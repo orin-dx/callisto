@@ -1,5 +1,120 @@
 # callisto-cli
 
+## 0.20.0
+
+_2026-11-12 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.19.0...callisto@0.20.0)_
+
+### Minor Changes
+
+- Every JSON field Callisto writes is now camelCase, so scripts see one naming style.
+
+  - `version` and `snapshot` `--format json` reports: `reason.dep_kind` and `reason.dependency_to` are now `depKind` and `dependencyTo`.
+  - Release plumbing files: the preview's `short_sha` is `shortSha`, and the receipt's `peeled_commit`, `tag_name` and `byte_length` are `peeledCommit`, `tagName` and `byteLength`.
+  - A test now walks every report and file type and fails on a snake_case key.
+
+  Breaking: scripts that read `reason.dep_kind` or `reason.dependency_to` from `version` or `snapshot` JSON must use `depKind` and `dependencyTo`.
+
+  Action: keep Callisto and the release action on one version. A release preview or receipt written by 0.19 does not load in this version.
+- Mistyped config keys and pre-release tags are caught where you make them.
+
+  - An unknown key inside a `[[fixed-group]]` or `[[linked-group]]` block now fails with an error naming the key. Before, it was silently ignored.
+  - `callisto pre enter` rejects a tag with a space, `!`, `/`, an empty part or a number with a leading zero such as `01` (E324) and writes nothing. Before, it wrote `pre.json` and `version` failed later with a confusing version error. Dotted tags such as `beta.1` still work.
+  - `pre-major-inference = "false"` is rejected (E256). It was accepted as `off` but never documented; use `"off"`.
+
+  Action: if a group block in `callisto.toml` carries a key Callisto does not recognise, remove it, and replace `pre-major-inference = "false"` with `"off"`.
+- Each configuration mistake now has its own error code, so a script or a person can tell them apart.
+
+  - E254 is retired. A bad `publish-to` is E330, `release-trigger` E331, `cascade.mode` E332, `changelog.layout` E333, a registry `kind` E334, `publish-url` on a non-PyPI registry E335, `url` on a Cargo registry E336, a registry timeout E337, and an unparsable package `match` E338. Before, all of these reported E254.
+  - A registry `kind` that does not match the package's ecosystem is E339. Before, it reported E171, which means an internal defect, so it looked like a bug in Callisto.
+  - Exit codes are unchanged.
+
+  Breaking: scripts that match E254 for these values, or E171 for a registry kind mismatch, must match the new codes.
+- Breaking: `version --emit-decision` and `release pending --decision` now reject a decision path outside the workspace, as `release plan` always did.
+
+  - `version --emit-decision ../x` or an absolute path outside the workspace used to write the decision file there and exit 0. It now exits 2 with E225 (outside the workspace) or E226 (invalid path) and writes nothing.
+  - `release pending --decision ../x` used to fail with exit 1 and a raw git "outside repository" error. It now exits 2 with E225 or E226.
+  - `version --emit-preview` is unchanged, so a preview can still go to a temp file outside the workspace.
+  - A workspace-relative path, such as the release PR action's `--emit-decision "$INPUT_DECISION_PATH"`, works as before.
+
+  Action: a script that passes an absolute or `../` decision path to `version --emit-decision` or `release pending --decision` must use a path inside the workspace.
+- Error codes now each name one condition, so a script can tell problems apart from the code.
+
+  - `callisto.toml`: E111 is only a TOML syntax error. An unknown key is E325, and a value of the wrong type or a missing required key is E326.
+  - `release pending --from`: a value that is not a full 40-character SHA is E327, and a valid SHA that is not a release commit on this branch is E328. Before, both showed E171, which means an internal defect.
+
+  Breaking: scripts that match E111 to detect an unknown key or a wrong-type value, or E171 to detect a bad `--from`, must match E325, E326, E327 or E328 instead.
+- The `version` JSON report's lockfile refresh result no longer has `success` or `exitCode`, and the `status`, `version`, `snapshot` and `matrix` reports now say `schemaVersion: 3`.
+
+  - `success` was always `true`, because a failed refresh stops the command with error E208 instead of appearing in the report. `exitCode` only mirrored `success`.
+  - Only the `version` report changed shape. The other three reports change just their `schemaVersion`, because they share one version number.
+
+  Breaking: scripts that read `success` or `exitCode` from the lockfile refresh result of `version --format json` get nothing back. Check the command's exit code instead. A script that pins `schemaVersion` to 2 for `status`, `snapshot` or `matrix` must accept 3.
+- Breaking: eight diagnostic codes that callisto no longer emits are gone from the JSON schema.
+
+  **What changed**
+  - `--format json` output never contains `napi-coordination-not-yet-supported`, `pre-major-inference-inert`, `changelog-section-not-found`, `changeset-read-error`, `git-discovery-failed`, `changelog-read-error`, `bare-rule-matches-multiple-ecosystems` or `publish-target-not-implemented`
+  - The `DiagnosticCode` enum in the schema no longer lists them
+
+  **Action**
+  - Remove any match on these codes from scripts; a schema validator pinned to the old enum should be updated
+- A private npm workspace root is no longer treated as a package.
+
+  - A root `package.json` that is `private` and lists `workspaces` is skipped, so it stops appearing in `status` and in release plans. Many project templates give that root a version such as `0.0.0`, and until now Callisto listed it as a package even though it only holds scripts and tooling, is never published, and nothing depends on it by version.
+  - `status` prints one line when it skips a root, so it never disappears silently.
+  - To version the root anyway, add a `[[package]]` block to `callisto.toml` with `match = "npm/<name>"`, where `<name>` is the root's `package.json` name, such as `match = "npm/monorepo"`.
+- Usage errors now exit 2, as the stability promise says, so a script can tell a mistake in the command from a failure in the workspace.
+
+  - A bad or missing flag value that Callisto checks after parsing now exits 2, like a clap-level mistake always did. Examples: `add --package a:patch`, `add --package cargo/a:bogus`, `add` without `--summary`, `init` without `--yes` and without a terminal, `snapshot --tag` with a space, and `--dry-run` on commands that need an output file.
+  - Also exit 2: an unknown package passed to `--package` on `add`, `matrix` or `release` (E102), an invalid `init --forge-repository` (E187) or `--product-package` (E189), a `release pending --from` that is not a release commit (E328), a repeated `--package` in a release selection (E169), an invalid `--decision`, `--preview` or `--snapshot` value (E281), `release execute` flags that contradict the intent (E232, E233), and a `release plan --artifact-repository` that does not match the config (E230).
+  - The rule: exit 2 when a flag value or combination is rejected, exit 1 when a valid flag meets state that cannot support it. Failures about your workspace, config, git, registries or release intent (for example E188, E299, E219, E308) still exit 1, and so does the same value read from `callisto.toml`, a changeset or `pre.json`.
+  - The JSON error envelope is unchanged.
+
+  Action: a script that checks for exit code 1 after a bad argument must also accept 2. Checking for any non-zero code is unaffected.
+
+### Patch Changes
+
+- `callisto add` no longer writes a changeset that Callisto's own tools reject, and `status` JSON has the same fields for every package.
+
+  - `add --package cargo/a:patch --package cargo/a:major` now fails with E329 and writes nothing. Before, it wrote both lines, and `status --check` then failed on the file.
+  - `status --format json`: `lastTag` and `pendingSeverity` print `null` when there is none instead of being left out, so every package record has the same keys.
+  - The `--strict` help for `snapshot` and `version` now says what the flag does: it turns warnings into errors, and graph errors abort either way.
+- `version --emit-preview` is faster in large monorepos.
+
+  - The check for packages that changed since their last release now asks git once for all packages tagged at the same release, instead of once per package.
+  - In a test workspace with 150 changed packages, that went from 151 git calls to 4, and from 3.8 s to 1.0 s.
+- A mistyped package name now gets a suggestion, so you can fix it from the error alone.
+
+  - `callisto add --package cargo/libb:minor` adds ``did you mean `cargo/lib`?`` to the E102 error, with up to three close matches.
+  - A wrong ecosystem is caught too: `npm/lib` suggests `cargo/lib`.
+  - When nothing is close, the error is unchanged.
+- Notes about packages Callisto skips are printed once per run.
+
+  - Before, a command that loads the workspace more than once, such as `callisto init`, printed the same note up to three times.
+  - This covers the notes for a crate with no version and for an ignored private workspace root.
+- `callisto release` and the release PR are much faster in very large monorepos.
+
+  - With about 1,500 of 1,800 packages releasing at once, `release --dry-run` starts 14 git processes instead of about 3,000: 8.1 s to 1.3 s in a release build, and 7.9 s to 1.6 s on a 20,000-commit history.
+  - `compose-pr-body --publish-plan` no longer slows down quadratically as more packages release at once: 12 s to 1.5 s in a debug build at 1,800 packages.
+  - The output is unchanged.
+- `callisto release pending --format json` now carries the same envelope as every other JSON report.
+
+  - The output gains `schemaVersion`, `command` and `dryRun`; the `pending` list and its fields are unchanged, so anything that reads `.pending[0].source` keeps working.
+  - A failing `release pending` reports `command: "release pending"` instead of `"release"`, so a script can tell which subcommand failed.
+
+  Action: if a script checks for `command == "release"` on a failing `release pending`, match `release pending` instead.
+- `callisto status` and the release preview now see committed changes when your Callisto workspace is a subdirectory of the git repository.
+
+  - `callisto status` reported `changedSinceLastTag: false` for packages that had commits since their last tag. It now reports `true`.
+  - `callisto release --dry-run` no longer misses the warning for changed packages that have no changeset.
+  - `callisto version` reads manifests and checks for pending changesets at HEAD correctly from a subdirectory workspace.
+
+  Nothing to do. A workspace at the repository root was never affected.
+- The release PR says which packages are versioned but not published.
+
+  - Under "Merging will publish", a line such as ``Versioned, not published: `callisto-fixtures` (no publish target).`` names each package that is bumped but has nowhere to publish, such as a private package that moves with its fixed group.
+  - Before, that package sat in the package table next to the ones that publish, with nothing saying it goes nowhere.
+  - For scripts: `--emit-preview` output adds `publish.versionedOnly`, listing those packages. It is a new optional field, so existing readers and older preview files keep working.
+
 ## 0.19.0
 
 _2026-11-10 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.18.0...callisto@0.19.0)_
