@@ -165,3 +165,24 @@ fn requirement_spellings_and_extras_syntax_are_matched_by_normalized_name() {
     assert!(after.contains("\"Lib_Py[x]==0.2.0\""), "{after}");
     assert!(after.contains("\"lib.py==0.2.0\""), "{after}");
 }
+
+#[test]
+fn a_parenthesized_pin_cascades_and_keeps_its_parentheses() {
+    let dir =
+        python_workspace("[project]\nname = \"app-py\"\nversion = \"0.1.0\"\ndependencies = [\"lib-py (==0.1.0)\"]\n");
+    bump_lib_minor(dir.path());
+    assert_eq!(
+        app_pyproject(dir.path()),
+        "[project]\nname = \"app-py\"\nversion = \"0.1.1\"\ndependencies = [\"lib-py (==0.2.0)\"]\n"
+    );
+}
+
+#[test]
+fn a_direct_url_requirement_with_extras_keeps_its_url_intact() {
+    let dir = python_workspace(
+        "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\ndependencies = [\"lib-py[x] @ https://example.com/lib.whl\"]\n",
+    );
+    bump_lib_minor(dir.path());
+    let after = app_pyproject(dir.path());
+    assert!(after.contains("\"lib-py[x] @ https://example.com/lib.whl\""), "{after}");
+}
