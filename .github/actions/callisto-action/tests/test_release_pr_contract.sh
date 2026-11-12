@@ -61,6 +61,8 @@ callisto() {
   case "$1" in
     matrix) printf '%s\n' '{"platformTargets":[]}' ;;
     compose-pr-body)
+      # Drain stdin so the script's piped printf cannot take SIGPIPE under pipefail.
+      if [[ " $* " == *' --existing-body - '* ]]; then cat > /dev/null; fi
       printf '%s\n' '{"schemaVersion":1,"body":"composed release body","labels":[{"name":"callisto: breaking","color":"d93f0b","description":"A major bump or a Breaking: note","applied":true},{"name":"callisto: ready","color":"0e8a16","description":"Nothing needs a second look","applied":false},{"name":"callisto: blocked","color":"b60205","description":"Merging would fail the release","applied":false}],"command":"compose-pr-body","dryRun":false}' ;;
     version) return 0 ;;
     *) echo "unexpected callisto invocation: $*" >&2; return 97 ;;
