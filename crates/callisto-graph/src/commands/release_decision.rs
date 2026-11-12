@@ -444,7 +444,18 @@ fn commit_delta<R: CommandRunner, D: DependencyResolver>(
         release_commit.as_str(),
     ];
     let changed = git_stdout(workspace.runner, &workspace.root, &diff_tree_args)?;
-    let changed = parse_name_status(&changed, &diff_tree_args)?;
+    let mut changed = parse_name_status(&changed, &diff_tree_args)?;
+
+    // `diff-tree` paths are repository-top-relative. Rewrite them workspace-relative; an edit outside the workspace
+    // becomes `../..` so it never matches a workspace path and is still refused as unexpected.
+    let prefix = git_stdout(workspace.runner, &workspace.root, &["rev-parse", "--show-prefix"])?;
+    let up = "../".repeat(prefix.matches('/').count());
+    for (_, path) in &mut changed {
+        *path = match path.strip_prefix(prefix.as_str()) {
+            Some(inside) => inside.to_owned(),
+            None => format!("{up}{path}"),
+        };
+    }
     Ok((parent, changed))
 }
 
@@ -1250,6 +1261,9 @@ mod tests {
             }
             if args.first().copied() == Some("rev-parse") && args.get(1).copied() == Some(rev_parse_parent.as_str()) {
                 return ok(self.parent.clone());
+            }
+            if args == ["rev-parse", "--show-prefix"] {
+                return ok(String::new());
             }
             if args.first().copied() == Some("diff-tree") {
                 return ok(self.name_status.clone());
