@@ -79,7 +79,7 @@ impl PackageJson {
         } else {
             text.clone()
         };
-        crate::atomic::atomic_write(&self.absolute, &on_disk, permit).map_err(|e| ManifestError::Write {
+        callisto_model::atomic::atomic_write(&self.absolute, &on_disk, permit).map_err(|e| ManifestError::Write {
             path: self.path.clone(),
             message: e.to_string(),
         })?;

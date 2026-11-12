@@ -245,6 +245,22 @@ mod tests {
         assert!(std::fs::read_to_string(&target).unwrap().starts_with("writer "));
     }
 
+    /// Concurrent replacing writes leave exactly one complete write, never an interleaved mix.
+    #[test]
+    fn concurrent_atomic_write_to_same_path_does_not_corrupt_file() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("shared.txt");
+        let permit = ApplyPermit::force_for_tests();
+        std::thread::scope(|scope| {
+            for i in 0..10 {
+                let (target, permit) = (&target, &permit);
+                scope.spawn(move || atomic_write(target, &format!("thread-{i}\n"), permit).unwrap());
+            }
+        });
+        let content = std::fs::read_to_string(&target).unwrap();
+        assert!((0..10).any(|i| content == format!("thread-{i}\n")), "got {content:?}");
+    }
+
     #[test]
     fn probe_leaves_no_file_or_directory_and_accepts_existing_target() {
         let dir = tempdir().unwrap();

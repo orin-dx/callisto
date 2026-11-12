@@ -190,7 +190,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                 Some(existing) => callisto_model::format::write_pre_json_preserving(pre_state, existing),
                 None => callisto_model::format::write_pre_json(pre_state),
             };
-            callisto_manifests::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| GraphError::ApplyIo {
+            callisto_model::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| GraphError::ApplyIo {
                 path: rel_pre_path.clone(),
                 message: e.to_string(),
             })?;

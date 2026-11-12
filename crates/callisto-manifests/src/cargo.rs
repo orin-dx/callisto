@@ -434,7 +434,7 @@ fn workspace_package_version(doc: &toml_edit::DocumentMut, path: &Path) -> Resul
 impl Manifest for CargoToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let text = self.fingerprint.apply(&self.document.to_string());
-        crate::atomic::atomic_write(&self.absolute, &text, permit).map_err(|e| ManifestError::Write {
+        callisto_model::atomic::atomic_write(&self.absolute, &text, permit).map_err(|e| ManifestError::Write {
             path: self.path.clone(),
             message: e.to_string(),
         })?;
@@ -1128,13 +1128,13 @@ impl WorkspaceCargoResolver {
     }
 
     /// Flushes the in-memory document to disk via
-    /// [`crate::atomic::atomic_write`]. Distinct, explicitly-called step --
+    /// [`callisto_model::atomic::atomic_write`]. Distinct, explicitly-called step --
     /// see [`Self::write_version`]/[`Self::write_dependency`]'s docs --
     /// mirroring the `Manifest` trait's `persist` across `CargoToml`,
     /// `PackageJson`, and `PyprojectToml`.
     pub fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let text = self.fingerprint.apply(&self.document.to_string());
-        crate::atomic::atomic_write(&self.absolute_path, &text, permit).map_err(|e| ManifestError::Write {
+        callisto_model::atomic::atomic_write(&self.absolute_path, &text, permit).map_err(|e| ManifestError::Write {
             path: self.root_path.clone(),
             message: e.to_string(),
         })?;
