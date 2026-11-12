@@ -187,3 +187,78 @@ fn release_pending_decision_outside_the_workspace_exits_2() {
         "E225",
     );
 }
+
+/// Each target must be refused with exit 2 before the plan is applied, leaving the manifest and changesets untouched.
+fn assert_decision_target_rejected(
+    setup: impl Fn(&std::path::Path),
+    target: impl Fn(&std::path::Path) -> String,
+    code: &str,
+) {
+    let dir = workspace();
+    let root = dir.path();
+    setup(root);
+    assert!(callisto(root, &["add", "--package", "cargo/a:patch", "--summary", "s"])
+        .status
+        .success());
+    let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    let changesets = fs::read_dir(root.join(".changeset")).unwrap().count();
+    let target = target(root);
+    assert_exit(root, &["version", "--emit-decision", &target], 2, code);
+    assert_eq!(
+        fs::read_to_string(root.join("Cargo.toml")).unwrap(),
+        manifest,
+        "{target}"
+    );
+    assert_eq!(
+        fs::read_dir(root.join(".changeset")).unwrap().count(),
+        changesets,
+        "{target}"
+    );
+}
+
+#[test]
+fn version_emit_decision_to_a_directory_or_the_root_exits_2_before_applying() {
+    assert_decision_target_rejected(|_| {}, |_| ".changeset".to_owned(), "E226");
+    assert_decision_target_rejected(|_| {}, |_| ".".to_owned(), "E226");
+    assert_decision_target_rejected(|_| {}, |root| root.to_str().unwrap().to_owned(), "E226");
+    assert_decision_target_rejected(
+        |_| {},
+        |root| root.join(".changeset").to_str().unwrap().to_owned(),
+        "E226",
+    );
+}
+
+#[test]
+fn version_emit_decision_with_a_trailing_slash_or_inside_git_exits_2_before_applying() {
+    assert_decision_target_rejected(|_| {}, |_| "out/".to_owned(), "E226");
+    assert_decision_target_rejected(|_| {}, |_| ".git/d.json".to_owned(), "E226");
+    assert_decision_target_rejected(|_| {}, |root| format!("{}/missing/../d.json", root.display()), "E226");
+}
+
+#[cfg(unix)]
+#[test]
+fn version_emit_decision_through_a_symlink_out_of_the_workspace_exits_2_before_applying() {
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().to_path_buf();
+    assert_decision_target_rejected(
+        |root| std::os::unix::fs::symlink(&target, root.join("link")).unwrap(),
+        |_| "link/d.json".to_owned(),
+        "E225",
+    );
+    assert!(!outside.path().join("d.json").exists());
+}
+
+#[test]
+fn version_emit_decision_to_a_relative_path_whose_directories_do_not_exist_yet_still_writes_it() {
+    let dir = workspace();
+    let root = dir.path();
+    assert!(callisto(root, &["add", "--package", "cargo/a:patch", "--summary", "s"])
+        .status
+        .success());
+    let out = callisto(
+        root,
+        &["version", "--emit-decision", ".callisto/nested/release-decision.json"],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr_of(&out));
+    assert!(root.join(".callisto/nested/release-decision.json").exists());
+}

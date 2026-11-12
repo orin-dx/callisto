@@ -495,28 +495,35 @@ fn canonicalize_through_missing(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 /// Decision paths are repository-relative for the diff and show commands, but callers may pass an absolute one; contain it
-/// in `root` once here. The file and its directories may not exist yet; the writer creates them.
+/// in `root` once here, before anything is applied. The file and its directories may not exist yet; the writer creates them.
 pub(crate) fn workspace_decision_path(path: &Path, root: &Path) -> Result<PathBuf, CliError> {
-    let io_error = |source| CliError::Io {
-        source,
-        path: Some(path.to_path_buf()),
+    let invalid = |detail: String| CliError::ReleaseDecisionPathInvalid {
+        path: path.display().to_string(),
+        detail,
     };
-    let relative = if path.is_absolute() {
-        let canonical = canonicalize_through_missing(path).map_err(io_error)?;
-        canonical
-            .strip_prefix(root)
-            .map_err(|_outside_source| CliError::ReleaseDecisionOutsideSource {
-                decision: canonical.display().to_string(),
-                root: root.display().to_string(),
-            })?
-            .to_path_buf()
-    } else {
+    let located = if path.is_absolute() {
         path.to_path_buf()
+    } else {
+        root.join(callisto_model::workspace_relative(path).map_err(|error| invalid(error.to_string()))?)
     };
-    callisto_model::workspace_relative(&relative).map_err(|error| CliError::ReleaseDecisionPathInvalid {
-        path: relative.display().to_string(),
-        detail: error.to_string(),
-    })
+    let canonical = canonicalize_through_missing(&located).map_err(|error| invalid(error.to_string()))?;
+    let relative = canonical
+        .strip_prefix(root)
+        .map_err(|_outside_source| CliError::ReleaseDecisionOutsideSource {
+            decision: canonical.display().to_string(),
+            root: root.display().to_string(),
+        })?
+        .to_path_buf();
+    if path.as_os_str().to_string_lossy().ends_with(std::path::is_separator) {
+        return Err(invalid("names a directory".to_owned()));
+    }
+    if relative.as_os_str().is_empty() || canonical.is_dir() {
+        return Err(invalid("is a directory".to_owned()));
+    }
+    if relative.starts_with(".git") {
+        return Err(invalid("is inside .git".to_owned()));
+    }
+    callisto_model::workspace_relative(&relative).map_err(|error| invalid(error.to_string()))
 }
 
 fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
