@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_012VZujCtdRrKCrMZwXPuDVL",
+  "agent_id": "a60b96e3da64503b6",
+  "subagent_type": "general-purpose",
+  "task_description": "Validate emit-decision before version mutates",
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 83311,
+    "cache_read_tokens": 1981787,
+    "output_tokens": 13160,
+    "api_call_count": 29
+  },
+  "started_at": "2026-11-11T23:16:09.777235-08:00",
+  "completed_at": "2026-11-11T23:22:13.977874-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

@@ -1,0 +1,108 @@
+{
+  "cli_version": "0.13.3-nightly.202611110616.7aed2fb15",
+  "checkpoint_id": "01M77A6Z2ZKQ9QPK7EBWVKZREQ",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T07:23:12.977655Z",
+  "branch": "fix/python-parenthesized-requirements",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "6f13e07b5469",
+  "checkpoint_transcript_start": 47147,
+  "transcript_lines_at_start": 47147,
+  "compact_transcript_start": 3376,
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 15748,
+    "cache_read_tokens": 3693203,
+    "output_tokens": 3466,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 16,
+      "cache_creation_tokens": 52933,
+      "cache_read_tokens": 705299,
+      "output_tokens": 3242,
+      "api_call_count": 8
+    }
+  },
+  "redaction": {
+    "replacements": 99,
+    "layers": {
+      "betterleaks": 36,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 348
+  },
+  "summary": {
+    "intent": "Review and land a set of fixes in the callisto repo: parenthesized Python requirement parsing, decision-target path validation, and subdirectory-sibling git handling, then open PRs linked to trail #357.",
+    "outcome": "Two of three fixes (parenthesized Python requirements, decision-target validation) are implemented on signed-commit branches with lint/pre-push/doc-check/workflow-contracts passing; the subdirectory-sibling fix and changesets are still in progress and no PRs have been opened yet.",
+    "learnings": {
+      "repo": [
+        "Python manifest rewriting lives in crates/callisto-manifests/src/python.rs and uses a hand-written PEP 508 parser; no crate in Cargo.lock parses PEP 508 requirements (pep440_rs only handles version specifiers).",
+        "The `;` environment-marker split must stay first in requirement parsing, before name/extras/URL parsing.",
+        "`Requirement` now carries a `parenthesized` flag so rewrites preserve the user's `lib-py (==x)` form; `name[extra] @ url` keeps the URL out of extras.",
+        "A shared helper validates decision targets for `version --emit-decision`, `release plan --decision` and `release pending --decision`; errors E225 (outside workspace) and E226 (root, existing dir, trailing separator, under .git, unresolvable) exit 2 with nothing written, and symlink escapes via relative paths are caught.",
+        "CI-style gates in this repo: `pre-push`, `lint`, `doc-check`, `workflow-contracts`, and `just test`, which has one known environment-related failure.",
+        "Proptest on the parser runs at 20,000 cases and caught a `\"(\"` edge case."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/python.rs",
+          "finding": "Parser name now terminates at whitespace, `(`, `[`, `@`, `,` or an operator; text after the name that is not a clause is dropped, which was the reviewed risk for silent rewrites."
+        }
+      ],
+      "workflow": [
+        "Reproduce the bug first, then write tests that fail before the fix (3 of 4 decision-target reject tests failed pre-fix; the 4th is a passing guard).",
+        "Fan work out to parallel agents (parser fix, decision-target fix, subdirectory siblings, changesets) and review their diffs before accepting.",
+        "Use `git diff origin/main...origin/<branch>` to review remote branches without checking them out."
+      ]
+    },
+    "friction": [
+      "An existing test depended on a file-as-parent failing late; it had to be rewritten to use a read-only directory and is now unix-only.",
+      "`just test` still ends with a known environment failure that must be discounted each run."
+    ],
+    "open_items": [
+      "Subdirectory siblings fix is still running: `--relative` for the release-commit shape check, the E121 guard, and a sweep of every other git call.",
+      "Changesets for the two finished branches are still being written by the courier agent.",
+      "Link each branch to trail #357, open PRs and edit the bodies.",
+      "Confirm that silently dropping non-clause text after the requirement name cannot change a user's dependency line."
+    ]
+  }
+}

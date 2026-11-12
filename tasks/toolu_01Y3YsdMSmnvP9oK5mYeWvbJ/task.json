@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01Y3YsdMSmnvP9oK5mYeWvbJ",
+  "agent_id": "a2a398e748726ecdf",
+  "subagent_type": "courier:changeset-analyzer",
+  "task_description": "Changesets for parser and decision-target fixes",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 38776,
+    "cache_read_tokens": 121341,
+    "output_tokens": 3708,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T23:22:26.855756-08:00",
+  "completed_at": "2026-11-11T23:22:52.596378-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
