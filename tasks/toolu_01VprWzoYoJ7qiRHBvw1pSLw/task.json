@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01VprWzoYoJ7qiRHBvw1pSLw",
+  "agent_id": "a2f7a5a1899c6a96c",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for exhaustive matches",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 32814,
+    "cache_read_tokens": 118067,
+    "output_tokens": 1853,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T15:11:05.404576-08:00",
+  "completed_at": "2026-11-11T15:11:23.899766-08:00"
+}

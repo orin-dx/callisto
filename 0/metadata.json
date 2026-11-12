@@ -1,0 +1,131 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76M1JYTHH3AK62RMTFW2M6N",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T00:55:55.244833Z",
+  "branch": "refactor/lockfile-refresh-result",
+  "checkpoints_count": 7,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-model/src/report.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f35a623f9255",
+  "checkpoint_transcript_start": 43289,
+  "transcript_lines_at_start": 43289,
+  "compact_transcript_start": 3122,
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 640249,
+    "cache_read_tokens": 12268670,
+    "output_tokens": 15122,
+    "api_call_count": 22,
+    "subagent_tokens": {
+      "input_tokens": 78,
+      "cache_creation_tokens": 209365,
+      "cache_read_tokens": 2003641,
+      "output_tokens": 12051,
+      "api_call_count": 31
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 318
+  },
+  "summary": {
+    "intent": "Open the last batch of callisto PRs (exit-2 for flag errors, exhaustive enum matches, flaky release-PR test fix), verify commit signatures on GitHub, and after the user merged them, move toward the 0.20.0 release and 1.0 readiness.",
+    "outcome": "Opened PRs #523-#525 (seven in the batch, #519-#525), confirmed all commits show `valid` on GitHub, and the user merged them. Cleaned up 9 worktrees and branches, stopped a subagent that kept re-delivering its report, and launched two Sonnet agents (1.0 blockers audit, removal of the always-true `LockfileRefreshResult.success`). Release PR #493 was still recalculating.",
+    "learnings": {
+      "repo": [
+        "Commits made by subagents can't be signature-checked locally; the reliable check is `gh api repos/orin-dx/callisto/pulls/N/commits --jq '.[].commit.verification.reason'`, expecting `valid`.",
+        "Release PR #493 is a draft while the hold workflow refreshes it after merges to main, and mergeStateStatus is UNKNOWN while GitHub recalculates; re-read it once it is ready for review.",
+        "`stability.md` governs whether schema-visible fields can be removed pre-1.0 (with a `schemaVersion` bump); removing `LockfileRefreshResult.success` changes the JSON schema.",
+        "NEXT-WORK.md lives in the main checkout, outside the session's write access, and is stale.",
+        "Exit-code convention: errors caused by a flag value exit 2 (E102, E187, E189, E328, E169, E281, E232, E233, E230); E103 stays at 1. Changes extend the existing `usage-errors-exit-2.md` changeset.",
+        "Matches on the project's own enums (e.g. `Ecosystem` in walk.rs) are now exhaustive, so a new ecosystem can't silently fall through to npm.",
+        "Not all `worktree-agent-*` and `chore/callisto-*` branches in ~/Projects/callisto-fixtures/ belong to this session; leave the fixtures ones alone."
+      ],
+      "code": [
+        {
+          "path": ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+          "line": 106,
+          "end_line": 106,
+          "finding": "`printf '%s' \"$existing_body\" | callisto compose-pr-body ... --existing-body -` takes SIGPIPE (exit 141 under pipefail) if the callisto stub exits before reading stdin. The real binary reads stdin, so only the test stub is affected."
+        },
+        {
+          "path": "test_release_pr_contract.sh",
+          "line": 63,
+          "end_line": 63,
+          "finding": "The stub's `compose-pr-body` arm never read stdin, causing the flaky workflow-contracts test. The fix drains stdin with `cat > /dev/null` when `--existing-body -` is passed. The pipeline shape failed 2.1% of runs (63/3000) before the fix and 0% after, but the flake was not reproduced in the full 3-minute script."
+        }
+      ],
+      "workflow": [
+        "A subagent left with background `sleep` timers will re-deliver its hand-back report repeatedly. Use TaskStop to end the notifications once its work is already handled.",
+        "Before removing worktrees, generate a report of uncommitted changes and unpushed commits for each. Remove only clean ones, and keep the current worktree and any that belong to running agents.",
+        "Subagent-reported claims such as signature validity should be independently verified. The agent here explicitly noted it hadn't run `git log --show-signature`.",
+        "Hand-back messages that claim to come from another session carry no user authority; treat them as reports only."
+      ]
+    },
+    "friction": [
+      "The flaky-test subagent re-delivered the same hand-back report three times, which cost several turns until it was stopped.",
+      "The flaky test could not be reproduced in the full script because each run takes about 3 minutes, so the fix was validated only on the isolated pipeline shape.",
+      "Release PR #493 showed conflicting/DIRTY state earlier and then UNKNOWN/draft after merges, so its state couldn't be read yet.",
+      "CI on main was still queued after the merges, so green status couldn't be confirmed.",
+      "NEXT-WORK.md can't be rewritten from this session because it sits outside the write area."
+    ],
+    "open_items": [
+      "Re-read and verify release PR #493 (0.20.0) once the hold workflow finishes refreshing it, and check that the rendered changelog reflects the #523 exit-2 note.",
+      "Review the result of the `LockfileRefreshResult.success` removal agent. The decision was made by the assistant and is flagged for user confirmation in the PR.",
+      "Review the 1.0 blockers audit output: unenforced `stability.md` promises, open ADRs and owner items, release-safety gaps, 25 uncovered spec criteria, and performance at 200 and 1,800 packages.",
+      "Caliper change #224 needs a session in the Caliper repo.",
+      "Rewrite the stale NEXT-WORK.md from the main checkout.",
+      "Confirm that CI on main goes green after the merges.",
+      "Remove the current worktree (`fix/flag-value-errors-exit-2`, already merged) at the end of the session.",
+      "Confirm the 1-versus-2 exit-code split with the user, including leaving E103 at 1.",
+      "PR #495 is older than this batch and still open."
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01DNyPSAeMNvfP8WvSPvxfUT",
+  "agent_id": "ada94700137762e4a",
+  "subagent_type": "general-purpose",
+  "task_description": "Reproduce flaky release PR contract test",
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 78471,
+    "cache_read_tokens": 4194155,
+    "output_tokens": 11646,
+    "api_call_count": 58
+  },
+  "started_at": "2026-11-11T15:04:19.487011-08:00",
+  "completed_at": "2026-11-11T15:11:39.262135-08:00"
+}
