@@ -13,6 +13,8 @@
 5. **System Git only.** All VCS reads and writes shell out to the user's `git` binary (`callisto_model::vcs`), so Callisto sees exactly the repository, config, and identity Git itself does. No embedded Git implementation.
 6. **Versioning.** The four published crates version in lockstep (one fixed group). Only `callisto-cli`, its command-line interface and its JSON reports are a compatibility surface; `callisto-model`, `callisto-manifests` and `callisto-graph` are internal and may change in any release.
 7. **User-facing errors are diagnosable.** Every error surfaced to a user derives `miette::Diagnostic` with a stable code and, where the fix isn't obvious from the message, `help` text. A wrapper around another crate's error (for example `GraphError::Config`) is `#[diagnostic(transparent)]` and declares no code of its own, so the inner code reaches the user. Full list: [`docs/errors.md`](docs/errors.md).
+8. **Exit codes are classified by type.** A failure caused by a flag value exits 2, everything else exits 1. Each error type decides in its own `exit_kind()` (`GraphError`, `ConfigError`, `CliError`), and `ExitKind::Runtime` is the default arm, so a new error is a runtime failure until it is listed as usage.
+9. **One report envelope.** Every `--format json` report is a typed `Report` written by `emit_report`, which adds `schemaVersion`, `command` and `dryRun`. The untyped JSON writer (`write_document`) is crate-private, so a command cannot print a report that bypasses the envelope.
 
 Design decisions, with the options they rejected and why: [`docs/adr/README.md`](docs/adr/README.md).
 
