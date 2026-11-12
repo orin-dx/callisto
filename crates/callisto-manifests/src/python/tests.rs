@@ -1636,6 +1636,12 @@ fn requirement_parse_handles_dashed_and_dotted_names() {
     assert_eq!(req.spec.as_deref(), Some(">=4.0.0"));
 }
 
+#[test]
+fn requirement_stray_bracket_in_extras_survives_a_round_trip() {
+    let req = Requirement::parse("¡[\u{b}[").unwrap();
+    assert_eq!(Requirement::parse(&req.render()), Some(req));
+}
+
 proptest! {
     /// Parsing an arbitrary string may or may not yield a `Requirement`
     /// (most random strings have no extractable package name), but
