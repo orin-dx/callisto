@@ -2,6 +2,8 @@
 
 Status: Accepted (implemented in #167)
 
+ADR 12 revises the selector-promotion half of this decision: qualified references are canonical slash form. The directory key and default tag stand.
+
 ## Context
 
 - A package's id was its primary manifest name. When a second directory declared the same name in another ecosystem, walking promoted both to `cargo/foo` and `npm/foo` (`crates/callisto-graph/src/walk.rs`).
