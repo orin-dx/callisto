@@ -13,19 +13,12 @@ use super::super::github::{github_release_for_tag, GitHubReleaseLookup};
 use super::policy::{observe_until_visible, programs, timeouts};
 use super::{
     confirmed_evidence, wrong_role, EffectAuthorization, ForgePublishOperation, ForgeReleaseOperation, NotesFallback,
-    PreparedOperation, ProviderCapabilities, ProviderContext, ProviderRequest, ReleaseNotes, ReleaseProvider,
+    PreparedOperation, ProviderContext, ProviderRequest, ReleaseNotes, ReleaseProvider,
 };
 
 pub(crate) struct ForgeReleaseProvider;
 
 impl ReleaseProvider for ForgeReleaseProvider {
-    fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities {
-            can_observe: true,
-            can_publish: true,
-        }
-    }
-
     fn preflight_conflict(&self) -> RemoteConflict {
         RemoteConflict::ForgeReleaseDiffers
     }
@@ -125,13 +118,6 @@ fn notes_file_error(error: std::io::Error) -> GraphError {
 pub(crate) struct ForgePublishProvider;
 
 impl ReleaseProvider for ForgePublishProvider {
-    fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities {
-            can_observe: true,
-            can_publish: true,
-        }
-    }
-
     fn preflight_conflict(&self) -> RemoteConflict {
         RemoteConflict::ForgeReleaseDiffers
     }

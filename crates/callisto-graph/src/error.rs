@@ -1012,8 +1012,6 @@ pub enum ReleasePreconditionRequirement {
     ArtifactManifestProvided,
     #[error("a verified artifact manifest")]
     VerifiedArtifactManifest,
-    #[error("a provider that can observe what it publishes")]
-    ObservableProvider,
     #[error("a registry client that can prove a version absent")]
     ObservableRegistryClient,
     #[error("a python interpreter (python3 or python) on PATH")]

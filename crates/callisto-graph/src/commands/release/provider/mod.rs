@@ -226,18 +226,6 @@ pub trait ReleaseProviderSet {
     }
 }
 
-/// What one provider role can do.
-///
-/// `can_observe` means the role answers an observation at all, not that the
-/// answer can be exact: PyPI answers `Indeterminate` because its upload
-/// endpoint is not a query API, and that is still an answer the executor can
-/// fail closed on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ProviderCapabilities {
-    pub(crate) can_observe: bool,
-    pub(crate) can_publish: bool,
-}
-
 /// The permit and the absence proof that together authorize one effect.
 pub(crate) struct EffectAuthorization<'a> {
     pub(crate) permit: &'a ApplyPermit,
@@ -346,8 +334,6 @@ impl<'a> ProviderContext<'a> {
 
 /// One operation role's adapter: what it can do, what it sees, what it does.
 pub(crate) trait ReleaseProvider {
-    fn capabilities(&self) -> ProviderCapabilities;
-
     fn observe(
         &self,
         context: &ProviderContext<'_>,
@@ -401,7 +387,7 @@ pub(crate) trait ReleaseProvider {
 /// The one place a prepared operation is routed to the provider that performs
 /// it. Roles are selected here; the registry role selects its per-ecosystem
 /// adapter in [`registry::adapter_for`], which is the only other selection.
-fn provider_for(operation: &PreparedOperation) -> &'static dyn ReleaseProvider {
+pub(crate) fn provider_for(operation: &PreparedOperation) -> &'static dyn ReleaseProvider {
     match operation {
         PreparedOperation::RegistryPublish(_) => &registry::RegistryProvider,
         PreparedOperation::Tag(_) => &tag::TagProvider,
@@ -409,24 +395,6 @@ fn provider_for(operation: &PreparedOperation) -> &'static dyn ReleaseProvider {
         PreparedOperation::ArtifactUpload(_) => &artifact::ArtifactUploadProvider,
         PreparedOperation::ForgePublish(_) => &forge::ForgePublishProvider,
     }
-}
-
-/// A role that can issue an effect but cannot be asked what the provider holds
-/// could never prove absence before acting, so it is refused here -- before any
-/// observation or effect -- rather than at dispatch.
-pub(crate) fn checked_provider_for(operation: &PreparedOperation) -> Result<&'static dyn ReleaseProvider, GraphError> {
-    let provider = provider_for(operation);
-    require_observable(provider.capabilities())?;
-    Ok(provider)
-}
-
-fn require_observable(capabilities: ProviderCapabilities) -> Result<(), GraphError> {
-    if capabilities.can_publish && !capabilities.can_observe {
-        return Err(GraphError::ReleasePreconditionUnmet {
-            requirement: ReleasePreconditionRequirement::ObservableProvider,
-        });
-    }
-    Ok(())
 }
 
 /// Maps one observation to its pre-effect decision. `conflict` names the
@@ -488,26 +456,6 @@ pub(crate) fn wrong_role(id: &ReleaseOperationId, expected: &str) -> GraphError 
 mod tests {
     use super::*;
 
-    /// Every production role must be able to answer an observation, because
-    /// the executor may only issue an effect against a proved absence.
-    #[test]
-    fn no_production_provider_can_publish_without_being_observable() {
-        for provider in [
-            &registry::RegistryProvider as &dyn ReleaseProvider,
-            &tag::TagProvider,
-            &forge::ForgeReleaseProvider,
-            &artifact::ArtifactUploadProvider,
-            &forge::ForgePublishProvider,
-        ] {
-            let capabilities = provider.capabilities();
-            assert!(
-                capabilities.can_observe,
-                "a publishing provider that cannot observe would act without proof of absence"
-            );
-            assert!(capabilities.can_publish);
-        }
-    }
-
     /// The operator has to know why an observation was indeterminate: a refused credential, a rate limit and an
     /// unreadable answer need different fixes. The cause is a closed, credential-free value, so it is safe to show.
     #[test]
@@ -544,43 +492,6 @@ mod tests {
                 );
                 assert!(error.to_string().contains(wanted), "{cause:?}: {error}");
             }
-        }
-    }
-
-    #[test]
-    fn a_publish_only_role_is_refused_and_every_other_shape_is_allowed() {
-        let error = require_observable(ProviderCapabilities {
-            can_observe: false,
-            can_publish: true,
-        })
-        .unwrap_err();
-        assert!(
-            matches!(
-                error,
-                GraphError::ReleasePreconditionUnmet {
-                    requirement: ReleasePreconditionRequirement::ObservableProvider
-                }
-            ),
-            "expected ReleasePreconditionUnmet(ObservableProvider), got {error:?}"
-        );
-        for capabilities in [
-            ProviderCapabilities {
-                can_observe: true,
-                can_publish: true,
-            },
-            ProviderCapabilities {
-                can_observe: true,
-                can_publish: false,
-            },
-            ProviderCapabilities {
-                can_observe: false,
-                can_publish: false,
-            },
-        ] {
-            assert!(
-                require_observable(capabilities).is_ok(),
-                "{capabilities:?} must be allowed"
-            );
         }
     }
 }

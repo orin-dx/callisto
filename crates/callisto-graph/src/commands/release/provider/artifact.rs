@@ -13,20 +13,13 @@ use super::super::github::{
 use super::forge::observed_draft_or_published_release;
 use super::policy::{observe_until_visible, programs, timeouts};
 use super::{
-    confirmed_evidence, wrong_role, ArtifactUploadOperation, EffectAuthorization, PreparedOperation,
-    ProviderCapabilities, ProviderContext, ProviderRequest, ReleaseProvider,
+    confirmed_evidence, wrong_role, ArtifactUploadOperation, EffectAuthorization, PreparedOperation, ProviderContext,
+    ProviderRequest, ReleaseProvider,
 };
 
 pub(crate) struct ArtifactUploadProvider;
 
 impl ReleaseProvider for ArtifactUploadProvider {
-    fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities {
-            can_observe: true,
-            can_publish: true,
-        }
-    }
-
     fn preflight_conflict(&self) -> RemoteConflict {
         RemoteConflict::ArtifactDiffers
     }

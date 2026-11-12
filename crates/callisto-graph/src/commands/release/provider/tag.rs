@@ -13,8 +13,8 @@ use crate::GraphError;
 
 use super::policy::{self, programs, run_observation, timeouts, Attempt};
 use super::{
-    confirmed_evidence, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext,
-    ProviderRequest, ReleaseProvider, TagOperation,
+    confirmed_evidence, wrong_role, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest,
+    ReleaseProvider, TagOperation,
 };
 
 /// What the local repository holds at `refs/tags/<name>`; identity is the target commit plus being annotated.
@@ -41,13 +41,6 @@ enum RemoteTagObservation {
 pub(crate) struct TagProvider;
 
 impl ReleaseProvider for TagProvider {
-    fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities {
-            can_observe: true,
-            can_publish: true,
-        }
-    }
-
     fn preflight_conflict(&self) -> RemoteConflict {
         RemoteConflict::TagTargetDiffers
     }
