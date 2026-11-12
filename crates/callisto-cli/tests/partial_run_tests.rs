@@ -328,8 +328,11 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
+    use std::os::unix::fs::PermissionsExt;
+
     let dir = setup_polyglot_git_repo();
     let root = dir.path();
     let global = GlobalArgs {
@@ -338,7 +341,8 @@ fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
         dry_run: false,
     };
     callisto_fixtures::scaffold_callisto(root);
-    std::fs::write(root.join("decision-parent"), "not a directory").unwrap();
+    std::fs::create_dir(root.join("decision-parent")).unwrap();
+    std::fs::set_permissions(root.join("decision-parent"), std::fs::Permissions::from_mode(0o555)).unwrap();
     commands::add::handle(
         AddArgs {
             packages: vec!["cargo/core-crate:patch".to_string()],
@@ -359,7 +363,10 @@ fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
         },
         &global,
     );
-    assert!(first.is_err(), "writing into a missing directory must fail after apply");
+    assert!(
+        first.is_err(),
+        "writing into a read-only directory must fail after apply"
+    );
     let staged = std::process::Command::new("git")
         .args(["diff", "--cached", "--quiet"])
         .current_dir(root)
