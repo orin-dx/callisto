@@ -18,7 +18,7 @@ The types that make a release run safe to crash and rerun, and how the two relea
 | --- | --- | --- |
 | Authorities | `callisto-model` (MIT) | Run envelope and execution state (`release/execution.rs`), observations and evidence (`release_observation.rs`), transition table (`release_transition.rs`) |
 | Derivation and execution | `callisto-graph` | Decisions (`commands/release_decision.rs`), intent derivation (`commands/release/derive.rs`), local route (`commands/release/local.rs`), executor (`commands/release_execution.rs`), provider adapters (`commands/release/provider/`) |
-| Entry points | `callisto-cli` | `commands/release.rs`: `release`, `release plan`, `release build-python`, `release artifact-manifest`, `release execute` |
+| Entry points | `callisto-cli` | `commands/release.rs`: `release`, `release pending`, `release plan`, `release inspect`, `release build-python`, `release artifact-manifest`, `release execute` |
 
 ## Two routes, one executor
 

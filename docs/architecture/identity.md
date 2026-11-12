@@ -29,7 +29,8 @@ How the workspace names packages, why bare names match across ecosystems, and wh
 
 A workspace can hold `cargo/foo` and `npm/foo` as separate packages; ambiguity is resolved where a lookup happens. Qualified selectors work before and after promotion, and the colon form is rejected with E316. Config and CLI selectors must be canonical (`ecosystem/name`); a bare name is E317 (see [ADR 12](../adr/0012-canonical-distribution-release-ownership.md)).
 
-- `aggregate::resolve_target_package` resolves changeset entries through `IdentityIndex::resolve_id`, which maps qualified native distribution names to their owner and rejects ambiguous bare names. `status` attributes changeset entries and checks their well-formedness through the same resolver.- `[[package]]` rules use `config::resolve::resolve_package_config`: the first rule in declaration order whose ecosystem the package has and whose name matches. It never sorts the rules. Config rejects a rule without its ecosystem (E317), so every rule is ecosystem-qualified.
+- `aggregate::resolve_target_package` resolves changeset entries through `IdentityIndex::resolve_id`, which maps qualified native distribution names to their owner and rejects ambiguous bare names. `status` attributes changeset entries and checks their well-formedness through the same resolver.
+- `[[package]]` rules use `config::resolve::resolve_package_config`: the first rule in declaration order whose ecosystem the package has and whose name matches. It never sorts the rules. Config rejects a rule without its ecosystem (E317), so every rule is ecosystem-qualified.
 - `[[package-set]]` is a fallback applied in `ManifestWalkResolver::build` (`crates/callisto-graph/src/walk.rs`) only when no `[[package]]` rule matched. Patterns (`config/pattern.rs`) are globs over the name with a required ecosystem prefix (a bare pattern is E317), tested against every ecosystem the package has a manifest in.
 
 ## Loading a workspace
@@ -37,7 +38,7 @@ A workspace can hold `cargo/foo` and `npm/foo` as separate packages; ambiguity i
 `Workspace::load` (`crates/callisto-graph/src/lib.rs`):
 
 1. `config::load` reads `callisto.toml` (absent means empty) and calls `config::resolve`, which does all validation and defaulting. Callers holding a `RawConfig` in memory call `resolve` directly.
-2. `ManifestWalkResolver::build` discovers projects, assigns ids (`IdentityIndex`), attaches platform packages and applies per-package config.
+2. `ManifestWalkResolver::build` discovers projects, assigns ids (`IdentityIndex`), attaches platform packages and applies per-package config. A `private` npm root that lists `workspaces` is skipped with one note per run, unless a `[[package]]` rule names it.
 3. `GroupTable::resolve` binds group members to ids.
 4. The tag index is built lazily, on the first `Workspace::tags` call.
 

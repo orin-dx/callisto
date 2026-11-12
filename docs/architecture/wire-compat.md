@@ -31,10 +31,11 @@ A rerun never reuses an intent from another build. `release execute --intent` an
 
 - The snapshot and the artifact manifest have no decode-time version gate of their own.
 - The intent decoder's check of the nested decision version cannot fail for a decoded decision, because the decision's decoder normalizes its version to 2 first.
+- 0.20 renamed the receipt's evidence keys (`peeled_commit`, `tag_name`, `byte_length`) and the preview's `short_sha` to camelCase without a version bump, so a receipt or preview written by 0.19 does not decode.
 - Two readers tightened without a version bump: the artifact attestation's `sourceCommit` now equals the slot's workflow commit rather than the release source, and decision, operation and slot versions parse with the owning package's ecosystem grammar.
 - The receipt's version does not track its nested types: the envelope went from 1 to 3 and the operation role vocabulary grew while the receipt stayed at 2.
 - No production code decodes a receipt or an envelope from bytes. Their decode gates and the receipt schema are exercised by tests only.
 - A version 1 decision can carry an `unreleasedVersion` reason, which only version 2 defines, and nothing rejects it.
-- `callisto schema --type release-receipt` is the only published release schema, and its `schemaVersion` is an unconstrained integer. `callisto schema --type snapshot` is the status report, not `ReleaseInputSnapshotV1`.
+- `callisto schema --type release-receipt` is the only published release schema, and its `schemaVersion` is an unconstrained integer. `callisto schema --type snapshot` is the `snapshot` command's report, not `ReleaseInputSnapshotV1`.
 - The version 2 intent never existed as its own commit, and the digest transcript version is one constant shared by the decision, snapshot, intent and registry-binding digests.
 - The generated consumer workflow passes the intent and manifest between jobs without a checksum or comparison step, which this repository's own release workflow has.

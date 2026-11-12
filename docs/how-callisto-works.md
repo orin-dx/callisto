@@ -65,7 +65,7 @@ Callisto is pre-v1. These rows describe current behavior rather than planned ada
 | Ecosystem | Versioning | Publishing |
 | --- | --- | --- |
 | Cargo | Crate versions, supported dependency declarations, lockfiles | Cargo |
-| npm/pnpm | Package versions, supported native dependency forms, lockfiles | Native npm tooling |
+| npm (npm, pnpm, yarn, bun) | Package versions, supported native dependency forms, lockfiles | The workspace's own package manager |
 | Python/PyPI | Static PEP 621 or Poetry versions | Build backend and Twine |
 
 | Layout | Current boundary |
