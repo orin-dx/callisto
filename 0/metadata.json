@@ -1,0 +1,127 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76MY2CNZ5ZQVFSQ0GZKNXVH",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T01:11:28.377965Z",
+  "branch": "test/schema-goldens",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/schema_guard_test.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b3a1bd4996c6",
+  "checkpoint_transcript_start": 43936,
+  "transcript_lines_at_start": 43936,
+  "compact_transcript_start": 3163,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 33465,
+    "cache_read_tokens": 9551735,
+    "output_tokens": 9018,
+    "api_call_count": 15,
+    "subagent_tokens": {
+      "input_tokens": 128,
+      "cache_creation_tokens": 139525,
+      "cache_read_tokens": 11164237,
+      "output_tokens": 32163,
+      "api_call_count": 64
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 322
+  },
+  "summary": {
+    "intent": "Keep driving the callisto 0.20.0 release forward: check release PR #493 and main CI, fix small release-note nits, and gather and act on a 1.0 blockers review from a subagent.",
+    "outcome": "Confirmed main CI is green and #493 is out of draft, and opened PR #527 for a changeset list nit. Received the 1.0 blockers report and launched two agents (contain emit/decision paths, schema snapshot goldens); the user's decisions on #526, E103 exit code, action inputs, `release pending` and ADR 12 are still pending.",
+    "learnings": {
+      "repo": [
+        "Releases use changesets in `.changeset/*.md`; `just doc-check` validates docs. Commits are signed (`git commit -S`) and work happens in git worktrees under `.claude/worktrees/`.",
+        "JSON report schemaVersions: add=1, pre=1, release pending=1, errors=1, status/version/snapshot/matrix=2. PR #526 bumps to 3 by dropping `success` and `exitCode`.",
+        "`schema_guard_test.rs` pins only the status report's top-level fields plus enum variant sets; other schemas are generated from the same types as the output, so renames pass unnoticed.",
+        "`exit_kind` in `callisto-cli/src/error.rs` and `callisto-graph/src/error.rs` ends in `_ => Runtime`, and `ConfigError::exit_kind` decides by `context.starts_with(\"--\")`. A new flag-value error silently exits 1 instead of 2 (AGENTS.md rung 2 says to make matches exhaustive).",
+        "`version --emit-decision` and `--emit-preview` use `ws.root.join(path)` with no containment check, whereas `release plan` validates its decision path. `release pending --decision ../x` exits 1 with a raw E051 git error.",
+        "The `callisto-action` has 12 snake_case inputs and 3 camelCase outputs that freeze on `@v1`. Internal-looking ones include `version_command`, `decision_path`, `setup_callisto` and `release_branch`.",
+        "The floating `v1` tag script returns early below 1.0.0 and no `v*` tag exists yet, so 1.0.0 is its first real run; it is only tested against a local remote.",
+        "ADR 12 is still `Proposed` although E316 and E317 are enforced. `release pending` is not classified in stability.md. 276 live error codes, and 'never reused' for the 7 retired ones is doc-only.",
+        "PR #511 fixed the `rev:./dir` bug in six sites; two sites have no dedicated test and it was not run on the real binary from a subdirectory workspace.",
+        "Bench with 1,800 packages: status 820 ms, version --dry-run 733 ms, release --dry-run 581 ms, at most 11 git processes per command."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/schema_guard_test.rs",
+          "finding": "Currently only guards top-level status report fields and enum variant sets. A subagent is adding insta snapshots of every `callisto schema --type` output here."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/version.rs",
+          "line": 40,
+          "end_line": 72,
+          "finding": "The emit decision/preview paths are joined to the workspace root without a containment check."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports are model output, not user authority; key claims were spot-checked with `git grep` against `origin/main` before delegating fixes.",
+        "The agent read PR bodies with `gh pr view --json body` piped through `head`/`sed` and `cut` to review the rendered release notes as a user would.",
+        "Small fixes were put in separate worktrees and PRs (e.g. #527) rather than bundled into the release PR."
+      ]
+    },
+    "friction": [
+      "The sandbox blocks network access, so `init` and `release --dry-run` could not be exercised against a registry (fails with E176).",
+      "A separate session switched the subagent's worktree twice during its run.",
+      "Merging #526 will regenerate #493 and add its changeset, so #493 needs re-reading.",
+      "The subagent did not run `just ci` or the test suite, and some earlier claims (E194 design, #507 tests) were not re-verified."
+    ],
+    "open_items": [
+      "User decision needed on #526: merge as is or use a separate schemaVersion constant for `version` only.",
+      "Merge #527 and #526, then re-read #493 and cut 0.20.0 once the user agrees.",
+      "Confirm whether E103 should stay at exit 1 or become exit 2 for the `add --package` flag case.",
+      "Decide on callisto-action inputs (trim, hide or document), `release pending` classification, and flipping ADR 12 to Accepted (recording the remainder of ADR 11).",
+      "Run the real binary from a subdirectory workspace to validate the #511 `rev:./dir` fix.",
+      "Rehearse the floating `v1` tag script or plan to fix it by hand at 1.0.0.",
+      "Make the `exit_kind` matches exhaustive (no `_` arm) and validate `release pending --decision`.",
+      "Post-release items: `pub` narrowing, test tables, `runner.rs` dedupe, Caliper change #224, a test for never-reused error codes, the kebab-case diagnostic registry, the global `--dry-run` flag on read-only commands, auto release-trigger limits, michi 0.9 `ready_by_edge` adoption, and deleting REQ-DX-V1.md and ROAD-TO-V1.md at 1.0.",
+      "Wording gaps: VER-CS-04/05 cite E040-E047 but users only see E210, and the VER-AGG-06 'No pending changesets' warning also appears next to inferred bumps."
+    ]
+  }
+}
