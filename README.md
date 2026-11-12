@@ -67,14 +67,64 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 
 ## What you get
 
-- **Ecosystems:** Cargo, npm, and Python/PyPI. npm packages publish with npm, pnpm, yarn or bun, whichever the workspace uses; Python packages need a static PEP 621 or Poetry version and are built with `python -m build` and uploaded with Twine ([support](docs/how-callisto-works.md#current-support), [credentials](docs/publishing.md)).
-- **Native-extension packages:** napi-rs platform packages take their owner's version, the generated workflow builds each `napi.targets` addon, and platform packages publish before the owner. Maturin gets no generated workflow, and Cargo plus maturin in one directory fails with E007 ([releasing](docs/releasing.md#platform-package-publish-order)).
-- **Tags:** one per package, `{name}@{version}`, or `ecosystem/name@{version}` when another ecosystem has a package of that name; `tag-template` overrides it ([stability](docs/stability.md), [config](docs/config.md)).
-- **GitHub releases:** notes come from the package's changelog section, and the product package's release carries your binary assets ([releasing](docs/releasing.md#generated-workflows)).
-- **Supply chain:** the generated build workflow attests each Cargo binary asset with GitHub build provenance, and `release execute` checks its SHA-256 and runs `gh attestation verify` before uploading it; the receipt records each asset's size and SHA-256. npm provenance is on when the publishing job sets `NPM_CONFIG_PROVENANCE` ([publishing](docs/publishing.md#provenance)).
-- **Release PR:** one PR, rebuilt on every push to the default branch, holds the versions, changelogs and a "Merging will publish" plan. Merging it is the approval ([releasing](docs/releasing.md#release-pr-and-approval)).
-- **Safe reruns:** a failed release can be rerun; versions, tags and releases that already landed are adopted, not repeated, and a receipt is written only when every operation succeeded ([publication checks](docs/releasing.md#publication-checks)).
-- **Scripting:** every command accepts `--dry-run`, `--format json` reports carry a `schemaVersion`, and a bad flag value exits 2 ([stability](docs/stability.md)).
+### Versioning from changesets
+
+- Contributors record release intent with `callisto add`, by flags or an interactive wizard. The `.changeset/*.md` files stay compatible with `@changesets/cli` ([stability](docs/stability.md)).
+- `callisto status` shows each package's planned bump. `status --check` exits 1 on an error-level diagnostic, so it works as a CI gate ([releasing](docs/releasing.md#pr-pre-flight-verification)).
+- `callisto version` bumps manifests, rewrites dependency requirements, writes changelogs, refreshes lockfiles (`--no-refresh-lockfiles` skips that) and stages the result for review ([guide](docs/how-callisto-works.md#a-change-through-the-system)).
+- A bump reaches dependents by the `[cascade]` policy: `mode` (`out-of-range` or `always`), `bump-severity`, `peer-escalation` and `preserve-npm-ranges` ([config](docs/config.md#cascade)).
+- A mistyped package name gets up to three `did you mean` suggestions, and a wrong ecosystem is caught too ([errors](docs/errors.md)).
+
+### Control over what moves together
+
+- `[[fixed-group]]` members bump in lock-step. `[[linked-group]]` members share the highest severity and align to the highest target version ([config](docs/config.md#fixed-group-and-linked-group)).
+- `[[package]]` (exact) and `[[package-set]]` (glob) rules override per package: `release-trigger`, `publish-to`, `tag-template`, `previous-tag-templates` for renamed packages, `changelog` and `pre-major-inference` ([config](docs/config.md#package-and-package-set)).
+- `[registries]` adds private or alternate cargo, npm and PyPI registries, each with its own `url`, `publish-timeout` and `confirm-timeout` ([config](docs/config.md#registries)).
+- An unknown key in `callisto.toml` is an error, so a typo fails instead of being ignored ([config](docs/config.md)).
+
+### Beyond changesets
+
+- `release-trigger = "auto"` infers bumps from conventional commits. `pre-major-inference` softens them for `0.y` packages that have a prior release: `conservative` turns a major into a minor, and `conservative-feat` also turns a minor into a patch ([config](docs/config.md#package-and-package-set)).
+- `callisto pre enter <tag>` and `pre exit` run prerelease mode; the tag must be a valid SemVer prerelease ([errors](docs/errors.md)).
+- `callisto snapshot --tag <tag>` writes throwaway versions, such as `0.0.0-<tag>-<sha>` in a Cargo workspace, without writing changelogs or consuming changesets, and `release` refuses to publish them (E169) ([versioning](docs/architecture/versioning.md)).
+- `[changelog] layout` chooses `grouped` (Major, Minor and Patch Changes under a dated heading, with a compare link when the GitHub repository is known) or `flat` ([config](docs/config.md#changelog)).
+
+### Releasing
+
+- `callisto release` publishes each package whose current version has no tag, using the ecosystem's own tool (`cargo`, `npm`, `pnpm`, `yarn`, `bun` or Twine), then creates the tag and the GitHub release. `--dry-run` prints the plan first ([releasing](docs/releasing.md#local-release-callisto-release)).
+- The order follows dependencies: platform packages publish before their npm owner, and a package's tag and release wait for every one of its registry publishes ([architecture](docs/architecture/release.md)).
+- A published version must show on the registry before anything is tagged or announced; `confirm-timeout` sets the wait ([releasing](docs/releasing.md#release-identity-and-recovery)).
+- Product binaries are declared with `[release] product-package` and `[[release.artifact]]` entries (package, target triple, asset name) and attach to the product's GitHub release ([config](docs/config.md#release)).
+- Tags are `{name}@{version}`, or `ecosystem/name@{version}` when another ecosystem has a package of that name; `tag-template` overrides them ([stability](docs/stability.md)). Release notes come from the package's changelog section.
+- One release PR, rebuilt on every push to the default branch, holds the versions, the changelogs and a "Merging will publish" plan. Merging it is the approval ([releasing](docs/releasing.md#release-pr-and-approval)).
+- A failed release can be rerun. Versions, tags and releases that already landed are adopted, not repeated, and a receipt is written only when every operation succeeded ([releasing](docs/releasing.md#publication-checks)).
+- The generated build workflow attests each Cargo binary asset with GitHub build provenance, and `release execute` checks its SHA-256 and runs `gh attestation verify` before uploading it. npm provenance is on when the publishing job sets `NPM_CONFIG_PROVENANCE` ([publishing](docs/publishing.md#provenance)).
+- napi-rs platform packages take their owner's version, and the generated workflow builds each `napi.targets` addon ([releasing](docs/releasing.md#platform-package-publish-order)).
+
+### CI and automation
+
+- `callisto init` detects packages and writes `callisto.toml` and `.changeset/`. With a GitHub origin it also writes `.github/workflows/callisto-release.yml` unless you pass `--no-workflow` ([releasing](docs/releasing.md#generated-workflows)).
+- The simple workflow has a `version-pr` job that keeps the release PR current and a `release` job that runs `callisto release` on each default-branch push. With binaries or napi targets it becomes version-pr, plan, build, an optional Python build and execute, and only `execute` gets registry secrets.
+- `callisto-action` runs in `mode: version-pr` (create or update the release PR) or `mode: release` (run `callisto release`). `setup-callisto` installs Callisto, checking the release binary with `gh attestation verify` (`verification: require`, `fallback` or `skip`). `callisto-validate` runs `status --check` and `release --dry-run` for your PR workflow ([releasing](docs/releasing.md#pr-pre-flight-verification)).
+- To adopt it: run `callisto init`, add the registry secrets it names, and require pull requests and reviews on the default branch.
+
+### Scripting and stability
+
+- `--format json` works on every command that reports a result. Each report carries `schemaVersion`, `command` and `dryRun`, with camelCase fields, and `callisto schema --type <report>` prints its JSON Schema ([stability](docs/stability.md)).
+- Exit codes are 0 for success, 1 for failure and 2 for a bad flag or argument. Every error has a code listed in [errors](docs/errors.md).
+- `--dry-run` is accepted on every command and changes nothing.
+- Release binaries cover macOS (arm64, x86_64) and Linux (x86_64 glibc and musl, arm64) ([install](#install)).
+
+### Limits
+
+- Cargo, npm and PyPI only. `nuget` is accepted in `publish-to`, but there is no NuGet publisher or package discovery ([config](docs/config.md#registries)).
+- Dependencies across languages are not inferred; use groups to move packages together ([guide](docs/how-callisto-works.md#current-support)).
+- Python versions must be static (PEP 621) or Poetry. Maturin gets no generated workflow, and Cargo plus maturin in one directory fails with E007 ([publishing](docs/publishing.md#current-python-support-limits)).
+- Generated workflows are GitHub Actions only, and build only Cargo binaries and napi addons; other products need a manual workflow ([releasing](docs/releasing.md#generated-workflows)).
+- A bump inferred from commits shows in `status` and `version`, but the release PR reads changesets only, so add a changeset to release it ([spec](docs/specs/cli.json)).
+- A release across several registries is not atomic ([guide](docs/how-callisto-works.md#current-support)).
+- Registry credentials are tokens passed to the native tools. OIDC trusted publishing is planned, not built ([plan](docs/projects/OIDC-TRUSTED-PUBLISHING.md)).
+- Windows is not supported ([stability](docs/stability.md)).
 
 ## Install
 
