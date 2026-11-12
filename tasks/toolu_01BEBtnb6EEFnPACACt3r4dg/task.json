@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01BEBtnb6EEFnPACACt3r4dg",
+  "agent_id": "a20372b9121dd296b",
+  "subagent_type": "bug-hunter",
+  "task_description": "Bug hunt pre mode and groups",
+  "token_usage": {
+    "input_tokens": 124,
+    "cache_creation_tokens": 119740,
+    "cache_read_tokens": 4771096,
+    "output_tokens": 31081,
+    "api_call_count": 62
+  },
+  "started_at": "2026-11-12T11:45:09.311215-08:00",
+  "completed_at": "2026-11-12T11:54:15.481449-08:00"
+}
