@@ -444,8 +444,8 @@ pub struct ReleasePendingArgs {
     #[arg(long, value_name = "SHA")]
     pub from: Option<String>,
     /// How many of the newest release commits to examine.
-    #[arg(long, value_name = "N", default_value_t = 10)]
-    pub limit: usize,
+    #[arg(long, value_name = "N", default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
+    pub limit: u64,
 }
 
 #[derive(Args, Clone, Debug)]

@@ -303,7 +303,12 @@ fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
     let decision_path = workspace_decision_path(&args.decision, &workspace.root)?;
-    let found = pending_releases(&workspace, &decision_path, args.limit, from.as_ref())?;
+    let found = pending_releases(
+        &workspace,
+        &decision_path,
+        usize::try_from(args.limit).unwrap_or(usize::MAX),
+        from.as_ref(),
+    )?;
     match global.format {
         OutputFormat::Json => {
             let releases: Vec<_> = found
