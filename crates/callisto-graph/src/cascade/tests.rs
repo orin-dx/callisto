@@ -946,7 +946,8 @@ fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
         packages: vec![bare_package(&pkg_a)],
     };
 
-    // On disk is 2.0.0-next.0 but the pinned baseline is 1.0.0, so a Minor bump must yield 1.1.0, not 2.0.0-next.1.
+    // On disk is 2.0.0-next.0 and the pinned baseline is 1.0.0. A Minor bump from the baseline (1.1.0-next.0) would sit
+    // behind the live version, so it is raised to the first severity that does not: 2.0.0-next.1.
     let mut base = BTreeMap::new();
     base.insert(
         pkg_a.clone(),
@@ -992,7 +993,7 @@ fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
 
     let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
 
-    assert_eq!(target.render(), "1.1.0-next.0");
+    assert_eq!(target.render(), "2.0.0-next.1");
 }
 
 /// Solve_cascade's rewrite-construction logic must never route an

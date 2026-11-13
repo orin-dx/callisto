@@ -94,9 +94,26 @@ pub fn versioned_bump(
     let (bumped_from, next) = match pre {
         Some(pre) if pre.mode == callisto_model::format::PreMode::Pre => {
             let pinned_base = crate::pre_initial_version(pre, package).unwrap_or(base);
-            let next = versioning
+            let mut next = versioning
                 .bump_prerelease(pinned_base, severity, &pre.tag, base)
                 .map_err(GraphError::Bump)?;
+            // A lower severity than the live prerelease already carries (its changeset is recorded, not re-named)
+            // must not downgrade it: raise to the lowest severity whose result is not behind the live version.
+            for floor in [Severity::Minor, Severity::Major] {
+                if !matches!(Version::compare(&next, base), Ok(std::cmp::Ordering::Less)) || floor <= severity {
+                    continue;
+                }
+                next = versioning
+                    .bump_prerelease(pinned_base, floor, &pre.tag, base)
+                    .map_err(GraphError::Bump)?;
+            }
+            if matches!(Version::compare(&next, base), Ok(std::cmp::Ordering::Less)) {
+                return Err(GraphError::VersionRegression {
+                    package: package.clone(),
+                    from: base.clone(),
+                    to: next,
+                });
+            }
             (pinned_base.clone(), next)
         }
         _ => {
@@ -336,5 +353,24 @@ mod tests {
             "1.1.0-beta.0",
             "pre mode must produce a pre-release target, not a stable 1.1.0"
         );
+    }
+
+    /// A lower severity than the live prerelease carries must not downgrade it.
+    #[test]
+    fn versioned_bump_in_pre_mode_never_lands_behind_the_live_version() {
+        let pkg = PackageId::Bare("core".to_string());
+        let mut initial_versions = indexmap::IndexMap::new();
+        initial_versions.insert("core".to_string(), Version::semver(1, 0, 0));
+        let pre = callisto_model::format::PreState {
+            mode: callisto_model::format::PreMode::Pre,
+            tag: "beta".to_string(),
+            initial_versions,
+            changesets: Vec::new(),
+        };
+        let live = Version::parse("1.1.0-beta.0", callisto_model::VersionGrammar::SemVer).unwrap();
+
+        let next = versioned_bump(&pkg, &live, Severity::Patch, Some(&pre)).unwrap();
+
+        assert_eq!(next.render(), "1.1.0-beta.1");
     }
 }
