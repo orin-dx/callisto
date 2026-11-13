@@ -282,27 +282,33 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
 
     callisto_fixtures::scaffold_callisto(&global.cwd);
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Fix the frobnication bug".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("Fix the frobnication bug".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: true,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .expect("the first version run must succeed and stage its changes");
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: true,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .expect("the first version run must succeed and stage its changes"),
+        std::process::ExitCode::SUCCESS
+    );
 
     let second = commands::version::handle(
         VersionArgs {
@@ -343,14 +349,17 @@ fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
     callisto_fixtures::scaffold_callisto(root);
     std::fs::create_dir(root.join("decision-parent")).unwrap();
     std::fs::set_permissions(root.join("decision-parent"), std::fs::Permissions::from_mode(0o555)).unwrap();
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Retain recovery evidence".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("Retain recovery evidence".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let first = commands::version::handle(
         VersionArgs {

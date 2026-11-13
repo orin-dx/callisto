@@ -121,27 +121,33 @@ license = "MIT"
         dry_run: false,
     };
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Patch update".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("Patch update".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: true,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: true,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let updated_cargo = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
     assert!(updated_cargo.contains("version = \"0.1.1\""));
@@ -160,14 +166,17 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
         dry_run: false,
     };
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Add new core component API".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Add new core component API".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     // 1. Compose PR body BEFORE versioning (must be non-empty and contain package summary)
     // Verify via the graph layer directly so we can inspect the actual body text.
@@ -207,18 +216,21 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
     assert_eq!(compose_res.unwrap(), std::process::ExitCode::SUCCESS);
 
     // 2. Version packages
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: true,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: true,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     // 3. Verify subpackage changelog was created in crates/core/CHANGELOG.md
     let changelog_path = root.join("crates/core/CHANGELOG.md");
@@ -245,17 +257,20 @@ fn test_dry_run_flag_preserves_disk_state() {
 
     callisto_fixtures::scaffold_callisto(root);
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("New feature".to_string()),
-        },
-        &GlobalArgs {
-            dry_run: false,
-            ..global_dry.clone()
-        },
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("New feature".to_string()),
+            },
+            &GlobalArgs {
+                dry_run: false,
+                ..global_dry.clone()
+            },
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     // Run version with dry_run = true
     let version_res = commands::version::handle(

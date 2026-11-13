@@ -37,23 +37,29 @@ fn a_body_composed_from_the_emitted_preview_matches_the_body_composed_before_ver
         .status()
         .unwrap()
         .success());
-    commands::init::handle(
-        InitArgs {
-            yes: true,
-            versioning: Some(InitVersioning::Independent),
-            ..Default::default()
-        },
-        &global,
-    )
-    .unwrap();
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Retry uploads.\n\nWith backoff.".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::init::handle(
+            InitArgs {
+                yes: true,
+                versioning: Some(InitVersioning::Independent),
+                ..Default::default()
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Retry uploads.\n\nWith backoff.".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let before = {
         let runner = callisto_cli::runner::CliCommandRunner;
@@ -65,7 +71,10 @@ fn a_body_composed_from_the_emitted_preview_matches_the_body_composed_before_ver
 
     let out = tempfile::TempDir::new().unwrap();
     let preview_path = out.path().join("preview.json");
-    commands::version::handle(version_args(Some(preview_path.clone())), &global).unwrap();
+    assert_eq!(
+        commands::version::handle(version_args(Some(preview_path.clone())), &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     let text = std::fs::read_to_string(&preview_path).expect("version wrote the preview");
     let preview = callisto_graph::release_preview::ReleasePreview::from_json(&text).unwrap();
     assert_eq!(preview.packages[0].name, "core-crate");
@@ -93,15 +102,18 @@ fn init_repo(global: &GlobalArgs) {
         .status()
         .unwrap()
         .success());
-    commands::init::handle(
-        InitArgs {
-            yes: true,
-            versioning: Some(InitVersioning::Independent),
-            ..Default::default()
-        },
-        global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::init::handle(
+            InitArgs {
+                yes: true,
+                versioning: Some(InitVersioning::Independent),
+                ..Default::default()
+            },
+            global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 }
 
 /// `version` and `compose-pr-body` must agree on what a relative preview path means: it is relative to `--cwd`.
@@ -114,16 +126,22 @@ fn a_relative_preview_path_means_cwd_for_both_commands() {
         dry_run: false,
     };
     init_repo(&global);
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Retry uploads.".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Retry uploads.".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+    assert_eq!(
+        commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     assert!(dir.path().join("preview.json").exists());
 
     let status = commands::compose_pr_body::handle(
@@ -149,14 +167,17 @@ fn a_relative_preview_path_is_under_cwd_when_cwd_is_below_the_workspace_root() {
         dry_run: false,
     };
     init_repo(&root_args);
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Retry uploads.".to_string()),
-        },
-        &root_args,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Retry uploads.".to_string()),
+            },
+            &root_args,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     let sub = dir.path().join("docs");
     std::fs::create_dir_all(&sub).unwrap();
     let global = GlobalArgs {
@@ -164,7 +185,10 @@ fn a_relative_preview_path_is_under_cwd_when_cwd_is_below_the_workspace_root() {
         ..root_args
     };
 
-    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+    assert_eq!(
+        commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     assert!(sub.join("preview.json").exists(), "written under --cwd");
     assert!(!dir.path().join("preview.json").exists(), "not at the workspace root");
@@ -214,15 +238,21 @@ fn the_publish_plan_of_a_versioned_tree_lists_the_crates_io_release() {
         dry_run: false,
     };
     init_repo(&global);
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Retry uploads.".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
-    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Retry uploads.".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
+    assert_eq!(
+        commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let stored = callisto_graph::release_preview::ReleasePreview::from_json(
         &std::fs::read_to_string(dir.path().join("preview.json")).unwrap(),
@@ -312,16 +342,22 @@ fn a_never_released_package_is_not_reported_as_changed_since_its_release() {
         dry_run: false,
     };
     init_repo(&global);
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("First feature.".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("First feature.".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+    assert_eq!(
+        commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let preview = callisto_graph::release_preview::ReleasePreview::from_json(
         &std::fs::read_to_string(dir.path().join("preview.json")).unwrap(),
@@ -365,16 +401,22 @@ fn the_preview_lists_a_publishable_package_the_plan_leaves_out() {
             .unwrap()
             .success());
     }
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Retry uploads.\n\nAction: re-run the installer.".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Retry uploads.\n\nAction: re-run the installer.".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+    assert_eq!(
+        commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let preview = callisto_graph::release_preview::ReleasePreview::from_json(
         &std::fs::read_to_string(dir.path().join("preview.json")).unwrap(),
@@ -437,15 +479,21 @@ fn a_private_fixed_group_member_does_not_make_the_publish_plan_fail() {
             .unwrap()
             .success());
     }
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Retry uploads.".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
-    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Retry uploads.".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
+    assert_eq!(
+        commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let preview = callisto_graph::release_preview::ReleasePreview::from_json(
         &std::fs::read_to_string(root.join("preview.json")).unwrap(),
