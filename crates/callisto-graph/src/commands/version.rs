@@ -38,16 +38,8 @@ fn map_reason_to_change_source(
             group: group.clone(),
             kind: GroupKind::Linked,
         }),
-        BumpReason::Cascade {
-            via,
-            dep_kind,
-            dependency_to,
-            ..
-        } => Some(ChangeSource::DependencyUpdate {
-            dependency: via.clone(),
-            dep_kind: *dep_kind,
-            to: dependency_to.clone(),
-        }),
+        // Listed from `CascadeOutcome::dependency_updates`, which covers every bumped dependency, not just the first.
+        BumpReason::Cascade { .. } => None,
         BumpReason::PeerEscalation { via, .. } => {
             let dep_to = outcome.targets.get(via).cloned().unwrap_or_else(|| to.clone());
             Some(ChangeSource::PeerEscalation {
@@ -67,6 +59,31 @@ fn map_reason_to_change_source(
         },
         _ => None,
     }
+}
+
+/// One "Dependency updates" entry per bumped dependency `id` was updated for, at the version it actually reached.
+fn dependency_update_entries(
+    id: &callisto_model::PackageId,
+    severity: Severity,
+    outcome: &crate::cascade::CascadeOutcome,
+) -> Vec<ChangelogEntry> {
+    let Some(updates) = outcome.dependency_updates.get(id) else {
+        return Vec::new();
+    };
+    updates
+        .iter()
+        .filter_map(|(dependency, dep_kind)| {
+            let to = outcome.targets.get(dependency)?.clone();
+            Some(ChangelogEntry {
+                severity,
+                source: ChangeSource::DependencyUpdate {
+                    dependency: dependency.clone(),
+                    dep_kind: *dep_kind,
+                    to,
+                },
+            })
+        })
+        .collect()
 }
 
 /// The GitHub repository compare links point to: the configured `[release] forge-repository`, else `origin`'s. No remote
@@ -258,17 +275,23 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
                     {
                         agg_input.entries.push(ChangelogEntry { severity: sev, source });
                     }
+                    agg_input.entries.extend(dependency_update_entries(id, sev, &outcome));
                     agg_input
                 }
                 _ => {
                     // No changeset drove this bump (cascade, group, inference, pre-release).
                     // Synthesize a single entry describing the reason so that render_section()
                     // never receives an empty entries list (which returns EmptyInput).
-                    let source = outcome
+                    let mut entries: Vec<ChangelogEntry> = outcome
                         .reasons
                         .get(id)
                         .and_then(|r| map_reason_to_change_source(r, id, &to, &outcome, &agg))
-                        .unwrap_or_else(|| ChangeSource::Changeset {
+                        .map(|source| ChangelogEntry { severity: sev, source })
+                        .into_iter()
+                        .collect();
+                    entries.extend(dependency_update_entries(id, sev, &outcome));
+                    if entries.is_empty() {
+                        let source = ChangeSource::Changeset {
                             filename: String::new(),
                             summary: format!(
                                 "Version bump ({})",
@@ -279,13 +302,15 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
                                     Severity::None => "none",
                                 }
                             ),
-                        });
+                        };
+                        entries.push(ChangelogEntry { severity: sev, source });
+                    }
                     ChangelogInput {
                         style: ChangelogStyle::default(),
                         package: id.clone(),
                         from: from.clone(),
                         to: Some(to.clone()),
-                        entries: vec![ChangelogEntry { severity: sev, source }],
+                        entries,
                     }
                 }
             };
