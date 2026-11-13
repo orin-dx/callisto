@@ -148,6 +148,8 @@ pub struct CascadeOutcome {
     pub reasons: BTreeMap<PackageId, BumpReason>,
     pub governed_by: BTreeMap<PackageId, ConfigKey>,
     pub rewrites: BTreeMap<RewriteKey, SpecRewrite>,
+    /// Per consumer, the bumped dependencies it was updated for; the changelog's "Dependency updates" list.
+    pub dependency_updates: BTreeMap<PackageId, BTreeMap<PackageId, DepKind>>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -258,6 +260,13 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                         governed_by: Some(ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
                         escalated_by: None,
                     });
+                }
+
+                if d.rewrite || d.severity > Severity::None {
+                    out.dependency_updates
+                        .entry(edge.from.clone())
+                        .or_default()
+                        .insert(edge.to.clone(), edge.kind);
                 }
 
                 if d.rewrite {
