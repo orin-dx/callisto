@@ -185,27 +185,33 @@ fn workspace_resolves_natively_after_version() {
         dry_run: false,
     };
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core:major".to_string(), "npm/@ws/lib:major".to_string()],
-            summary: Some("Bump core and lib".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core:major".to_string(), "npm/@ws/lib:major".to_string()],
+                summary: Some("Bump core and lib".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: false,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: false,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     assert_native_resolution(root);
 }
@@ -222,14 +228,17 @@ fn workspace_resolves_natively_after_snapshot() {
         dry_run: false,
     };
 
-    commands::snapshot::handle(
-        SnapshotArgs {
-            tag: "canary".to_string(),
-            strict: false,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::snapshot::handle(
+            SnapshotArgs {
+                tag: "canary".to_string(),
+                strict: false,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     assert_native_resolution(root);
 }
@@ -408,27 +417,33 @@ fn pnpm_and_uv_workspace_resolves_natively_after_version() {
         dry_run: false,
     };
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["npm/@ws/lib:major".to_string(), "pypi/core-py:major".to_string()],
-            summary: Some("Bump lib and core-py".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["npm/@ws/lib:major".to_string(), "pypi/core-py:major".to_string()],
+                summary: Some("Bump lib and core-py".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: false,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: false,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     assert_pnpm_and_uv_resolution(root, true);
 }
@@ -450,26 +465,32 @@ fn pnpm_workspace_version_refreshes_lockfile_for_frozen_install() {
         cwd: root.to_path_buf(),
         dry_run: false,
     };
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["npm/@ws/lib:major".to_string()],
-            summary: Some("Bump workspace library".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: false,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["npm/@ws/lib:major".to_string()],
+                summary: Some("Bump workspace library".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: false,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let refreshed_lock = fs::read_to_string(&lockfile).unwrap();
     assert!(refreshed_lock.contains("version: link:../lib"), "{refreshed_lock}");
@@ -502,14 +523,17 @@ fn pnpm_and_uv_workspace_resolves_natively_after_snapshot() {
         dry_run: false,
     };
 
-    commands::snapshot::handle(
-        SnapshotArgs {
-            tag: "canary".to_string(),
-            strict: false,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::snapshot::handle(
+            SnapshotArgs {
+                tag: "canary".to_string(),
+                strict: false,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     assert_pnpm_and_uv_resolution(root, true);
 }
@@ -693,26 +717,32 @@ fn pnpm_workspace_protocols_pack_and_install_after_version() {
         cwd: dir.path().to_path_buf(),
         dry_run: false,
     };
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["npm/@protocol/lib:minor".into()],
-            summary: Some("Release workspace library".into()),
-        },
-        &global,
-    )
-    .unwrap();
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: false,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["npm/@protocol/lib:minor".into()],
+                summary: Some("Release workspace library".into()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: false,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     assert_pnpm_protocols_and_pack(dir.path(), false);
 }
 
@@ -729,14 +759,17 @@ fn pnpm_workspace_protocols_pack_and_install_after_snapshot() {
         cwd: dir.path().to_path_buf(),
         dry_run: false,
     };
-    commands::snapshot::handle(
-        SnapshotArgs {
-            tag: "canary".into(),
-            strict: false,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::snapshot::handle(
+            SnapshotArgs {
+                tag: "canary".into(),
+                strict: false,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     assert_pnpm_protocols_and_pack(dir.path(), true);
 }
 

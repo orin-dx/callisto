@@ -294,7 +294,10 @@ mod tests {
                 cwd: tmp.path().to_path_buf(),
                 dry_run: false,
             };
-            handle(PreArgs::Enter { tag: tag.to_string() }, &g).expect(tag);
+            assert_eq!(
+                handle(PreArgs::Enter { tag: tag.to_string() }, &g).expect(tag),
+                std::process::ExitCode::SUCCESS
+            );
             let written = std::fs::read_to_string(tmp.path().join(".changeset/pre.json")).unwrap();
             assert_eq!(callisto_model::format::parse_pre_json(&written).unwrap().tag, tag);
         }
@@ -315,13 +318,16 @@ mod tests {
             existing
         );
 
-        handle(
-            PreArgs::Enter {
-                tag: "pr-42".to_string(),
-            },
-            &global,
-        )
-        .expect("valid tag");
+        assert_eq!(
+            handle(
+                PreArgs::Enter {
+                    tag: "pr-42".to_string(),
+                },
+                &global,
+            )
+            .expect("valid tag"),
+            std::process::ExitCode::SUCCESS
+        );
         let written = std::fs::read_to_string(root.join(".changeset/pre.json")).unwrap();
         assert_eq!(callisto_model::format::parse_pre_json(&written).unwrap().tag, "pr-42");
     }

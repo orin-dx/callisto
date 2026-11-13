@@ -261,14 +261,17 @@ fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
 
     callisto_fixtures::scaffold_callisto(&global.cwd);
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Test patch".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("Test patch".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let changeset_dir = root.join(".changeset");
     fs::write(changeset_dir.join("pre.json"), r#"{"mode": "p"#).unwrap();
@@ -368,13 +371,16 @@ fn test_pre_exit_rejects_double_exit() {
         dry_run: false,
     };
 
-    commands::pre::handle(
-        PreArgs::Enter {
-            tag: "alpha".to_string(),
-        },
-        &global,
-    )
-    .expect("pre enter must succeed");
+    assert_eq!(
+        commands::pre::handle(
+            PreArgs::Enter {
+                tag: "alpha".to_string(),
+            },
+            &global,
+        )
+        .expect("pre enter must succeed"),
+        std::process::ExitCode::SUCCESS
+    );
 
     let first_exit = commands::pre::handle(PreArgs::Exit, &global);
     assert!(first_exit.is_ok(), "first pre exit must succeed: {first_exit:?}");
@@ -467,13 +473,16 @@ fn test_pre_enter_stages_pre_json_via_git_add() {
         dry_run: false,
     };
 
-    commands::pre::handle(
-        PreArgs::Enter {
-            tag: "alpha".to_string(),
-        },
-        &global,
-    )
-    .expect("pre enter must succeed");
+    assert_eq!(
+        commands::pre::handle(
+            PreArgs::Enter {
+                tag: "alpha".to_string(),
+            },
+            &global,
+        )
+        .expect("pre enter must succeed"),
+        std::process::ExitCode::SUCCESS
+    );
 
     let output = Command::new("git")
         .args(["status", "--porcelain"])
@@ -509,20 +518,26 @@ fn test_pre_exit_stages_pre_json_via_git_add() {
         dry_run: false,
     };
 
-    commands::pre::handle(
-        PreArgs::Enter {
-            tag: "alpha".to_string(),
-        },
-        &global,
-    )
-    .expect("pre enter must succeed");
+    assert_eq!(
+        commands::pre::handle(
+            PreArgs::Enter {
+                tag: "alpha".to_string(),
+            },
+            &global,
+        )
+        .expect("pre enter must succeed"),
+        std::process::ExitCode::SUCCESS
+    );
     Command::new("git")
         .args(["commit", "-m", "enter pre mode"])
         .current_dir(root)
         .status()
         .unwrap();
 
-    commands::pre::handle(PreArgs::Exit, &global).expect("pre exit must succeed");
+    assert_eq!(
+        commands::pre::handle(PreArgs::Exit, &global).expect("pre exit must succeed"),
+        std::process::ExitCode::SUCCESS
+    );
 
     let output = Command::new("git")
         .args(["status", "--porcelain"])
@@ -553,36 +568,45 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
         dry_run: false,
     };
 
-    commands::pre::handle(
-        PreArgs::Enter {
-            tag: "beta".to_string(),
-        },
-        &global,
-    )
-    .expect("pre enter must succeed");
-
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Beta feature".to_string()),
-        },
-        &global,
-    )
-    .expect("add must succeed");
-
-    for _ in 0..2 {
-        commands::version::handle(
-            VersionArgs {
-                refresh_lockfiles: false,
-                no_refresh_lockfiles: true,
-                strict: false,
-                allow_empty_changesets: false,
-                emit_decision: None,
-                emit_preview: None,
+    assert_eq!(
+        commands::pre::handle(
+            PreArgs::Enter {
+                tag: "beta".to_string(),
             },
             &global,
         )
-        .expect("version must succeed in pre mode");
+        .expect("pre enter must succeed"),
+        std::process::ExitCode::SUCCESS
+    );
+
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Beta feature".to_string()),
+            },
+            &global,
+        )
+        .expect("add must succeed"),
+        std::process::ExitCode::SUCCESS
+    );
+
+    for _ in 0..2 {
+        assert_eq!(
+            commands::version::handle(
+                VersionArgs {
+                    refresh_lockfiles: false,
+                    no_refresh_lockfiles: true,
+                    strict: false,
+                    allow_empty_changesets: false,
+                    emit_decision: None,
+                    emit_preview: None,
+                },
+                &global,
+            )
+            .expect("version must succeed in pre mode"),
+            std::process::ExitCode::SUCCESS
+        );
     }
 
     let pre_json = fs::read_to_string(root.join(".changeset/pre.json")).unwrap();

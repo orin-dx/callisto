@@ -78,14 +78,17 @@ fn test_status_check_clean_workspace_exits_ok() {
 
     callisto_fixtures::scaffold_callisto(&global.cwd);
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("A valid changeset".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("A valid changeset".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     // A pending changeset with no diagnostic errors: exit code 0, not FAILURE
     // -- pending state never affects the exit code.
