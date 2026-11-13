@@ -1565,6 +1565,44 @@ fn write_version_uses_poetry_section_when_project_table_has_no_version_field() {
 }
 
 #[test]
+fn flit_version_is_read_and_written_in_tool_flit_metadata() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_pyproject(
+        dir.path(),
+        "[tool.flit.metadata]\nmodule = \"mod\"\nversion = \"1.0.0\"\n",
+    );
+    assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
+
+    let new_v = Version::parse("1.1.0", VersionGrammar::Pep440).unwrap();
+    manifest.write_version(&new_v, &permit()).unwrap();
+
+    assert_eq!(manifest.current_version().unwrap().render(), "1.1.0");
+    assert!(manifest.document.get("project").is_none());
+}
+
+#[test]
+fn write_version_without_any_version_table_adds_project_version() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_pyproject(dir.path(), "[project]\nname = \"bare\"\n");
+
+    let new_v = Version::parse("0.1.0", VersionGrammar::Pep440).unwrap();
+    manifest.write_version(&new_v, &permit()).unwrap();
+
+    assert_eq!(manifest.current_version().unwrap().render(), "0.1.0");
+}
+
+#[test]
+fn current_version_rejects_a_value_that_is_not_pep440() {
+    let dir = tempdir().unwrap();
+    let manifest = open_pyproject(dir.path(), "[project]\nname = \"bad\"\nversion = \"not a version\"\n");
+
+    assert!(matches!(
+        manifest.current_version(),
+        Err(ManifestError::InvalidVersion { .. })
+    ));
+}
+
+#[test]
 fn persist_is_exposed_as_a_manifest_trait_method() {
     let dir = tempdir().unwrap();
     let pyproject_path = dir.path().join("pyproject.toml");

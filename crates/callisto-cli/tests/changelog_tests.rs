@@ -25,27 +25,33 @@ fn test_changelog_content_uses_real_changeset_summary() {
 
     callisto_fixtures::scaffold_callisto(&global.cwd);
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Fix the frobnication bug".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("Fix the frobnication bug".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: true,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: true,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let changelog_path = root.join("crates/core/CHANGELOG.md");
     assert!(changelog_path.exists(), "crates/core/CHANGELOG.md must exist");
@@ -81,36 +87,45 @@ fn test_changelog_content_includes_all_changeset_summaries() {
 
     callisto_fixtures::scaffold_callisto(&global.cwd);
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Fix the widget alignment".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("Fix the widget alignment".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Improve error messages".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("Improve error messages".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: true,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: true,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let changelog_path = root.join("crates/core/CHANGELOG.md");
     assert!(changelog_path.exists(), "crates/core/CHANGELOG.md must exist");
@@ -145,26 +160,32 @@ fn version_with_config(config: Option<&str>) -> String {
     if let Some(config) = config {
         fs::write(root.join("callisto.toml"), config).unwrap();
     }
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Fix the frobnication bug".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: true,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:patch".to_string()],
+                summary: Some("Fix the frobnication bug".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
+    assert_eq!(
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: true,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+                emit_preview: None,
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     fs::read_to_string(root.join("crates/core/CHANGELOG.md")).unwrap()
 }
 

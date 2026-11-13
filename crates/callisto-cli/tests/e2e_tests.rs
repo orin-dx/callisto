@@ -208,14 +208,17 @@ fn test_status_check_exit_codes() {
     );
 
     // --- Workspace with a pending changeset (no errors) -> still exit code 0 ---
-    commands::add::handle(
-        callisto_cli::cli::AddArgs {
-            packages: vec!["cargo/my-app:patch".to_string()],
-            summary: Some("test fix".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            callisto_cli::cli::AddArgs {
+                packages: vec!["cargo/my-app:patch".to_string()],
+                summary: Some("test fix".to_string()),
+            },
+            &global,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     let pending_code = commands::status::handle(check_args.clone(), &global).unwrap();
     assert_eq!(

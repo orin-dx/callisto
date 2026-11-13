@@ -54,14 +54,17 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
     assert!(root.join("callisto.toml").exists());
     assert!(!root.join("src/callisto.toml").exists());
 
-    commands::add::handle(
-        AddArgs {
-            packages: vec![format!("{package}:minor")],
-            summary: Some("Add a feature".to_owned()),
-        },
-        &global(root, false),
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec![format!("{package}:minor")],
+                summary: Some("Add a feature".to_owned()),
+            },
+            &global(root, false),
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     let status = StatusArgs {
         strict: false,
         check: false,
@@ -78,7 +81,10 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
         emit_decision: None,
         emit_preview: None,
     };
-    commands::version::handle(version, &global(root, false)).unwrap();
+    assert_eq!(
+        commands::version::handle(version, &global(root, false)).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     assert!(fs::read_to_string(root.join(manifest)).unwrap().contains(bumped));
 
     run_git(root, &["add", "."]);
@@ -173,29 +179,35 @@ fn root_package_release_commit_accepts_default_and_configured_changelog_paths() 
                 &callisto_model::ApplyPermit::force_for_tests(),
             )
             .unwrap();
-            commands::add::handle(
-                AddArgs {
-                    packages: vec![format!("{identity}:patch")],
-                    summary: Some("Fix the root package".to_owned()),
-                },
-                &global(root, false),
-            )
-            .unwrap();
+            assert_eq!(
+                commands::add::handle(
+                    AddArgs {
+                        packages: vec![format!("{identity}:patch")],
+                        summary: Some("Fix the root package".to_owned()),
+                    },
+                    &global(root, false),
+                )
+                .unwrap(),
+                std::process::ExitCode::SUCCESS
+            );
             run_git(root, &["add", "."]);
             run_git(root, &["commit", "-q", "-m", "configure and request release"]);
             let decision_path = ".callisto/release-decision.json";
-            commands::version::handle(
-                VersionArgs {
-                    refresh_lockfiles: false,
-                    no_refresh_lockfiles: true,
-                    strict: false,
-                    allow_empty_changesets: false,
-                    emit_decision: Some(decision_path.into()),
-                    emit_preview: None,
-                },
-                &global(root, false),
-            )
-            .unwrap();
+            assert_eq!(
+                commands::version::handle(
+                    VersionArgs {
+                        refresh_lockfiles: false,
+                        no_refresh_lockfiles: true,
+                        strict: false,
+                        allow_empty_changesets: false,
+                        emit_decision: Some(decision_path.into()),
+                        emit_preview: None,
+                    },
+                    &global(root, false),
+                )
+                .unwrap(),
+                std::process::ExitCode::SUCCESS
+            );
             let changelog_path = if custom_changelog {
                 "RELEASES.md"
             } else {

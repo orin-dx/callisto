@@ -197,7 +197,7 @@ fn config(root: &Path) -> String {
 fn an_init_with_no_settings_says_the_defaults_apply_instead_of_printing_an_empty_file() {
     let dir = workspace(1);
     let run = run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false);
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert!(
         run.out
             .contains("callisto.toml: no settings needed, the defaults apply."),
@@ -223,7 +223,7 @@ fn init_makes_the_git_toplevel_the_root_of_a_repository_whose_manifests_are_all_
     git(root, &["commit", "-q", "-m", "fixture"]);
 
     let run = run_init(root, yes(InitVersioning::Independent), false, vec![], false);
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert!(root.join("callisto.toml").exists());
     assert!(run.out.contains("cargo/core 1.0.0"), "{}", run.out);
 }
@@ -334,7 +334,10 @@ fn a_non_github_origin_gets_no_unrequested_workflow() {
         yes: true,
         ..Default::default()
     };
-    run_init(dir.path(), args, false, vec![], false).result.unwrap();
+    assert_eq!(
+        run_init(dir.path(), args, false, vec![], false).result.unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
 }
 
@@ -352,7 +355,7 @@ fn a_supplied_flag_skips_its_question() {
         vec![Answer::Confirm(false), Answer::Confirm(true)],
         false,
     );
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert_eq!(run.prompter.prompts(), [WORKFLOW_PROMPT, WRITE_PROMPT]);
     assert_eq!(config(dir.path()), "# callisto configuration\n");
 }
@@ -373,7 +376,7 @@ fn declining_to_ship_binaries_writes_no_release() {
         ],
         false,
     );
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert_eq!(
         run.prompter.prompts(),
         [VERSIONING_PROMPT, SHIP_PROMPT, WORKFLOW_PROMPT, WRITE_PROMPT]
@@ -402,7 +405,7 @@ fn shipping_binaries_asks_product_forge_and_targets() {
         ],
         false,
     );
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert_eq!(
         run.prompter.prompts(),
         [
@@ -569,9 +572,12 @@ fn yes_with_targets_requires_forge_and_product() {
 #[test]
 fn yes_without_targets_ships_nothing() {
     let dir = workspace(1);
-    run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false)
-        .result
-        .unwrap();
+    assert_eq!(
+        run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false)
+            .result
+            .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     assert!(!config(dir.path()).contains("[release]"));
 }
 
@@ -728,7 +734,7 @@ fn missing_origin_writes_config_with_warning_and_skips_shipping() {
         vec![Answer::Select(0), Answer::Confirm(true)],
         false,
     );
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert_eq!(run.prompter.prompts(), [VERSIONING_PROMPT, WRITE_PROMPT]);
     assert!(!config(interactive_dir.path()).contains("[release]"));
 }
@@ -780,7 +786,7 @@ fn non_interactive_matches_interactive() {
         ],
         false,
     );
-    interactive.result.unwrap();
+    assert_eq!(interactive.result.unwrap(), std::process::ExitCode::SUCCESS);
     let flags_dir = workspace(1);
     let flags = run_init(
         flags_dir.path(),
@@ -793,7 +799,7 @@ fn non_interactive_matches_interactive() {
         vec![],
         false,
     );
-    flags.result.unwrap();
+    assert_eq!(flags.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert!(flags.prompter.asked.is_empty());
     assert_eq!(config(interactive_dir.path()), config(flags_dir.path()));
     let preview = |out: &str| {
@@ -836,7 +842,7 @@ fn dry_run_previews_and_writes_nothing() {
         vec![Answer::Confirm(false)],
         true,
     );
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert_eq!(run.prompter.prompts(), [WORKFLOW_PROMPT]);
     assert!(run.out.contains("Release plan:"), "{}", run.out);
     assert!(run.out.contains("[DRY-RUN]"));
@@ -853,16 +859,19 @@ fn dry_run_with_workflow_lists_every_file() {
     };
     let out = Shared::default();
     let err = Shared::default();
-    run(
-        args,
-        &global(dir.path(), OutputFormat::Json, true),
-        false,
-        &mut Scripted::new(vec![], &out),
-        &mut out.clone(),
-        &mut err.clone(),
-        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
-    )
-    .unwrap();
+    assert_eq!(
+        run(
+            args,
+            &global(dir.path(), OutputFormat::Json, true),
+            false,
+            &mut Scripted::new(vec![], &out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     let files: Vec<&str> = report["files"]
         .as_array()
@@ -888,16 +897,19 @@ fn json_reports_on_stdout() {
     let dir = workspace(0);
     let out = Shared::default();
     let err = Shared::default();
-    run(
-        yes(InitVersioning::Independent),
-        &global(dir.path(), OutputFormat::Json, false),
-        false,
-        &mut Scripted::new(vec![], &out),
-        &mut out.clone(),
-        &mut err.clone(),
-        &CliCommandRunner,
-    )
-    .unwrap();
+    assert_eq!(
+        run(
+            yes(InitVersioning::Independent),
+            &global(dir.path(), OutputFormat::Json, false),
+            false,
+            &mut Scripted::new(vec![], &out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &CliCommandRunner,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     assert_eq!(report["initialized"], true);
     assert_eq!(report["config"], "# callisto configuration\n");
@@ -980,7 +992,7 @@ fn interactive_workflow_confirm_writes_the_generated_file() {
         false,
         &fake_ls_remote(env!("CARGO_PKG_VERSION")),
     );
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert_eq!(run.prompter.prompts(), [WORKFLOW_PROMPT, WRITE_PROMPT]);
     assert_eq!(run.prompter.asked[0].1.as_deref(), Some("true"), "defaults to Y");
     let workflow = workflow_file(dir.path());
@@ -1008,16 +1020,19 @@ fn workflow_flag_generates_without_asking() {
         workflow: true,
         ..yes(InitVersioning::Independent)
     };
-    run_init_with_runner(
-        dir.path(),
-        args,
-        false,
-        vec![],
-        false,
-        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
-    )
-    .result
-    .unwrap();
+    assert_eq!(
+        run_init_with_runner(
+            dir.path(),
+            args,
+            false,
+            vec![],
+            false,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .result
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
 }
 
@@ -1039,7 +1054,7 @@ fn written_workflow_notes_that_merging_publishes() {
         false,
         &fake_ls_remote(env!("CARGO_PKG_VERSION")),
     );
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert!(run.out.contains(&format!("{note}\n")), "{}", run.out);
 
     let dir = workspace(0);
@@ -1113,16 +1128,19 @@ fn preexisting_changesets_config_json_warns_per_unhonoured_key() {
 }
 
 fn run_with_json(root: &Path, args: InitArgs, dry_run: bool, out: &Shared, err: &Shared) {
-    run(
-        args,
-        &global(root, OutputFormat::Json, dry_run),
-        false,
-        &mut Scripted::new(vec![], out),
-        &mut out.clone(),
-        &mut err.clone(),
-        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
-    )
-    .unwrap();
+    assert_eq!(
+        run(
+            args,
+            &global(root, OutputFormat::Json, dry_run),
+            false,
+            &mut Scripted::new(vec![], out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 }
 
 // An unresolvable tag (offline, or an unreleased version) errors clearly, naming the fix.
@@ -1159,7 +1177,7 @@ fn workflow_declined_or_disabled_writes_nothing() {
         vec![Answer::Confirm(false), Answer::Confirm(true)],
         false,
     );
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert!(!declined.path().join(".github/workflows/callisto-release.yml").exists());
 
     let no_flag = workspace(0);
@@ -1168,7 +1186,7 @@ fn workflow_declined_or_disabled_writes_nothing() {
         ..yes(InitVersioning::Independent)
     };
     let run = run_init(no_flag.path(), args, false, vec![], false);
-    run.result.unwrap();
+    assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert!(run.prompter.prompts().is_empty());
     assert!(!no_flag.path().join(".github/workflows/callisto-release.yml").exists());
 }
@@ -1256,16 +1274,19 @@ fn shipping_binaries_generates_the_build_matrix_workflow() {
         workflow: true,
         ..with_targets(&["x86_64-unknown-linux-gnu"])
     };
-    run_init_with_runner(
-        dir.path(),
-        args,
-        false,
-        vec![],
-        false,
-        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
-    )
-    .result
-    .unwrap();
+    assert_eq!(
+        run_init_with_runner(
+            dir.path(),
+            args,
+            false,
+            vec![],
+            false,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .result
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     let workflow = workflow_file(dir.path());
     for expected in [
         "callisto release plan --from-release-commit",
@@ -1284,16 +1305,19 @@ fn unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic() {
     let dir = platform_workspace_without_napi_targets();
     let out = Shared::default();
     let err = Shared::default();
-    run(
-        InitArgs::default(),
-        &global(dir.path(), OutputFormat::Json, false),
-        true,
-        &mut Scripted::new(vec![Answer::Confirm(true)], &out),
-        &mut out.clone(),
-        &mut err.clone(),
-        &CliCommandRunner,
-    )
-    .unwrap();
+    assert_eq!(
+        run(
+            InitArgs::default(),
+            &global(dir.path(), OutputFormat::Json, false),
+            true,
+            &mut Scripted::new(vec![Answer::Confirm(true)], &out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &CliCommandRunner,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     assert!(
         err.text().contains("Skipping GitHub Actions workflow generation"),
         "{}",

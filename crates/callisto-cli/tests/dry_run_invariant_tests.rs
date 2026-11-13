@@ -69,14 +69,17 @@ fn global(root: &std::path::Path, dry_run: bool) -> GlobalArgs {
 fn seed_initialized_workspace(root: &std::path::Path) {
     let real = global(root, false);
     callisto_fixtures::scaffold_callisto(root);
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:minor".to_string()],
-            summary: Some("Seeded changeset".to_string()),
-        },
-        &real,
-    )
-    .unwrap();
+    assert_eq!(
+        commands::add::handle(
+            AddArgs {
+                packages: vec!["cargo/core-crate:minor".to_string()],
+                summary: Some("Seeded changeset".to_string()),
+            },
+            &real,
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "Seed changesets"]);
 }
@@ -88,14 +91,17 @@ fn add_dry_run_writes_nothing() {
     seed_initialized_workspace(root);
 
     assert_no_disk_mutation(root, || {
-        commands::add::handle(
-            AddArgs {
-                packages: vec!["cargo/core-crate:patch".to_string()],
-                summary: Some("Should not be written".to_string()),
-            },
-            &global(root, true),
-        )
-        .unwrap();
+        assert_eq!(
+            commands::add::handle(
+                AddArgs {
+                    packages: vec!["cargo/core-crate:patch".to_string()],
+                    summary: Some("Should not be written".to_string()),
+                },
+                &global(root, true),
+            )
+            .unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
     });
 }
 
@@ -106,18 +112,21 @@ fn version_dry_run_writes_nothing() {
     seed_initialized_workspace(root);
 
     assert_no_disk_mutation(root, || {
-        commands::version::handle(
-            VersionArgs {
-                refresh_lockfiles: false,
-                no_refresh_lockfiles: true,
-                strict: false,
-                allow_empty_changesets: false,
-                emit_decision: None,
-                emit_preview: None,
-            },
-            &global(root, true),
-        )
-        .unwrap();
+        assert_eq!(
+            commands::version::handle(
+                VersionArgs {
+                    refresh_lockfiles: false,
+                    no_refresh_lockfiles: true,
+                    strict: false,
+                    allow_empty_changesets: false,
+                    emit_decision: None,
+                    emit_preview: None,
+                },
+                &global(root, true),
+            )
+            .unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
     });
 }
 
@@ -128,14 +137,17 @@ fn snapshot_dry_run_writes_nothing() {
     seed_initialized_workspace(root);
 
     assert_no_disk_mutation(root, || {
-        commands::snapshot::handle(
-            SnapshotArgs {
-                tag: "canary".to_string(),
-                strict: false,
-            },
-            &global(root, true),
-        )
-        .unwrap();
+        assert_eq!(
+            commands::snapshot::handle(
+                SnapshotArgs {
+                    tag: "canary".to_string(),
+                    strict: false,
+                },
+                &global(root, true),
+            )
+            .unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
     });
 }
 
@@ -148,13 +160,16 @@ fn pre_enter_dry_run_writes_nothing() {
     seed_initialized_workspace(root);
 
     assert_no_disk_mutation(root, || {
-        commands::pre::handle(
-            PreArgs::Enter {
-                tag: "beta".to_string(),
-            },
-            &global(root, true),
-        )
-        .unwrap();
+        assert_eq!(
+            commands::pre::handle(
+                PreArgs::Enter {
+                    tag: "beta".to_string(),
+                },
+                &global(root, true),
+            )
+            .unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
     });
 }
 
@@ -167,16 +182,22 @@ fn pre_exit_dry_run_writes_nothing() {
     seed_initialized_workspace(root);
 
     // Establish real pre-mode state first, so `pre exit` has a file to mutate.
-    commands::pre::handle(
-        PreArgs::Enter {
-            tag: "beta".to_string(),
-        },
-        &global(root, false),
-    )
-    .unwrap();
+    assert_eq!(
+        commands::pre::handle(
+            PreArgs::Enter {
+                tag: "beta".to_string(),
+            },
+            &global(root, false),
+        )
+        .unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
 
     assert_no_disk_mutation(root, || {
-        commands::pre::handle(PreArgs::Exit, &global(root, true)).unwrap();
+        assert_eq!(
+            commands::pre::handle(PreArgs::Exit, &global(root, true)).unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
     });
 }
 
@@ -192,15 +213,18 @@ fn init_dry_run_writes_nothing_even_with_yes() {
     );
 
     assert_no_disk_mutation(root, || {
-        commands::init::handle(
-            InitArgs {
-                yes: true,
-                versioning: Some(InitVersioning::Fixed),
-                ..Default::default()
-            },
-            &global(root, true),
-        )
-        .unwrap();
+        assert_eq!(
+            commands::init::handle(
+                InitArgs {
+                    yes: true,
+                    versioning: Some(InitVersioning::Fixed),
+                    ..Default::default()
+                },
+                &global(root, true),
+            )
+            .unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
     });
 }
 
@@ -217,15 +241,18 @@ fn release_dry_run_writes_nothing() {
     fs::write(root.join("untracked.txt"), "dirty\n").unwrap();
 
     assert_no_disk_mutation(root, || {
-        commands::release::handle(
-            ReleaseCommandArgs {
-                command: None,
-                packages: vec![],
-                receipt: None,
-            },
-            &global(root, true),
-        )
-        .unwrap();
+        assert_eq!(
+            commands::release::handle(
+                ReleaseCommandArgs {
+                    command: None,
+                    packages: vec![],
+                    receipt: None,
+                },
+                &global(root, true),
+            )
+            .unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
     });
 }
 
@@ -337,13 +364,16 @@ fn pre_dry_run_json_output_fields_are_correct() {
     assert!(enter_json["content"].is_string(), "content should be a JSON string");
 
     // Establish real pre mode so `pre exit` has a file to read.
-    commands::pre::handle(
-        PreArgs::Enter {
-            tag: "beta".to_string(),
-        },
-        &global(root, false),
-    )
-    .expect("real pre enter should succeed");
+    assert_eq!(
+        commands::pre::handle(
+            PreArgs::Enter {
+                tag: "beta".to_string(),
+            },
+            &global(root, false),
+        )
+        .expect("real pre enter should succeed"),
+        std::process::ExitCode::SUCCESS
+    );
 
     // --- pre exit --dry-run --format json ---
     let exit_out = Command::new(env!("CARGO_BIN_EXE_callisto"))
