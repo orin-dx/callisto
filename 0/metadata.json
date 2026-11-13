@@ -1,0 +1,116 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M79DJ12YFB8K47VME830Z9T9",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-13T03:00:13.36179Z",
+  "branch": "fix/changelog-dependency-updates",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f00e719eb9bf",
+  "checkpoint_transcript_start": 48785,
+  "transcript_lines_at_start": 48785,
+  "compact_transcript_start": 3504,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 130449,
+    "cache_read_tokens": 2822049,
+    "output_tokens": 10410,
+    "api_call_count": 20,
+    "subagent_tokens": {
+      "input_tokens": 122,
+      "cache_creation_tokens": 105081,
+      "cache_read_tokens": 4771096,
+      "output_tokens": 30721,
+      "api_call_count": 61
+    }
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 14,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 356
+  },
+  "summary": {
+    "intent": "Finish the pre-release downgrade fix (PR #538) and then reproduce and fix the remaining changelog findings from the bug hunt, namely incomplete or stale 'Dependency updates' entries in cascaded packages' changelogs.",
+    "outcome": "PR #538 was marked ready for review. A second branch, fix/changelog-dependency-updates, now records every bumped dependency per consumer in cascade and lists each at the version it actually reached. It has a regression test and a changeset, and was committed signed, pushed and linked to trail #357. The PR number was queried but not shown, and the `pre exit` dependency-line loss was not addressed.",
+    "learnings": {
+      "repo": [
+        "Pre-release downgrade fix lives in `versioned_bump` in groups.rs; if the bump lands behind the live version, severity is raised until it doesn't, otherwise the existing version-regression error is raised.",
+        "Changelog 'Dependency updates' entries previously came from a single BumpReason::Cascade reason, which only held the first via dependency. They now come from CascadeOutcome::dependency_updates (consumer -> bumped dependency -> DepKind).",
+        "Changelog entries are built in crates/callisto-graph/src/commands/version.rs through map_reason_to_change_source plus the new dependency_update_entries helper, which reads versions from outcome.targets.",
+        "Checks are run via `just pre-push`, `just lint`, `just doc-check`, and `just workflow-contracts`. Commits are signed with `-S` and branches are linked to trail issues via `entire trail link`.",
+        "Changes need a changeset file in .changeset/."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "finding": "CascadeOutcome gained a `dependency_updates: BTreeMap<PackageId, BTreeMap<PackageId, DepKind>>` field. It is populated when an edge is rewritten or its dependency severity is greater than None."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "finding": "BumpReason::Cascade now maps to None in map_reason_to_change_source, because dependency_update_entries adds the entries in both the aggregate and per-package changelog paths."
+        }
+      ],
+      "workflow": [
+        "Reproduce agent-reported bugs against the real binary before fixing them, instead of trusting the report.",
+        "Python string-replace patch scripts needed manual follow-up edits when the replaced block's tail was left inconsistent.",
+        "Start fix branches from origin/main with --no-track, one PR per finding group."
+      ]
+    },
+    "friction": [
+      "The scripted multi-line replacement in version.rs left the block tail broken and had to be fixed by hand.",
+      "The first regression test failed to compile because of a type mismatch (to.render() returned a borrowed value). It took two sed/edit passes to fix.",
+      "The work happens in a worktree still holding the earlier #537 branch, so branch state has to be watched."
+    ],
+    "open_items": [
+      "The `pre exit` dependency-line loss finding is not yet fixed or reproduced.",
+      "The stale-version finding was only partly covered; the new entries use the version actually reached, but the repro result was not shown in detail.",
+      "`just workflow-contracts` has not been run, and CI has not run on either PR.",
+      "The PR number for fix/changelog-dependency-updates was not displayed, so the PR may still need to be opened or edited.",
+      "The old pre-mode test expectation was changed from 1.1.0-next.0 to 2.0.0-next.1 with no recorded decision behind the old behaviour, so the user may want to confirm."
+    ]
+  }
+}
