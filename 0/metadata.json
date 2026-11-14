@@ -1,0 +1,118 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M7DW669EDA0EWFY4A0EZ135Y",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-14T20:32:51.611752Z",
+  "branch": "fix/version-lock-refresh-rollback",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "943d0350d0e3",
+  "checkpoint_transcript_start": 51719,
+  "transcript_lines_at_start": 51719,
+  "compact_transcript_start": 3728,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 22071,
+    "cache_read_tokens": 5406813,
+    "output_tokens": 10449,
+    "api_call_count": 15,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 377
+  },
+  "summary": {
+    "intent": "Land several callisto fix PRs (#541, #542, #543, #545) with green CI, then address trail findings on changes #151 (PR #543, version-lock refresh rollback) and #153 (PR #545, npm v-prefixed specs).",
+    "outcome": "Fixed #541 by removing an empty-entry check that contradicted an existing test, then pushed it signed and updated the PR description. For #543 the finding was fixed in apply.rs and preflight.rs, and a new regression test was confirmed red without the fix. The final check script was started, and the #545 finding has not yet been addressed.",
+    "learnings": {
+      "repo": [
+        "Tests in callisto's init command expect `--artifact-target` to keep empty comma-split entries so the error message can name them (test `artifact_target_flag_splits_on_comma`).",
+        "Lockfile refresh in callisto-graph runs in the order Cargo, then pypi, then npm. A Cargo-then-pnpm failure therefore reproduces the rollback bug where a later failed refresh leaves earlier lockfiles changed.",
+        "`gh pr checks --required` exits immediately because no required checks are configured on the repo.",
+        "The 'Entire Gates' check is the trail approval gate and needs the user to clear it. It is the only failing check on #542 and #543.",
+        "The registry-tools test is skipped in CI, so the local check script skips it too."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "line": 203,
+          "end_line": 245,
+          "finding": "Lockfile snapshot and refresh logic that the #543 finding concerns. Temporarily disabling the snapshot line made the new test fail, confirming the fix is needed."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply/tests.rs",
+          "finding": "Added a test for a later failed refresh, using FailingProgramRunner, which fails Cargo then pnpm and checks that earlier lockfile changes are rolled back."
+        }
+      ],
+      "workflow": [
+        "Judge test results by exit code rather than grepping output. Grepping hid a failing test on #541, which broke the user's standing rule.",
+        "Verify a new regression test by temporarily disabling the fix, seeing it fail, then restoring the fix.",
+        "Check CI state on all sibling PRs after discovering a verification gap, rather than assuming they are fine.",
+        "Use `gh pr checks --watch` without `--required` when the repo has no required checks configured.",
+        "Commits are GPG-signed with `git commit -S`, and the signature is checked with `git log --format=%G?`."
+      ]
+    },
+    "friction": [
+      "Output-grep verification masked a failing test, so #541 failed CI after the first push.",
+      "`gh pr checks --required` returned immediately with no required checks configured, so it could not be used to watch CI.",
+      "The trail change numbers (#151, #153) did not match the PR numbers (#543, #545), so they had to be mapped."
+    ],
+    "open_items": [
+      "Finish the #545 (npm v-prefixed specs) finding from change #153.",
+      "Wait for CI on #541 and #545 to finish and report the results.",
+      "Implement the npm overrides fix.",
+      "The user needs to clear the Entire Gates approval on #542 and #543.",
+      "The inference re-bump question is left for the user to decide.",
+      "The changelog heading is left unchanged, as it is deliberate behaviour and a product choice."
+    ]
+  }
+}
