@@ -71,9 +71,12 @@ fn targets(plan: &VersionPlan, opts: &ApplyOptions) -> BTreeSet<(PathBuf, Target
     targets
 }
 
-/// The text of every file `plan` writes (`None` when it does not exist yet), read before the first write so a failure
-/// after the writes can put the tree back.
-pub(super) fn snapshot(root: &Path, plan: &VersionPlan, opts: &ApplyOptions) -> Vec<(PathBuf, Option<String>)> {
+/// The bytes of a file as it was before the run (`None` when it did not exist).
+pub(super) type Snapshot = Vec<(PathBuf, Option<Vec<u8>>)>;
+
+/// The contents of every file `plan` writes, read before the first write so a failure after the writes can put the
+/// tree back.
+pub(super) fn snapshot(root: &Path, plan: &VersionPlan, opts: &ApplyOptions) -> Snapshot {
     let paths: Vec<PathBuf> = targets(plan, opts)
         .into_iter()
         .filter(|(_, target)| *target != Target::Removed)
@@ -82,35 +85,34 @@ pub(super) fn snapshot(root: &Path, plan: &VersionPlan, opts: &ApplyOptions) -> 
     snapshot_paths(root, &paths)
 }
 
-/// The text of each of `paths` (`None` when it does not exist), skipping any that cannot be read as text.
-pub(super) fn snapshot_paths(root: &Path, paths: &[PathBuf]) -> Vec<(PathBuf, Option<String>)> {
+/// The bytes of each of `paths` (`None` when it does not exist), skipping any that cannot be read.
+pub(super) fn snapshot_paths(root: &Path, paths: &[PathBuf]) -> Snapshot {
     paths
         .iter()
-        .filter_map(|path| match std::fs::read_to_string(root.join(path)) {
-            Ok(text) => Some((path.clone(), Some(text))),
+        .filter_map(|path| match std::fs::read(root.join(path)) {
+            Ok(bytes) => Some((path.clone(), Some(bytes))),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some((path.clone(), None)),
             Err(_) => None,
         })
         .collect()
 }
 
-/// Puts every file in `snapshot` back as it was, removing the ones the run created.
+/// Puts every file in `snapshot` back as it was, removing the ones the run created. A file whose contents are
+/// unchanged is left alone, and one that changed is rewritten in place, so a symlinked lockfile stays a symlink.
 ///
 /// # Errors
 ///
 /// [`GraphError::ApplyIo`] for the first file that could not be put back, naming the failure that caused the restore.
-pub(super) fn restore(
-    root: &Path,
-    snapshot: &[(PathBuf, Option<String>)],
-    cause: &GraphError,
-    permit: &ApplyPermit,
-) -> Result<(), GraphError> {
+pub(super) fn restore(root: &Path, snapshot: &Snapshot, cause: &GraphError) -> Result<(), GraphError> {
     for (path, original) in snapshot {
+        let full = root.join(path);
+        let current = std::fs::read(&full).ok();
+        if current == *original {
+            continue;
+        }
         let outcome = match original {
-            Some(text) => {
-                callisto_model::atomic::atomic_write(&root.join(path), text, permit).map_err(|e| e.to_string())
-            }
-            None => match std::fs::remove_file(root.join(path)) {
+            Some(bytes) => std::fs::write(&full, bytes).map_err(|e| e.to_string()),
+            None => match std::fs::remove_file(&full) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
                 _ => Ok(()),
             },

@@ -222,7 +222,7 @@ pub fn apply_version_plan<R: CommandRunner>(
         let refresh_results = match refresh_lockfiles(runner, root, &cargo_workspaces, &lockfile_dirs) {
             Ok(results) => results,
             Err(error) => {
-                preflight::restore(root, &snapshot, &error, permit)?;
+                preflight::restore(root, &snapshot, &error)?;
                 return Err(error);
             }
         };

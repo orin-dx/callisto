@@ -82,6 +82,105 @@ impl CommandRunner for CargoThenPnpmFailsRunner {
     }
 }
 
+/// Writes non-UTF-8 bytes to `bun.lockb` on the Cargo refresh, then fails the pnpm refresh.
+struct BinaryLockThenPnpmFailsRunner;
+
+impl CommandRunner for BinaryLockThenPnpmFailsRunner {
+    fn run(&self, program: &str, _args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+        if program == "cargo" {
+            std::fs::write(cwd.join("bun.lockb"), [0xff, 0x00, 0xfe]).unwrap();
+        }
+        let fails = program == "pnpm";
+        Ok(CommandOutput {
+            exit_code: Some(if fails { 1 } else { 0 }),
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+}
+
+fn dual_plan() -> VersionPlan {
+    VersionPlan {
+        bumps: vec![PlannedBump {
+            package: PackageId::parse("cargo:dual").unwrap(),
+            from: cargo_version("1.0.0"),
+            to: cargo_version("1.1.0"),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![
+                VersionWriteTarget::Manifest(PathBuf::from("Cargo.toml")),
+                VersionWriteTarget::Manifest(PathBuf::from("package.json")),
+            ],
+        }],
+        ..Default::default()
+    }
+}
+
+fn write_dual_workspace(root: &Path) {
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"dual\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("package.json"), r#"{"name":"dual","version":"1.0.0"}"#).unwrap();
+    std::fs::write(root.join("pnpm-lock.yaml"), "# lock").unwrap();
+}
+
+/// A binary lockfile an earlier refresh rewrote is put back byte for byte.
+#[test]
+fn a_binary_lockfile_is_restored_byte_for_byte() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write_dual_workspace(root);
+    std::fs::write(root.join("bun.lockb"), [0x00, 0x01, 0x02, 0xff]).unwrap();
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+
+    let result = apply_version_plan(
+        root,
+        &dual_plan(),
+        &BinaryLockThenPnpmFailsRunner,
+        &opts,
+        &ApplyPermit::force_for_tests(),
+    );
+
+    assert!(result.is_err());
+    assert_eq!(std::fs::read(root.join("bun.lockb")).unwrap(), [0x00, 0x01, 0x02, 0xff]);
+}
+
+/// A symlinked lockfile that no refresh touched stays a symlink: the rollback leaves unchanged files alone.
+#[cfg(unix)]
+#[test]
+fn a_rollback_keeps_an_untouched_symlinked_lockfile_a_symlink() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write_dual_workspace(root);
+    std::fs::write(root.join("Cargo.lock"), "# stale").unwrap();
+    std::fs::write(root.join("shared.lock"), "# yarn").unwrap();
+    std::os::unix::fs::symlink("shared.lock", root.join("yarn.lock")).unwrap();
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+
+    let result = apply_version_plan(
+        root,
+        &dual_plan(),
+        &FailingRefreshRunner,
+        &opts,
+        &ApplyPermit::force_for_tests(),
+    );
+
+    assert!(result.is_err());
+    assert!(std::fs::symlink_metadata(root.join("yarn.lock"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+}
+
 /// A lockfile an earlier ecosystem already refreshed goes back too, or it would sit beside the restored manifests.
 #[test]
 fn a_later_failed_refresh_also_restores_a_lockfile_an_earlier_one_refreshed() {
