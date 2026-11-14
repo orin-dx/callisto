@@ -603,7 +603,7 @@ fn normalize_node_semver_clause(s: &str) -> Option<String> {
         .find_map(|op| trimmed.strip_prefix(op).map(|rest| (*op, rest)))
         .unwrap_or(("", trimmed));
     let version = rest
-        .strip_prefix(['v', 'V'])
+        .strip_prefix('v')
         .filter(|after| after.starts_with(|c: char| c.is_ascii_digit()));
     let op = if op == "~>" { "~" } else { op };
     match (version, trimmed.starts_with("~>")) {

@@ -97,7 +97,10 @@ fn v_prefixed_and_tilde_arrow_clauses_parse_like_their_plain_forms() {
             "{raw} should read as {plain}"
         );
     }
-    assert!(matches!(parse_npm_spec_str("vendor-pkg", None), DepSpec::Opaque(_)));
+    // Only a lowercase `v` is a version prefix; anything else is a dist-tag.
+    for tag in ["vendor-pkg", "V1.2.3", "^V1.2.3"] {
+        assert!(matches!(parse_npm_spec_str(tag, None), DepSpec::Opaque(_)), "{tag}");
+    }
 }
 
 #[test]
