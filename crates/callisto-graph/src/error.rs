@@ -882,7 +882,7 @@ pub enum GraphError {
     )]
     #[diagnostic(
         code(E208),
-        help("Run `{refresh_command}` to see the full failure, fix it, then re-run `callisto version`.")
+        help("Fix the failure shown, then re-run `callisto version`. Nothing was left changed; `{refresh_command}` is the command that failed.")
     )]
     LockfileRefreshFailed {
         filename: PathBuf,

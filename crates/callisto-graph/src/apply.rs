@@ -160,6 +160,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     };
     let lockfile_dirs = lockfile_dirs(root, plan, &active_ecosystems)?;
     let classification = classify_manifest_writes(plan);
+    let snapshot = preflight::snapshot(root, plan, opts);
 
     for step in write_steps(plan, &classification) {
         modified_paths.push(apply_write_step(&step, plan, root, &ctx, permit)?);
@@ -202,7 +203,15 @@ pub fn apply_version_plan<R: CommandRunner>(
 
     // Must run before the staging loop below, so refreshed lockfiles are on disk to be staged.
     if opts.refresh_lockfiles {
-        let refresh_results = refresh_lockfiles(runner, root, &cargo_workspaces, &lockfile_dirs)?;
+        // Nothing is staged yet and the changesets are still on disk, so a failed refresh puts the written files back
+        // and the run can simply be repeated once the cause is fixed.
+        let refresh_results = match refresh_lockfiles(runner, root, &cargo_workspaces, &lockfile_dirs) {
+            Ok(results) => results,
+            Err(error) => {
+                preflight::restore(root, &snapshot, &error, permit)?;
+                return Err(error);
+            }
+        };
         if !refresh_results.is_empty() {
             outcome.lockfile_refresh_results = Some(refresh_results);
         }

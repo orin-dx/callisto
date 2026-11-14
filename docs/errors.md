@@ -247,7 +247,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E205 | Fixed group aligns on a tagged member that has no base version in the workspace | Ensure the tagged group member is still a live workspace package, or re-tag against a current member. |
 | E206 | Fixed group has no live members with a base version to align on | Ensure at least one member of the fixed group resolves to a workspace package. |
 | E207 | Computed bump for a package would move its version backwards | This indicates a corrupted alignment base (bad tag, pre.json, or group config); verify release state before retrying. |
-| E208 | A lockfile refresh command exited non-zero while applying the version plan | Run `<refresh_command>` to see the full failure, fix it, then re-run `callisto version`. |
+| E208 | A lockfile refresh command exited non-zero while applying the version plan | Fix the failure shown, then re-run `callisto version`. Nothing was left changed; `<refresh_command>` is the command that failed. |
 | E245 | `pre.json` records a bare name that now names several packages, and none was the only one when `pre.json` was added | In `pre.json` `initialVersions`, rename the `<key>` key to the qualified id of the package it was recorded for. |
 | E246 | Version dependency edge involves incompatible version grammars | Use the same version grammar on both sides of the dependency edge, or drop the edge. |
 | E247 | On-disk versions changed since the version plan was generated | Regenerate the version plan against the current workspace state before applying it. |

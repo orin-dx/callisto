@@ -71,6 +71,51 @@ fn targets(plan: &VersionPlan, opts: &ApplyOptions) -> BTreeSet<(PathBuf, Target
     targets
 }
 
+/// The text of every file `plan` writes (`None` when it does not exist yet), read before the first write so a failure
+/// after the writes can put the tree back.
+pub(super) fn snapshot(root: &Path, plan: &VersionPlan, opts: &ApplyOptions) -> Vec<(PathBuf, Option<String>)> {
+    targets(plan, opts)
+        .into_iter()
+        .filter(|(_, target)| *target != Target::Removed)
+        .filter_map(|(path, _)| match std::fs::read_to_string(root.join(&path)) {
+            Ok(text) => Some((path, Some(text))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some((path, None)),
+            Err(_) => None,
+        })
+        .collect()
+}
+
+/// Puts every file in `snapshot` back as it was, removing the ones the run created.
+///
+/// # Errors
+///
+/// [`GraphError::ApplyIo`] for the first file that could not be put back, naming the failure that caused the restore.
+pub(super) fn restore(
+    root: &Path,
+    snapshot: &[(PathBuf, Option<String>)],
+    cause: &GraphError,
+    permit: &ApplyPermit,
+) -> Result<(), GraphError> {
+    for (path, original) in snapshot {
+        let outcome = match original {
+            Some(text) => {
+                callisto_model::atomic::atomic_write(&root.join(path), text, permit).map_err(|e| e.to_string())
+            }
+            None => match std::fs::remove_file(root.join(path)) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+                _ => Ok(()),
+            },
+        };
+        if let Err(message) = outcome {
+            return Err(GraphError::ApplyIo {
+                path: path.clone(),
+                message: format!("could not be put back after `{cause}`: {message}"),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Fails with every target that cannot be written, before anything is.
 ///
 /// # Errors
