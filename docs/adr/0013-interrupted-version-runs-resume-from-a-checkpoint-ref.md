@@ -4,58 +4,58 @@ Status: Proposed
 
 ## Context
 
-- `callisto version` writes manifests, changelogs and `pre.json`, refreshes lockfiles with each ecosystem's tool, stages, then consumes changesets ([versioning](../architecture/versioning.md#idempotent-apply)). Inputs are kept until refresh and staging succeed, so a failure leaves them available.
-- A refresh failure (E208) told the user to fix the cause and re-run, but the re-run was refused with E121, because the run had already changed the versions it plans from. The docs name the gap: "a fresh command does not retain that plan… Automatic replay is not guaranteed." Two bug hunts found it independently after 0.20.0.
-- Unlike a release, whose landed effects stay observable at the providers ([ADR 3](0003-reruns-adopt-landed-effects.md)), a `version` run destroys its own inputs: the manifests, specs, config and changesets it plans from are the files it rewrites. A re-run cannot observe what the interrupted run planned from.
-- A prototype that re-planned from `HEAD` versions was wrong: dependency specs on disk had already been rewritten, so the cascade dropped a dependent and the resume exited 0 with that dependent's manifest unstaged.
+- `callisto version` writes manifests, changelogs and `pre.json`, refreshes lockfiles with each ecosystem's tool, stages, then consumes changesets. Inputs are kept until refresh and staging succeed ([versioning](../architecture/versioning.md#idempotent-apply)).
+- After a failed refresh (E208) the advised re-run was refused with E121, because the run had already changed the versions it plans from. The architecture names the gap: "a fresh command does not retain that plan… Automatic replay is not guaranteed."
+- A release's landed effects stay observable at the providers, so a re-run can adopt them ([ADR 3](0003-reruns-adopt-landed-effects.md)). A `version` run is different: it rewrites the very files it plans from (manifests, specs, changesets), so a re-run cannot observe what the interrupted run planned.
 
 ## Decision
 
-Before its first write, `version` records its inputs in a checkpoint: a commit of `HEAD` plus the working tree and the index as they are, built in a temporary index (`GIT_INDEX_FILE`), never signed, and pointed to by `refs/callisto/checkpoint/version`. The ref is created only if absent. The checkpoint commit also records what the plan depends on beyond files: `HEAD`, the tag refs the plan reads, the plan-changing flags and the Callisto version.
+Persist the inputs of an interrupted `version` run, never its progress, and re-derive the work from them.
 
+- **Checkpoint.** Before its first write, `version` records `HEAD`, the working tree and the index as a commit at `refs/callisto/checkpoint/version`, created only if absent and never signed. The commit also records what planning reads beyond files: `HEAD`, the tag refs it uses, the plan-changing flags and the Callisto version. It covers the workspace and its release inputs, not the whole repository.
 - **Complete.** The ref is deleted after the last effect, including the `--emit-decision` and `--emit-preview` files.
-- **Resume.** Running `version` again while the ref exists re-plans from a throwaway worktree of the checkpoint and applies that plan to the real tree. The existing `from`/`to` guard and the changelog's duplicate-heading check make the writes idempotent, and the refresh, staging and consumption run again. There is no recovery command: a plain re-run resumes, as a plain re-run finishes a release under ADR 3.
-- **Refuse.** If any recorded input changed since the checkpoint (config, changesets, `pre.json`, `HEAD`, the recorded tags, the flags) or a manifest is at neither `from` nor `to`, the resume stops with nothing written and prints the exact git commands to abort.
-- **Abort.** Restore the working tree and index from the checkpoint and remove the files the run created; Git restores symlinks, binary files and modes.
-- E121 stays for states Callisto did not record (hand edits, older Callisto versions).
+- **Resume.** A plain re-run while the ref exists plans from a worktree of the checkpoint and applies that plan to the real tree. The existing `from`/`to` guard and the changelog's duplicate-heading check make the writes idempotent. There is no recovery command, as under ADR 3.
+- **Refuse.** If a recorded input changed, or a manifest is at neither `from` nor `to`, nothing is written and the user is shown how to abort: restore the tree and index from the checkpoint and remove the files the run created.
+- E121 stays for states Callisto did not record.
 
-The checkpoint holds inputs, not progress: every resume re-observes the tree through the `from`/`to` guard, so no recorded state can disagree with the files the way the release state file did (#124).
+Architecture:
+
+- The checkpoint primitives live in `GitAccess` and run the system `git` ([ADR 5](0005-system-git-only.md)); creating one is a write and needs an `ApplyPermit` ([ADR 8](0008-format-preserving-writes-gated-by-apply-permit.md)).
+- The command layer owns the lifecycle. Planning is unchanged: a resume loads the workspace from the checkpoint's worktree with the existing loader, so ecosystems need nothing new.
+- Like the committed decision for a release ([ADR 2](0002-committed-decision-is-release-authority.md)), the checkpoint is the authority for what the interrupted run was doing; the `from`/`to` guard is its adoption. Because every resume re-observes the tree, recorded state cannot disagree with the files the way the release state file did (#124).
+
+Scope: `version` only. `pre enter` and `pre exit` write one file and become idempotent instead. `release` keeps ADR 3. `init` fails only before writing. `snapshot` may adopt the checkpoint to undo its writes later, under this ADR.
 
 ## Options considered
 
-- **Restore the written files in process on failure** — rejected. Implemented in #543: four review rounds each found a new case (a lockfile an earlier ecosystem refreshed, binary lockfiles, symlinks, read-only files). It reimplements a filesystem undo that Git already has.
-- **Refresh lockfiles after consuming the changesets, and report E208 as a post-condition** — rejected. It consumes the inputs before the refresh succeeds, the recovery material the apply ordering protects.
-- **Check in core, before writing, that every spec covers the new versions** — rejected as the fix. Which specs must resolve is each ecosystem's rule (Cargo needs a path dev-dependency's version to match; others differ), and [ADR 10](0010-native-resolution-after-version.md) makes the native tool the authority. It may return later as a hint inside one ecosystem.
-- **Re-plan from `HEAD` versions** — rejected. Prototyped: the plan also reads specs from disk, so a resumed run dropped a dependent the first run had planned.
-- **A plan journal file in `.git`** — rejected. It needs the plan serialized and versioned, and breaks when Callisto is upgraded between the runs; the checkpoint stores inputs, which any version can plan from.
-- **Rehearse every run in a scratch copy first** — rejected for now. It also avoids the half-applied state, but costs a copy and a second refresh on every run instead of only after a failure.
-- **`git stash`, a branch, or git notes as storage** — rejected. The stash stack is the user's and has no namespace; a branch is visible and `push --all` publishes it; notes attach to commits that do not exist yet.
+- **Restore the written files in process on failure** — rejected. Each review of #543 found another case Git already handles (a lockfile an earlier ecosystem refreshed, binary lockfiles, symlinks, read-only files).
+- **Report E208 after consuming the changesets** — rejected. It consumes the inputs before the refresh succeeds, the recovery material the apply ordering keeps.
+- **Check in core that every spec covers the new versions** — rejected. Which specs must resolve is each ecosystem's rule, and [ADR 10](0010-native-resolution-after-version.md) makes the native tool the authority.
+- **Re-plan from `HEAD` versions** — rejected. Planning also reads specs from disk; a prototype dropped a dependent the interrupted run had already rewritten, and exited 0.
+- **A plan journal file** — rejected. It needs the plan serialized and versioned, and breaks across a Callisto upgrade; inputs can be planned from by any version.
+- **Rehearse every run in a scratch copy** — rejected. It pays a copy and a second refresh on every run, not only after a failure.
+- **`git stash`, a branch, or git notes** — rejected. The stash stack is the user's, a branch is published by `push --all`, notes need a commit that does not exist yet.
 
 ## Consequences
 
-- E208's advice ("fix it, then re-run `callisto version`") becomes true, and a crash or Ctrl-C mid-apply resumes the same way.
-- A checkpoint is invisible to `git branch`, `git tag`, `git stash list`, and to `push --all` and `--tags`; `push --mirror` copies it and `git log --all` shows it. `git gc` keeps its objects until the ref is deleted.
-- Each run costs a few git processes for the checkpoint: about 80 ms for this repository. It is limited to the workspace and its release inputs, because one large untracked file made the whole-tree version take 3.2 s.
-- A run in CI never resumes (every runner is fresh); the ref is deleted on success and discarded with the runner on failure.
+- A failed refresh, a crash or Ctrl-C mid-apply is finished by running `version` again.
 - Only one `version` run can be in flight per repository.
-- The ref name and the checkpoint metadata are read across Callisto versions, so they are listed in [wire-compat](../architecture/wire-compat.md).
-- `snapshot` can use the same checkpoint to undo its transient writes; that is a follow-up, not part of this decision.
+- The checkpoint is hidden from `git branch`, `git tag`, `git stash list`, `push --all` and `--tags`; `push --mirror` copies it and `git log --all` shows it.
+- CI never resumes, because each runner is fresh; the ref goes with the runner.
+- The ref name and its recorded metadata are read across Callisto versions and belong in [wire-compat](../architecture/wire-compat.md).
 
 ## Enforcement
 
-- A differential test: for each workspace shape, a run whose lockfile refresh fails once and is then resumed leaves the same files, index and status as a run that never failed. Shapes: Cargo cascade with an existing changelog, fixed group with inherited versions, Cargo and npm where npm fails after Cargo refreshed, Python with `uv.lock`, a workspace below the repository root, pre mode with a group, an uncommitted changeset, a symlinked lockfile.
-- Refusal tests: a hand-edited version, an edited `callisto.toml`, a tag created on `HEAD` between the runs, and a second concurrent run.
-- An abort test: the printed commands return the tree, index and status to their state before the run.
+- A differential test: a run whose lockfile refresh fails once and is resumed leaves the same files, index and status as a run that never failed, across ecosystems and workspace layouts.
+- Tests that a changed input, a hand-edited version and a concurrent run are refused, and that the abort steps restore the state before the run.
 
 ## Revisit when
 
-- Planning can run from git objects without a worktree, which would remove the throwaway checkout.
+- Planning can read a workspace from git objects, removing the worktree.
 - Another local multi-step command needs resume or abort.
-- A Git version changes how `commit-tree`, `update-ref` or a temporary index behave.
 
 ## Sources
 
-- Bug hunts after 0.20.0: two independent reports of the E208 retry refused by E121.
-- PR #543 and its review findings (changes #151 and #153 on trail #357).
-- Local prototype and differential runs, 2026-11-14 (not committed).
-- ADR 3 and PR #124 for why release execution keeps no state; `docs/architecture/versioning.md` "Idempotent apply".
+- PR #543 and its review findings (change #151, trail #357); the E121 and E208 rows in `docs/errors.md`.
+- ADR 3 and PR #124 for why release execution keeps no state.
+- Prototype runs, 2026-11-14, to be reproduced by the enforcement tests.
