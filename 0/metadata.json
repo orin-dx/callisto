@@ -1,0 +1,142 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M7E0CHT4QRWGR18XF2JQBAF6",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-14T21:46:25.535537Z",
+  "branch": "docs/adr-version-checkpoint",
+  "checkpoints_count": 6,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "043df50ce3f0",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 4918,
+    "cache_read_tokens": 1531484,
+    "output_tokens": 3891,
+    "api_call_count": 3
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 391
+  },
+  "summary": {
+    "intent": "Resume the callisto-hardening follow-up work, which became migrating CI macOS runners off the retired macos-14, then diagnosing and fixing the broken Release workflow on main, then designing a robust recovery for interrupted `callisto version` runs.",
+    "outcome": "Merged macos-14→macos-15 (#421) and opened #422 to follow macos-latest; cleaned up 2 worktrees and 19 local branches; found the E165 release wedge (stale release PR #409 merged after #420 rewrote changesets) and opened a revert PR on trail; prototyped and empirically validated a git-ref checkpoint design and committed ADR 0013 locally for review, with nothing implemented yet.",
+    "learnings": {
+      "repo": [
+        "Entire titles sessions from their first prompt, not Claude Code's names; sessions are found by session id, and its index lags (checkpoints only up to 2026-10-22).",
+        "Entire auto-opens a draft PR when a trail is created, so use `gh pr edit` rather than `gh pr create`; `Entire Gates` check needs the user to approve the trail in Entire.",
+        "All commits must be GPG-signed; the sandbox blocks GPG, so commits need unsandboxed retry. `%G?` shows `E` for GitHub web-merge commits whose keys aren't in the local keyring, which is not unsigned.",
+        "A formatting hook blocks commits when cargo fmt is not clean; run `cargo fmt --all` before committing.",
+        "Release failure cause: release PR #409 was built from 8 changesets that #420 deleted/renamed before merge, so the release commit consumed no changesets and `callisto release plan` fails with E165 on every later push to main. No guard prevents a stale release PR from merging.",
+        "ADR 10 makes the native tool the oracle for lockfile refresh; versioning.md says apply retains changesets until refresh succeeds as the recovery design, and apply is idempotent via from/to guard. E121 is the documented limit of recovery.",
+        "Re-planning from HEAD versions alone fails for mixed Cargo+npm because dependency specs are read from the half-rewritten disk, giving a silently inconsistent result with exit 0.",
+        "Git-ref checkpoint spike (refs/callisto/version-base) matched a clean run across 8 workspace shapes; commit-tree never invoked gpg; ref is pushed by `push --mirror` and visible in `git log --all`; snapshotting a 200 MB untracked file cost 3.2 s versus 59 ms when limited to named paths.",
+        "`pre enter/exit` should be made idempotent rather than use a checkpoint; init, add, release and the CI action don't fit the checkpoint pattern.",
+        "Workflows use ubuntu-latest everywhere except ubuntu-24.04-arm (no -latest label); matrix.rs already uses macos-latest."
+      ],
+      "code": [
+        {
+          "path": ".github/workflows/callisto-ci.yml",
+          "line": 150,
+          "finding": "macos artifact preflight matrix entries pinned `runner: macos-14` (around lines 145 and 150); now moved to macos-15 then macos-latest."
+        },
+        {
+          "path": ".github/workflows/callisto-release.yml",
+          "line": 302,
+          "finding": "release artifact build pinned `runner: macos-14` (around lines 297 and 302); this builds the macOS release binaries."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 162,
+          "finding": "Planning takes base versions from `ws.base_versions()`, which reads the disk; this is the seam that breaks naive resume."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 478,
+          "finding": "`manifest_version_at` reads each manifest's effective version at HEAD, including inheritance, used by E121."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "line": 461,
+          "finding": "`write_version_guarded` skips manifests already at the target version and refuses ones at neither from nor to, making apply idempotent."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "line": 241,
+          "end_line": 279,
+          "finding": "Apply stages everything first and removes changesets/pre.json from disk only after `git rm --cached` succeeds."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/version.rs",
+          "line": 112,
+          "end_line": 126,
+          "finding": "`--emit-decision` and `--emit-preview` are written after apply consumes changesets; a failure there loses the ability to re-derive the decision, so a checkpoint must outlive them."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Entire API and keychain access failed with TLS errors inside the sandbox; entire, gpg-signed commits and gh needed unsandboxed runs, with the auto-mode classifier denying some retries.",
+      "`gh pr create` failed minting the orin-dx-pr-bot token (OpenSSL unsupported on the private key).",
+      "The `!` ssh-add attempts were passed as text twice (placeholder and prefix issues), and the SSH agent could not be verified from the sandbox.",
+      "Could not load the GitHub changelog, so the macos-14 retirement date stayed unconfirmed.",
+      "The assistant anchored on the agents' framing for the E208 fix and over-built a rollback (#543), drawing strong user disappointment.",
+      "The confirm.sh script put `--no-gpg-sign` in the wrong position, so early checks never created a checkpoint.",
+      "The spike commit was blocked by the format hook and its changes carried over to the new branch, requiring a move back."
+    ],
+    "open_items": [
+      "Revert PR for the stale 0.17.0 release commit 9148c135 needs approval and merge; then confirm the next push regenerates a correct release PR.",
+      "Find why 'Create or update the Callisto release PR' failed on the #420 push, and add a guard so a stale release PR can't merge.",
+      "Decide whether E165 should be recoverable without a manual revert; investigate `tag candidate callisto-graph@0 ... placeholder 0` warnings.",
+      "PR #422 (macos-latest) needs CI results and trail #160 approval; confirm what macos-latest resolves to; trail #159 not closed; the macos-14 retirement date is unconfirmed.",
+      "Close #543 (rollback) and open a docs fix for E208 wording; make `pre enter/exit` idempotent in a separate PR.",
+      "ADR 0013 is committed locally for review; the checkpoint design is not implemented.",
+      "Unconfirmed checkpoint risks: tag-sensitive planning (commit inference, fixed-group alignment), submodules, `just bench` cost, abort command/wording, explicit `--no-gpg-sign`, limiting the snapshot to workspace and release inputs, recording the index as a second tree, and refusing resume when config/changesets/pre.json changed.",
+      "Remaining cleanup: smoke-main (441 deleted files), wf_cd627354-1a0-2 (untracked test file), callisto-homebrew-tap, stack/docs-v1, remote merged branches, and stale audit/release trails #139–#152, #129, #130.",
+      "Original plan items remain open: spec drift re-verification, #290 guard gaps, npm/monorepo exclusion shape, E194 fixed-group tag title, T12 Cargo/PyPI registry tests, matrix.rs target triples, npm OIDC trusted publishing."
+    ]
+  }
+}
