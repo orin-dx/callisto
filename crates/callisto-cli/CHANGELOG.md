@@ -1,5 +1,61 @@
 # callisto-cli
 
+## 0.20.1
+
+_2026-11-14 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.20.0...callisto@0.20.1)_
+
+### Patch Changes
+
+- A package released because its dependencies changed now lists every one of them under "Dependency updates" in its changelog, each at the version it actually reached.
+
+  - Before, only the first dependency that bumped the package was listed. A package with its own changeset got no dependency line at all, though its manifest pins were rewritten.
+  - A fixed group could also leave the line one version behind the manifest (`b → 1.0.1` while the pin said `=1.1.0`).
+  - You do not need to do anything. Changelog sections already written are not changed.
+- In pre-release mode, `callisto version` no longer lowers a package that already has a higher prerelease.
+
+  - Before, a package whose changeset was already recorded in `pre.json` lost that bump on the next run. If a dependency or a fixed-group sibling then bumped it with a lower severity, it was recomputed from the starting version: `1.1.0-beta.0` became `1.0.1-beta.0`, a version older than the one already published.
+  - Now the result is raised until it is not behind the current version, so that package goes to `1.1.0-beta.1`.
+  - If no bump can get past the current version, for example after switching the pre-release tag from `rc` to `beta`, `version` stops with the existing version-regression error instead of writing an older version.
+  - You do not need to do anything.
+- Python dependencies written as `name (==1.0.0)` are now recognized, so bumping that dependency releases its dependents and updates the pin.
+
+  - Before, the legacy parenthesized form was not seen as a dependency: the dependent was not released and its pin stayed old. The same pin written `name==1.0.0` already worked.
+  - Now a bump of `name` to 2.0.0 patch-releases the dependent and rewrites the pin to `name (==2.0.0)`, keeping the parentheses.
+  - A requirement like `name[extra] @ https://...` is now read with the URL kept out of the extras.
+  - You do not need to do anything. If you had worked around this by rewriting pins to `name==1.0.0`, you can leave them.
+- A Python dependency written as a wildcard (`lib==1.*`, `lib==1.2.*`) is no longer rewritten into an exact pin when `lib` is released.
+
+  - Before, `lib==1.*` became `lib==2.0.0` on the next release, which silently turned a loose constraint into a hard pin. `lib===1.2.3` also became `lib==2.0.0`.
+  - Now these ranges are treated like other forms Callisto cannot rewrite mechanically: if the new version is outside the range, `callisto version` stops with `E319` and changes nothing, as it already does for Cargo and npm wildcards.
+  - If you hit `E319`, edit the range in `pyproject.toml` so it covers the new version, then run `version` again.
+- `callisto release pending --limit 0` is now a usage error (exit 2) instead of reporting that nothing is pending.
+
+  - Before, `--limit 0` examined no release commits and printed the same result as a workspace with no unfinished release.
+  - Now `--limit` must be at least 1.
+  - You do not need to do anything unless a script passes `--limit 0`.
+- Fixes two checks that misbehaved when the Callisto workspace is a subdirectory of the git repository (`repo/ws`). Both compared repository-relative git paths with workspace-relative ones.
+
+  - `callisto version` now refuses to run again with E121 (exit 1) after an interrupted run. If a first `version` staged a bump and you then restored the working tree to HEAD, the second run used to exit 0 with a misleading "No pending changesets" warning. This matches the behavior when the workspace is at the repository root.
+  - `callisto release plan --from-release-commit` no longer fails with E165 "release-decision file was not written by this commit" for a valid release commit. Edits outside the workspace are still refused.
+  - That command still cannot succeed from a subdirectory workspace. `release` requires the repository root to be the workspace root (E170), and it now reports E170 instead of the misleading E165.
+  - You do not need to do anything, unless you hit either problem. If you want to release, move the workspace to the repository root.
+- `callisto version --emit-decision <path>` now rejects a bad path before it changes anything, instead of failing after the workspace is already half-versioned.
+
+  - Before, only the shape of the path was checked up front, and the file was written at the end. A path that was a directory or the workspace root (`.changeset`, `.`, the root), had a trailing slash, or was inside `.git` failed late with `E213` ("Is a directory", exit 1). By then manifests were bumped and staged and changesets deleted, and a rerun failed with `E121`.
+  - A relative path through an in-workspace symlink that points outside the workspace wrote the file outside the workspace.
+  - Now one check runs first, and it also covers `release plan --decision` and `release pending --decision`. All rejections exit 2 with nothing written:
+    - `E225`: the path resolves outside the workspace.
+    - `E226`: the workspace root, an existing directory, a trailing separator, anything under `.git`, or a path that cannot be resolved.
+  - A new file under directories that do not exist yet still works.
+  - If a script expected the late `E213` (exit 1) for these paths, expect `E225` or `E226` with exit 2 instead, and nothing is changed.
+- `callisto version` no longer says "No pending changesets found in workspace" when it has just planned a bump inferred from commits.
+
+  - With `release-trigger = "auto"` and a `feat:` commit after the last tag but no changeset file, `version` printed the plan (for example `cargo/a` 0.1.0 to 0.2.0) and then warned there were no changesets, which contradicted the plan beside it. It now prints only the plan.
+  - `version --strict` turned that warning into an error and exited 1 on a valid inferred plan. It now exits 0.
+  - The JSON `diagnostics` array no longer carries the `empty-changeset` diagnostic when the bump was inferred from commits.
+  - When there is nothing to release (no changesets and no inferred bumps), the warning still appears, and `--strict` still fails on it. `status` is unchanged.
+  - You do not need to do anything, unless a script relied on that warning (or the `empty-changeset` diagnostic) to detect inferred bumps. Check the plan output instead.
+
 ## 0.20.0
 
 _2026-11-12 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.19.0...callisto@0.20.0)_
