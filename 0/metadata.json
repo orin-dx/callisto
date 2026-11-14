@@ -1,0 +1,120 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M7DV5H2622Q3YSFCZN7YNGB3",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-14T20:15:03.518321Z",
+  "branch": "fix/npm-v-prefixed-specs",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "76ecf22d50bb",
+  "checkpoint_transcript_start": 51317,
+  "transcript_lines_at_start": 51317,
+  "compact_transcript_start": 3701,
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 610456,
+    "cache_read_tokens": 4044785,
+    "output_tokens": 9223,
+    "api_call_count": 14,
+    "subagent_tokens": {
+      "input_tokens": 44,
+      "cache_creation_tokens": 16611,
+      "cache_read_tokens": 5060337,
+      "output_tokens": 9443,
+      "api_call_count": 22
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 376
+  },
+  "summary": {
+    "intent": "Triage and fix defects found by two bug-hunt agents in the Callisto release tool, opening separate PRs per fix, then continue with the remaining npm and changelog defects.",
+    "outcome": "Opened PRs #541 (init artifact-target E197), #542 (Python `==1.*` pin), and #543 (restore written files after E208 lockfile refresh failure). Reproduced the npm `v`/`~>` spec bug and fixed it by normalising at parse time, with a unit test and changeset on branch fix/npm-v-prefixed-specs; checks were still running at the end of the transcript.",
+    "learnings": {
+      "repo": [
+        "Each fix goes on its own branch off origin/main with a signed commit, a changeset file in .changeset/, and a PR linked via `entire trail link`.",
+        "Checks are run through a helper script (check2.sh) pointed at the worktree, and fmt/tests run via cargo (`cargo fmt --all`, `cargo test -q -p <crate>`).",
+        "Error E208 (lockfile refresh failure) docs imply a retry should work; the old help text advising to run the command manually was wrong once files are restored, so the help and docs row had to be updated along with the code.",
+        "Spec VER-AGG-04 starts the commit-inference window at the last tag, which causes `version` to re-bump with release-trigger=auto until the release is tagged. This is a design question, not a regression.",
+        "Poetry caret/tilde dependents deliberately do not take pre-release/snapshot versions per the spec, so E319 there is a product gap, not a bug."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/npm.rs",
+          "finding": "parse_npm_spec_str did not recognise `v`-prefixed (`v1.2.3`, `=v1.2.3`, `^v1.2.3`) or `~>` specs, so such dependents were never tested or rewritten. Because the write path does not compare the old text, normalising at parse time is safe (`v` dropped, `~>` becomes `~`)."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm/tests.rs",
+          "finding": "Unit tests for npm spec parsing live here; a `v_prefixed` test was added."
+        },
+        {
+          "path": "crates/callisto-graph/src/changelog/write.rs",
+          "line": 30,
+          "end_line": 110,
+          "finding": "Changelog writing logic that prepends a new `# <package>` heading; this is where the duplicate-H1 bug with an existing `# Changelog` title originates. Inspected but not yet changed."
+        }
+      ],
+      "workflow": [
+        "Reproduce agent-reported findings with a small shell script before fixing them; this confirmed the npm `v`/`~>` bug with a `^1.2.3` control.",
+        "Stash-free isolation: create a fresh branch from origin/main with `git checkout --no-track -b` so each PR contains only its own change.",
+        "Clearly separating verified, agent-reported, skipped and needs-decision findings in summaries keeps the user oriented."
+      ]
+    },
+    "friction": [
+      "Fixes were developed in a shared worktree (verify-manifest-findings) containing multiple changes, so each had to be moved onto its own branch from origin/main.",
+      "The user had to ask what the findings were and what was being addressed, because the earlier summary was not detailed enough.",
+      "Two of the agent-reported findings (npm `v` prefix, changelog heading) and the inference re-bump were not reproduced by the assistant before reporting; the `v` prefix was reproduced only later."
+    ],
+    "open_items": [
+      "npm overrides: an exact override `1.2.3` becomes `~2.0.0`, and `pnpm.overrides` is never updated. Reproduced, not fixed.",
+      "Changelog heading: an existing `# Changelog` or `# Changelog for a` title leads to two H1s. Needs reproduction and a fix.",
+      "Finish the checks for fix/npm-v-prefixed-specs, then commit and open a PR.",
+      "User decision needed: should `version` treat an already-versioned inferred bump as consumed under release-trigger=auto?",
+      "Product decision needed: Poetry caret/tilde dependents cannot take snapshot or pre-release versions.",
+      "Skipped config edge cases: `changelog` pointing at Cargo.toml or a source file, and `[changesets] dir`/`changelog` accepting `..` or `.git`."
+    ]
+  }
+}
