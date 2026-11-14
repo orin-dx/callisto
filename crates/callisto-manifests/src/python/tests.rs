@@ -952,6 +952,15 @@ fn round_trip_exact_pin_rewrites_to_new_version() {
     assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("==2.0.0"));
 }
 
+/// A wildcard or arbitrary-equality pin would change meaning as an exact pin, so it is not rewritten.
+#[test]
+fn round_trip_leaves_wildcard_and_arbitrary_equality_alone() {
+    let target = make_pep440_version("2.0.0");
+    for raw in ["==1.*", "==1.2.*", "===1.2.3"] {
+        assert!(round_trip(&make_pypi_spec(raw), &target).is_none(), "{raw}");
+    }
+}
+
 #[test]
 fn round_trip_compatible_release_rewrites_to_new_version() {
     let spec = make_pypi_spec("~=1.4.2");
