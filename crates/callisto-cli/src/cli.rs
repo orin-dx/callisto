@@ -253,6 +253,14 @@ pub struct SnapshotArgs {
     pub strict: bool,
 }
 
+/// A target triple typed after a comma (`a, b`) keeps no stray space, which config validation would reject later.
+fn trimmed_triple(raw: &str) -> Result<String, String> {
+    match raw.trim() {
+        "" => Err("a target triple cannot be empty".to_owned()),
+        triple => Ok(triple.to_owned()),
+    }
+}
+
 /// Arguments for the `init` command.
 #[derive(Args, Clone, Debug, Default)]
 pub struct InitArgs {
@@ -263,7 +271,7 @@ pub struct InitArgs {
     #[arg(long, value_enum)]
     pub versioning: Option<InitVersioning>,
     /// Ship the product's binaries as GitHub release assets for this Rust target triple (repeatable, comma-separated).
-    #[arg(long = "artifact-target", value_name = "TRIPLE", value_delimiter = ',')]
+    #[arg(long = "artifact-target", value_name = "TRIPLE", value_delimiter = ',', value_parser = trimmed_triple)]
     pub artifact_targets: Vec<String>,
     /// The package whose binaries ship, when several packages produce one.
     #[arg(long, value_name = "PACKAGE")]
@@ -639,6 +647,18 @@ mod tests {
             help_for("snapshot"),
             "Treat warnings as errors (graph errors abort with or without it)"
         );
+    }
+
+    #[test]
+    fn init_artifact_targets_drop_the_space_after_a_comma() {
+        use clap::Parser;
+
+        let cli = Cli::try_parse_from(["callisto", "init", "--artifact-target", "a-b, c-d"]).unwrap();
+        let Command::Init(args) = cli.command else {
+            panic!("not init")
+        };
+        assert_eq!(args.artifact_targets, ["a-b", "c-d"]);
+        assert!(Cli::try_parse_from(["callisto", "init", "--artifact-target", "a,,b"]).is_err());
     }
 
     #[test]
