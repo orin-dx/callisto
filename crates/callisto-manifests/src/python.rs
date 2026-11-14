@@ -779,6 +779,11 @@ fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec>
     // Validate that the original clause parses correctly (guards against
     // unknown version syntax that happens to start with a known prefix).
     let rest = original.strip_prefix(op)?;
+    // A wildcard (`==1.*`) or arbitrary-equality (`===1.2.3`) clause has no exact form to rewrite without changing
+    // its meaning, so it is left for the caller to reject like any other form it cannot rewrite.
+    if rest.contains('*') || rest.trim_start().starts_with(['=', '<', '>', '~', '!']) {
+        return None;
+    }
     let mut rendered_target = render_target(op, target)?;
     // `~=1.2` allows any 1.x from 1.2, and `~=1.2.0` only 1.2.x, so a compatible-release clause keeps the number of
     // components it was written with.
