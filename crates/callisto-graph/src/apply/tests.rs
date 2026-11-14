@@ -65,6 +65,68 @@ fn cargo_version(v: &str) -> Version {
     Version::parse(v, VersionGrammar::SemVer).expect("valid semver")
 }
 
+/// Refreshes `Cargo.lock` for real (rewrites it), then fails the pnpm refresh, as a Cargo-then-npm workspace can.
+struct CargoThenPnpmFailsRunner;
+
+impl CommandRunner for CargoThenPnpmFailsRunner {
+    fn run(&self, program: &str, _args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+        if program == "cargo" {
+            std::fs::write(cwd.join("Cargo.lock"), "# refreshed").unwrap();
+        }
+        let fails = program == "pnpm";
+        Ok(CommandOutput {
+            exit_code: Some(if fails { 1 } else { 0 }),
+            stdout: String::new(),
+            stderr: if fails { "ERR_PNPM".to_string() } else { String::new() },
+        })
+    }
+}
+
+/// A lockfile an earlier ecosystem already refreshed goes back too, or it would sit beside the restored manifests.
+#[test]
+fn a_later_failed_refresh_also_restores_a_lockfile_an_earlier_one_refreshed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"dual\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("package.json"), r#"{"name":"dual","version":"1.0.0"}"#).unwrap();
+    std::fs::write(root.join("Cargo.lock"), "# stale").unwrap();
+    std::fs::write(root.join("pnpm-lock.yaml"), "# lock").unwrap();
+    let plan = VersionPlan {
+        bumps: vec![PlannedBump {
+            package: PackageId::parse("cargo:dual").unwrap(),
+            from: cargo_version("1.0.0"),
+            to: cargo_version("1.1.0"),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![
+                VersionWriteTarget::Manifest(PathBuf::from("Cargo.toml")),
+                VersionWriteTarget::Manifest(PathBuf::from("package.json")),
+            ],
+        }],
+        ..Default::default()
+    };
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+
+    let result = apply_version_plan(
+        root,
+        &plan,
+        &CargoThenPnpmFailsRunner,
+        &opts,
+        &ApplyPermit::force_for_tests(),
+    );
+
+    assert!(result.is_err());
+    assert_eq!(std::fs::read_to_string(root.join("Cargo.lock")).unwrap(), "# stale");
+}
+
 /// A failed lockfile refresh puts the written manifest back, so the documented retry is not refused as an
 /// interrupted run.
 #[test]

@@ -74,12 +74,21 @@ fn targets(plan: &VersionPlan, opts: &ApplyOptions) -> BTreeSet<(PathBuf, Target
 /// The text of every file `plan` writes (`None` when it does not exist yet), read before the first write so a failure
 /// after the writes can put the tree back.
 pub(super) fn snapshot(root: &Path, plan: &VersionPlan, opts: &ApplyOptions) -> Vec<(PathBuf, Option<String>)> {
-    targets(plan, opts)
+    let paths: Vec<PathBuf> = targets(plan, opts)
         .into_iter()
         .filter(|(_, target)| *target != Target::Removed)
-        .filter_map(|(path, _)| match std::fs::read_to_string(root.join(&path)) {
-            Ok(text) => Some((path, Some(text))),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some((path, None)),
+        .map(|(path, _)| path)
+        .collect();
+    snapshot_paths(root, &paths)
+}
+
+/// The text of each of `paths` (`None` when it does not exist), skipping any that cannot be read as text.
+pub(super) fn snapshot_paths(root: &Path, paths: &[PathBuf]) -> Vec<(PathBuf, Option<String>)> {
+    paths
+        .iter()
+        .filter_map(|path| match std::fs::read_to_string(root.join(path)) {
+            Ok(text) => Some((path.clone(), Some(text))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some((path.clone(), None)),
             Err(_) => None,
         })
         .collect()
