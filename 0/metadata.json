@@ -1,0 +1,116 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M7E7ZTJT3ETJPM3QPW1DM8MR",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-14T23:59:06.651828Z",
+  "branch": "docs/adr-version-checkpoint",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "38d2e074f127",
+  "checkpoint_transcript_start": 53459,
+  "transcript_lines_at_start": 53459,
+  "compact_transcript_start": 3849,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 3030,
+    "cache_read_tokens": 2085931,
+    "output_tokens": 3992,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 394
+  },
+  "summary": {
+    "intent": "Get ADR 13 (interrupted `version` runs resume from a checkpoint ref) into a shape suitable for the repo, then open its PR under a properly scoped trail and close #543. The user also questioned the habit of attaching every PR to trail #357 and whether the ADR was agent rambling.",
+    "outcome": "The assistant agreed the ADR was over-long prose and rewrote it to the repo's ADR shape (decision, rationale, rejected options, enforcement pointing at real code). It updated the ADR README index, ran `just doc-check`, and made a signed local commit; nothing was pushed and the PR and #543 closure are still pending.",
+    "learnings": {
+      "repo": [
+        "ADRs in this repo are short: ADR 10 is the model, with a decision in two rules, two rejected options and a brief enforcement section that points at real code and tests.",
+        "Behaviour (resume, refuse, abort) belongs in `docs/specs/versioning.json`, not in ADRs.",
+        "Architecture placement (`GitAccess`, command layer, planning seam) belongs in `docs/architecture/versioning.md`, which already has an 'Idempotent apply' section.",
+        "ADR enforcement sections must name code and tests that exist, not planned ones.",
+        "`just doc-check` validates docs; the ADR README keeps an index that must be updated when adding an ADR.",
+        "Commits are signed (`git commit -S`) and verified via `git log --format='%h %G?'`.",
+        "The repo's own rule is to group trails by outcome; trails are not per-PR wrappers.",
+        "Auto-created trails can't be reparented through the CLI, so merged PRs stay in their existing trail."
+      ],
+      "code": [
+        {
+          "path": "docs/adr/0013-interrupted-version-runs-resume-from-a-checkpoint-ref.md",
+          "finding": "Rewritten to the decision-only shape: an interrupted `version` run records its inputs in a git ref and resumes from them."
+        }
+      ],
+      "workflow": [
+        "Check existing artifacts (ADR 10, README conventions) before drafting a new one so it matches house style.",
+        "Don't reuse an open trail out of habit; check whether it matches the PR's outcome first.",
+        "Keep transient detail (bug-hunt narrative, timings, mechanics) out of durable docs like ADRs.",
+        "Don't stop for sign-off on every step when the direction is already agreed."
+      ]
+    },
+    "friction": [
+      "The first ADR draft was bloated, with seven options, a scope list, a semantic analogy and enforcement pointing at nonexistent tests, so it needed a full rewrite.",
+      "All PRs were attached to trail #357 regardless of topic, reproducing the 'trails as PR wrappers' problem the user had already flagged.",
+      "The assistant's earlier draft cited the wrong source (#153, the npm PR, instead of #151).",
+      "The user had to ask twice what was wrong before the assistant identified the real issue."
+    ],
+    "open_items": [
+      "Open the ADR 13 PR under a new 'Resumable version runs' trail.",
+      "Close #543 with a pointer to the ADR PR.",
+      "Implement the resumable `version` checkpoint.",
+      "Create the trail for 'Dependency spec handling' (#542, #545, and the npm overrides fix still to come).",
+      "Create the trail for 'Input validation' (#541).",
+      "Narrow #357 to the post-0.20.0 subdirectory fixes.",
+      "Possible later use of checkpoints for `snapshot`, which is out of scope for now."
+    ]
+  }
+}
