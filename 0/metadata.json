@@ -1,0 +1,113 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M7E6N4QZ2V4C4ZYX2B02044R",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-14T23:35:49.705894Z",
+  "branch": "docs/adr-version-checkpoint",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "49ab210f0318",
+  "checkpoint_transcript_start": 53398,
+  "transcript_lines_at_start": 53398,
+  "compact_transcript_start": 3844,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 520613,
+    "cache_read_tokens": 1549102,
+    "output_tokens": 5355,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 392
+  },
+  "summary": {
+    "intent": "Draft ADR 13 for the Callisto repo, which decides that interrupted `version` runs resume from a checkpoint ref, and then refine it so it captures architecture and retrospective-relevant information without transient detail.",
+    "outcome": "ADR 13 was drafted and committed locally (signed) on branch `docs/adr-version-checkpoint`. After the user's review question, it was revised to add architecture placement, the guiding principle and scope, and to remove transient detail and a wrong source citation. The rewrite was committed, but the transcript doesn't show the final doc-check or commit result, and nothing is pushed.",
+    "learnings": {
+      "repo": [
+        "ADR rules in this repo: every stated reason must cite a source, and behaviour descriptions belong in `docs/specs/`, not in ADRs.",
+        "`just doc-check` validates docs and is run before committing ADR changes.",
+        "Commits are signed (`git commit -S`), and `git log --format='%G?'` is used to verify the signature status.",
+        "ADR 3 removed persisted state for releases because providers stay observable, and the release state file got stuck in #124. ADR 13 is justified as different because `version` destroys its own inputs and the checkpoint stores inputs, not progress.",
+        "Architectural layering: git primitives live in `GitAccess` (system git, ADR 5), the command layer owns the lifecycle, planning is unchanged, and begin requires an `ApplyPermit` (ADR 8).",
+        "The `version` checkpoint must record `HEAD` and the tags the plan reads, in addition to config, changesets and `pre.json`. A tag created between a failed run and its resume moved the commit-inference window, and the resume then planned nothing while leaving a modified `Cargo.toml` and an untracked changelog.",
+        "Change #153 is the npm `v`-prefix PR and is unrelated to this ADR; only #151 is the correct citation."
+      ],
+      "code": [
+        {
+          "path": "docs/adr/0013-interrupted-version-runs-resume-from-a-checkpoint-ref.md",
+          "finding": "ADR 13 decides: checkpoint at `refs/callisto/checkpoint/version` before the first write, deleted only after all effects including `--emit-decision` and `--emit-preview` files, a plain re-run resumes, refuse and print abort commands if inputs changed, E121 retained for unrecorded states."
+        }
+      ],
+      "workflow": [
+        "Reviewing a draft against the repo's own ADR rules surfaced missing architecture, transient content (measurements, backstory, implementation mechanics) and a wrong citation.",
+        "In an ADR, keep the durable reasoning and drop numbers that go stale, mechanics such as `GIT_INDEX_FILE`, and lists of test cases. Name the test rather than enumerating its cases.",
+        "Speculative follow-ups belong in a Scope section rather than Consequences."
+      ]
+    },
+    "friction": [
+      "The first draft carried transient backstory (two bug hunts, a failed prototype), measurements and implementation mechanics that did not belong in an ADR.",
+      "A wrong citation (#153) slipped into the first draft and was only caught on re-review.",
+      "The transcript shows doc-check and the commit run twice, as a combined command and then separately, and the final outputs are not shown, so the final state is unconfirmed."
+    ],
+    "open_items": [
+      "User review of the revised ADR 13 file.",
+      "Open the ADR PR under a new trail.",
+      "Close #543, the in-process rollback attempt.",
+      "Implement the checkpoint in a single PR with the differential test across eight workspace shapes, refusal tests (hand edit, config edit, tag on `HEAD`, concurrent run) and an abort-fidelity test.",
+      "Fix `pre` so that it is idempotent.",
+      "Possibly use the checkpoint for `snapshot` later; this is deferred and recorded in Scope.",
+      "Confirm the final doc-check and the signed commit succeeded, and push when ready (nothing is pushed yet)."
+    ]
+  }
+}
