@@ -1,0 +1,120 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M7DZ6F88PKJEPDH2E92HG6TC",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-14T21:25:31.639482Z",
+  "branch": "fix/version-lock-refresh-rollback",
+  "checkpoints_count": 7,
+  "save_step_count": 7,
+  "files_touched": [
+    "crates/callisto-graph/src/apply/preflight.rs",
+    "crates/callisto-graph/src/apply/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "246128d05e24",
+  "checkpoint_transcript_start": 52258,
+  "transcript_lines_at_start": 52258,
+  "compact_transcript_start": 3763,
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 453275,
+    "cache_read_tokens": 6889160,
+    "output_tokens": 26122,
+    "api_call_count": 18,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 385
+  },
+  "summary": {
+    "intent": "Get PR #543 (rollback of lockfiles/manifests after a failed `callisto version` lockfile refresh, E208) past repeated automated review findings, then work out the right architectural fix for the E208-then-E121 recovery problem across current and future ecosystems.",
+    "outcome": "Rollback was judged the wrong mechanism after four review rounds. Reading ADR 10 and versioning.md showed retain-inputs-and-retry is the intended design, so the recommendation became making interrupted `version` runs resumable by planning from HEAD versions. The read-only fix was committed locally as superseded WIP, and a spike branch off origin/main was created to verify resume assumptions; nothing further was pushed.",
+    "learnings": {
+      "repo": [
+        "ADR 10 (native-resolution-after-version) makes each ecosystem's native tool the oracle for resolution after `version`; a failed lockfile refresh is a coded error (E208) and Callisto does not reimplement resolvers.",
+        "Apply refreshes the lockfile and stages before consuming changesets, so a failed refresh deliberately leaves changesets in place as recovery material (versioning.md:27).",
+        "Apply is already idempotent per bump via from/to: a manifest at `from` is written, one at `to` counts as done, anything else is refused (versioning.md:25).",
+        "E121 (manifest differs from HEAD while release inputs remain, looks like an interrupted run) is the documented limit of recovery, not a bug; E208's help text 'fix it, then re-run' contradicts it by sending users into E121.",
+        "Language-specific rules, such as Cargo requiring a dev-dependency range to cover the new version, must not go into the language-agnostic core; they can only be optional hints inside one ecosystem.",
+        "New ecosystems need three things for resume: a reader for the effective version at HEAD, a write idempotent by from/to, and a refresh command safe to re-run. Inherited versions (Maven parent, .NET props) go through the existing 'authority' notion, and ecosystems with no manifest version (Go) only repeat refresh and staging.",
+        "Dev-dependency range failures are the more common E208 trigger and arise from the new version, so a refresh before versioning would not catch them."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 162,
+          "end_line": 162,
+          "finding": "Planning takes base versions from `ws.base_versions()`, which reads the on-disk manifests. This is why a re-run after a partial apply bumps again and trips E121."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 478,
+          "end_line": 478,
+          "finding": "`manifest_version_at` reads a manifest's effective version at HEAD, including inheritance. E121 already uses it, so it can be reused to plan from HEAD versions when resuming."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply/preflight.rs",
+          "line": 238,
+          "end_line": 255,
+          "finding": "Preflight lets a read-only Cargo.toml in a writable directory pass. Atomic replacement then bumps it while preserving its read-only mode, so an in-place restore fails with PermissionDenied."
+        }
+      ],
+      "workflow": [
+        "When review findings keep arriving on one mechanism, treat that as a sign the mechanism is wrong. State the invariant and enumerate its dimensions before patching, and run the review prompt against your own diff before pushing.",
+        "Read the existing ADRs and architecture docs before designing a fix; they showed that several recommended options contradicted decisions already made.",
+        "Verify a design with a throwaway spike checked differentially, comparing an interrupted-then-resumed run against a clean run across several workspace shapes, before committing to implementation.",
+        "Check CI results by exit code rather than by grepping test output.",
+        "Each push triggers a new automated review, so pushing quickly and answering each finding one at a time encourages whack-a-mole fixes."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}
