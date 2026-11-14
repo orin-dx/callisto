@@ -1,0 +1,143 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M7BZETS7PD7CRXCHPSPMARVD",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-14T02:51:35.112738Z",
+  "branch": "fix/version-lock-refresh-rollback",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/error.rs",
+    "docs/errors.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "227b246869c6",
+  "checkpoint_transcript_start": 50438,
+  "transcript_lines_at_start": 50438,
+  "compact_transcript_start": 3643,
+  "token_usage": {
+    "input_tokens": 110,
+    "cache_creation_tokens": 73823,
+    "cache_read_tokens": 15048094,
+    "output_tokens": 26203,
+    "api_call_count": 53,
+    "subagent_tokens": {
+      "input_tokens": 508,
+      "cache_creation_tokens": 309525,
+      "cache_read_tokens": 34226996,
+      "output_tokens": 107297,
+      "api_call_count": 254
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 374
+  },
+  "summary": {
+    "intent": "Verify defect reports from two subagents testing the callisto CLI (manifest rewriting, plan-to-publish flows) and fix the confirmed ones via PRs.",
+    "outcome": "Reproduced the manifests agent's findings and shipped two fixes (#541 init --artifact-target trimming, #542 Python wildcard pins now fail with E319 instead of becoming exact pins). A third fix, restoring files when lockfile refresh fails (E208 then E121), was implemented with updated test, help text and docs, but its final check run, commit and PR were not completed in the transcript.",
+    "learnings": {
+      "repo": [
+        "Both subagents independently found the E208 then E121 problem: a failed lockfile refresh leaves manifests half-applied, and the documented 'fix it and re-run callisto version' advice is refused by the E121 interrupted-run guard.",
+        "apply/preflight.rs already enumerates every path a plan touches, so it can be reused for snapshot and restore around the lockfile refresh.",
+        "Repo lints reject ignoring Result values, so a failed restore must be reported rather than silently swallowed.",
+        "The existing test refresh_lockfiles_failure_stops_apply_with_coded_error_naming_command_and_lockfile encoded the old half-applied behaviour and needed updating to the new contract.",
+        "Repo workflow: changesets in .changeset/, signed commits (-S), `entire trail link` to trail 357, PRs edited via gh, and checks run via just pre-push, just lint, just doc-check and clippy on 1.100.0.",
+        "Poetry caret/tilde dependents failing for pre-release or snapshot versions is deliberate per docs/specs/versioning.json, so it is a product gap rather than a bug."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/python.rs",
+          "line": 741,
+          "end_line": 767,
+          "finding": "round_trip sends any '==' constraint, including wildcards like ==1.*, to rewrite_single, which turns it into an exact pin; rewrite_poetry_operator returns None for pre-release targets, which becomes a hard E319 in cascade.rs rewrite_edge."
+        },
+        {
+          "path": "crates/callisto-cli/src/cli.rs",
+          "line": 266,
+          "finding": "--artifact-target uses value_delimiter=',' without trimming, so 'a, b' yields ' b' and later fails the E197 safe-path-component check."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm.rs",
+          "line": 485,
+          "end_line": 500,
+          "finding": "update_dependency_spec writes the rewritten dependency spec into overrides and resolutions (loosening exact pins) and never updates pnpm.overrides."
+        },
+        {
+          "path": "crates/callisto-graph/src/changelog/write.rs",
+          "line": 62,
+          "end_line": 75,
+          "finding": "Prepending a changelog entry duplicates the H1 when the existing title is not exactly '# <package>'."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm.rs",
+          "line": 561,
+          "finding": "parse_npm_spec_str falls through to DepSpec::Opaque for 'v'-prefixed and '~>' specs, so those dependents are silently never rewritten or bumped."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports are claims, not facts: re-reproduce each with a freshly built binary before fixing.",
+        "The subagent's worktree had been removed, so verification needed a new worktree and rebuild from current main.",
+        "The shell guard blocks piping sed output into bash, so scripts are written to a file and run from there.",
+        "Use a separate branch per fix (git checkout --no-track -b ... origin/main) so PRs stay small and independent."
+      ]
+    },
+    "friction": [
+      "The original subagent worktree and binary were gone, forcing a rebuild in a new worktree.",
+      "The c.sh helper needed an edit after the first t17 run failed.",
+      "The shell guard blocked piping sed into bash, requiring a workaround.",
+      "The lockfile-restore change broke an existing test that asserted the old half-applied behaviour.",
+      "Lints forced handling of the restore Result instead of ignoring it."
+    ],
+    "open_items": [
+      "Finish the E208/E121 fix: the last check run's result is not shown, and the commit, push and PR are still to do.",
+      "Decide whether to support Poetry caret/tilde pre-release rewriting or document it as a limit.",
+      "Fix npm overrides: keep exact pins exact and also update pnpm.overrides.",
+      "Batch the config-validation PR: changelog pointing at a manifest or source file, changesets.dir or changelog accepting '..', '.git' or a backslash, and changelog=\"\" giving a confusing E314.",
+      "Handle npm 'v'-prefixed and '~>' dependency specs silently treated as Opaque, with no diagnostic.",
+      "Commit inference re-bumps on every version run until the release is tagged (follows VER-AGG-04, but is surprising).",
+      "Changelog H1 duplication when adopting Callisto over an existing changelog with a different title.",
+      "Pre-existing: validation does not predict unrewritable dev-dependency ranges before writing."
+    ]
+  }
+}

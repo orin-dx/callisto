@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_016Tp954CvziVZRHGXpcjjq7",
+  "agent_id": "a24db56a03fed8e76",
+  "subagent_type": "general-purpose",
+  "task_description": "Hunt plan-to-publish flow defects",
+  "token_usage": {
+    "input_tokens": 342,
+    "cache_creation_tokens": 218711,
+    "cache_read_tokens": 26571716,
+    "output_tokens": 70735,
+    "api_call_count": 171
+  },
+  "started_at": "2026-11-13T18:14:32.729624-08:00",
+  "completed_at": "2026-11-13T18:41:53.777341-08:00"
+}
