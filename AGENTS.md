@@ -60,6 +60,16 @@ Use the first rung that works:
 - A deliberately deferred sibling gets an explicit record: changeset note, tracked follow-up or code comment.
 - A new shared helper migrates every call site in the same change, or the rest are tracked.
 
+## Plugins
+
+Start work through these commands so their checks run:
+
+- Options before deciding: `/guide:explore`. Does it work: `/guide:spike`.
+- Bug or review findings: `/guide:fix`. Real feature or shared change: `/guide:build`.
+- Verify or find bugs: `/guide:check`. Commit and PR: `/guide:ship`.
+
+Changesets are written with `callisto add` and follow the changeset rules in this file. `/guide:build` gates shared work through a spec; the owner-confirmation rule below still applies.
+
 ## Specs and plans
 
 - Specs (`spec@1`) live in `docs/specs/`, one per area, current behavior only. Change the spec in the same PR as the behavior. No history, rationale or revision notes.
