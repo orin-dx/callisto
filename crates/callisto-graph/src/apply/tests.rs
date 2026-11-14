@@ -43,8 +43,64 @@ impl CommandRunner for RecordingRunner {
     }
 }
 
+/// Succeeds for everything except `cargo update`, which fails the way an unresolvable dependency does.
+struct FailingRefreshRunner;
+
+impl CommandRunner for FailingRefreshRunner {
+    fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
+        let refresh = program == "cargo" && args.contains(&"update");
+        Ok(CommandOutput {
+            exit_code: Some(if refresh { 101 } else { 0 }),
+            stdout: String::new(),
+            stderr: if refresh {
+                "no matching package".to_string()
+            } else {
+                String::new()
+            },
+        })
+    }
+}
+
 fn cargo_version(v: &str) -> Version {
     Version::parse(v, VersionGrammar::SemVer).expect("valid semver")
+}
+
+/// A failed lockfile refresh puts the written manifest back, so the documented retry is not refused as an
+/// interrupted run.
+#[test]
+fn a_failed_lockfile_refresh_restores_the_written_manifests() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let original = "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+    std::fs::write(root.join("Cargo.toml"), original).unwrap();
+    std::fs::write(root.join("Cargo.lock"), "# lock").unwrap();
+    let plan = VersionPlan {
+        bumps: vec![PlannedBump {
+            package: PackageId::parse("cargo:my-crate").unwrap(),
+            from: cargo_version("1.0.0"),
+            to: cargo_version("1.1.0"),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![VersionWriteTarget::Manifest(PathBuf::from("Cargo.toml"))],
+        }],
+        ..Default::default()
+    };
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+
+    let result = apply_version_plan(
+        root,
+        &plan,
+        &FailingRefreshRunner,
+        &opts,
+        &ApplyPermit::force_for_tests(),
+    );
+
+    assert!(result.is_err(), "the failed refresh must be reported");
+    assert_eq!(std::fs::read_to_string(root.join("Cargo.toml")).unwrap(), original);
 }
 
 /// A bump-precondition failure inside a batched group must block
@@ -791,8 +847,8 @@ fn refresh_lockfiles_failure_stops_apply_with_coded_error_naming_command_and_loc
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(root.join("package.json")).unwrap()).unwrap();
     assert_eq!(
-        manifest["version"], "1.1.0",
-        "the failure must occur after the manifest write"
+        manifest["version"], "1.0.0",
+        "the failed refresh must put the written manifest back"
     );
 }
 
