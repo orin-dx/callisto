@@ -24,8 +24,17 @@ Rules for AI agents working in this repo.
 - Scoped iteration: one `cargo test -p <crate>` or `cargo clippy -p <crate> --all-targets -- -D warnings` at a time.
   - Not `moon run <project>:test`: its per-project fan-out serializes on `target/`'s build lock.
   - Never run cargo builds in parallel.
-- Changesets: `callisto add --package cargo/callisto-cli:<bump> --summary "..."` (non-interactive). Target `callisto-cli`: its changelog is the one users read. One changeset per user-visible topic. Lead with what the user sees now and say why it matters to them; add an action or limit when it matters. A fix to something not yet released has no changeset. Use a short sentence for a simple change, or a short lead and bullets for related details. No internal names, mechanism or filler.
 - Never `git checkout -- Cargo.lock` as cleanup. A lockfile diff means investigate, not discard.
+
+## Changesets
+
+- Write one with `callisto add --package cargo/callisto-cli:<bump> --summary "..."` (non-interactive). Target `callisto-cli`: its changelog is the one users read. One changeset per user-visible topic. A fix to something not yet released has no changeset.
+- Changesets become the project's changelog, so write them for the people who use it, not for the implementer.
+- Open with a bold lead-in naming the change as the user sees it, then one line on its value: what they can now do or what changed for them.
+- When there is more to say, add short bullets in this order: why it matters, how to adopt it (commands, configuration, migration), and limits they will hit. Use sub-bullets for detail.
+- Group a longer entry under bold labels such as **Upgrading** or **Scripting**. Do not use `#` headings; the changelog supplies those.
+- Put a breaking change in its own paragraph starting `**Breaking:**` (old behavior, new behavior, what to do), and a step users must take in one starting `**Action:**`. Never inside a bullet: the release PR lists them under "Read before merging" only as paragraphs.
+- One idea per bullet. Leave out internals unless the user must know them.
 
 ## Invariants
 
@@ -60,6 +69,18 @@ Use the first rung that works:
 - A deliberately deferred sibling gets an explicit record: changeset note, tracked follow-up or code comment.
 - A new shared helper migrates every call site in the same change, or the rest are tracked.
 
+## Plugins
+
+Start work through these commands so their checks run:
+
+- Options before deciding: `/guide:explore`. Does it work: `/guide:spike`.
+- Bug or review findings: `/guide:fix`. Real feature or shared change: `/guide:build`.
+- Verify or find bugs: `/guide:check`. Commit: `/guide:ship`.
+
+Changesets are written with `callisto add` and follow the changeset rules in this file. `/guide:build` gates shared work through a spec; the owner-confirmation rule below still applies.
+
+Pull requests are opened by Entire from the branch's trail: push the branch and create or link its trail (`entire trail create`). Do not open the PR with `gh`.
+
 ## Specs and plans
 
 - Specs (`spec@1`) live in `docs/specs/`, one per area, current behavior only. Change the spec in the same PR as the behavior. No history, rationale or revision notes.
@@ -75,7 +96,7 @@ Use the first rung that works:
 - Succinct: short sentences, bullets, tables. No backstory, hedging or filler.
 - Never hard-wrap Markdown or PR bodies: one line per paragraph.
 - Code comments: one short line, only for a non-obvious why. Wrap at 120 columns (`rustfmt.toml`). No history ("used to", "previously"): git records it.
-- No claude.ai session links in commits, PRs or files.
+- A commit or PR may end with the `Claude-Session:` trailer. Keep claude.ai session links out of source and documentation files.
 
 <!-- entire-agent:begin -->
 Read .entire/agent-guide.md for this repository's workflow, source inspection, and verification guidance.

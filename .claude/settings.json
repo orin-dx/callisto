@@ -1,13 +1,14 @@
 {
   "enabledPlugins": {
-    "axiom@orin-dx-agent-plugins": true,
-    "canon@orin-dx-agent-plugins": true,
-    "delta@orin-dx-agent-plugins": true,
-    "graph@orin-dx-agent-plugins": true,
-    "lambda@orin-dx-agent-plugins": true,
-    "proof@orin-dx-agent-plugins": true,
-    "trace@orin-dx-agent-plugins": true,
-    "vector@orin-dx-agent-plugins": true
+    "courier@wisp-plugins": true,
+    "guide@wisp-plugins": true,
+    "navigator@wisp-plugins": true,
+    "ranger@wisp-plugins": true,
+    "scribe@wisp-plugins": true,
+    "sentinel@wisp-plugins": true,
+    "smith@wisp-plugins": true,
+    "vanguard@wisp-plugins": true,
+    "weaver@wisp-plugins": true
   },
   "hooks": {
     "PostToolUse": [
