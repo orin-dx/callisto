@@ -254,11 +254,9 @@ pub struct SnapshotArgs {
 }
 
 /// A target triple typed after a comma (`a, b`) keeps no stray space, which config validation would reject later.
+/// Empty entries stay, so `collect_answers` can name the empty one.
 fn trimmed_triple(raw: &str) -> Result<String, String> {
-    match raw.trim() {
-        "" => Err("a target triple cannot be empty".to_owned()),
-        triple => Ok(triple.to_owned()),
-    }
+    Ok(raw.trim().to_owned())
 }
 
 /// Arguments for the `init` command.
@@ -658,7 +656,6 @@ mod tests {
             panic!("not init")
         };
         assert_eq!(args.artifact_targets, ["a-b", "c-d"]);
-        assert!(Cli::try_parse_from(["callisto", "init", "--artifact-target", "a,,b"]).is_err());
     }
 
     #[test]
