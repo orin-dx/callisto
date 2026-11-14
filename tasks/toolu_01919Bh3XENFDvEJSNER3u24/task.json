@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01919Bh3XENFDvEJSNER3u24",
+  "agent_id": "a7ec3ec7f0007989e",
+  "subagent_type": "Explore",
+  "task_description": "Survey partial-failure write sites",
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 73310,
+    "cache_read_tokens": 1151289,
+    "output_tokens": 7761,
+    "api_call_count": 22
+  },
+  "started_at": "2026-11-14T13:35:13.238222-08:00",
+  "completed_at": "2026-11-14T13:37:08.972115-08:00"
+}
