@@ -1,0 +1,120 @@
+{
+  "cli_version": "0.13.4-nightly.202611121940.ce16562b9",
+  "checkpoint_id": "01M7BY3987QNTRJKN05N0XHEBE",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-14T02:27:46.826254Z",
+  "branch": "fix/init-artifact-target-trim",
+  "checkpoints_count": 14,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "224ff5e526e5",
+  "checkpoint_transcript_start": 50007,
+  "transcript_lines_at_start": 50007,
+  "compact_transcript_start": 3606,
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 404326,
+    "cache_read_tokens": 4825227,
+    "output_tokens": 19441,
+    "api_call_count": 23,
+    "subagent_tokens": {
+      "input_tokens": 4,
+      "cache_creation_tokens": 44875,
+      "cache_read_tokens": 41204,
+      "output_tokens": 344,
+      "api_call_count": 2
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 373
+  },
+  "summary": {
+    "intent": "Wrap up the 0.20.1 fix PRs (#537-#540) and release PR #533, then design a language-agnostic, goal-oriented code review prompt (for Entire's review agent) and launch an agentic whole-codebase defect hunt.",
+    "outcome": "PRs #537-#540 were merged with #540's CI green on all 17 checks, and the worktree and local branches were cleaned up. Release PR #533 (0.20.1, seven fixes) is mergeable but waits on CI and Entire Gates approval. A lean tagged review prompt was drafted, and two agents were launched, one on plan-to-publish and one on manifests and cascade. They are running with permission to execute the binary and to report only reproduced defects.",
+    "learnings": {
+      "repo": [
+        "CI used `channel = \"stable\"` for Rust, so a new toolchain (1.100) broke clippy, test-build and coverage on #538 and #539 until #540 landed; pinning a tested version would prevent this.",
+        "Release PR #533 bundles all seven changes (#531, #534-#539); #540 is test-only and has no changeset.",
+        "Entire Gates showed `fail` on #533 and CI there needs manual approval; it is unknown whether the gate result is stale.",
+        "Merging main into branches (not rebasing) keeps signed commits intact.",
+        "Real bugs found in earlier hunts were mostly cross-module: subdirectory path handling differing across `version`, `release_decision` and `release`; fixed groups interacting with pre mode; changelog reading cascade state altered by a later group pass.",
+        "Settled decisions agents must not flag: emoji in release PR body, E194, exit-code judgment calls, Entire auto-push.",
+        "Docs consulted for invariants: ARCHITECTURE.md, docs/architecture/, docs/specs/*.json, docs/stability.md, AGENTS.md; there is no REVIEW.md.",
+        "An existing test asserted the pre-mode downgrade bug, so a passing test is not evidence of intent.",
+        "The codebase is about 46k lines across callisto-graph, callisto-cli, callisto-manifests and callisto-model crates."
+      ],
+      "code": [],
+      "workflow": [
+        "Agent findings labelled 'confirmed' often lack proof; reproduce each finding with the real binary or a failing test before fixing.",
+        "Agent-based review works better when given a goal, invariants and permission to execute than when split into crate shards with handoff notes, which recreates human org-chart process.",
+        "Review prompts work better stating goal, why each rule exists, proof bar and output contract than a step-by-step method; use tags, calm tone, a stopping condition and put the Change last.",
+        "Don't make reviewers conservative in several places at once (proof, confidence floor, exclusions, author-would-fix); keep proof as the one gate.",
+        "Compare review models and prompts against an answer key of past Changes (#538, #539, #535, #528, #531 plus clean ones) scoring defects found, false positives and cost.",
+        "Scripts were often a workaround for the worktree guard rather than a real need; prefer direct commands.",
+        "Keep one PR per topic, signed commits and the repo's own checks; drop ceremony such as long PR bodies for one-line fixes."
+      ]
+    },
+    "friction": [
+      "Worktree guard forced helper scripts for simple removals.",
+      "Earlier plans over-engineered with shards, boundary notes and multi-wave agents, and had to be rethought after user pushback.",
+      "Review prompt went through several rounds of simplification as it was too prescriptive.",
+      "Uncertainty about the review model ('gpt sol medium') and whether the sandbox permits running the program.",
+      "Entire Gates status on #533 is unclear and needs manual CI approval."
+    ],
+    "open_items": [
+      "User must approve CI and merge release PR #533 to publish 0.20.1 after checking the Entire Gates result.",
+      "Delete remote branches for #537-#540.",
+      "Reproduce, fix and PR separately each defect the two running agents report.",
+      "Decide OIDC trusted publishing (generated workflow vs config key, `id-token: write` on `execute`; plan in docs/projects/OIDC-TRUSTED-PUBLISHING.md).",
+      "Pin the CI Rust toolchain to a tested version instead of `stable`.",
+      "Another bug hunt on npm workspace and lockfile handling and the GitHub release/tag flow.",
+      "Docs PR #495 is an old draft; check if stale and close or refresh.",
+      "Build an answer key to compare review models and effort levels, and test the revised prompt on known past Changes.",
+      "Decide whether the review environment can allow running the program, and whether the UI uses the confidence field."
+    ]
+  }
+}

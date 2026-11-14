@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_013KuPH8KdLdn2WSW9bN1VTt",
+  "agent_id": "a81a9a4f69fa01be4",
+  "subagent_type": "general-purpose",
+  "task_description": "Hunt manifest and cascade defects",
+  "token_usage": {
+    "input_tokens": 214,
+    "cache_creation_tokens": 152300,
+    "cache_read_tokens": 12756821,
+    "output_tokens": 46349,
+    "api_call_count": 107
+  },
+  "started_at": "2026-11-13T18:14:32.749836-08:00",
+  "completed_at": "2026-11-13T18:24:29.204068-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
