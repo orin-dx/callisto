@@ -573,6 +573,10 @@ fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
         return DepSpec::Catalog(name);
     }
 
+    let original = s;
+    let normalized = normalize_node_semver_clause(s);
+    let s = normalized.as_deref().unwrap_or(s);
+
     if crate::common::is_bare_semver(s)
         && let Ok(v) = Version::parse(s, VersionGrammar::SemVer)
     {
@@ -583,7 +587,29 @@ fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
         return DepSpec::Range(req, s.to_string());
     }
 
-    DepSpec::Opaque(s.to_string())
+    DepSpec::Opaque(original.to_string())
+}
+
+/// A single clause as node-semver reads it (`v1.2.3`, `=v1.2.3`, `^v1.2.3`, `~>1.2.3`) rewritten to the form the range
+/// parser knows, or `None` when there is nothing to change. Without it such a spec is opaque, so it is never tested
+/// against a bumped dependency and its dependent silently keeps the old version.
+fn normalize_node_semver_clause(s: &str) -> Option<String> {
+    let trimmed = s.trim();
+    if trimmed.contains(char::is_whitespace) || trimmed.contains('|') {
+        return None;
+    }
+    let (op, rest) = ["~>", "^", "~", ">=", ">", "<=", "<", "="]
+        .iter()
+        .find_map(|op| trimmed.strip_prefix(op).map(|rest| (*op, rest)))
+        .unwrap_or(("", trimmed));
+    let version = rest
+        .strip_prefix(['v', 'V'])
+        .filter(|after| after.starts_with(|c: char| c.is_ascii_digit()));
+    let op = if op == "~>" { "~" } else { op };
+    match (version, trimmed.starts_with("~>")) {
+        (None, false) => None,
+        (version, _) => Some(format!("{op}{}", version.unwrap_or(rest))),
+    }
 }
 
 pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
