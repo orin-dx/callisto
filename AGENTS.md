@@ -33,7 +33,7 @@ Rules for AI agents working in this repo.
 - Open with a bold lead-in naming the change as the user sees it, then one line on its value: what they can now do or what changed for them.
 - When there is more to say, add short bullets in this order: why it matters, how to adopt it (commands, configuration, migration), and limits they will hit. Use sub-bullets for detail.
 - Group a longer entry under bold labels such as **Upgrading** or **Scripting**. Do not use `#` headings; the changelog supplies those.
-- Mark a breaking change with a **Breaking** label that states the old behavior, the new behavior and what to do.
+- Put a breaking change in its own paragraph starting `**Breaking:**` (old behavior, new behavior, what to do), and a step users must take in one starting `**Action:**`. Never inside a bullet: the release PR lists them under "Read before merging" only as paragraphs.
 - One idea per bullet. Leave out internals unless the user must know them.
 
 ## Invariants
