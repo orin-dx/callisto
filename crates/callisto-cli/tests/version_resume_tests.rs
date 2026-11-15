@@ -609,6 +609,58 @@ fn a_different_workspace_does_not_resume_anothers_checkpoint() {
     );
 }
 
+/// A caller that selects the repository through `GIT_DIR` would have the scratch checkout act on the real one, so no
+/// checkpoint is recorded for it.
+#[test]
+fn a_run_with_git_dir_set_records_no_checkpoint() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+
+    let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", repo.workspace.to_str().unwrap(), "version"])
+        .env("PATH", path)
+        .env("GIT_DIR", repo.root.join(".git"))
+        .env("FAIL_PROG", "cargo")
+        .env("FAIL_FLAG", &flag)
+        .output()
+        .unwrap();
+
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("E208"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!has_checkpoint(&repo.root));
+}
+
+/// Which directories are packages is decided from `pnpm-workspace.yaml` and similar files, so editing one after the
+/// failure changes what the plan would do.
+#[test]
+fn a_workspace_membership_file_edited_after_the_failure_refuses_the_resume() {
+    let repo = repo(
+        |ws| {
+            npm_range(ws);
+            write(ws, "pnpm-workspace.yaml", "packages:\n  - 'js/*'\n");
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    version(&repo.workspace, &bin, Some(("npm", &flag)));
+    write(&repo.workspace, "pnpm-workspace.yaml", "packages:\n  - 'js/app'\n");
+
+    let out = version(&repo.workspace, &bin, None);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains("E340") && stderr.contains("pnpm-workspace.yaml"),
+        "{stderr}"
+    );
+}
+
 /// A checkpoint belongs to its own worktree: another worktree neither sees it nor discards it.
 #[test]
 fn linked_worktrees_keep_their_own_checkpoints() {

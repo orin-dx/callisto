@@ -216,6 +216,45 @@ impl GitAccess<'_> {
         Ok(listed.lines().map(std::path::PathBuf::from).collect())
     }
 
+    /// Every file under this root with one of `names` as its file name, in `rev`'s tree or on disk (tracked or
+    /// untracked, not ignored), relative to this root.
+    pub fn files_named(
+        &self,
+        rev: &str,
+        names: &[&str],
+    ) -> Result<std::collections::BTreeSet<std::path::PathBuf>, VcsError> {
+        let at_rev = self.git_stdout(&[
+            "-c",
+            "core.quotepath=off",
+            "ls-tree",
+            "-r",
+            "--name-only",
+            rev,
+            "--",
+            ".",
+        ])?;
+        let on_disk = self.git_stdout(&[
+            "-c",
+            "core.quotepath=off",
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+        ])?;
+        Ok(at_rev
+            .lines()
+            .chain(on_disk.lines())
+            .map(std::path::PathBuf::from)
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| names.contains(&name))
+            })
+            .collect())
+    }
+
     /// Removes a worktree [`Self::add_checkpoint_worktree`] added.
     pub fn remove_worktree(&self, dir: &Path) -> Result<(), VcsError> {
         let dir = dir.to_string_lossy();

@@ -79,14 +79,18 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     };
 
     // An interrupted run left its inputs at the checkpoint (ADR 13): plan from them, or refuse if they changed.
-    // A repository with no commits has nothing to record a checkpoint against.
+    // No commits, or a repository chosen through GIT_DIR and friends (the scratch checkout would act on the real
+    // one): no checkpoint, and `version` behaves as it did before.
     let git = ws.git_access();
+    let repository_selected = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some());
     let facts = match git.resolve_commit("HEAD").map_err(GraphError::from)? {
-        Some(_) => Some(
+        Some(_) if !repository_selected => Some(
             git.checkpoint_facts(env!("CARGO_PKG_VERSION"))
                 .map_err(GraphError::from)?,
         ),
-        None => None,
+        _ => None,
     };
     let checkpoint = match &facts {
         Some(_) => git.checkpoint(VERSION_CHECKPOINT).map_err(GraphError::from)?,

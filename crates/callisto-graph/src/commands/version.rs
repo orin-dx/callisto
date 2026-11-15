@@ -458,6 +458,11 @@ pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
 
     let mut inputs: BTreeSet<std::path::PathBuf> = ws.manifest_cache.borrow().keys().cloned().collect();
     inputs.insert(std::path::PathBuf::from("callisto.toml"));
+    // Discovery reads these to decide which directories are packages, and some of them without opening a manifest.
+    inputs.extend(git.files_named(
+        rev,
+        &["pnpm-workspace.yaml", "package.json", "Cargo.toml", "pyproject.toml"],
+    )?);
     inputs.extend(crate::apply::written_paths(plan));
     let dir = &ws.config.changesets_dir;
     inputs.extend(git.files_at(rev, dir)?);
