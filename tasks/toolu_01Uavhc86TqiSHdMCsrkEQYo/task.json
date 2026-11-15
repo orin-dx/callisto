@@ -1,0 +1,8 @@
+{
+  "tool_use_id": "toolu_01Uavhc86TqiSHdMCsrkEQYo",
+  "agent_id": "acf5605da041cec43",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for errors.md alignment",
+  "started_at": "2026-11-11T15:00:14.965265-08:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

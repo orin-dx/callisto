@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01XBSuLAaFVrzyzKnJBtqzz4",
+  "agent_id": "a0a64a1f61b5c396d",
+  "subagent_type": "general-purpose",
+  "task_description": "Diagnose fuzz sweep failures",
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 42501,
+    "cache_read_tokens": 352881,
+    "output_tokens": 3693,
+    "api_call_count": 7
+  },
+  "started_at": "2026-11-15T13:06:35.643767-08:00",
+  "completed_at": "2026-11-15T13:07:21.538796-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

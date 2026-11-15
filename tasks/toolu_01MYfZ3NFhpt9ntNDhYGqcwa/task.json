@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01MYfZ3NFhpt9ntNDhYGqcwa",
+  "agent_id": "a286b220fe8141737",
+  "subagent_type": "general-purpose",
+  "task_description": "Diagnose mutants shard 3",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 46011,
+    "cache_read_tokens": 488207,
+    "output_tokens": 5469,
+    "api_call_count": 9
+  },
+  "started_at": "2026-11-15T13:06:35.643697-08:00",
+  "completed_at": "2026-11-15T13:07:56.504512-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
