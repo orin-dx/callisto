@@ -14,6 +14,19 @@ use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
+/// A throwaway worktree of the checkpoint, removed when dropped so no exit path leaves one registered.
+struct ResumeTree<'g, 'r> {
+    git: &'g callisto_model::vcs::GitAccess<'r>,
+    tree: std::path::PathBuf,
+    _dir: tempfile::TempDir,
+}
+
+impl Drop for ResumeTree<'_, '_> {
+    fn drop(&mut self) {
+        self.git.remove_worktree(&self.tree).ok();
+    }
+}
+
 pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     if global.dry_run {
         for (flag, set) in [
@@ -49,40 +62,44 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         Some(_) => git.checkpoint(VERSION_CHECKPOINT).map_err(GraphError::from)?,
         None => None,
     };
-    let resume_dir = match (&checkpoint, &facts) {
-        (Some(checkpoint), Some(facts)) => {
-            let changes = callisto_graph::commands::checkpoint_input_changes(&ws, checkpoint, facts)?;
-            if !changes.is_empty() {
-                let abort = callisto_graph::commands::checkpoint_abort_commands(&ws, checkpoint)?;
-                return Err(GraphError::CheckpointInputsChanged { changes, abort }.into());
-            }
+    let resume_tree = match &checkpoint {
+        Some(_) => {
             let dir = tempfile::tempdir().map_err(|source| CliError::Io { source, path: None })?;
             let tree = dir.path().join("tree");
             git.add_checkpoint_worktree(VERSION_CHECKPOINT, &tree)
                 .map_err(GraphError::from)?;
-            let prefix = git.root_prefix().map_err(GraphError::from)?;
-            Some((dir, tree, prefix))
+            Some(ResumeTree { git, tree, _dir: dir })
         }
-        _ => None,
+        None => None,
     };
-    let checkpoint_ws = match &resume_dir {
-        Some((_, tree, prefix)) => Some(load_workspace(
-            &GlobalArgs {
-                cwd: tree.join(prefix),
-                ..global.clone()
-            },
-            &runner,
-        )?),
+    let checkpoint_ws = match &resume_tree {
+        Some(resume) => {
+            let prefix = git.root_prefix().map_err(GraphError::from)?;
+            Some(load_workspace(
+                &GlobalArgs {
+                    cwd: resume.tree.join(prefix),
+                    ..global.clone()
+                },
+                &runner,
+            )?)
+        }
         None => None,
     };
     let plan_ws = checkpoint_ws.as_ref().unwrap_or(&ws);
 
     let plan = callisto_graph::commands::plan_version_dated(plan_ws, &inference, &opts, Some(&today_utc()))?;
 
-    // Without a checkpoint, refuses when disk already shows a bump HEAD lacks while release inputs or staged version
-    // state remain.
-    if checkpoint_ws.is_none() {
-        callisto_graph::commands::check_partial_run(&ws)?;
+    match (&checkpoint, &facts) {
+        (Some(checkpoint), Some(facts)) => {
+            let changes = callisto_graph::commands::checkpoint_input_changes(&ws, checkpoint, facts, &plan)?;
+            if !changes.is_empty() {
+                let abort = callisto_graph::commands::checkpoint_abort_commands(&ws, checkpoint, &plan)?;
+                return Err(GraphError::CheckpointInputsChanged { changes, abort }.into());
+            }
+        }
+        // Without a checkpoint, refuses when disk already shows a bump HEAD lacks while release inputs or staged
+        // version state remain.
+        _ => callisto_graph::commands::check_partial_run(&ws)?,
     }
 
     // Escalated diagnostics (e.g. --strict on "no pending changesets") must fail before anything is written.
@@ -116,10 +133,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     // The plan is in memory, so the checkpoint's worktree has done its job.
     drop(checkpoint_ws);
-    if let Some((dir, tree, _)) = resume_dir {
-        git.remove_worktree(&tree).ok();
-        drop(dir);
-    }
+    drop(resume_tree);
 
     let apply_opts = ApplyOptions {
         refresh_lockfiles: !args.no_refresh_lockfiles,

@@ -14,7 +14,7 @@ fn fake_tools(dir: &Path) -> PathBuf {
     let bin = dir.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    for prog in ["cargo", "npm", "uv"] {
+    for prog in ["cargo", "npm", "uv", "yarn", "pnpm", "bun"] {
         let script = format!(
             "#!/bin/sh\nif [ \"$FAIL_PROG\" = {prog} ] && [ ! -e \"$FAIL_FLAG\" ]; then touch \"$FAIL_FLAG\"; \
              echo simulated failure >&2; exit 1; fi\nif [ {prog} = cargo ] && [ \"$1\" != update ]; then exec \"{cargo}\" \
@@ -234,49 +234,231 @@ fn a_resumed_run_leaves_exactly_what_an_uninterrupted_run_leaves() {
         ),
     ];
     for (name, shape, subdir, failing, uncommitted) in cases {
-        let control = repo(shape, subdir, uncommitted);
-        let bin = fake_tools(control.root.parent().unwrap());
-        let out = version(&control.workspace, &bin, None);
-        assert!(
-            out.status.success(),
-            "{name}: control run: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        let resumed = repo(shape, subdir, uncommitted);
-        let bin = fake_tools(resumed.root.parent().unwrap());
-        let flag = resumed.root.parent().unwrap().join("failed-once");
-        let first = version(&resumed.workspace, &bin, Some((failing, &flag)));
-        assert!(
-            String::from_utf8_lossy(&first.stderr).contains("E208"),
-            "{name}: first run should fail with E208"
-        );
-        assert!(
-            has_checkpoint(&resumed.root),
-            "{name}: the failed run keeps its checkpoint"
-        );
-        let out = version(&resumed.workspace, &bin, None);
-        assert!(
-            out.status.success(),
-            "{name}: resume: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        assert!(
-            !has_checkpoint(&resumed.root),
-            "{name}: a completed run removes its checkpoint"
-        );
-        assert_eq!(
-            git(&resumed.root, &["worktree", "list"]).lines().count(),
-            1,
-            "{name}: no worktree is left"
-        );
-        assert_eq!(
-            state(&control.root),
-            state(&resumed.root),
-            "{name}: resumed tree differs from an uninterrupted run"
-        );
+        assert_resume_matches(name, shape, subdir, failing, uncommitted, |_| {});
     }
+}
+
+/// Runs `version` on two identical repositories, once uninterrupted and once with its `failing` lockfile tool failing
+/// the first time and the run repeated, and asserts they end the same. `prepare` runs on each after its first commit.
+fn assert_resume_matches(
+    name: &str,
+    shape: Shape,
+    subdir: &str,
+    failing: &str,
+    uncommitted: Option<&str>,
+    prepare: fn(&Repo),
+) -> (Repo, Repo) {
+    let control = repo(shape, subdir, uncommitted);
+    prepare(&control);
+    let bin = fake_tools(control.root.parent().unwrap());
+    let out = version(&control.workspace, &bin, None);
+    assert!(
+        out.status.success(),
+        "{name}: control run: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let resumed = repo(shape, subdir, uncommitted);
+    prepare(&resumed);
+    let bin = fake_tools(resumed.root.parent().unwrap());
+    let flag = resumed.root.parent().unwrap().join("failed-once");
+    let first = version(&resumed.workspace, &bin, Some((failing, &flag)));
+    assert!(
+        String::from_utf8_lossy(&first.stderr).contains("E208"),
+        "{name}: first run should fail with E208"
+    );
+    assert!(
+        has_checkpoint(&resumed.root),
+        "{name}: the failed run keeps its checkpoint"
+    );
+    let out = version(&resumed.workspace, &bin, None);
+    assert!(
+        out.status.success(),
+        "{name}: resume: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert!(
+        !has_checkpoint(&resumed.root),
+        "{name}: a completed run removes its checkpoint"
+    );
+    assert_eq!(
+        git(&resumed.root, &["worktree", "list"]).lines().count(),
+        1,
+        "{name}: no worktree is left"
+    );
+    assert_eq!(
+        state(&control.root),
+        state(&resumed.root),
+        "{name}: resumed tree differs from an uninterrupted run"
+    );
+    (control, resumed)
+}
+
+/// Cargo and npm, with the npm lockfile named `lock`.
+fn npm_lock_is(ws: &Path, lock: &str) {
+    cargo_and_npm(ws);
+    fs::remove_file(ws.join("package-lock.json")).unwrap();
+    write(ws, lock, "# lock\n");
+}
+
+#[test]
+fn a_symlinked_a_binary_and_a_read_only_file_come_through_a_resume_unchanged() {
+    // A symlinked yarn.lock that Cargo's failed refresh never touched stays a symlink.
+    let (_, resumed) = assert_resume_matches(
+        "symlinked lockfile",
+        |ws| {
+            npm_lock_is(ws, "shared.lock");
+            fs::remove_file(ws.join("shared.lock")).unwrap();
+            write(ws, "real.lock", "# yarn\n");
+            std::os::unix::fs::symlink("real.lock", ws.join("yarn.lock")).unwrap();
+        },
+        "",
+        "cargo",
+        None,
+        |_| {},
+    );
+    assert!(fs::symlink_metadata(resumed.workspace.join("yarn.lock"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
+    // A binary lockfile that no tool rewrites keeps its bytes.
+    let bytes = [0x00, 0xff, 0xfe, 0x01];
+    let (_, resumed) = assert_resume_matches(
+        "binary lockfile",
+        |ws| {
+            npm_lock_is(ws, "bun.lockb");
+            fs::write(ws.join("bun.lockb"), [0x00, 0xff, 0xfe, 0x01]).unwrap();
+        },
+        "",
+        "cargo",
+        None,
+        |_| {},
+    );
+    assert_eq!(fs::read(resumed.workspace.join("bun.lockb")).unwrap(), bytes);
+
+    // A read-only manifest the run rewrites keeps its mode.
+    let (_, resumed) = assert_resume_matches("read-only manifest", cargo_cascade, "", "cargo", None, |repo| {
+        let manifest = repo.workspace.join("crates/b/Cargo.toml");
+        fs::set_permissions(&manifest, fs::Permissions::from_mode(0o444)).unwrap();
+    });
+    let mode = fs::metadata(resumed.workspace.join("crates/b/Cargo.toml"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o444);
+}
+
+#[test]
+fn a_checkout_with_crlf_line_endings_still_resumes() {
+    let (_, resumed) = assert_resume_matches("crlf", cargo_cascade, "", "cargo", None, |repo| {
+        write(&repo.workspace, ".gitattributes", "*.md text eol=crlf\n");
+        git(&repo.root, &["add", ".gitattributes"]);
+        git(&repo.root, &["commit", "-qm", "attributes"]);
+        // Check the changeset out again so it has CRLF endings on disk, as on Windows or with autocrlf.
+        fs::remove_file(repo.workspace.join(".changeset/one.md")).unwrap();
+        git(&repo.root, &["checkout", "--", ".changeset/one.md"]);
+    });
+    assert!(!resumed.workspace.join(".changeset/one.md").exists());
+}
+
+/// An npm workspace where `app` depends on `ui` with a range the bump still covers.
+fn npm_range(ws: &Path) {
+    write(
+        ws,
+        "package.json",
+        "{\"name\":\"root\",\"private\":true,\"workspaces\":[\"js/*\"]}\n",
+    );
+    write(ws, "js/ui/package.json", "{\"name\":\"ui\",\"version\":\"1.0.0\"}\n");
+    write(
+        ws,
+        "js/app/package.json",
+        "{\"name\":\"app\",\"version\":\"1.0.0\",\"dependencies\":{\"ui\":\"^1.0.0\"}}\n",
+    );
+    write(ws, "package-lock.json", "{}\n");
+    write(ws, "callisto.toml", "");
+    write(ws, ".changeset/one.md", "---\n\"ui\": minor\n---\n\nUi change\n");
+}
+
+#[test]
+fn a_manifest_edited_after_the_failure_refuses_the_resume() {
+    let repo = repo(npm_range, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    version(&repo.workspace, &bin, Some(("npm", &flag)));
+    // Pinning the dependency changes what the plan would do; a resume must not run on the stale plan.
+    let manifest = repo.workspace.join("js/app/package.json");
+    let edited = "{\"name\":\"app\",\"version\":\"1.0.0\",\"dependencies\":{\"ui\":\"1.0.0\"}}\n";
+    fs::write(&manifest, edited).unwrap();
+
+    let out = version(&repo.workspace, &bin, None);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains("E340") && stderr.contains("js/app/package.json"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read_to_string(&manifest).unwrap(), edited);
+}
+
+#[test]
+fn the_printed_abort_steps_never_remove_a_file_the_user_added() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    version(&repo.workspace, &bin, Some(("cargo", &flag)));
+    write(&repo.workspace, ".changeset/two.md", "---\n\"a\": patch\n---\n\nMore\n");
+    write(&repo.workspace, "notes.txt", "mine\n");
+
+    let refused = version(&repo.workspace, &bin, None);
+    let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
+    assert!(stderr.contains("E340"), "{stderr}");
+    for line in stderr.lines() {
+        let step = line.trim_start_matches(|c: char| c.is_whitespace() || c == '│');
+        if step.starts_with("git ") || step.starts_with("rm ") {
+            let status = Command::new("sh")
+                .args(["-c", step])
+                .current_dir(&repo.workspace)
+                .status()
+                .unwrap();
+            assert!(status.success(), "abort step `{step}` failed");
+        }
+    }
+
+    assert!(
+        repo.workspace.join(".changeset/two.md").exists() && repo.workspace.join("notes.txt").exists(),
+        "the abort steps removed a file the user added"
+    );
+}
+
+#[test]
+fn a_dry_run_leaves_other_worktrees_registered() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let other = repo.root.parent().unwrap().join("other");
+    git(
+        &repo.root,
+        &["worktree", "add", "--detach", "-q", other.to_str().unwrap()],
+    );
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    version(&repo.workspace, &bin, Some(("cargo", &flag)));
+    // The other worktree's directory is away, as on an unmounted drive.
+    let away = repo.root.parent().unwrap().join("away");
+    fs::rename(&other, &away).unwrap();
+
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", repo.workspace.to_str().unwrap(), "--dry-run", "version"])
+        .env("PATH", path)
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        git(&repo.root, &["worktree", "list"]).lines().count(),
+        2,
+        "a dry run must not prune a worktree whose directory is away"
+    );
 }
 
 #[test]

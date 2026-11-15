@@ -407,13 +407,15 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     })
 }
 
-/// What changed since `checkpoint` among the inputs a plan reads: `HEAD`, tags, the Callisto version, `callisto.toml`
-/// and the changesets (new or edited; a removed one was consumed by the run). `pre.json` is left out because a
-/// pre-mode run writes it itself.
+/// What changed since `checkpoint` among the inputs `plan` was made from: `HEAD`, tags, the Callisto version,
+/// `callisto.toml`, the changesets (new or edited; a removed one was consumed by the run), and every manifest the plan
+/// reads but does not write. A manifest the plan writes may differ, because the interrupted run may have written it;
+/// apply's `from`/`to` guard checks its version. `pre.json` is left out because a pre-mode run writes it itself.
 pub fn checkpoint_input_changes<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     checkpoint: &callisto_model::vcs::Checkpoint,
     now: &callisto_model::vcs::CheckpointFacts,
+    plan: &VersionPlan,
 ) -> Result<Vec<String>, GraphError> {
     let then = &checkpoint.facts;
     let mut changes = Vec::new();
@@ -432,24 +434,43 @@ pub fn checkpoint_input_changes<R: CommandRunner, D: DependencyResolver>(
     let git = ws.git_access();
     let rev = checkpoint.commit.as_str();
     let dir = &ws.config.changesets_dir;
-    let mut paths: BTreeSet<std::path::PathBuf> = git.files_at(rev, dir)?.into_iter().collect();
+    let written = crate::apply::written_paths(plan);
+
+    let mut changesets: BTreeSet<std::path::PathBuf> = git.files_at(rev, dir)?.into_iter().collect();
     if let Ok(entries) = std::fs::read_dir(ws.root.join(dir)) {
-        paths.extend(
+        changesets.extend(
             entries
                 .flatten()
                 .filter(|entry| entry.path().is_file())
                 .map(|entry| dir.join(entry.file_name())),
         );
     }
-    paths.remove(&ws.config.pre_json_path());
-    let config = std::path::PathBuf::from("callisto.toml");
-    paths.insert(config.clone());
-    for path in paths {
-        let recorded = git.read_at(rev, &path)?;
-        let current = std::fs::read_to_string(ws.root.join(&path)).ok();
+    changesets.remove(&ws.config.pre_json_path());
+    for path in changesets {
         // A changeset that is gone was consumed by the interrupted run itself.
-        let consumed = path != config && recorded.is_some() && current.is_none();
-        if recorded != current && !consumed {
+        let consumed = git.path_exists_at(rev, &path)? && !ws.root.join(&path).is_file();
+        if !consumed && !git.path_matches_at(rev, &path)? {
+            changes.push(format!("`{}` changed", path.display()));
+        }
+    }
+
+    let mut read_only: BTreeSet<std::path::PathBuf> = ws
+        .graph
+        .packages()
+        .flat_map(|pkg| pkg.manifests.iter().map(|decl| decl.path.clone()))
+        .collect();
+    read_only.extend(
+        [
+            "callisto.toml",
+            "Cargo.toml",
+            "package.json",
+            "pnpm-workspace.yaml",
+            "pyproject.toml",
+        ]
+        .map(std::path::PathBuf::from),
+    );
+    for path in read_only.difference(&written) {
+        if !git.path_matches_at(rev, path)? {
             changes.push(format!("`{}` changed", path.display()));
         }
     }
@@ -457,21 +478,31 @@ pub fn checkpoint_input_changes<R: CommandRunner, D: DependencyResolver>(
 }
 
 /// The commands that discard an interrupted run: put the index and the working tree back as `checkpoint` recorded
-/// them, remove the files the run created, and drop the checkpoint. Run from the workspace root.
+/// them, remove the files the run created (the plan's new files and any lockfile), and drop the checkpoint. Run from
+/// the workspace root. A file the user added is never listed.
 pub fn checkpoint_abort_commands<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     checkpoint: &callisto_model::vcs::Checkpoint,
+    plan: &VersionPlan,
 ) -> Result<String, GraphError> {
     let git = ws.git_access();
     let rev = checkpoint.commit.as_str();
     let name = callisto_model::vcs::VERSION_CHECKPOINT;
+    let written = crate::apply::written_paths(plan);
+    let is_lockfile = |path: &std::path::Path| {
+        path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+            crate::workspace_owner::NPM_LOCKFILES.contains(&n)
+                || crate::workspace_owner::PYPI_LOCKFILES.contains(&n)
+                || n == "Cargo.lock"
+        })
+    };
     let mut commands = vec![
         format!("  git read-tree {name}^2"),
         // Short enough that the error renderer never wraps it, so it can be copied as is.
         format!("  git restore -W -s {name} ."),
     ];
     for created in git.untracked_files()? {
-        if !git.path_exists_at(rev, &created)? {
+        if (written.contains(&created) || is_lockfile(&created)) && !git.path_exists_at(rev, &created)? {
             commands.push(format!("  rm -- '{}'", created.display()));
         }
     }

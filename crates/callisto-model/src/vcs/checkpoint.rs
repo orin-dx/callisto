@@ -108,10 +108,29 @@ impl GitAccess<'_> {
         self.git_stdout(&["update-ref", "-d", name]).map(drop)
     }
 
-    /// Checks the checkpoint at `name` out, detached, at `dir` (which must not exist), after pruning worktrees whose
-    /// directories are gone.
+    /// Whether `path` (relative to this root) is on disk as `rev` recorded it, compared as Git compares: through its
+    /// line-ending and attribute filters, so a checkout with CRLF endings matches the blob it was written from. Absent
+    /// on both sides matches.
+    pub fn path_matches_at(&self, rev: &str, path: &Path) -> Result<bool, VcsError> {
+        let recorded = if self.path_exists_at(rev, path)? {
+            let spec = format!("{rev}:./{}", path.display());
+            Some(self.git_stdout(&["rev-parse", &spec])?)
+        } else {
+            None
+        };
+        let full = self.root().join(path);
+        let current = if full.is_file() {
+            let path = path.to_string_lossy();
+            let file = full.to_string_lossy();
+            Some(self.git_stdout(&["hash-object", "--path", &path, &file])?)
+        } else {
+            None
+        };
+        Ok(recorded == current)
+    }
+
+    /// Checks the checkpoint at `name` out, detached, at `dir` (which must not exist).
     pub fn add_checkpoint_worktree(&self, name: &str, dir: &Path) -> Result<(), VcsError> {
-        self.git_stdout(&["worktree", "prune"])?;
         let dir = dir.to_string_lossy();
         self.git_stdout(&["worktree", "add", "--detach", "--quiet", &dir, name])
             .map(drop)

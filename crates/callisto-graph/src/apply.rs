@@ -286,6 +286,12 @@ pub fn apply_version_plan<R: CommandRunner>(
     Ok(outcome)
 }
 
+/// Every path `plan` writes, creates or deletes (manifests, changelogs, consumed changesets, `pre.json`). Lockfiles
+/// are not included: tools refresh them.
+pub fn written_paths(plan: &VersionPlan) -> BTreeSet<PathBuf> {
+    preflight::written_paths(plan)
+}
+
 /// One physical write of a version plan, in the order it must happen.
 enum WriteStep<'p> {
     /// One load/mutate/persist cycle over a manifest only the `Manifest` trait writes: the
