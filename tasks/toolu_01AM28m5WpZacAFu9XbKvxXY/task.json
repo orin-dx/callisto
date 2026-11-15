@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01AM28m5WpZacAFu9XbKvxXY",
+  "agent_id": "a8350c9d2a6678870",
+  "subagent_type": "general-purpose",
+  "task_description": "Re-review checkpoint resume after redesign",
+  "token_usage": {
+    "input_tokens": 108,
+    "cache_creation_tokens": 121669,
+    "cache_read_tokens": 5443126,
+    "output_tokens": 41900,
+    "api_call_count": 54
+  },
+  "started_at": "2026-11-14T18:19:55.066332-08:00",
+  "completed_at": "2026-11-14T18:27:09.866682-08:00"
+}
