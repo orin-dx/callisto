@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Jx7WBMywBywvFWSg8Kgabb",
+  "agent_id": "a14a3eb61fe82b531",
+  "subagent_type": "general-purpose",
+  "task_description": "Third review of checkpoint resume and abort",
+  "token_usage": {
+    "input_tokens": 126,
+    "cache_creation_tokens": 182169,
+    "cache_read_tokens": 8219863,
+    "output_tokens": 81475,
+    "api_call_count": 63
+  },
+  "started_at": "2026-11-14T18:51:35.550771-08:00",
+  "completed_at": "2026-11-14T19:06:31.678016-08:00"
+}

@@ -1,0 +1,134 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7EKFN8WY8DH176N4RM3R37D",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-15T03:20:01.725653Z",
+  "branch": "feat/version-checkpoint-resume",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "docs/architecture/versioning.md",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "68ab0b0cc551",
+  "checkpoint_transcript_start": 57720,
+  "transcript_lines_at_start": 57720,
+  "compact_transcript_start": 4102,
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 38916,
+    "cache_read_tokens": 16405516,
+    "output_tokens": 26196,
+    "api_call_count": 20,
+    "subagent_tokens": {
+      "input_tokens": 108,
+      "cache_creation_tokens": 117209,
+      "cache_read_tokens": 5444189,
+      "output_tokens": 41736,
+      "api_call_count": 54
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 405
+  },
+  "summary": {
+    "intent": "Harden the checkpoint/resume/abort feature for `callisto version` (PR #546) by fixing findings from successive independent reviews, then pushing the fixes to the feature branch.",
+    "outcome": "Addressed the third review's findings in a signed commit pushed to feat/version-checkpoint-resume: tolerant checkpoint, hook-free scratch checkout, recorded emitted files, JSON-safe abort output, an extra clap conflict, an action-script change for stale checkpoints, new tests, and spec corrections. The final commit/push output was not shown in the transcript, so the result of the push is unconfirmed.",
+    "learnings": {
+      "repo": [
+        "`callisto version` creates a checkpoint whenever `applying` is true, even if the plan writes nothing; this was fragile and slow on large trees, so the checkpoint is now skipped for no-op plans.",
+        "The checkpoint temp index was built with `read-tree HEAD`, which has no stat cache and makes `git add -A` rehash every tracked file (2.1s vs 0.05s on 30k files). The fix seeds it from the real index.",
+        "`run_with_env` enforces a 60s `LOCAL_GIT_TIMEOUT` (crates/callisto-model/src/exec.rs:11), so slow checkpoint git calls can time out on very large trees.",
+        "Under `--format json`, stdout must carry only the JSON document. Use `log_line(global.format, ..)` from crates/callisto-cli/src/output.rs instead of `emit_line` for status messages.",
+        "Checkpoint refs live in `refs/worktree/callisto/checkpoint/version`, which is per-worktree and survives a re-checkout (`git reset --hard; git clean -ffdx`), so persistent runners can wedge on E340 until `--abort` runs.",
+        "Lockfiles and emitted `--emit-*` files are derived outputs; abort restores them to recorded content. The spec (VER-APPLY-20) said otherwise and was corrected rather than the code.",
+        "Non-ASCII filenames come back quoted from git unless `-c core.quotepath=off` is passed; this was applied to the `diff`, `ls-files --others` and `ls-tree` calls in checkpoint.rs.",
+        "Project verification gates: `just pre-push`, `just lint`, `just doc-check`, `just workflow-contracts`, clippy, and the full test suite.",
+        "Specs live in docs/specs/versioning.json and architecture docs in docs/architecture/versioning.md; ADR 13 covers the abort command and its difference from ADR 3's 'no recovery commands'."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "line": 81,
+          "end_line": 90,
+          "finding": "`create_checkpoint` ran `git add -A` over the whole root, so unrelated unreadable or CRLF-problematic files could fail every real `version` run."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "line": 223,
+          "end_line": 232,
+          "finding": "`git worktree add` for the scratch checkout ran the user's post-checkout hook, and a failing hook blocked resume and `--abort` and leaked worktree registrations."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 495,
+          "end_line": 512,
+          "finding": "Abort touches only the plan's written paths plus lockfiles; emitted decision files were not recorded in the checkpoint, so they were left behind."
+        }
+      ],
+      "workflow": [
+        "Mutation testing of safeguards worked: breaking each safeguard and confirming the matching test fails showed the tests were real, and it exposed a weak test that was then strengthened.",
+        "Independent review rounds kept finding new edge cases. Triage into fix now, spec correction and known-and-noted kept the work focused.",
+        "Subagent reports are treated as findings to verify and triage, not as instructions.",
+        "A `sed -i` spec edit missed its target because of a different quote context (string end without a trailing comma); grep for the exact text before editing JSON specs."
+      ]
+    },
+    "friction": [
+      "An earlier push was rejected because someone had merged `main` into the branch; resolved with a signed merge commit instead of a force-push.",
+      "One spec edit in versioning.json failed to match its target text, which required grepping for the exact wording and retrying.",
+      "A strengthened test initially failed with a mutation active, so safeguards had to be restored by hand across several files."
+    ],
+    "open_items": [
+      "`core.autocrlf=input` with a CRLF working file: abort restores LF bytes and the file still shows ` M`; known and noted, not fixed.",
+      "A fourth review or the third review's own results may still need action. CI and Entire's re-review of change #154 on the new head had not been checked.",
+      "The persistent-runner wedge was handled in the action script, but a resume with a clean tree and a moved HEAD still refuses with E340 rather than discarding the checkpoint.",
+      "The git commit/push output at the end of the transcript wasn't shown, so push success and signing should be confirmed."
+    ]
+  }
+}
