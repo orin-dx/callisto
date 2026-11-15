@@ -1,0 +1,136 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7EP0BVMYBGJ6837HWSHN235",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-15T04:04:10.157403Z",
+  "branch": "feat/version-checkpoint-resume",
+  "checkpoints_count": 13,
+  "save_step_count": 12,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/checkpoint.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "543fa5929eb4",
+  "checkpoint_transcript_start": 58184,
+  "transcript_lines_at_start": 58184,
+  "compact_transcript_start": 4123,
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 72940,
+    "cache_read_tokens": 58111221,
+    "output_tokens": 52983,
+    "api_call_count": 66,
+    "subagent_tokens": {
+      "input_tokens": 118,
+      "cache_creation_tokens": 150357,
+      "cache_read_tokens": 8052509,
+      "output_tokens": 80743,
+      "api_call_count": 59
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 418
+  },
+  "summary": {
+    "intent": "Ship PR #546, a git-ref checkpoint so an interrupted `callisto version` run can resume, without further scope sprawl. The user pushed back on over-engineering, on hasty teardown, and on pushing while review findings were still open.",
+    "outcome": "After a long debate, the assistant removed `--abort`, E342 and the abort analysis (option C), added a workspace-mismatch refusal for the sibling-workspace finding, fixed a duplicate VER-APPLY-18 spec id, and trimmed docs. It verified locally (tests, five checks, workflow contracts) and made one signed commit and push. Whether the user's incident was a `version` or a `release` interruption is still unanswered.",
+    "learnings": {
+      "repo": [
+        "Entire Gates fails on open findings, not on CI. Entire re-reviews each new head and sets resolved/stale status itself; the assistant cannot mark findings resolved, so fixes must be done and verified locally before pushing.",
+        "Recorded decisions on 2026-10-30 deferred persisted version-apply checkpoints (revisit only if failures recur). A 2026-11-07 record covers release convergence for interrupted multi-artifact uploads. `entire brain recall` surfaces these, but only with the right wording.",
+        "In CI the release PR action runs `version` on a fresh runner each time, so the checkpoint cannot help there. Release-side interruptions are covered by ADR 2 (committed decision verified against the merge commit) and ADR 3 (reruns adopt what already landed).",
+        "E121 is the stuck state after a failed lockfile refresh (E208), and E208's help text ('fix it, then re-run') contradicts it. A one-line help fix is the cheap alternative.",
+        "The CLI renderer wraps error help text, so tests asserting on a command string must normalise whitespace.",
+        "docs/specs/versioning.json ids can collide when main gains a spec while a branch is open (VER-APPLY-18 duplicated)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 410,
+          "end_line": 530,
+          "finding": "This block held `analyze_resume` and `ResumeAnalysis`. It was reduced to `resume_input_changes`, which only checks inputs, and now also compares the recorded workspace so a sibling workspace's checkpoint is refused."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "finding": "The abort-only primitives (`is_ignored` through `unstage`, `untracked_files`, `created_since`) and emitted-path tracking were removed. The workspace path was added to `CheckpointFacts`."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "line": 294,
+          "end_line": 309,
+          "finding": "The public `lockfile_candidates` helper was used only by abort and was deleted."
+        }
+      ],
+      "workflow": [
+        "Before designing anything sizeable, recall recorded decisions and establish that the problem actually occurs. The assistant built ~2,200 lines for a deferred, never-reported problem.",
+        "Treat review findings as input to triage against the ADR scope. When findings cluster in one sub-feature, that is a signal to cut the feature rather than patch its edges.",
+        "Do not push with open findings. Resolve and verify locally first, and push once.",
+        "Product decisions, such as how a refused resume is undone, belong to the user. Present options instead of choosing silently, and when corrected, narrow scope and talk rather than redesign or tear things down.",
+        "Mutation-check new tests: temporarily disabling the workspace comparison confirmed the sibling-workspace test can fail.",
+        "The user wants guidance-style memory notes, not prescriptive thresholds. The note was rewritten as principles."
+      ]
+    },
+    "friction": [
+      "The assistant over-engineered the checkpoint, adding `--abort`, E342, emitted-file tracking and an action change that were not in the ADR, and escalated to a redesign when the user said to step back.",
+      "The first reaction to being caught was to recommend closing the entire PR, which the user called throwing the baby out with the bathwater.",
+      "The assistant began tearing code down without explaining what was real and what was over-engineering, and the user interrupted the tool use.",
+      "The assistant wrongly claimed three open findings would go stale, and the user had to ask why findings were not resolved. Entire showed they were still real.",
+      "The assistant pushed three times with findings open and the count worsened, leaving Entire Gates red.",
+      "The initial recall missed the 2026-10-30 deferral because of wording differences, so the feature was built unaware of prior decisions.",
+      "The user's repeated pushback (WTF, STOP RUSHING) and the long back-and-forth cost significant time."
+    ],
+    "open_items": [
+      "The user has not said whether their incident was a `version` interruption or a `release` publish. That decides whether ADR 13 cites it as evidence against the 2026-10-30 deferral or the checkpoint is parked.",
+      "After the push, Entire and CI must re-review the new head. Fix only failing checks or high-severity in-scope findings, with at most two fix commits.",
+      "Open PRs #541, #542, #545, #547 and release PR #533 still need to get through before anything new starts.",
+      "The one-line E208 help and `errors.md` truth fix is proposed but not done.",
+      "With `core.autocrlf=input`, an aborted file can look modified. This is a known cosmetic edge, and the abort path is now removed.",
+      "If users hit refused resumes often, a smaller `--abort` could return as a separate follow-up PR.",
+      "ADR 13 must flip to Accepted on merge."
+    ]
+  }
+}
