@@ -1,0 +1,5 @@
+# These mutations move the scan cursor backwards, so the loop never ends and the sweep fails on the timeout.
+exclude_re = [
+  "replace \\+ with - in mask_bearer",
+  "replace \\+ with - in redact_url_userinfo",
+]
