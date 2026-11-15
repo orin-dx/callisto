@@ -25,7 +25,9 @@ Before its first write, `version` records its inputs (`HEAD`, the working tree, 
 
 ## Enforcement
 
-To be filled by the implementing PR: the differential resume test and the refusal tests.
+- `crates/callisto-cli/tests/version_resume_tests.rs`: `a_resumed_run_leaves_exactly_what_an_uninterrupted_run_leaves` compares a run whose lockfile refresh fails once and is resumed with one that never failed, across ecosystems, a workspace below the repository root, pre mode and an uncommitted changeset; `changed_inputs_refuse_the_resume_and_the_printed_steps_undo_the_run`; `a_run_that_failed_to_write_its_preview_writes_it_when_run_again`; `a_version_edited_by_hand_after_the_failure_is_refused_not_overwritten`.
+- `crates/callisto-model/src/vcs/access.rs`: `a_checkpoint_records_the_tree_leaves_the_user_state_alone_and_is_held_once`.
+- VER-APPLY-18 and VER-APPLY-19 in `docs/specs/versioning.json`.
 
 ## Revisit when
 

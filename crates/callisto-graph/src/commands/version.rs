@@ -407,6 +407,78 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     })
 }
 
+/// What changed since `checkpoint` among the inputs a plan reads: `HEAD`, tags, the Callisto version, `callisto.toml`
+/// and the changesets (new or edited; a removed one was consumed by the run). `pre.json` is left out because a
+/// pre-mode run writes it itself.
+pub fn checkpoint_input_changes<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    checkpoint: &callisto_model::vcs::Checkpoint,
+    now: &callisto_model::vcs::CheckpointFacts,
+) -> Result<Vec<String>, GraphError> {
+    let then = &checkpoint.facts;
+    let mut changes = Vec::new();
+    if now.head != then.head {
+        changes.push(format!("`HEAD` moved from {} to {}", then.head, now.head));
+    }
+    if now.tags != then.tags {
+        changes.push("tags changed".to_string());
+    }
+    if now.callisto_version != then.callisto_version {
+        changes.push(format!(
+            "Callisto changed from {} to {}",
+            then.callisto_version, now.callisto_version
+        ));
+    }
+    let git = ws.git_access();
+    let rev = checkpoint.commit.as_str();
+    let dir = &ws.config.changesets_dir;
+    let mut paths: BTreeSet<std::path::PathBuf> = git.files_at(rev, dir)?.into_iter().collect();
+    if let Ok(entries) = std::fs::read_dir(ws.root.join(dir)) {
+        paths.extend(
+            entries
+                .flatten()
+                .filter(|entry| entry.path().is_file())
+                .map(|entry| dir.join(entry.file_name())),
+        );
+    }
+    paths.remove(&ws.config.pre_json_path());
+    let config = std::path::PathBuf::from("callisto.toml");
+    paths.insert(config.clone());
+    for path in paths {
+        let recorded = git.read_at(rev, &path)?;
+        let current = std::fs::read_to_string(ws.root.join(&path)).ok();
+        // A changeset that is gone was consumed by the interrupted run itself.
+        let consumed = path != config && recorded.is_some() && current.is_none();
+        if recorded != current && !consumed {
+            changes.push(format!("`{}` changed", path.display()));
+        }
+    }
+    Ok(changes)
+}
+
+/// The commands that discard an interrupted run: put the index and the working tree back as `checkpoint` recorded
+/// them, remove the files the run created, and drop the checkpoint. Run from the workspace root.
+pub fn checkpoint_abort_commands<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    checkpoint: &callisto_model::vcs::Checkpoint,
+) -> Result<String, GraphError> {
+    let git = ws.git_access();
+    let rev = checkpoint.commit.as_str();
+    let name = callisto_model::vcs::VERSION_CHECKPOINT;
+    let mut commands = vec![
+        format!("  git read-tree {name}^2"),
+        // Short enough that the error renderer never wraps it, so it can be copied as is.
+        format!("  git restore -W -s {name} ."),
+    ];
+    for created in git.untracked_files()? {
+        if !git.path_exists_at(rev, &created)? {
+            commands.push(format!("  rm -- '{}'", created.display()));
+        }
+    }
+    commands.push(format!("  git update-ref -d {name}"));
+    Ok(commands.join("\n"))
+}
+
 /// Refuses when a canonical manifest version differs from `HEAD` while release inputs remain or the change is staged.
 pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace<'_, R, D>) -> Result<(), GraphError> {
     let head = match ws.git_access().head_sha() {

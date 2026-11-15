@@ -83,7 +83,7 @@ fn test_pre_mode_blackbox_lifecycle() {
 
 #[cfg(unix)]
 #[test]
-fn failed_pre_state_deletion_fails_closed_on_a_fresh_version_retry() {
+fn failed_pre_state_deletion_is_finished_by_a_retry() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = setup_polyglot_git_repo();
@@ -200,28 +200,19 @@ exec "$CALLISTO_TEST_REAL_GIT" "$@"
         "stable outputs should already be written before deletion staging fails"
     );
 
+    // ADR 13: the retry resumes from the checkpoint and finishes the exit, without a second bump.
     let retry = run_callisto_cli(root, &["version", "--no-refresh-lockfiles"], None);
-    assert!(!retry.status.success(), "a fresh retry must fail closed with E121");
-    let diagnostic = format!(
-        "{}{}",
-        String::from_utf8_lossy(&retry.stdout),
+    assert!(
+        retry.status.success(),
+        "a retry must finish the interrupted exit: {}",
         String::from_utf8_lossy(&retry.stderr)
-    )
-    .split_whitespace()
-    .collect::<Vec<_>>()
-    .join(" ");
-    assert!(diagnostic.contains("E121"), "expected E121, got: {diagnostic}");
-    assert!(
-        diagnostic.contains("git diff --cached"),
-        "recovery help must inspect staged changes: {diagnostic}"
     );
+    assert!(!pre_json.exists(), "the finished exit consumes pre.json");
     assert!(
-        diagnostic.contains("git rm -- <path>"),
-        "recovery help must name manual input removal: {diagnostic}"
-    );
-    assert!(
-        pre_json.exists(),
-        "the refused retry must not delete the retained input"
+        fs::read_to_string(root.join("crates/core/Cargo.toml"))
+            .unwrap()
+            .contains("version = \"0.2.0\""),
+        "the retry keeps the stable version the interrupted run wrote"
     );
 }
 

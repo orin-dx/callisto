@@ -50,6 +50,24 @@ pub trait CommandRunner: Send + Sync {
         })
     }
 
+    /// Run a child with extra environment variables, such as `GIT_INDEX_FILE` for a git command on a temporary index.
+    /// Runners without an explicit child-environment implementation fail closed.
+    fn run_with_env(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        env: &[(&str, &str)],
+    ) -> Result<CommandOutput, CommandError> {
+        if env.is_empty() {
+            return self.run(program, args, cwd);
+        }
+        Err(CommandError::Unsupported {
+            program: program.to_string(),
+            reason: "this command runner does not support a child environment".to_string(),
+        })
+    }
+
     /// Run a publisher with credentials supplied only to that child.
     /// Runners without an explicit child-environment implementation fail closed.
     fn run_with_timeout_publisher(

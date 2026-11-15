@@ -336,7 +336,7 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
 
 #[cfg(unix)]
 #[test]
-fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
+fn decision_write_failure_is_finished_by_a_retry_without_a_second_bump() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = setup_polyglot_git_repo();
@@ -387,21 +387,25 @@ fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
         "the applied version must remain staged as recovery evidence"
     );
 
+    // ADR 13: the retry resumes from the checkpoint and finishes the run without stacking a second bump.
+    let manifest = || std::fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
+    let after_first = manifest();
+    std::fs::set_permissions(root.join("decision-parent"), std::fs::Permissions::from_mode(0o755)).unwrap();
     let retry = commands::version::handle(
         VersionArgs {
             refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
-            emit_decision: None,
+            emit_decision: Some("decision-parent/release-decision.json".into()),
             emit_preview: None,
         },
         &global,
     );
-    assert!(retry.is_err(), "a fresh command must refuse to stack a second bump");
-    let retry_error = retry.unwrap_err().to_string();
+    assert!(retry.is_ok(), "a retry must finish the interrupted run: {retry:?}");
+    assert_eq!(manifest(), after_first, "the retry must not stack a second bump");
     assert!(
-        retry_error.contains("this looks like an interrupted `version` run"),
-        "expected the recovery refusal, got: {retry_error}"
+        root.join("decision-parent/release-decision.json").exists(),
+        "the retry writes the decision"
     );
 }

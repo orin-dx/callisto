@@ -7,7 +7,7 @@ use crate::{Version, VersionGrammar};
 
 mod artifact;
 mod decision;
-mod digest;
+pub(crate) mod digest;
 mod execution;
 mod github;
 mod intent;
