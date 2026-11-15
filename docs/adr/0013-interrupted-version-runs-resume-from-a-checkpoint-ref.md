@@ -9,7 +9,7 @@ Status: Proposed
 
 ## Decision
 
-Before its first write, `version` records its inputs (`HEAD`, the working tree, the index, and the tags and flags planning reads) as a commit at `refs/callisto/checkpoint/version`, and deletes the ref when the run completes. A re-run while the ref exists plans from those inputs and reapplies idempotently; if an input changed since, it refuses and writes nothing.
+Before its first write, `version` records its inputs (`HEAD`, the working tree, the index, and the tags and flags planning reads) as a commit at `refs/callisto/checkpoint/version`, and deletes the ref when the run completes. A re-run while the ref exists plans from those inputs and reapplies idempotently. It first applies the plan in a scratch worktree of the checkpoint to learn what a finished run leaves, and refuses, writing nothing, unless every file the plan was derived from or writes is on disk as recorded or as that expected tree has it.
 
 ## Options considered
 

@@ -266,7 +266,7 @@ pub enum GraphError {
         code(E340),
         help(
             "Run `callisto version` again only with the inputs it started from. To discard the interrupted run instead, \
-             run these commands, then run `callisto version` again:\n{abort}"
+             run these commands (they restore only the files the run writes), then run `callisto version` again:\n{abort}"
         )
     )]
     CheckpointInputsChanged { changes: Vec<String>, abort: String },

@@ -1235,7 +1235,8 @@ mod tests {
         let before = (status(&["status", "--porcelain"]), status(&["diff", "--cached"]));
 
         let facts = git.checkpoint_facts("9.9.9").unwrap();
-        git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts).unwrap();
+        git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts, "2026-01-02")
+            .unwrap();
 
         assert_eq!(
             (status(&["status", "--porcelain"]), status(&["diff", "--cached"])),
@@ -1243,6 +1244,7 @@ mod tests {
         );
         let recorded = git.checkpoint(super::super::VERSION_CHECKPOINT).unwrap().unwrap();
         assert_eq!(recorded.facts, facts);
+        assert_eq!(recorded.date, "2026-01-02");
         let rev = recorded.commit.as_str().to_string();
         assert_eq!(
             git.read_at(&rev, Path::new("a.txt")).unwrap().as_deref(),
@@ -1258,7 +1260,7 @@ mod tests {
             "the second parent records the index"
         );
         assert!(matches!(
-            git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts),
+            git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts, "2026-01-02"),
             Err(VcsError::CheckpointHeld { .. })
         ));
         git.delete_checkpoint(super::super::VERSION_CHECKPOINT).unwrap();

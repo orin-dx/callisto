@@ -320,7 +320,7 @@
     },
     {
       "id": "VER-APPLY-19",
-      "criterion": "A run that finds the checkpoint refuses with E340 and writes nothing when `HEAD`, the tags, the Callisto version, `callisto.toml` or a changeset (added or edited; a removed one counts as consumed) changed since it was recorded, and prints the commands that put the index and working tree back as recorded, remove the files the run created and delete the checkpoint. A manifest at neither the planned `from` nor `to` version is still refused. A run that cannot create the checkpoint because another run created it first fails with E341.",
+      "criterion": "A run that finds the checkpoint refuses with E340 and writes nothing when `HEAD`, the tags or the Callisto version changed since it was recorded, or when a file the plan was derived from (a manifest the loader opened, `callisto.toml`, a changeset) or a file it writes is on disk neither as recorded nor as the tree a finished run would leave (the plan applied to the recorded tree without a lockfile refresh), compared through Git's line-ending filters. It prints commands that restore only the files the plan writes (working tree and index), remove the files the run created and the lockfiles its refresh may have created, and delete the checkpoint; a file the user added is never touched. A dry run reports the plan without this check. The planning date and the commit history come from the recorded run. A run that cannot create the checkpoint because another run created it first fails with E341.",
       "is_error_case": true
     }
   ],

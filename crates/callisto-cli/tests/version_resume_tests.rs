@@ -271,6 +271,14 @@ fn assert_resume_matches(
         has_checkpoint(&resumed.root),
         "{name}: the failed run keeps its checkpoint"
     );
+    assert!(
+        git(
+            &resumed.root,
+            &["log", "-1", "--format=%B", "refs/callisto/checkpoint/version"]
+        )
+        .contains("Callisto-Date: 20"),
+        "{name}: the checkpoint records the date the run planned with"
+    );
     let out = version(&resumed.workspace, &bin, None);
     assert!(
         out.status.success(),
@@ -410,25 +418,158 @@ fn the_printed_abort_steps_never_remove_a_file_the_user_added() {
     version(&repo.workspace, &bin, Some(("cargo", &flag)));
     write(&repo.workspace, ".changeset/two.md", "---\n\"a\": patch\n---\n\nMore\n");
     write(&repo.workspace, "notes.txt", "mine\n");
+    // A lockfile in a directory the plan never touched is not the run's, whatever its name.
+    write(&repo.workspace, "unrelated/Cargo.lock", "# mine\n");
 
     let refused = version(&repo.workspace, &bin, None);
     let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
     assert!(stderr.contains("E340"), "{stderr}");
-    for line in stderr.lines() {
-        let step = line.trim_start_matches(|c: char| c.is_whitespace() || c == '│');
-        if step.starts_with("git ") || step.starts_with("rm ") {
-            let status = Command::new("sh")
-                .args(["-c", step])
-                .current_dir(&repo.workspace)
-                .status()
-                .unwrap();
-            assert!(status.success(), "abort step `{step}` failed");
-        }
-    }
+    run_abort_steps(&stderr, &repo.workspace);
 
     assert!(
-        repo.workspace.join(".changeset/two.md").exists() && repo.workspace.join("notes.txt").exists(),
+        repo.workspace.join(".changeset/two.md").exists()
+            && repo.workspace.join("notes.txt").exists()
+            && repo.workspace.join("unrelated/Cargo.lock").exists(),
         "the abort steps removed a file the user added"
+    );
+}
+
+/// Runs the steps an E340 error prints, as one script in one shell, the way a user pastes them.
+fn run_abort_steps(stderr: &str, cwd: &Path) {
+    let script: Vec<&str> = stderr
+        .lines()
+        .map(|line| line.trim_start_matches(|c: char| c.is_whitespace() || c == '│'))
+        .filter(|step| step.starts_with("c=") || step.starts_with("git ") || step.starts_with("rm "))
+        .collect();
+    assert!(script.len() > 1, "no abort steps in: {stderr}");
+    let status = Command::new("sh")
+        .args(["-ec", &script.join("\n")])
+        .current_dir(cwd)
+        .status()
+        .unwrap();
+    assert!(status.success(), "abort steps failed:\n{}", script.join("\n"));
+}
+
+/// The abort steps run after a late failure, once a new changelog is staged, put back the state before the run.
+#[test]
+fn the_abort_steps_remove_a_changelog_the_run_staged() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let before = state(&repo.root);
+    let out_dir = repo.root.parent().unwrap().join("out");
+    fs::create_dir_all(&out_dir).unwrap();
+    fs::set_permissions(&out_dir, fs::Permissions::from_mode(0o555)).unwrap();
+    let preview = out_dir.join("preview.json");
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let first = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args([
+            "--cwd",
+            repo.workspace.to_str().unwrap(),
+            "version",
+            "--emit-preview",
+            preview.to_str().unwrap(),
+        ])
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(!first.status.success(), "the preview write should fail");
+    assert!(
+        git(&repo.root, &["diff", "--cached", "--name-only"]).contains("crates/a/CHANGELOG.md"),
+        "the run staged the new changelog before failing"
+    );
+    // Any changed input refuses the resume.
+    write(&repo.workspace, "callisto.toml", "# edited\n");
+
+    let refused = version(&repo.workspace, &bin, None);
+    let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
+    assert!(stderr.contains("E340"), "{stderr}");
+    run_abort_steps(&stderr, &repo.workspace);
+    write(&repo.workspace, "callisto.toml", "");
+
+    assert_eq!(
+        state(&repo.root),
+        before,
+        "the abort steps should restore the state before the run"
+    );
+}
+
+#[test]
+fn a_dependency_requirement_edited_after_the_failure_refuses_the_resume() {
+    // A major bump of `a` is outside b's requirement, so the run rewrites it.
+    let repo = repo(
+        |ws| {
+            cargo_cascade(ws);
+            write(ws, ".changeset/one.md", "---\n\"a\": major\n---\n\nBreak\n");
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    version(&repo.workspace, &bin, Some(("cargo", &flag)));
+    // The run rewrote b's requirement on a to 2.0.0; the user loosens it and keeps b's planned version.
+    let manifest = repo.workspace.join("crates/b/Cargo.toml");
+    let text = fs::read_to_string(&manifest).unwrap();
+    assert!(text.contains("\"2.0.0\" }"), "{text}");
+    let edited = text.replace("\"2.0.0\" }", "\"=2.0.0\" }");
+    fs::write(&manifest, &edited).unwrap();
+
+    let out = version(&repo.workspace, &bin, None);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains("E340") && stderr.contains("crates/b/Cargo.toml"),
+        "{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(&manifest).unwrap(),
+        edited,
+        "the user's edit must survive"
+    );
+}
+
+/// Commit inference on, a staged edit that touched the package before the run: a resume must read history from the
+/// real `HEAD`, not from the checkpoint's own commits.
+#[test]
+fn a_resume_reads_commit_history_from_the_real_head() {
+    let repo = repo(
+        |ws| {
+            cargo_cascade(ws);
+            write(
+                ws,
+                "callisto.toml",
+                "[[package]]\nmatch = \"cargo/a\"\nrelease-trigger = \"auto\"\n",
+            );
+            fs::remove_file(ws.join(".changeset/one.md")).unwrap();
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+    git(&repo.root, &["tag", "-a", "a@1.0.0", "-m", "a"]);
+    write(&repo.workspace, "crates/a/src/lib.rs", "pub fn f() {}\n");
+    git(&repo.root, &["add", "-A"]);
+    git(&repo.root, &["commit", "-qm", "feat: add f"]);
+    // Staged and unstaged edits to the package, so the checkpoint's index commit touches it.
+    write(&repo.workspace, "crates/a/src/lib.rs", "pub fn f() {}\npub fn g() {}\n");
+    git(&repo.root, &["add", "crates/a/src/lib.rs"]);
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    let first = version(&repo.workspace, &bin, Some(("cargo", &flag)));
+    assert!(
+        String::from_utf8_lossy(&first.stderr).contains("E208"),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    fs::remove_file(repo.workspace.join("crates/a/CHANGELOG.md")).ok();
+
+    let out = version(&repo.workspace, &bin, None);
+
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let changelog = fs::read_to_string(repo.workspace.join("crates/a/CHANGELOG.md")).unwrap();
+    assert!(changelog.contains("add f"), "{changelog}");
+    assert!(
+        !changelog.contains("index"),
+        "the checkpoint's synthetic commit leaked into history: {changelog}"
     );
 }
 
@@ -493,18 +634,7 @@ fn changed_inputs_refuse_the_resume_and_the_printed_steps_undo_the_run() {
             "{name}: resume should be refused: {stderr}"
         );
 
-        // The printed steps, as a user would copy them.
-        for line in stderr.lines() {
-            let step = line.trim_start_matches(|c: char| c.is_whitespace() || c == '│');
-            if step.starts_with("git ") || step.starts_with("rm ") {
-                let status = Command::new("sh")
-                    .args(["-c", step])
-                    .current_dir(&repo.workspace)
-                    .status()
-                    .unwrap();
-                assert!(status.success(), "{name}: abort step `{step}` failed");
-            }
-        }
+        run_abort_steps(&stderr, &repo.workspace);
         if name == "a tag" {
             git(&repo.root, &["tag", "-d", "a@1.0.0"]);
         } else {

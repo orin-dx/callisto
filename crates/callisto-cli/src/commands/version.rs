@@ -66,7 +66,8 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         Some(_) => {
             let dir = tempfile::tempdir().map_err(|source| CliError::Io { source, path: None })?;
             let tree = dir.path().join("tree");
-            git.add_checkpoint_worktree(VERSION_CHECKPOINT, &tree)
+            let head = checkpoint.as_ref().map(|c| c.facts.head.as_str()).unwrap_or_default();
+            git.add_checkpoint_worktree(VERSION_CHECKPOINT, &tree, head)
                 .map_err(GraphError::from)?;
             Some(ResumeTree { git, tree, _dir: dir })
         }
@@ -87,19 +88,17 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     };
     let plan_ws = checkpoint_ws.as_ref().unwrap_or(&ws);
 
-    let plan = callisto_graph::commands::plan_version_dated(plan_ws, &inference, &opts, Some(&today_utc()))?;
+    // A resume plans with the date the interrupted run used, so its changelog sections all carry one date.
+    let date = match &checkpoint {
+        Some(checkpoint) if !checkpoint.date.is_empty() => checkpoint.date.clone(),
+        _ => today_utc(),
+    };
+    let plan = callisto_graph::commands::plan_version_dated(plan_ws, &inference, &opts, Some(&date))?;
 
-    match (&checkpoint, &facts) {
-        (Some(checkpoint), Some(facts)) => {
-            let changes = callisto_graph::commands::checkpoint_input_changes(&ws, checkpoint, facts, &plan)?;
-            if !changes.is_empty() {
-                let abort = callisto_graph::commands::checkpoint_abort_commands(&ws, checkpoint, &plan)?;
-                return Err(GraphError::CheckpointInputsChanged { changes, abort }.into());
-            }
-        }
-        // Without a checkpoint, refuses when disk already shows a bump HEAD lacks while release inputs or staged
-        // version state remain.
-        _ => callisto_graph::commands::check_partial_run(&ws)?,
+    // Without a checkpoint, refuses when disk already shows a bump HEAD lacks while release inputs or staged version
+    // state remain. With one, the inputs are checked below, once everything that reads the checkpoint's tree is built.
+    if checkpoint.is_none() {
+        callisto_graph::commands::check_partial_run(&ws)?;
     }
 
     // Escalated diagnostics (e.g. --strict on "no pending changesets") must fail before anything is written.
@@ -131,6 +130,22 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         None => None,
     };
 
+    // A resume must start from the checkpoint plus some of the interrupted run's own writes. The plan is applied in the
+    // checkpoint's scratch worktree to learn what a finished run leaves, which takes the run's own permit and writes
+    // only there; a dry run has no permit, so it reports the plan without verifying the inputs.
+    if let (Some(scratch), Some(checkpoint), Some(facts), Some(permit), false) =
+        (&checkpoint_ws, &checkpoint, &facts, permit.as_ref(), has_errors)
+    {
+        let verdict = callisto_graph::commands::check_resume(&ws, scratch, checkpoint, facts, &plan, &runner, permit)?;
+        if !verdict.changes.is_empty() {
+            return Err(GraphError::CheckpointInputsChanged {
+                changes: verdict.changes,
+                abort: verdict.abort,
+            }
+            .into());
+        }
+    }
+
     // The plan is in memory, so the checkpoint's worktree has done its job.
     drop(checkpoint_ws);
     drop(resume_tree);
@@ -142,7 +157,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let applying = !has_errors && permit.is_some();
     if let (true, None, Some(facts)) = (applying, &checkpoint, &facts) {
-        git.create_checkpoint(VERSION_CHECKPOINT, facts)
+        git.create_checkpoint(VERSION_CHECKPOINT, facts, &date)
             .map_err(GraphError::from)?;
     }
 

@@ -209,25 +209,11 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     // Stage each lockfile of an active ecosystem that exists beside the workspace the plan wrote into.
-    let beside = |dirs: &BTreeSet<PathBuf>, names: &[&str]| -> Vec<PathBuf> {
-        dirs.iter()
-            .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
-            .collect()
-    };
-    let candidates = beside(&lockfile_dirs.npm, &NPM_LOCKFILES)
-        .into_iter()
-        .chain(beside(&lockfile_dirs.pypi, &PYPI_LOCKFILES));
     let mut lockfile_paths: Vec<PathBuf> = Vec::new();
-    for p in candidates {
+    for p in lockfile_candidate_paths(&lockfile_dirs, &cargo_workspaces) {
         if path_exists(root, &p)? && !modified_paths.contains(&p) {
             lockfile_paths.push(p.clone());
             modified_paths.push(p);
-        }
-    }
-    for lockfile in cargo_workspaces.iter().map(|workspace| cargo_lockfile(workspace)) {
-        if path_exists(root, &lockfile)? && !modified_paths.contains(&lockfile) {
-            lockfile_paths.push(lockfile.clone());
-            modified_paths.push(lockfile);
         }
     }
 
@@ -284,6 +270,35 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     Ok(outcome)
+}
+
+/// Every lockfile a run of `plan` may refresh or create, whether or not it exists: the known lockfile names beside each
+/// npm and Python workspace the plan wrote into, and each Cargo workspace's `Cargo.lock`. Apply refreshes and stages
+/// these; abort removes the ones the run created.
+pub fn lockfile_candidates(root: &Path, plan: &VersionPlan) -> Result<Vec<PathBuf>, GraphError> {
+    let active = active_ecosystems(plan);
+    let cargo_workspaces = if active.contains(&Ecosystem::Cargo) {
+        touched_cargo_workspaces(root, plan)?
+    } else {
+        BTreeSet::new()
+    };
+    Ok(lockfile_candidate_paths(
+        &lockfile_dirs(root, plan, &active)?,
+        &cargo_workspaces,
+    ))
+}
+
+fn lockfile_candidate_paths(dirs: &LockfileDirs, cargo_workspaces: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
+    let beside = |dirs: &BTreeSet<PathBuf>, names: &[&str]| -> Vec<PathBuf> {
+        dirs.iter()
+            .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+            .collect()
+    };
+    beside(&dirs.npm, &NPM_LOCKFILES)
+        .into_iter()
+        .chain(beside(&dirs.pypi, &PYPI_LOCKFILES))
+        .chain(cargo_workspaces.iter().map(|workspace| cargo_lockfile(workspace)))
+        .collect()
 }
 
 /// Every path `plan` writes, creates or deletes (manifests, changelogs, consumed changesets, `pre.json`). Lockfiles

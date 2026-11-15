@@ -15,6 +15,7 @@ pub const VERSION_CHECKPOINT: &str = "refs/callisto/checkpoint/version";
 const HEAD_TRAILER: &str = "Callisto-Head";
 const TAGS_TRAILER: &str = "Callisto-Tags";
 const VERSION_TRAILER: &str = "Callisto-Version";
+const DATE_TRAILER: &str = "Callisto-Date";
 
 /// The inputs a plan reads besides files, recorded in the checkpoint commit's message.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +31,8 @@ pub struct CheckpointFacts {
 pub struct Checkpoint {
     pub commit: CommitSha,
     pub facts: CheckpointFacts,
+    /// The date the run planned with (`YYYY-MM-DD`), so a resume on a later day writes the same changelog dates.
+    pub date: String,
 }
 
 impl GitAccess<'_> {
@@ -52,6 +55,7 @@ impl GitAccess<'_> {
                 tags: trailer(TAGS_TRAILER),
                 callisto_version: trailer(VERSION_TRAILER),
             },
+            date: trailer(DATE_TRAILER),
             commit,
         }))
     }
@@ -73,7 +77,7 @@ impl GitAccess<'_> {
     ///
     /// [`VcsError::CheckpointHeld`] when `name` already exists, so two runs never share one; a failed git command
     /// otherwise.
-    pub fn create_checkpoint(&self, name: &str, facts: &CheckpointFacts) -> Result<CommitSha, VcsError> {
+    pub fn create_checkpoint(&self, name: &str, facts: &CheckpointFacts, date: &str) -> Result<CommitSha, VcsError> {
         let git_dir = self.git_stdout(&["rev-parse", "--absolute-git-dir"])?;
         let index = Path::new(git_dir.trim()).join("callisto-checkpoint.index");
         let index_str = index.to_string_lossy().into_owned();
@@ -84,7 +88,7 @@ impl GitAccess<'_> {
             self.git_stdout_env(&["add", "-A", "--", "."], &env)?;
             let tree = self.git_stdout_env(&["write-tree"], &env)?;
             let message = format!(
-                "callisto checkpoint\n\n{HEAD_TRAILER}: {}\n{TAGS_TRAILER}: {}\n{VERSION_TRAILER}: {}\n",
+                "callisto checkpoint\n\n{HEAD_TRAILER}: {}\n{TAGS_TRAILER}: {}\n{VERSION_TRAILER}: {}\n{DATE_TRAILER}: {date}\n",
                 facts.head, facts.tags, facts.callisto_version
             );
             self.internal_commit(&tree, &[&facts.head, index_commit.as_str()], &message)
@@ -112,28 +116,54 @@ impl GitAccess<'_> {
     /// line-ending and attribute filters, so a checkout with CRLF endings matches the blob it was written from. Absent
     /// on both sides matches.
     pub fn path_matches_at(&self, rev: &str, path: &Path) -> Result<bool, VcsError> {
-        let recorded = if self.path_exists_at(rev, path)? {
-            let spec = format!("{rev}:./{}", path.display());
-            Some(self.git_stdout(&["rev-parse", &spec])?)
-        } else {
-            None
-        };
-        let full = self.root().join(path);
-        let current = if full.is_file() {
-            let path = path.to_string_lossy();
-            let file = full.to_string_lossy();
-            Some(self.git_stdout(&["hash-object", "--path", &path, &file])?)
-        } else {
-            None
-        };
-        Ok(recorded == current)
+        Ok(self.blob_hash_at(rev, path)? == self.file_hash(path)?)
     }
 
-    /// Checks the checkpoint at `name` out, detached, at `dir` (which must not exist).
-    pub fn add_checkpoint_worktree(&self, name: &str, dir: &Path) -> Result<(), VcsError> {
-        let dir = dir.to_string_lossy();
-        self.git_stdout(&["worktree", "add", "--detach", "--quiet", &dir, name])
-            .map(drop)
+    /// The object id of `path` (relative to this root) in `rev`'s tree, or `None` when it is absent there.
+    pub fn blob_hash_at(&self, rev: &str, path: &Path) -> Result<Option<String>, VcsError> {
+        if !self.path_exists_at(rev, path)? {
+            return Ok(None);
+        }
+        let spec = format!("{rev}:./{}", path.display());
+        self.git_stdout(&["rev-parse", &spec]).map(Some)
+    }
+
+    /// The object id Git would give the file at `path` (relative to this root) as it is on disk now, through its
+    /// line-ending and attribute filters, or `None` when it is absent. Two ids are equal exactly when Git would
+    /// store the same content.
+    pub fn file_hash(&self, path: &Path) -> Result<Option<String>, VcsError> {
+        let full = self.root().join(path);
+        if !full.is_file() {
+            return Ok(None);
+        }
+        let name = path.to_string_lossy();
+        let file = full.to_string_lossy();
+        self.git_stdout(&["hash-object", "--path", &name, &file]).map(Some)
+    }
+
+    /// Checks the checkpoint at `name` out at `dir` (which must not exist) with `HEAD` on the commit the run started
+    /// from, so history reads (commit inference) see the real commits and not the checkpoint's own. The files and the
+    /// index stay as the checkpoint recorded them.
+    pub fn add_checkpoint_worktree(&self, name: &str, dir: &Path, head: &str) -> Result<(), VcsError> {
+        let dir_text = dir.to_string_lossy();
+        self.git_stdout(&["worktree", "add", "--detach", "--quiet", &dir_text, name])?;
+        let args = ["reset", "--quiet", "--soft", head];
+        let output = self.runner().run("git", &args, dir)?;
+        if !output.success() {
+            return Err(git_failed(&args, dir, &output.stderr));
+        }
+        Ok(())
+    }
+
+    /// Files under this root that exist now but not in `rev`: untracked ones and ones added to the index, relative to
+    /// this root.
+    pub fn created_since(&self, rev: &str) -> Result<Vec<std::path::PathBuf>, VcsError> {
+        let mut created = self.untracked_files()?;
+        let added = self.git_stdout(&["diff", "--name-only", "--relative", "--diff-filter=A", rev, "--", "."])?;
+        created.extend(added.lines().map(std::path::PathBuf::from));
+        created.sort();
+        created.dedup();
+        Ok(created)
     }
 
     /// This root's path inside the repository (empty at the top), so the same directory can be found in a worktree.
