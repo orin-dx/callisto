@@ -1,5 +1,18 @@
 # callisto-fixtures
 
+## 0.21.0
+
+_2026-11-15_
+
+### Minor Changes
+
+- Released together with the `workspace` fixed group.
+
+### Patch Changes
+
+- Dependency updates
+  - `callisto-model` → `0.21.0`
+
 ## 0.20.0
 
 _2026-11-12_
