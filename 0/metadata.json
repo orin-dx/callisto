@@ -1,0 +1,141 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7ER83MBXS1058HHF02GH8BA",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-15T04:43:23.458893Z",
+  "branch": "feat/version-checkpoint-resume",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/version.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "374a622d30b4",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 17932,
+    "cache_read_tokens": 14879273,
+    "output_tokens": 12793,
+    "api_call_count": 16,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 419
+  },
+  "summary": {
+    "intent": "Resume the callisto-hardening follow-up work: upgrade CI macOS runners off the retired macos-14, clean up stale branches and worktrees, diagnose and fix the broken Release workflow, and ship the version-checkpoint resume feature (PR #546) with its review findings resolved.",
+    "outcome": "macOS runners moved to macos-15 (#421, merged) then macos-latest (#422, draft), 22 stale worktrees and branches cleaned, the release failure traced to a stale release PR (E165) with a revert PR and trail created, and the checkpoint PR trimmed to drop --abort, fixing the sibling-workspace finding and two further findings. Final local checks were still being re-run, and the last fixes were not yet pushed.",
+    "learnings": {
+      "repo": [
+        "Release workflow fails with E165 ('no changeset was consumed by this commit') when a release PR merges after changesets on main were rewritten; every later push to main retries the same stale release and fails.",
+        "Entire opens a draft PR automatically when a trail is created and the branch is linked, so use `gh pr edit` rather than `gh pr create`.",
+        "Entire Gates is the check that fails on open review findings; Entire re-reviews each new head and sets resolved/stale itself, and the default finding list hides stale ones unless `--freshness any` is passed.",
+        "Git commits in this repo are GPG-signed; the sandbox blocks GPG, `entire`, `gh` and ssh-agent access, so those commands need to run outside it.",
+        "`testing/check-comments.sh` (part of `just lint`) can fail even when clippy is clean; `just workflow-contracts` validates workflow and action script changes.",
+        "docs/specs/versioning.json criterion IDs (VER-APPLY-N) can collide when main gains new ones while a branch is open; the checkpoint criteria were renumbered to 19 and 20.",
+        "ADR 2 (committed decision verified against the merge commit) and ADR 3 (reruns adopt what already landed) cover release races and partial failures; persisted version-apply checkpoints were deferred on 2026-10-30 with a revisit condition of 'only if failures recur'.",
+        "ubuntu-24.04-arm has no -latest label, so it stays pinned; all other runners use *-latest."
+      ],
+      "code": [
+        {
+          "path": ".github/workflows/callisto-ci.yml",
+          "line": 145,
+          "end_line": 150,
+          "finding": "macOS artifact preflight matrix entries pinned runner: macos-14, later macos-15, then macos-latest; callisto-release.yml has the same pins at lines 297 and 302."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "finding": "CheckpointFacts now records the workspace path so a checkpoint from a sibling workspace is treated as a changed input and refused with E340; abort-only primitives (is_ignored, unstage, created_since, untracked_files) were removed."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 410,
+          "end_line": 530,
+          "finding": "analyze_resume and ResumeAnalysis were reduced to resume_input_changes, since abort analysis was removed."
+        },
+        {
+          "path": "crates/callisto-cli/tests/version_resume_tests.rs",
+          "finding": "Tests were verified by mutation: temporarily removing each fix makes exactly its new test fail. Error help text is wrapped by the renderer, so assertions must normalise whitespace."
+        }
+      ],
+      "workflow": [
+        "Check recorded decisions (`entire brain recall`) before designing a feature; the checkpoint had already been weighed and deferred, and the earlier recall used different wording and missed it.",
+        "Resolve or address review findings locally before pushing, since each push triggers a re-review and the open count can grow; the user explicitly required this.",
+        "Triage review findings as input, not obligations: when one sub-feature (--abort) produced most findings across three rounds, cutting the feature beat patching it.",
+        "Don't make product decisions silently (such as how a refused resume gets undone); ask the user, and when corrected, narrow scope instead of widening.",
+        "Confirm evidence that a problem actually occurs before building (about 2,200 lines were spent on a failure no user had reported).",
+        "Pasting `! cmd` with a placeholder or after other text reaches the assistant as plain text and does not run; it must be the entire prompt with a real value.",
+        "Merge commits from GitHub show signature status 'E' locally because the web-flow key is not in the local keyring; this is not unsigned."
+      ]
+    },
+    "friction": [
+      "Entire search and auth were blocked by sandbox TLS and proxy errors until the user ran `! entire auth status` themselves.",
+      "The Entire session title did not match the name the user used ('callisto-hardening'); the session had to be found by scanning local transcripts.",
+      "GPG signing, gh token minting (OpenSSL 'unsupported' error on the bot key), the ssh-agent and the GitHub changelog fetch were all blocked or failed in the sandbox.",
+      "The assistant sank a day and about 2,200 lines into the checkpoint with --abort and repeated review rounds; the user stopped it with 'STOP RUSHING' and later had to correct it twice on 'resolve before pushing'.",
+      "The assistant wrongly claimed three open findings would go stale; Entire's re-review showed they were real defects.",
+      "The assistant made several edits and deletions (half-trim) before walking the user through what was real versus over-engineered.",
+      "`just lint` failed on the comment checker after the last edits, requiring a follow-up fix.",
+      "The macos-14 retirement date was never confirmed against GitHub's changelog."
+    ],
+    "open_items": [
+      "Trail #159 (macOS 15 move) is still open though #421 merged; the worktree for it also still needs cleanup.",
+      "PR #422 (macos-latest) needs CI results and the user's approval of trail #160 in Entire.",
+      "Revert PR for the stale release commit 9148c135 needs to merge, then the release PR regenerates; the guard against merging a stale release PR, the cause of the failed release-PR refresh on the #420 push, and the stray `callisto-graph@0` SemVer warnings still need investigating.",
+      "PR #546 needs the latest fixes pushed (the two extra findings), Entire's re-review, user approval, and ADR 13 updated to cite the user's incident once they say whether it was a `version` or `release` interruption.",
+      "Remote branches for merged PRs were left in place, and several local worktrees and branches (smoke-main, wf_cd627354-1a0-2, callisto-homebrew-tap, stack/docs-v1) await a user decision.",
+      "Many audit-fix and release trails remain open in Entire and need an audit.",
+      "Spec drift re-verification, #290 guard gaps, the E194 shared tag title, T12 registry tests, matrix.rs triples, npm OIDC trusted publishing and the `ready_by_edge` swap remain from the original plan.",
+      "The `uses: $/.github/actions/...` actionlint warning in both workflows is unexplained."
+    ]
+  }
+}
