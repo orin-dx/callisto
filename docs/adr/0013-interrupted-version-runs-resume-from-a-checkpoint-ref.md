@@ -9,13 +9,13 @@ Status: Proposed
 
 ## Decision
 
-Before its first write, `version` records its inputs (`HEAD`, the working tree, the index, and the tags and flags planning reads) as a commit at `refs/worktree/callisto/checkpoint/version`, and deletes the ref when the run completes. A re-run while the ref exists plans from those inputs and reapplies idempotently. It first applies the plan in a scratch worktree of the checkpoint to learn what a finished run leaves, and refuses, writing nothing, unless every file the plan was derived from or writes is on disk as recorded or as that expected tree has it. The ref is per worktree, so a linked worktree has its own checkpoint. Discarding a run is a command, `callisto version --abort`: it puts back the files the run wrote that still hold its output, removes the files it created (never an ignored one), leaves and reports a file edited since, and keeps the checkpoint until nothing is left to put back.
+Before its first write, `version` records its inputs (`HEAD`, the working tree, the index, and the tags and flags planning reads) as a commit at `refs/worktree/callisto/checkpoint/version`, and deletes the ref when the run completes. A re-run while the ref exists plans from those inputs and reapplies idempotently. It first applies the plan in a scratch worktree of the checkpoint to learn what a finished run leaves, and refuses, writing nothing, unless every file the plan was derived from or writes is on disk as recorded or as that expected tree has it. The ref is per worktree, so a linked worktree has its own checkpoint, and it records the workspace so another workspace of the worktree does not resume it. A refused resume has one way out: delete the ref (`git update-ref -d …`, named in the error) and follow the E121 steps, which is today's behaviour.
 
 ## Options considered
 
 - **Restore the written files when a step fails** — rejected: each review of #543 found another file state Git already restores correctly (lockfiles from an earlier ecosystem, binary files, symlinks, read-only files).
 - **Re-plan from the versions at `HEAD`** — rejected: planning also reads dependency specs from disk, and a prototype resume dropped a dependent the first run had rewritten, exiting 0.
-- **Print shell commands that undo the run** — rejected: two reviews found five defects in the printed block (it overwrote edits made since, deleted a user's ignored lockfile, ran from the wrong directory and then dropped the checkpoint, needed quoting). A command decides per file, takes paths as arguments and can stop and be repeated. This departs from ADR 3's "no recovery commands", which concerns release execution, where providers stay observable; a `version` run has no provider to adopt from.
+- **An undo for a refused resume** (printed shell commands, then a `version --abort` command) — rejected for now: three review rounds found about a dozen defects in it (edits made since overwritten, an ignored lockfile deleted, wrong working directory, staged and untracked files, Git versions before `git restore`), and nothing shows users need more than deleting the ref and following E121. This matches the 2026-10-30 decision to defer recovery beyond resume. Revisit if refusals prove common.
 - **Persist the plan itself** — rejected: it must be serialized and versioned and breaks across a Callisto upgrade; recorded inputs can be planned by any version.
 
 ## Consequences
@@ -26,9 +26,9 @@ Before its first write, `version` records its inputs (`HEAD`, the working tree, 
 
 ## Enforcement
 
-- `crates/callisto-cli/tests/version_resume_tests.rs`: `a_resumed_run_leaves_exactly_what_an_uninterrupted_run_leaves` compares a run whose lockfile refresh fails once and is resumed with one that never failed, across ecosystems, a workspace below the repository root, pre mode and an uncommitted changeset; `changed_inputs_refuse_the_resume_and_the_printed_steps_undo_the_run`; `a_run_that_failed_to_write_its_preview_writes_it_when_run_again`; `a_version_edited_by_hand_after_the_failure_is_refused_not_overwritten`.
+- `crates/callisto-cli/tests/version_resume_tests.rs`: `a_resumed_run_leaves_exactly_what_an_uninterrupted_run_leaves` compares a run whose lockfile refresh fails once and is resumed with one that never failed, across ecosystems, a workspace below the repository root, pre mode and an uncommitted changeset; `a_run_that_failed_to_write_its_preview_writes_it_when_run_again`; the refusal tests (`a_manifest_edited_after_the_failure_refuses_the_resume`, `a_dependency_requirement_edited_after_the_failure_refuses_the_resume`, `a_changeset_deleted_by_hand_after_the_failure_refuses_the_resume`, `a_different_workspace_does_not_resume_anothers_checkpoint`); and `a_refused_resume_can_be_given_up_by_deleting_the_checkpoint`.
 - `crates/callisto-model/src/vcs/access.rs`: `a_checkpoint_records_the_tree_leaves_the_user_state_alone_and_is_held_once`.
-- VER-APPLY-18 and VER-APPLY-19 in `docs/specs/versioning.json`.
+- VER-APPLY-19 and VER-APPLY-20 in `docs/specs/versioning.json`.
 
 ## Revisit when
 

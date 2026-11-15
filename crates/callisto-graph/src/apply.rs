@@ -291,22 +291,6 @@ pub fn validate_plan<R: CommandRunner>(
     Ok(())
 }
 
-/// Every lockfile a run of `plan` may refresh or create, whether or not it exists: the known lockfile names beside each
-/// npm and Python workspace the plan wrote into, and each Cargo workspace's `Cargo.lock`. Apply refreshes and stages
-/// these; abort removes the ones the run created.
-pub fn lockfile_candidates(root: &Path, plan: &VersionPlan) -> Result<Vec<PathBuf>, GraphError> {
-    let active = active_ecosystems(plan);
-    let cargo_workspaces = if active.contains(&Ecosystem::Cargo) {
-        touched_cargo_workspaces(root, plan)?
-    } else {
-        BTreeSet::new()
-    };
-    Ok(lockfile_candidate_paths(
-        &lockfile_dirs(root, plan, &active)?,
-        &cargo_workspaces,
-    ))
-}
-
 fn lockfile_candidate_paths(dirs: &LockfileDirs, cargo_workspaces: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
     let beside = |dirs: &BTreeSet<PathBuf>, names: &[&str]| -> Vec<PathBuf> {
         dirs.iter()

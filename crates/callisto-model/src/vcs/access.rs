@@ -1235,7 +1235,7 @@ mod tests {
         let before = (status(&["status", "--porcelain"]), status(&["diff", "--cached"]));
 
         let facts = git.checkpoint_facts("9.9.9").unwrap();
-        git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts, "2026-01-02", &[])
+        git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts, "2026-01-02")
             .unwrap();
 
         assert_eq!(
@@ -1260,7 +1260,7 @@ mod tests {
             "the second parent records the index"
         );
         assert!(matches!(
-            git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts, "2026-01-02", &[]),
+            git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts, "2026-01-02"),
             Err(VcsError::CheckpointHeld { .. })
         ));
         git.delete_checkpoint(super::super::VERSION_CHECKPOINT).unwrap();

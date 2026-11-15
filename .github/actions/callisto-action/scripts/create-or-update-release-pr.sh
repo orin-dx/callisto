@@ -98,9 +98,6 @@ echo 'hasChangesets=true' >> "$GITHUB_OUTPUT"
 # The version command consumes the changesets the body describes, so it also writes the facts the body is built from.
 preview_file=$(mktemp)
 read -ra command <<< "$INPUT_VERSION_COMMAND"
-# A runner that is reused can still hold an interrupted run's checkpoint, which refuses a run once HEAD has moved. Start
-# clean; an older Callisto without the flag has no checkpoint to discard.
-"${command[@]}" --abort || true
 command+=(--emit-decision "$INPUT_DECISION_PATH" --emit-preview "$preview_file")
 "${command[@]}"
 

@@ -17,7 +17,7 @@ const HEAD_TRAILER: &str = "Callisto-Head";
 const TAGS_TRAILER: &str = "Callisto-Tags";
 const VERSION_TRAILER: &str = "Callisto-Version";
 const DATE_TRAILER: &str = "Callisto-Date";
-const EMIT_TRAILER: &str = "Callisto-Emit";
+const WORKSPACE_TRAILER: &str = "Callisto-Workspace";
 
 /// The inputs a plan reads besides files, recorded in the checkpoint commit's message.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +25,9 @@ pub struct CheckpointFacts {
     pub head: String,
     pub tags: String,
     pub callisto_version: String,
+    /// The workspace directory inside the repository (empty at the top). Workspaces share a worktree's checkpoint ref,
+    /// so a run in another workspace must not resume this one's.
+    pub workspace: String,
 }
 
 /// A recorded checkpoint: a commit whose tree is the working tree, whose first parent is `HEAD` and whose second
@@ -35,9 +38,6 @@ pub struct Checkpoint {
     pub facts: CheckpointFacts,
     /// The date the run planned with (`YYYY-MM-DD`), so a resume on a later day writes the same changelog dates.
     pub date: String,
-    /// Files inside the workspace the run was asked to write besides the plan's (`--emit-decision`, `--emit-preview`),
-    /// which an abort puts back or removes like any other output of the run.
-    pub emitted: Vec<std::path::PathBuf>,
 }
 
 impl GitAccess<'_> {
@@ -59,13 +59,9 @@ impl GitAccess<'_> {
                 head: trailer(HEAD_TRAILER),
                 tags: trailer(TAGS_TRAILER),
                 callisto_version: trailer(VERSION_TRAILER),
+                workspace: trailer(WORKSPACE_TRAILER),
             },
             date: trailer(DATE_TRAILER),
-            emitted: message
-                .lines()
-                .filter_map(|line| line.strip_prefix(EMIT_TRAILER)?.strip_prefix(": "))
-                .map(std::path::PathBuf::from)
-                .collect(),
             commit,
         }))
     }
@@ -77,6 +73,7 @@ impl GitAccess<'_> {
             head: self.head_sha()?.as_str().to_string(),
             tags: crate::release::digest::lower_hex(Sha256::digest(tags.as_bytes())),
             callisto_version: callisto_version.to_string(),
+            workspace: self.root_prefix()?.display().to_string(),
         })
     }
 
@@ -87,13 +84,7 @@ impl GitAccess<'_> {
     ///
     /// [`VcsError::CheckpointHeld`] when `name` already exists, so two runs never share one; a failed git command
     /// otherwise.
-    pub fn create_checkpoint(
-        &self,
-        name: &str,
-        facts: &CheckpointFacts,
-        date: &str,
-        emitted: &[std::path::PathBuf],
-    ) -> Result<CommitSha, VcsError> {
+    pub fn create_checkpoint(&self, name: &str, facts: &CheckpointFacts, date: &str) -> Result<CommitSha, VcsError> {
         let git_dir = self.git_stdout(&["rev-parse", "--absolute-git-dir"])?;
         let index = Path::new(git_dir.trim()).join("callisto-checkpoint.index");
         let index_str = index.to_string_lossy().into_owned();
@@ -115,13 +106,10 @@ impl GitAccess<'_> {
                 return Err(git_failed(&args, self.root(), &output.stderr));
             }
             let tree = self.git_stdout_env(&["write-tree"], &env)?;
-            let mut message = format!(
-                "callisto checkpoint\n\n{HEAD_TRAILER}: {}\n{TAGS_TRAILER}: {}\n{VERSION_TRAILER}: {}\n{DATE_TRAILER}: {date}\n",
-                facts.head, facts.tags, facts.callisto_version
+            let message = format!(
+                "callisto checkpoint\n\n{HEAD_TRAILER}: {}\n{TAGS_TRAILER}: {}\n{VERSION_TRAILER}: {}\n{WORKSPACE_TRAILER}: {}\n{DATE_TRAILER}: {date}\n",
+                facts.head, facts.tags, facts.callisto_version, facts.workspace
             );
-            for path in emitted {
-                message.push_str(&format!("{EMIT_TRAILER}: {}\n", path.display()));
-            }
             self.internal_commit(&tree, &[&facts.head, index_commit.as_str()], &message)
         })();
         std::fs::remove_file(&index).ok();
@@ -148,69 +136,6 @@ impl GitAccess<'_> {
         let path = path.to_string_lossy();
         self.git_stdout(&["--literal-pathspecs", "ls-files", "--", &path])
             .map(|listed| !listed.is_empty())
-    }
-
-    /// Whether a `.gitignore` or exclude rule ignores `path` (relative to this root).
-    pub fn is_ignored(&self, path: &Path) -> Result<bool, VcsError> {
-        let path = path.to_string_lossy();
-        let args = ["check-ignore", "-q", "--", &path];
-        let output = self.runner().run("git", &args, self.root())?;
-        match output.exit_code {
-            Some(0) => Ok(true),
-            Some(1) => Ok(false),
-            _ => Err(git_failed(&args, self.root(), &output.stderr)),
-        }
-    }
-
-    /// Puts `path` (relative to this root) back as the checkpoint at `name` recorded it: the file from its tree and
-    /// the index entry from its second parent (no entry when it was not staged). Paths are passed as arguments and
-    /// matched literally, so no quoting or pathspec magic applies.
-    pub fn restore_path(&self, name: &str, path: &Path) -> Result<(), VcsError> {
-        let rev = self.resolve_commit(name)?.ok_or_else(|| VcsError::RefNotFound {
-            ref_name: name.to_string(),
-        })?;
-        let rev = rev.as_str();
-        let text = path.to_string_lossy();
-        self.git_stdout(&["--literal-pathspecs", "restore", "-W", "-s", rev, "--", &text])?;
-        if self.path_exists_at(&format!("{rev}^2"), path)? {
-            self.git_stdout(&[
-                "--literal-pathspecs",
-                "restore",
-                "-S",
-                "-s",
-                &format!("{rev}^2"),
-                "--",
-                &text,
-            ])
-            .map(drop)
-        } else {
-            self.unstage(path)
-        }
-    }
-
-    /// Removes `path`'s index entry, if any, and the file.
-    pub fn discard_created(&self, path: &Path) -> Result<(), VcsError> {
-        self.unstage(path)?;
-        match std::fs::remove_file(self.root().join(path)) {
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                Err(VcsError::Git(format!("could not remove `{}`: {error}", path.display())))
-            }
-            _ => Ok(()),
-        }
-    }
-
-    fn unstage(&self, path: &Path) -> Result<(), VcsError> {
-        let text = path.to_string_lossy();
-        self.git_stdout(&[
-            "--literal-pathspecs",
-            "rm",
-            "-q",
-            "--cached",
-            "--ignore-unmatch",
-            "--",
-            &text,
-        ])
-        .map(drop)
     }
 
     /// Whether `path` (relative to this root) is on disk as `rev` recorded it, compared as Git compares: through its
@@ -269,45 +194,10 @@ impl GitAccess<'_> {
         Ok(())
     }
 
-    /// Files under this root that exist now but not in `rev`: untracked ones and ones added to the index, relative to
-    /// this root.
-    pub fn created_since(&self, rev: &str) -> Result<Vec<std::path::PathBuf>, VcsError> {
-        let mut created = self.untracked_files()?;
-        let added = self.git_stdout(&[
-            "-c",
-            "core.quotepath=off",
-            "diff",
-            "--name-only",
-            "--relative",
-            "--diff-filter=A",
-            rev,
-            "--",
-            ".",
-        ])?;
-        created.extend(added.lines().map(std::path::PathBuf::from));
-        created.sort();
-        created.dedup();
-        Ok(created)
-    }
-
     /// This root's path inside the repository (empty at the top), so the same directory can be found in a worktree.
     pub fn root_prefix(&self) -> Result<std::path::PathBuf, VcsError> {
         self.git_stdout(&["rev-parse", "--show-prefix"])
             .map(std::path::PathBuf::from)
-    }
-
-    /// Untracked, not ignored files under this root, relative to it.
-    pub fn untracked_files(&self) -> Result<Vec<std::path::PathBuf>, VcsError> {
-        let listed = self.git_stdout(&[
-            "-c",
-            "core.quotepath=off",
-            "ls-files",
-            "--others",
-            "--exclude-standard",
-            "--",
-            ".",
-        ])?;
-        Ok(listed.lines().map(std::path::PathBuf::from).collect())
     }
 
     /// The files under `dir` (relative to this root) in `rev`'s tree, relative to this root.

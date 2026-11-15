@@ -416,90 +416,6 @@ fn a_manifest_edited_after_the_failure_refuses_the_resume() {
 }
 
 #[test]
-fn the_printed_abort_steps_never_remove_a_file_the_user_added() {
-    let repo = repo(cargo_cascade, "", None);
-    let bin = fake_tools(repo.root.parent().unwrap());
-    let flag = repo.root.parent().unwrap().join("failed-once");
-    version(&repo.workspace, &bin, Some(("cargo", &flag)));
-    write(&repo.workspace, ".changeset/two.md", "---\n\"a\": patch\n---\n\nMore\n");
-    write(&repo.workspace, "notes.txt", "mine\n");
-    // A lockfile in a directory the plan never touched is not the run's, whatever its name.
-    write(&repo.workspace, "unrelated/Cargo.lock", "# mine\n");
-
-    let refused = version(&repo.workspace, &bin, None);
-    let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
-    assert!(stderr.contains("E340"), "{stderr}");
-    run_abort_steps(&repo.workspace, &bin);
-
-    assert!(
-        repo.workspace.join(".changeset/two.md").exists()
-            && repo.workspace.join("notes.txt").exists()
-            && repo.workspace.join("unrelated/Cargo.lock").exists(),
-        "the abort steps removed a file the user added"
-    );
-}
-
-/// Runs `callisto version --abort` against `workspace`, from `from` (the workspace itself unless given).
-fn abort_run(workspace: &Path, from: &Path, bin: &Path) -> Output {
-    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
-    Command::new(env!("CARGO_BIN_EXE_callisto"))
-        .args(["--cwd", workspace.to_str().unwrap(), "version", "--abort"])
-        .current_dir(from)
-        .env("PATH", path)
-        .output()
-        .unwrap()
-}
-
-/// Runs the abort and asserts it discards the run.
-fn run_abort_steps(workspace: &Path, bin: &Path) {
-    let out = abort_run(workspace, workspace, bin);
-    assert!(out.status.success(), "abort: {}", String::from_utf8_lossy(&out.stderr));
-}
-
-/// The abort steps run after a late failure, once a new changelog is staged, put back the state before the run.
-#[test]
-fn the_abort_steps_remove_a_changelog_the_run_staged() {
-    let repo = repo(cargo_cascade, "", None);
-    let bin = fake_tools(repo.root.parent().unwrap());
-    let before = state(&repo.root);
-    let out_dir = repo.root.parent().unwrap().join("out");
-    fs::create_dir_all(&out_dir).unwrap();
-    fs::set_permissions(&out_dir, fs::Permissions::from_mode(0o555)).unwrap();
-    let preview = out_dir.join("preview.json");
-    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
-    let first = Command::new(env!("CARGO_BIN_EXE_callisto"))
-        .args([
-            "--cwd",
-            repo.workspace.to_str().unwrap(),
-            "version",
-            "--emit-preview",
-            preview.to_str().unwrap(),
-        ])
-        .env("PATH", &path)
-        .output()
-        .unwrap();
-    assert!(!first.status.success(), "the preview write should fail");
-    assert!(
-        git(&repo.root, &["diff", "--cached", "--name-only"]).contains("crates/a/CHANGELOG.md"),
-        "the run staged the new changelog before failing"
-    );
-    // Any changed input refuses the resume.
-    write(&repo.workspace, "callisto.toml", "# edited\n");
-
-    let refused = version(&repo.workspace, &bin, None);
-    let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
-    assert!(stderr.contains("E340"), "{stderr}");
-    run_abort_steps(&repo.workspace, &bin);
-    write(&repo.workspace, "callisto.toml", "");
-
-    assert_eq!(
-        state(&repo.root),
-        before,
-        "the abort steps should restore the state before the run"
-    );
-}
-
-#[test]
 fn a_dependency_requirement_edited_after_the_failure_refuses_the_resume() {
     // A major bump of `a` is outside b's requirement, so the run rewrites it.
     let repo = repo(
@@ -613,77 +529,6 @@ fn a_run_that_fails_before_writing_leaves_no_checkpoint() {
     assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
 }
 
-/// An edit made after the interruption to a file the run wrote is not overwritten; the abort says so and can be
-/// repeated once the file is dealt with.
-#[test]
-fn an_abort_leaves_a_file_edited_since_the_interruption_and_can_be_repeated() {
-    let repo = repo(cargo_cascade, "", None);
-    let bin = fake_tools(repo.root.parent().unwrap());
-    let before = state(&repo.root);
-    failed_cargo_run(&repo, &bin);
-    let changeset = repo.workspace.join(".changeset/one.md");
-    let original = fs::read_to_string(&changeset).unwrap();
-    fs::write(&changeset, format!("{original}extra line\n")).unwrap();
-
-    let out = abort_run(&repo.workspace, &repo.workspace, &bin);
-
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        !out.status.success() && stderr.contains("E342") && stderr.contains(".changeset/one.md"),
-        "{stderr}"
-    );
-    assert!(
-        fs::read_to_string(&changeset).unwrap().contains("extra line"),
-        "the edit must survive"
-    );
-    assert!(has_checkpoint(&repo.root), "the checkpoint stays until nothing is left");
-
-    fs::write(&changeset, original).unwrap();
-    run_abort_steps(&repo.workspace, &bin);
-    assert!(!has_checkpoint(&repo.root));
-    assert_eq!(state(&repo.root), before);
-}
-
-/// A lockfile that is ignored may predate the run, so an abort leaves it.
-#[test]
-fn an_abort_keeps_an_ignored_lockfile() {
-    let repo = repo(
-        |ws| {
-            cargo_cascade(ws);
-            write(ws, ".gitignore", "Cargo.lock\n");
-            write(ws, "Cargo.lock", "# pinned by me\n");
-        },
-        "",
-        None,
-    );
-    let bin = fake_tools(repo.root.parent().unwrap());
-    failed_cargo_run(&repo, &bin);
-    write(&repo.workspace, "callisto.toml", "# edited\n");
-    assert!(String::from_utf8_lossy(&version(&repo.workspace, &bin, None).stderr).contains("E340"));
-
-    run_abort_steps(&repo.workspace, &bin);
-
-    assert_eq!(
-        fs::read_to_string(repo.workspace.join("Cargo.lock")).unwrap(),
-        "# pinned by me\n"
-    );
-}
-
-/// The abort works from any directory, for a workspace below the repository root.
-#[test]
-fn the_abort_works_from_the_repository_root_for_a_workspace_below_it() {
-    let repo = repo(cargo_cascade, "ws", None);
-    let bin = fake_tools(repo.root.parent().unwrap());
-    let before = state(&repo.root);
-    failed_cargo_run(&repo, &bin);
-
-    let out = abort_run(&repo.workspace, &repo.root, &bin);
-
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert!(!has_checkpoint(&repo.root));
-    assert_eq!(state(&repo.root), before);
-}
-
 /// A changeset the user deletes after the interruption is a change, not the run's own consumption.
 #[test]
 fn a_changeset_deleted_by_hand_after_the_failure_refuses_the_resume() {
@@ -704,6 +549,62 @@ fn a_changeset_deleted_by_hand_after_the_failure_refuses_the_resume() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !out.status.success() && stderr.contains("E340") && stderr.contains(".changeset/one.md"),
+        "{stderr}"
+    );
+}
+
+/// A changed input refuses the resume; deleting the checkpoint, as the error says, falls back to the E121 steps.
+#[test]
+fn a_refused_resume_can_be_given_up_by_deleting_the_checkpoint() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    failed_cargo_run(&repo, &bin);
+    write(&repo.workspace, "callisto.toml", "# edited\n");
+
+    let refused = version(&repo.workspace, &bin, None);
+    // The error renderer wraps the help text, so compare with whitespace collapsed.
+    let stderr = String::from_utf8_lossy(&refused.stderr)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        stderr.contains("E340") && stderr.contains("git update-ref -d refs/worktree/callisto"),
+        "{stderr}"
+    );
+
+    git(
+        &repo.root,
+        &["update-ref", "-d", "refs/worktree/callisto/checkpoint/version"],
+    );
+    let after = version(&repo.workspace, &bin, None);
+
+    assert!(
+        String::from_utf8_lossy(&after.stderr).contains("E121"),
+        "{}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+}
+
+/// Workspaces in one worktree share its checkpoint ref, so a run in another workspace must not resume this one's.
+#[test]
+fn a_different_workspace_does_not_resume_anothers_checkpoint() {
+    let repo = repo(
+        |root| {
+            cargo_cascade(&root.join("ws1"));
+            cargo_cascade(&root.join("ws2"));
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    version(&repo.root.join("ws1"), &bin, Some(("cargo", &flag)));
+
+    let out = version(&repo.root.join("ws2"), &bin, None);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains("E340") && stderr.contains("ws1"),
         "{stderr}"
     );
 }
@@ -782,7 +683,7 @@ fn a_plan_that_writes_nothing_records_no_checkpoint() {
 }
 
 /// The scratch checkout is internal: a user's hook does not run in it, so a failing one cannot block a resume or
-/// an abort.
+/// a resume.
 #[test]
 fn a_failing_post_checkout_hook_does_not_block_a_resume() {
     let repo = repo(cargo_cascade, "", None);
@@ -797,70 +698,6 @@ fn a_failing_post_checkout_hook_does_not_block_a_resume() {
 
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(git(&repo.root, &["worktree", "list"]).lines().count(), 1);
-}
-
-#[test]
-fn abort_keeps_stdout_clean_under_format_json() {
-    let repo = repo(cargo_cascade, "", None);
-    let bin = fake_tools(repo.root.parent().unwrap());
-    failed_cargo_run(&repo, &bin);
-    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
-
-    let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
-        .args([
-            "--format",
-            "json",
-            "--cwd",
-            repo.workspace.to_str().unwrap(),
-            "version",
-            "--abort",
-        ])
-        .env("PATH", path)
-        .output()
-        .unwrap();
-
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert!(
-        out.stdout.is_empty(),
-        "stdout: {}",
-        String::from_utf8_lossy(&out.stdout)
-    );
-}
-
-/// The decision a run emitted before it was interrupted is discarded with the rest of the run.
-#[test]
-fn an_abort_removes_the_decision_file_the_interrupted_run_emitted() {
-    let repo = repo(cargo_cascade, "", None);
-    let bin = fake_tools(repo.root.parent().unwrap());
-    let before = state(&repo.root);
-    let out_dir = repo.root.parent().unwrap().join("out");
-    fs::create_dir_all(&out_dir).unwrap();
-    fs::set_permissions(&out_dir, fs::Permissions::from_mode(0o555)).unwrap();
-    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
-    let first = Command::new(env!("CARGO_BIN_EXE_callisto"))
-        .args([
-            "--cwd",
-            repo.workspace.to_str().unwrap(),
-            "version",
-            "--emit-decision",
-            ".callisto/release-decision.json",
-            "--emit-preview",
-            out_dir.join("preview.json").to_str().unwrap(),
-        ])
-        .env("PATH", path)
-        .output()
-        .unwrap();
-    assert!(!first.status.success(), "the preview write should fail");
-    assert!(
-        repo.workspace.join(".callisto/release-decision.json").exists(),
-        "the decision was written before the preview failed"
-    );
-
-    run_abort_steps(&repo.workspace, &bin);
-
-    assert!(!repo.workspace.join(".callisto/release-decision.json").exists());
-    fs::remove_dir(repo.workspace.join(".callisto")).ok();
-    assert_eq!(state(&repo.root), before);
 }
 
 #[test]
@@ -890,56 +727,6 @@ fn a_dry_run_leaves_other_worktrees_registered() {
         2,
         "a dry run must not prune a worktree whose directory is away"
     );
-}
-
-#[test]
-fn changed_inputs_refuse_the_resume_and_the_printed_steps_undo_the_run() {
-    let changes: [(&str, Shape); 2] = [
-        ("callisto.toml", |root| {
-            write(
-                root,
-                "callisto.toml",
-                "[[fixed-group]]\nname = \"all\"\nmembers = [\"cargo/a\", \"cargo/b\"]\n",
-            );
-        }),
-        ("a tag", |root| {
-            git(root, &["tag", "-a", "a@1.0.0", "-m", "a"]);
-        }),
-    ];
-    for (name, change) in changes {
-        let repo = repo(cargo_cascade, "", None);
-        let bin = fake_tools(repo.root.parent().unwrap());
-        let before = state(&repo.root);
-        version(
-            &repo.workspace,
-            &bin,
-            Some(("cargo", &repo.root.parent().unwrap().join("failed-once"))),
-        );
-        change(&repo.root);
-
-        let refused = version(&repo.workspace, &bin, None);
-        let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
-        assert!(
-            !refused.status.success() && stderr.contains("E340"),
-            "{name}: resume should be refused: {stderr}"
-        );
-
-        run_abort_steps(&repo.workspace, &bin);
-        if name == "a tag" {
-            git(&repo.root, &["tag", "-d", "a@1.0.0"]);
-        } else {
-            write(&repo.root, "callisto.toml", "");
-        }
-        assert_eq!(
-            state(&repo.root),
-            before,
-            "{name}: the abort steps should restore the state before the run"
-        );
-        assert!(
-            !has_checkpoint(&repo.root),
-            "{name}: the abort steps remove the checkpoint"
-        );
-    }
 }
 
 /// The emitted files are the run's last effects: a run that consumed its changesets but could not write the preview

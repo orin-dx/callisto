@@ -407,31 +407,16 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     })
 }
 
-/// What a checkpoint says about the real tree, for resuming or discarding an interrupted run.
-pub struct ResumeAnalysis {
-    /// Inputs that are neither as recorded nor as a finished run would leave them; a resume refuses when any exist.
-    pub changes: Vec<String>,
-    /// Files the run wrote that still hold its output, to put back as the checkpoint recorded them.
-    pub restore: Vec<std::path::PathBuf>,
-    /// Files the run created, to delete.
-    pub remove: Vec<std::path::PathBuf>,
-    /// Files the run wrote that were edited since, which an abort leaves alone.
-    pub edited: Vec<std::path::PathBuf>,
-}
-
-/// Analyses an interrupted run by checking that the real tree is the checkpoint plus some of the run's own writes.
+/// The inputs of an interrupted run that changed in a way the run did not cause, so a resume must refuse (ADR 13).
 ///
 /// `scratch` is the workspace loaded from the checkpoint's worktree and `plan` was made from it. The plan is applied
-/// there, without a lockfile refresh, so the worktree becomes the tree a finished run leaves. Every file the plan
-/// was derived from (the manifests the loader opened, `callisto.toml`, the changesets) and every file it writes must
-/// then be on disk either as the checkpoint recorded it or as that expected tree has it, compared through Git's
-/// filters; a file the expected tree lacks counts as the run's deletion only when the index lacks it too, so a changeset
-/// the user deleted by hand is a change. `HEAD`, the tags and the Callisto version must match as well.
-///
-/// The same data gives the abort plan: files the run wrote and that still hold its output are restored, files it
-/// created are removed (never an ignored file), and a file edited since is reported and left. `permit` writes only
-/// into `scratch`.
-pub fn analyze_resume<R: CommandRunner, D: DependencyResolver>(
+/// there, without a lockfile refresh, so the worktree becomes the tree a finished run leaves. Every file the plan was
+/// derived from (the manifests the loader opened, `callisto.toml`, the changesets) and every file it writes must then be
+/// on disk either as the checkpoint recorded it or as that expected tree has it, compared through Git's filters; a file
+/// the expected tree lacks counts as the run's deletion only when the index lacks it too, so a changeset the user
+/// deleted by hand is a change. `HEAD`, the tags and the Callisto version must match as well. `permit` writes only into
+/// `scratch`.
+pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     scratch: &Workspace<'_, R, D>,
     checkpoint: &callisto_model::vcs::Checkpoint,
@@ -439,7 +424,7 @@ pub fn analyze_resume<R: CommandRunner, D: DependencyResolver>(
     plan: &VersionPlan,
     runner: &R,
     permit: &callisto_model::ApplyPermit,
-) -> Result<ResumeAnalysis, GraphError> {
+) -> Result<Vec<String>, GraphError> {
     let then = &checkpoint.facts;
     let mut changes = Vec::new();
     if now.head != then.head {
@@ -447,6 +432,12 @@ pub fn analyze_resume<R: CommandRunner, D: DependencyResolver>(
     }
     if now.tags != then.tags {
         changes.push("tags changed".to_string());
+    }
+    if now.workspace != then.workspace {
+        changes.push(format!(
+            "the checkpoint belongs to the workspace `{}`, not this one",
+            then.workspace
+        ));
     }
     if now.callisto_version != then.callisto_version {
         changes.push(format!(
@@ -464,11 +455,10 @@ pub fn analyze_resume<R: CommandRunner, D: DependencyResolver>(
     let git = ws.git_access();
     let expected = scratch.git_access();
     let rev = checkpoint.commit.as_str();
-    let written = crate::apply::written_paths(plan);
 
     let mut inputs: BTreeSet<std::path::PathBuf> = ws.manifest_cache.borrow().keys().cloned().collect();
     inputs.insert(std::path::PathBuf::from("callisto.toml"));
-    inputs.extend(written.iter().cloned());
+    inputs.extend(crate::apply::written_paths(plan));
     let dir = &ws.config.changesets_dir;
     inputs.extend(git.files_at(rev, dir)?);
     if let Ok(entries) = std::fs::read_dir(ws.root.join(dir)) {
@@ -490,42 +480,7 @@ pub fn analyze_resume<R: CommandRunner, D: DependencyResolver>(
             changes.push(format!("`{}` changed", path.display()));
         }
     }
-
-    // Abort touches only what the run writes: the plan's files and the lockfiles its refresh may have created.
-    let lockfiles = crate::apply::lockfile_candidates(&scratch.root, plan)?;
-    // Lockfiles and emitted files are outputs a tool or the run produced, so there is no expected content to compare
-    // them with: they are put back as recorded.
-    let touched: BTreeSet<&std::path::PathBuf> = written
-        .iter()
-        .chain(lockfiles.iter())
-        .chain(checkpoint.emitted.iter())
-        .collect();
-    let (mut restore, mut remove, mut edited) = (Vec::new(), Vec::new(), Vec::new());
-    for path in touched {
-        let current = git.file_hash(path)?;
-        let recorded = git.blob_hash_at(rev, path)?;
-        if current == recorded {
-            continue;
-        }
-        // A tool rewrote a lockfile, so there is no expected output to compare it with.
-        let still_run_output = !written.contains(path) || current == expected.file_hash(path)?;
-        if !still_run_output {
-            edited.push(path.clone());
-        } else if recorded.is_none() {
-            // An ignored file may predate the run (the checkpoint leaves ignored files out), so it stays.
-            if !git.is_ignored(path)? {
-                remove.push(path.clone());
-            }
-        } else {
-            restore.push(path.clone());
-        }
-    }
-    Ok(ResumeAnalysis {
-        changes,
-        restore,
-        remove,
-        edited,
-    })
+    Ok(changes)
 }
 
 /// Refuses when a canonical manifest version differs from `HEAD` while release inputs remain or the change is staged.

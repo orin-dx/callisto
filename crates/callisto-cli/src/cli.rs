@@ -231,10 +231,6 @@ pub struct VersionArgs {
     /// changesets they came from. A relative path is relative to `--cwd`.
     #[arg(long, value_name = "PATH")]
     pub emit_preview: Option<std::path::PathBuf>,
-    /// Discards an interrupted run: puts back the files it wrote that you have not edited since, removes the files it
-    /// created and deletes its checkpoint. Run it when `version` reports that the interrupted run cannot resume.
-    #[arg(long, conflicts_with_all = ["emit_decision", "emit_preview", "strict", "allow_empty_changesets", "no_refresh_lockfiles", "refresh_lockfiles"])]
-    pub abort: bool,
 }
 
 /// Subcommands for managing prerelease mode.
@@ -560,7 +556,6 @@ mod tests {
                 allow_empty_changesets: false,
                 emit_decision: None,
                 emit_preview: None,
-                abort: false,
             }),
             Command::Pre(PreArgs::Exit),
             Command::Snapshot(SnapshotArgs {

@@ -10,7 +10,7 @@ use callisto_model::{ApplyPermit, DiagnosticSeverity};
 use crate::cli::{GlobalArgs, OutputFormat, VersionArgs};
 use crate::commands::release::workspace_decision_path;
 use crate::error::CliError;
-use crate::output::{emit_line, emit_report, log_line};
+use crate::output::{emit_line, emit_report};
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
@@ -57,70 +57,7 @@ fn open_checkpoint_tree<'g, 'r>(
     Ok((resume, scratch))
 }
 
-/// `version --abort`: discards an interrupted run. Files the run wrote that still hold its output are put back as the
-/// checkpoint recorded them, files it created are removed, and a file edited since is left and reported, which keeps
-/// the checkpoint so the abort can be repeated. If `HEAD` moved, the run may have been committed by hand, so no file is
-/// touched and only the checkpoint is dropped.
-fn abort(global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let runner = CliCommandRunner;
-    let ws = load_workspace(global, &runner)?;
-    let git = ws.git_access();
-    let Some(checkpoint) = git.checkpoint(VERSION_CHECKPOINT).map_err(GraphError::from)? else {
-        log_line(global.format, "No interrupted `version` run to discard.")?;
-        return Ok(ExitCode::SUCCESS);
-    };
-    let facts = git
-        .checkpoint_facts(env!("CARGO_PKG_VERSION"))
-        .map_err(GraphError::from)?;
-    if facts.head != checkpoint.facts.head {
-        git.delete_checkpoint(VERSION_CHECKPOINT).map_err(GraphError::from)?;
-        log_line(
-            global.format,
-            "`HEAD` moved since the interrupted run, so its files were left as they are. Checkpoint removed.",
-        )?;
-        return Ok(ExitCode::SUCCESS);
-    }
-    let permit =
-        ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or(CliError::VersionEmitDryRun { flag: "abort" })?;
-    let (tree, scratch) = open_checkpoint_tree(git, &checkpoint, &runner, global)?;
-    let opts = VersionOptions {
-        strict: false,
-        allow_empty_changesets: true,
-    };
-    let date = if checkpoint.date.is_empty() {
-        today_utc()
-    } else {
-        checkpoint.date.clone()
-    };
-    let plan = callisto_graph::commands::plan_version_dated(&scratch, &select_inference(), &opts, Some(&date))?;
-    let analysis =
-        callisto_graph::commands::analyze_resume(&ws, &scratch, &checkpoint, &facts, &plan, &runner, &permit)?;
-    drop(scratch);
-    drop(tree);
-
-    for path in &analysis.restore {
-        git.restore_path(VERSION_CHECKPOINT, path).map_err(GraphError::from)?;
-    }
-    for path in &analysis.remove {
-        git.discard_created(path).map_err(GraphError::from)?;
-    }
-    if !analysis.edited.is_empty() {
-        let edited = analysis.edited.iter().map(|p| p.display().to_string()).collect();
-        return Err(GraphError::CheckpointAbortIncomplete { edited }.into());
-    }
-    git.delete_checkpoint(VERSION_CHECKPOINT).map_err(GraphError::from)?;
-    log_line(global.format, "Discarded the interrupted `version` run.")?;
-    Ok(ExitCode::SUCCESS)
-}
-
 pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    if args.abort {
-        // Fails before loading anything when `--dry-run` is also given, as for the emitted files.
-        if global.dry_run {
-            return Err(CliError::VersionEmitDryRun { flag: "abort" });
-        }
-        return abort(global);
-    }
     if global.dry_run {
         for (flag, set) in [
             ("emit-decision", args.emit_decision.is_some()),
@@ -212,13 +149,10 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     if let (Some(scratch), Some(checkpoint), Some(facts), Some(permit), false) =
         (&checkpoint_ws, &checkpoint, &facts, permit.as_ref(), has_errors)
     {
-        let analysis =
-            callisto_graph::commands::analyze_resume(&ws, scratch, checkpoint, facts, &plan, &runner, permit)?;
-        if !analysis.changes.is_empty() {
-            return Err(GraphError::CheckpointInputsChanged {
-                changes: analysis.changes,
-            }
-            .into());
+        let changes =
+            callisto_graph::commands::resume_input_changes(&ws, scratch, checkpoint, facts, &plan, &runner, permit)?;
+        if !changes.is_empty() {
+            return Err(GraphError::CheckpointInputsChanged { changes }.into());
         }
     }
 
@@ -237,14 +171,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     if let (true, true, None, Some(facts), Some(permit)) = (applying, writes, &checkpoint, &facts, permit.as_ref()) {
         // A run that cannot start must leave no checkpoint behind, or the fix its error asks for is never honoured.
         callisto_graph::apply::validate_plan(&ws.root, &plan, &apply_opts, permit, &runner)?;
-        // The emitted files inside the workspace are recorded so an abort can put them back too.
-        let emitted: Vec<std::path::PathBuf> = pending_decision
-            .iter()
-            .map(|(path, _)| path)
-            .chain(pending_preview.iter().map(|(path, _)| path))
-            .filter_map(|path| path.strip_prefix(&ws.root).ok().map(std::path::PathBuf::from))
-            .collect();
-        git.create_checkpoint(VERSION_CHECKPOINT, facts, &date, &emitted)
+        git.create_checkpoint(VERSION_CHECKPOINT, facts, &date)
             .map_err(GraphError::from)?;
     }
 
@@ -708,7 +635,6 @@ mod tests {
             no_refresh_lockfiles: true,
             emit_decision: None,
             emit_preview: None,
-            abort: false,
         };
         let result = super::handle(args, &global);
         assert!(result.is_ok(), "expected Ok, got: {result:?}");
