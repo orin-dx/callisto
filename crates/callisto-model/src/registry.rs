@@ -40,10 +40,11 @@ pub enum PublishOutcome {
 /// `secrets`.
 pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
     let mut redacted = text.to_string();
-    for secret in secrets {
-        if !secret.is_empty() {
-            redacted = redacted.replace(secret.as_str(), "[REDACTED]");
-        }
+    // Longest first, so a secret that contains another is replaced whole instead of left part visible.
+    let mut longest_first: Vec<&String> = secrets.iter().filter(|secret| !secret.is_empty()).collect();
+    longest_first.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
+    for secret in longest_first {
+        redacted = redacted.replace(secret.as_str(), "[REDACTED]");
     }
     redact_url_userinfo(&redact_token_shapes(&redacted))
 }
@@ -257,6 +258,16 @@ mod tests {
         let redacted = redact_known_secrets(text, &["abc123secret".to_string()]);
         assert!(!redacted.contains("abc123secret"));
         assert!(redacted.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn a_secret_that_contains_another_is_redacted_whole_in_either_order() {
+        let text = "token=abcdefgh was rejected";
+        for secrets in [["abcd", "abcdefgh"], ["abcdefgh", "abcd"]] {
+            let secrets = secrets.map(String::from);
+            let redacted = redact_known_secrets(text, &secrets);
+            assert_eq!(redacted, "token=[REDACTED] was rejected", "{secrets:?}");
+        }
     }
 
     #[test]

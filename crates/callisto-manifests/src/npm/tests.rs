@@ -82,6 +82,27 @@ fn workspace_parser_preserves_every_suffix_and_catalog() {
     assert!(matches!(parse_npm_spec_str("workspace:^", None), DepSpec::Opaque(_)));
 }
 
+/// node-semver reads a `v` prefix and `~>` as the plain forms; left opaque they were never tested against a bump.
+#[test]
+fn v_prefixed_and_tilde_arrow_clauses_parse_like_their_plain_forms() {
+    for (raw, plain) in [
+        ("v1.2.3", "1.2.3"),
+        ("=v1.2.3", "=1.2.3"),
+        ("^v1.2.3", "^1.2.3"),
+        ("~>1.2.3", "~1.2.3"),
+    ] {
+        assert_eq!(
+            parse_npm_spec_str(raw, None),
+            parse_npm_spec_str(plain, None),
+            "{raw} should read as {plain}"
+        );
+    }
+    // Only a lowercase `v` is a version prefix; anything else is a dist-tag.
+    for tag in ["vendor-pkg", "V1.2.3", "^V1.2.3"] {
+        assert!(matches!(parse_npm_spec_str(tag, None), DepSpec::Opaque(_)), "{tag}");
+    }
+}
+
 #[test]
 fn ordinary_npm_disjunctions_remain_ranges_and_match_any_valid_arm() {
     let spec = parse_npm_spec_str("^1.0.0 || ^2.0.0", None);
