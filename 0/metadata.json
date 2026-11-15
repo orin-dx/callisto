@@ -1,0 +1,131 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7E9TASFSGPJ7JGJYDC9DABX",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-15T00:31:05.769984Z",
+  "branch": "feat/version-checkpoint-resume",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/mod.rs",
+    "docs/architecture/versioning.md",
+    "docs/errors.md",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "5e13f03ac55a",
+  "checkpoint_transcript_start": 53552,
+  "transcript_lines_at_start": 53552,
+  "compact_transcript_start": 3855,
+  "token_usage": {
+    "input_tokens": 166,
+    "cache_creation_tokens": 107579,
+    "cache_read_tokens": 48176918,
+    "output_tokens": 64662,
+    "api_call_count": 83,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 396
+  },
+  "summary": {
+    "intent": "Implement ADR 13 (interrupted `version` runs resume from a checkpoint ref) end to end in an agentic fashion, after the user approved the ADR and asked to skip human ceremony. Also decide whether the other ADRs needed fixing.",
+    "outcome": "Added checkpoint primitives in the model layer, resume/refuse logic in the graph and CLI `version` handler, new errors E340/E341, a real-binary differential test suite (4 tests), and the docs, spec, ADR enforcement section and changeset. Everything was committed locally with a signature and doc-check passed; the PR was not yet opened, and the ADR 12 cleanup was proposed but not started.",
+    "learnings": {
+      "repo": [
+        "ADRs 1-11 have full structure (decision, rejected options, enforcement, revisit, sources) and are historical records; changed decisions get a new ADR rather than a rewrite. ADR 12 alone lacks Enforcement and Revisit sections and bundles behaviour that belongs in specs.",
+        "Per the docs README, behaviour goes in `docs/specs/*.json`, architecture placement in `docs/architecture/*.md`, and ADR Enforcement is filled in by the implementing PR naming real tests.",
+        "Error codes: E340 and E341 were free. `crates/callisto-graph/tests/error_registry_architecture.rs` only checks that codes appear in `docs/errors.md`, so new rows must be added there.",
+        "`testing/check-comments.sh` rejects history-narration words such as 'now' in comments, and clippy (`-D warnings`) flags complex tuple types in tests, which are fixed with a type alias like `Shape`.",
+        "The `CommandRunner` trait in `callisto-model/src/exec.rs` gained `run_with_env` (fail-closed default) so a checkpoint can use a temporary index via an env var; the CLI runner implements it.",
+        "`lower_hex` in `release/digest.rs` was widened to `pub(crate)` and reused instead of duplicated.",
+        "Existing tests (`partial_run_tests`, `pre_mode_tests`) asserted the old fail-closed retry behaviour, so they were renamed and rewritten to expect that a retry finishes the run (e.g. `..._is_finished_by_a_retry`).",
+        "Handler ordering matters: plan first, then the E121 partial-run check when no checkpoint exists, to preserve earlier error precedence."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "finding": "New module for checkpoint create/read/delete and a detached worktree of the checkpoint, never touching the user's index or working tree."
+        },
+        {
+          "path": "crates/callisto-cli/tests/version_resume_tests.rs",
+          "finding": "Differential tests with the real binary; root-case paths must be \"\" not \".\" because `create_dir_all` fails on a trailing `/.`. Disabling checkpoint creation made them fail, confirming they catch the bug."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "finding": "Adds `checkpoint_input_changes` and `checkpoint_abort_commands`, re-exported from `commands/mod.rs`, implementing the input-changed refusal (E340) and abort guidance."
+        }
+      ],
+      "workflow": [
+        "Verify that new tests detect the bug by temporarily disabling the fix and confirming they fail.",
+        "Run the project check script (`check3.sh`) and then `just lint`, clippy and the full workspace test suite, since failures in unrelated tests can reveal behaviour changes.",
+        "Keep ADRs short: decision, rejected options, consequences, revisit trigger and sources. Move explanation to specs and architecture docs."
+      ]
+    },
+    "friction": [
+      "Earlier ADR 13 drafts were too long because they explained reasoning instead of stating the decision.",
+      "The first check run failed on comment-checker and clippy violations, which required fixes.",
+      "The full test suite failed on three existing tests that encoded the old retry-refusal behaviour, requiring investigation and rewrites.",
+      "A sed command using `\\n` in a pattern for a multi-line edit was a no-op and had to be redone with an Edit.",
+      "The test harness's `\".\"` root path broke `create_dir_all`, requiring sed normalisation."
+    ],
+    "open_items": [
+      "Open the PR for `feat/version-checkpoint-resume`; the commit is local and nothing has been pushed.",
+      "ADR 12 cleanup: add Enforcement and Revisit sections, and reduce behaviour bullets to spec pointers in a separate small docs PR (proposed, awaiting the user's go-ahead).",
+      "The wire-compat table update lists the checkpoint ref; this should be confirmed in review.",
+      "A test was skipped in the workspace run (`a_version_the_registry_serves_is_exact`), so its status should be checked separately."
+    ]
+  }
+}
