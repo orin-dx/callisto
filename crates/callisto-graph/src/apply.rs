@@ -209,25 +209,11 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     // Stage each lockfile of an active ecosystem that exists beside the workspace the plan wrote into.
-    let beside = |dirs: &BTreeSet<PathBuf>, names: &[&str]| -> Vec<PathBuf> {
-        dirs.iter()
-            .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
-            .collect()
-    };
-    let candidates = beside(&lockfile_dirs.npm, &NPM_LOCKFILES)
-        .into_iter()
-        .chain(beside(&lockfile_dirs.pypi, &PYPI_LOCKFILES));
     let mut lockfile_paths: Vec<PathBuf> = Vec::new();
-    for p in candidates {
+    for p in lockfile_candidate_paths(&lockfile_dirs, &cargo_workspaces) {
         if path_exists(root, &p)? && !modified_paths.contains(&p) {
             lockfile_paths.push(p.clone());
             modified_paths.push(p);
-        }
-    }
-    for lockfile in cargo_workspaces.iter().map(|workspace| cargo_lockfile(workspace)) {
-        if path_exists(root, &lockfile)? && !modified_paths.contains(&lockfile) {
-            lockfile_paths.push(lockfile.clone());
-            modified_paths.push(lockfile);
         }
     }
 
@@ -284,6 +270,44 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     Ok(outcome)
+}
+
+/// Everything `apply_version_plan` checks before its first write: that each target can be written and staged, and that
+/// the Cargo workspaces and lockfile directories it will refresh resolve. A caller that must not leave state behind
+/// when the apply cannot start (a checkpoint) runs this first.
+pub fn validate_plan<R: CommandRunner>(
+    root: &Path,
+    plan: &VersionPlan,
+    opts: &ApplyOptions,
+    permit: &ApplyPermit,
+    runner: &R,
+) -> Result<(), GraphError> {
+    preflight::check(root, plan, opts, permit, runner)?;
+    let active = active_ecosystems(plan);
+    if active.contains(&Ecosystem::Cargo) {
+        touched_cargo_workspaces(root, plan)?;
+    }
+    lockfile_dirs(root, plan, &active)?;
+    Ok(())
+}
+
+fn lockfile_candidate_paths(dirs: &LockfileDirs, cargo_workspaces: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
+    let beside = |dirs: &BTreeSet<PathBuf>, names: &[&str]| -> Vec<PathBuf> {
+        dirs.iter()
+            .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+            .collect()
+    };
+    beside(&dirs.npm, &NPM_LOCKFILES)
+        .into_iter()
+        .chain(beside(&dirs.pypi, &PYPI_LOCKFILES))
+        .chain(cargo_workspaces.iter().map(|workspace| cargo_lockfile(workspace)))
+        .collect()
+}
+
+/// Every path `plan` writes, creates or deletes (manifests, changelogs, consumed changesets, `pre.json`). Lockfiles
+/// are not included: tools refresh them.
+pub fn written_paths(plan: &VersionPlan) -> BTreeSet<PathBuf> {
+    preflight::written_paths(plan)
 }
 
 /// One physical write of a version plan, in the order it must happen.

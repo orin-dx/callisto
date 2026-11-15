@@ -4,8 +4,10 @@ use crate::{CommandError, CommitRecord, CommitWalkError, CommitWalker};
 use thiserror::Error;
 
 pub mod access;
+pub mod checkpoint;
 
 pub use access::{FirstParentTouches, GitAccess};
+pub use checkpoint::{Checkpoint, CheckpointFacts, VERSION_CHECKPOINT};
 
 #[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
@@ -44,6 +46,13 @@ pub enum VcsError {
         help("Commit, stash, or remove the listed tracked or untracked change before retrying.")
     )]
     DirtyWorktree { path: String },
+
+    #[error("another `callisto version` run holds the checkpoint `{name}`")]
+    #[diagnostic(
+        code(E341),
+        help("Wait for the other run to finish, then run `callisto version` again to resume or finish its work.")
+    )]
+    CheckpointHeld { name: String },
 
     #[error("reference `{ref_name}` was not found")]
     #[diagnostic(code(E052), help("Check if reference or tag exists in local or remote Git refs."))]

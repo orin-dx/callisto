@@ -71,6 +71,14 @@ fn targets(plan: &VersionPlan, opts: &ApplyOptions) -> BTreeSet<(PathBuf, Target
     targets
 }
 
+/// Every path `plan` writes, creates or deletes in a run that records changelogs and consumes changesets.
+pub(super) fn written_paths(plan: &VersionPlan) -> BTreeSet<PathBuf> {
+    targets(plan, &ApplyOptions::default())
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect()
+}
+
 /// Fails with every target that cannot be written, before anything is.
 ///
 /// # Errors

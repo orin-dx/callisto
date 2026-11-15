@@ -1158,6 +1158,16 @@ mod tests {
 
     impl CommandRunner for RealGit {
         fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            self.run_with_env(program, args, cwd, &[])
+        }
+
+        fn run_with_env(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            env: &[(&str, &str)],
+        ) -> Result<CommandOutput, CommandError> {
             let output = std::process::Command::new(program)
                 .args(args)
                 .current_dir(cwd)
@@ -1165,6 +1175,7 @@ mod tests {
                 .env_remove("GIT_WORK_TREE")
                 .env_remove("GIT_INDEX_FILE")
                 .env("GIT_CEILING_DIRECTORIES", cwd.parent().unwrap_or(cwd))
+                .envs(env.iter().copied())
                 .output()
                 .map_err(|error| CommandError::Io {
                     program: program.to_string(),
@@ -1193,6 +1204,67 @@ mod tests {
             .status()
             .unwrap();
         assert!(status.success(), "git {args:?} failed");
+    }
+
+    /// A checkpoint records the working tree, untracked files included, without touching the user's index or
+    /// working tree; it is never signed, even where signing is forced; a second one is refused.
+    #[test]
+    fn a_checkpoint_records_the_tree_leaves_the_user_state_alone_and_is_held_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        real_git(&root, &["init", "-q"]);
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        real_git(&root, &["add", "a.txt"]);
+        real_git(&root, &["commit", "-q", "-m", "one"]);
+        // Signing is forced and would fail, as with a missing key.
+        real_git(&root, &["config", "commit.gpgsign", "true"]);
+        real_git(&root, &["config", "gpg.program", "false"]);
+        std::fs::write(root.join("a.txt"), "staged\n").unwrap();
+        real_git(&root, &["add", "a.txt"]);
+        std::fs::write(root.join("a.txt"), "staged\nunstaged\n").unwrap();
+        std::fs::write(root.join("new.md"), "untracked\n").unwrap();
+        let git = GitAccess::new(root.clone(), &RealGit);
+        let status = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            String::from_utf8(out.stdout).unwrap()
+        };
+        let before = (status(&["status", "--porcelain"]), status(&["diff", "--cached"]));
+
+        let facts = git.checkpoint_facts("9.9.9").unwrap();
+        git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts, "2026-01-02")
+            .unwrap();
+
+        assert_eq!(
+            (status(&["status", "--porcelain"]), status(&["diff", "--cached"])),
+            before
+        );
+        let recorded = git.checkpoint(super::super::VERSION_CHECKPOINT).unwrap().unwrap();
+        assert_eq!(recorded.facts, facts);
+        assert_eq!(recorded.date, "2026-01-02");
+        let rev = recorded.commit.as_str().to_string();
+        assert_eq!(
+            git.read_at(&rev, Path::new("a.txt")).unwrap().as_deref(),
+            Some("staged\nunstaged\n")
+        );
+        assert_eq!(
+            git.read_at(&rev, Path::new("new.md")).unwrap().as_deref(),
+            Some("untracked\n")
+        );
+        assert_eq!(
+            git.read_at(&format!("{rev}^2"), Path::new("a.txt")).unwrap().as_deref(),
+            Some("staged\n"),
+            "the second parent records the index"
+        );
+        assert!(matches!(
+            git.create_checkpoint(super::super::VERSION_CHECKPOINT, &facts, "2026-01-02"),
+            Err(VcsError::CheckpointHeld { .. })
+        ));
+        git.delete_checkpoint(super::super::VERSION_CHECKPOINT).unwrap();
+        assert!(git.checkpoint(super::super::VERSION_CHECKPOINT).unwrap().is_none());
     }
 
     #[test]

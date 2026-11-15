@@ -11,6 +11,7 @@ Which version each release document writes, which versions it reads, and what a 
 | `ReleaseIntentV1` | `release plan --out`; the input of `release execute` and `release artifact-manifest` | 5 | 5 | Rejected before any output file is written or provider is touched: E215 from the CLI pre-check, E295 from the model decoder. |
 | `ArtifactManifestV1` | `release artifact-manifest --out` | 1 | any version | No decode-time gate. A parse failure is E237; `validate_for_intent` accepts version 1 only. |
 | `ReleaseRunEnvelopeV1` | inside a receipt only | 3 | 3 | Rejected at decode with an `UnsupportedSchema` error that has no diagnostic code. |
+| `version` checkpoint | the commit at `refs/worktree/callisto/checkpoint/version`; its message carries `Callisto-Head`, `Callisto-Tags` and `Callisto-Version` trailers | 1 | 1 | Any change in `Callisto-Version` refuses the resume with E340, so another version never replays a checkpoint. |
 | `ReleaseReceiptV1` | `release --receipt`, `release execute --receipt`; also the JSON stdout of both | 2 | 2 | Rejected at decode with an `UnsupportedSchema` error that has no diagnostic code. |
 
 - The decision digest covers the sorted entries (package, target version, reasons) and not the schema version, so a version 1 and a version 2 decision with the same entries share a digest. The digest is verified on every read.

@@ -261,6 +261,17 @@ pub enum GraphError {
         head: callisto_model::Version,
     },
 
+    #[error("an interrupted `version` run cannot resume because its inputs changed: {}", .changes.join("; "))]
+    #[diagnostic(
+        code(E340),
+        help(
+            "Run `callisto version` again only with the inputs it started from. To give up on the interrupted run, \
+             delete its checkpoint with `git update-ref -d refs/worktree/callisto/checkpoint/version`, then follow the \
+             E121 steps to finish or undo what it wrote."
+        )
+    )]
+    CheckpointInputsChanged { changes: Vec<String> },
+
     #[error("failed to update `{}` while applying the version plan: {message}", .path.display())]
     #[diagnostic(
         code(E122),

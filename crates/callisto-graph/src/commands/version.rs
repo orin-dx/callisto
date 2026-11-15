@@ -407,6 +407,87 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     })
 }
 
+/// The inputs of an interrupted run that changed in a way the run did not cause, so a resume must refuse (ADR 13).
+///
+/// `scratch` is the workspace loaded from the checkpoint's worktree and `plan` was made from it. The plan is applied
+/// there, without a lockfile refresh, so the worktree becomes the tree a finished run leaves. Every file the plan was
+/// derived from (the manifests the loader opened, `callisto.toml`, the changesets) and every file it writes must then be
+/// on disk either as the checkpoint recorded it or as that expected tree has it, compared through Git's filters; a file
+/// the expected tree lacks counts as the run's deletion only when the index lacks it too, so a changeset the user
+/// deleted by hand is a change. `HEAD`, the tags and the Callisto version must match as well. `permit` writes only into
+/// `scratch`.
+pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    scratch: &Workspace<'_, R, D>,
+    checkpoint: &callisto_model::vcs::Checkpoint,
+    now: &callisto_model::vcs::CheckpointFacts,
+    plan: &VersionPlan,
+    runner: &R,
+    permit: &callisto_model::ApplyPermit,
+) -> Result<Vec<String>, GraphError> {
+    let then = &checkpoint.facts;
+    let mut changes = Vec::new();
+    if now.head != then.head {
+        changes.push(format!("`HEAD` moved from {} to {}", then.head, now.head));
+    }
+    if now.tags != then.tags {
+        changes.push("tags changed".to_string());
+    }
+    if now.workspace != then.workspace {
+        changes.push(format!(
+            "the checkpoint belongs to the workspace `{}`, not this one",
+            then.workspace
+        ));
+    }
+    if now.callisto_version != then.callisto_version {
+        changes.push(format!(
+            "Callisto changed from {} to {}",
+            then.callisto_version, now.callisto_version
+        ));
+    }
+
+    let apply_opts = crate::apply::ApplyOptions {
+        refresh_lockfiles: false,
+        transient: false,
+    };
+    crate::apply::apply_version_plan(&scratch.root, plan, runner, &apply_opts, permit)?;
+
+    let git = ws.git_access();
+    let expected = scratch.git_access();
+    let rev = checkpoint.commit.as_str();
+
+    let mut inputs: BTreeSet<std::path::PathBuf> = ws.manifest_cache.borrow().keys().cloned().collect();
+    inputs.insert(std::path::PathBuf::from("callisto.toml"));
+    // Discovery reads these to decide which directories are packages, and some of them without opening a manifest.
+    inputs.extend(git.files_named(
+        rev,
+        &["pnpm-workspace.yaml", "package.json", "Cargo.toml", "pyproject.toml"],
+    )?);
+    inputs.extend(crate::apply::written_paths(plan));
+    let dir = &ws.config.changesets_dir;
+    inputs.extend(git.files_at(rev, dir)?);
+    if let Ok(entries) = std::fs::read_dir(ws.root.join(dir)) {
+        inputs.extend(
+            entries
+                .flatten()
+                .filter(|entry| entry.path().is_file())
+                .map(|entry| dir.join(entry.file_name())),
+        );
+    }
+    for path in &inputs {
+        let current = git.file_hash(path)?;
+        if current == git.blob_hash_at(rev, path)? {
+            continue;
+        }
+        // The run unstages a file before it deletes it, so a file that is gone but still staged was deleted by hand.
+        let run_output = current == expected.file_hash(path)? && !(current.is_none() && git.is_staged(path)?);
+        if !run_output {
+            changes.push(format!("`{}` changed", path.display()));
+        }
+    }
+    Ok(changes)
+}
+
 /// Refuses when a canonical manifest version differs from `HEAD` while release inputs remain or the change is staged.
 pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace<'_, R, D>) -> Result<(), GraphError> {
     let head = match ws.git_access().head_sha() {

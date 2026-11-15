@@ -212,6 +212,28 @@ impl CommandRunner for CliCommandRunner {
         )
     }
 
+    fn run_with_env(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        env: &[(&str, &str)],
+    ) -> Result<CommandOutput, CommandError> {
+        let remove = unrelated_credentials(program);
+        run_with_timeout_impl(
+            program,
+            args,
+            cwd,
+            callisto_model::LOCAL_GIT_TIMEOUT,
+            LiveEcho::STDERR,
+            known_credential_env_values(std::env::vars()),
+            ChildEnvironment {
+                remove: &remove,
+                set: env,
+            },
+        )
+    }
+
     fn run_with_timeout_env_filtered(
         &self,
         program: &str,

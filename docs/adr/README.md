@@ -12,6 +12,7 @@
 - [10. The workspace resolves natively after `version` or `snapshot`](0010-native-resolution-after-version.md) — a co-released dependent's spec is always raised to the new version and lockfiles refresh by default; guardrail: do not go back to rewriting only out-of-range specs or make lockfile refresh opt-in without a new ADR.
 - [11. Directory-keyed packages and promotion-aware history](0011-directory-keyed-package-identity.md) — the directory key survives display promotion; new default tags use the promoted display id and historical bare records use an ownership fallback; guardrail: do not derive paths or persisted keys from the display id without a new ADR.
 - [12. Canonical distribution references and explicit release ownership](0012-canonical-distribution-release-ownership.md) — accepted v1 model. Separates native distribution identities, version authority and shared effects while preserving deliberate historical migration.
+- [13. An interrupted `version` run resumes from its recorded inputs](0013-interrupted-version-runs-resume-from-a-checkpoint-ref.md) — proposed. `version` records its inputs at `refs/callisto/checkpoint/version` before writing; guardrail: do not restore written files in process or persist the plan without a new ADR.
 
 ## Rules
 
