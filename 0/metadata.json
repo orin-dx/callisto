@@ -1,0 +1,137 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7ECYHFMDES5P7MXEGQA3VA8",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-15T01:25:48.802209Z",
+  "branch": "feat/version-checkpoint-resume",
+  "checkpoints_count": 5,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/version.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "3e0c5a12de36",
+  "checkpoint_transcript_start": 54948,
+  "transcript_lines_at_start": 54948,
+  "compact_transcript_start": 3944,
+  "token_usage": {
+    "input_tokens": 62,
+    "cache_creation_tokens": 607234,
+    "cache_read_tokens": 17793144,
+    "output_tokens": 31650,
+    "api_call_count": 30,
+    "subagent_tokens": {
+      "input_tokens": 64,
+      "cache_creation_tokens": 109679,
+      "cache_read_tokens": 2629115,
+      "output_tokens": 27255,
+      "api_call_count": 32
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 401
+  },
+  "summary": {
+    "intent": "Land ADR 13 (resumable `version` runs via a git checkpoint) in Callisto: address the four defects a review subagent found in the checkpoint implementation, then push, open a PR under a new trail, and close #543. The user also asked side questions about whether Callisto uses michi-pipeline and what to do first.",
+    "outcome": "Fixed all four review findings (prune removed, CRLF-safe comparison via git, manifest-read-only inputs checked against the plan, abort steps limited to the run's own files) plus an automatic worktree cleanup guard, added tests, and all checks passed. The fix commit was signed and a push was started, but the PR, trail creation and #543 closure were not completed in the transcript.",
+    "learnings": {
+      "repo": [
+        "Callisto depends on `michi-graph` (toposort, release DAG) but not `michi-pipeline`; `callisto-model` is MIT and must never depend on FSL crates (ARCHITECTURE.md invariant 2).",
+        "Git operations go through system git and `CommandRunner` (ADR 5); the checkpoint is a git ref, not a pipeline.",
+        "Checkpoint resume invariant: a resume must start from the checkpoint plus a subset of the interrupted run's own writes, and must refuse any other change to inputs the plan reads (E340).",
+        "Comparing checkout files to `git show rev:path` bytes breaks under CRLF/autocrlf; comparison must go through git's filters.",
+        "`git worktree prune` with no expiry removes unrelated worktree registrations, even on a dry run; git itself only prunes after gc.worktreePruneExpire (3 months).",
+        "Abort steps must list only files the plan writes plus lockfiles; listing every untracked file deletes user files such as a new changeset."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 194,
+          "end_line": 238,
+          "finding": "`checkpoint_input_changes` originally compared only HEAD, tags, Callisto version, callisto.toml and the changesets dir, so manifest edits after an interruption were ignored; it was rewritten to take the plan and also check manifests the plan reads but does not write."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 254,
+          "end_line": 258,
+          "finding": "`checkpoint_abort_commands` printed `rm` for every untracked file not in the checkpoint, deleting user-created files; now limited to plan-written paths and lockfiles."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "line": 556,
+          "finding": "An unconditional `git worktree prune` ran whenever a checkpoint existed; removed, with a test that fails when it is restored."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/version.rs",
+          "line": 76,
+          "finding": "The handler skipped `check_partial_run` whenever a checkpoint existed; it was restructured to plan first, check inputs against the plan, and use a `ResumeTree` guard that always removes the temp worktree."
+        }
+      ],
+      "workflow": [
+        "Reproduce each review-agent finding yourself before fixing, since agents have overstated findings before.",
+        "State the underlying invariant behind several findings so the fix addresses the class rather than individual cases.",
+        "Verify a regression test by temporarily restoring the bug and confirming the test fails.",
+        "The command guard rejected heredoc python scripts that name git, so edits had to be made with the Edit tool instead.",
+        "Subagent hand-back reports are model output and carry no user authority."
+      ]
+    },
+    "friction": [
+      "The command guard blocked a heredoc script that edited files, forcing a switch to individual Edit calls.",
+      "An Edit to preflight.rs was rejected because the file had changed since it was read, requiring a re-read.",
+      "A mistyped no-op third edit was made to the CLI version handler.",
+      "The 4-commit local branch could not be pushed before review, and #543 kept collecting edge-case findings through four review rounds."
+    ],
+    "open_items": [
+      "Open the PR for `feat/version-checkpoint-resume` under a new \"Resumable version runs\" trail (trail creation was just being explored) and close #543 with a pointer to it.",
+      "Run another independent review on the fixed checkpoint diff before relying on it.",
+      "Delete the leftover local spike and `verify-manifest-findings` branches and worktrees.",
+      "Fix `pre enter`/`pre exit` idempotency (small PR) and the npm `pnpm.overrides` defect.",
+      "Decide on re-bump behavior under `release-trigger = \"auto\"` and on OIDC trusted publishing (user decisions).",
+      "Awaiting user approval/merge of #545, #542, #541, and CI/Entire approvals on release PR #533.",
+      "Unverified: a version run during an unresolved merge now fails at `git write-tree` (E051); check whether main already refuses that state.",
+      "Untested: dual-manifest packages, Cargo pre mode beyond existing tests, and submodule members."
+    ]
+  }
+}

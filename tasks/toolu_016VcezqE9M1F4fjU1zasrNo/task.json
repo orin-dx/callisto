@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_016VcezqE9M1F4fjU1zasrNo",
+  "agent_id": "af47760eb41358eda",
+  "subagent_type": "general-purpose",
+  "task_description": "Review checkpoint resume diff",
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 109679,
+    "cache_read_tokens": 2629115,
+    "output_tokens": 27255,
+    "api_call_count": 32
+  },
+  "started_at": "2026-11-14T16:31:16.932583-08:00",
+  "completed_at": "2026-11-14T16:36:55.552095-08:00"
+}
