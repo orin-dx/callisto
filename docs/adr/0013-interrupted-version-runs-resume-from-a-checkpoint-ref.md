@@ -23,6 +23,7 @@ Before its first write, `version` records its inputs (`HEAD`, the working tree, 
 - A failed refresh, a crash or Ctrl-C is finished by running `version` again.
 - One `version` run at a time per worktree. CI runners never resume; the ref is lost with the runner.
 - The ref name and its recorded fields are read across Callisto versions.
+- Known limit: for an npm platform owner, `apply` writes the owner's version and its optional-dependency pins as two separate file writes. A crash exactly between them leaves a file that matches neither the checkpoint nor the expected tree, so the resume is refused (E340). It fails closed, and the way out is the usual one: delete the ref and follow E121. A lockfile-refresh failure, the usual interruption, happens after all writes and is not affected.
 
 ## Enforcement
 
