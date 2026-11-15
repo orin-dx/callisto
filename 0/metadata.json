@@ -1,0 +1,134 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7EG1HH67ZJ8D0ERWWXAKY80",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-15T02:19:54.728161Z",
+  "branch": "feat/version-checkpoint-resume",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/tests/version_resume_tests.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/checkpoint.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a0f37238be09",
+  "checkpoint_transcript_start": 55832,
+  "transcript_lines_at_start": 55832,
+  "compact_transcript_start": 4001,
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 76956,
+    "cache_read_tokens": 32525186,
+    "output_tokens": 52203,
+    "api_call_count": 47,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 403
+  },
+  "summary": {
+    "intent": "Address five open review findings (1 high, 3 medium, 1 low) on the checkpoint-resume PR (#546) for `callisto version`, and the user then approved redesigning the resume verification so the work could be trusted rather than patched again.",
+    "outcome": "Replaced the list-based input checks with a single `check_resume` that applies the plan into the scratch worktree and compares the real tree against the checkpoint and the expected post-run tree. All 12 resume tests and the full workspace checks pass, docs were updated, the work was committed locally (signed) and sent to a fresh independent review. Nothing has been pushed; PR #546 is still at the commit the original review ran against.",
+    "learnings": {
+      "repo": [
+        "Architecture invariant 4 (ARCHITECTURE.md) is enforced by the test `apply_permits_are_never_granted_from_a_literal`: apply permits can't be created from a literal, even scoped to a scratch dir. A scratch apply must use the run's own permit, and a dry run skips the verification.",
+        "A minor bump of a dependency stays inside a dependent's `\"1.0.0\"` requirement, so nothing is rewritten. Tests that need a dependency-requirement rewrite must use a major bump.",
+        "The changelog strips the `feat:` prefix from commit subjects, so assertions on changelog text shouldn't expect it.",
+        "`cargo fmt --all` reflows edited blocks, so later string-match edits on those blocks must re-read the current text first.",
+        "Docs that describe the E340 resume refusal live in several places and all had to change with the rule: docs/architecture/versioning.md, docs/specs/versioning.json, ADR 0013, docs/errors.md and crates/callisto-graph/src/error.rs. `just doc-check` validates them.",
+        "Applying the plan into the scratch worktree consumes its changesets, so the resume check must run after the decision and preview are derived but before the scratch worktree is dropped."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 410,
+          "end_line": 543,
+          "finding": "The list-based `checkpoint_input_changes` and `checkpoint_abort_commands` were replaced by `check_resume` returning `ResumeVerdict`. Each input file must match the checkpoint record or the expected tree, otherwise the resume is refused. The abort list is the expected tree minus the checkpoint."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/mod.rs",
+          "finding": "The re-exports now expose `check_resume` and `ResumeVerdict` in place of `checkpoint_input_changes` and `checkpoint_abort_commands`."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "finding": "`create_checkpoint` now takes a date argument so the recorded date is replayed on resume. A `reset --soft` step keeps a synthetic `index` entry from leaking into the changelog, and removing it reproduces the reviewer's finding. Small hash primitives were added so `path_matches_at` can be built on them."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/version.rs",
+          "finding": "A resume now uses the recorded date and `HEAD`. The resume check runs after the preview is built and before the scratch worktree is dropped, using the run's own permit; dry runs skip it."
+        }
+      ],
+      "workflow": [
+        "The user's request to be confident in the work led to mutation checks: removing each safeguard in turn (the `reset --soft`, the input comparison loop) and confirming that tests fail, which shows the tests actually guard the behavior.",
+        "When successive review rounds keep finding new gaps, the design likely enumerates cases instead of verifying an invariant. Stopping and proposing an architectural fix before patching further was the right call.",
+        "A fresh independent review before any push gives a check that isn't based on the author's own scenarios.",
+        "Outward-facing actions were gated: the redesign was proposed and approved first, and the work was committed locally without pushing."
+      ]
+    },
+    "friction": [
+      "The first fix round produced five more heuristics, and two of its new tests failed. The assistant judged it was patching symptoms and stopped.",
+      "The first attempt at the scratch-worktree permit tripped the architecture test for invariant 4 and had to be redone.",
+      "An Edit call used `new_str` instead of `new_string`, and a later edit failed to match because `cargo fmt` had reformatted the text.",
+      "Two of the assistant's own new tests were wrong (a minor bump that rewrites nothing, and an assertion expecting the stripped `feat:` prefix), and one assertion's wording went stale once the special case was removed.",
+      "The workspace test run needed `--skip a_version_the_registry_serves_is_exact` while diagnosing failures."
+    ],
+    "open_items": [
+      "The fresh independent review of the redesign has been launched and its findings have not been seen; nothing is pushed until it is read.",
+      "The redesign commit is local only; PR #546 still points at the pre-redesign commit.",
+      "Lockfiles are written by tools and aren't predictable from the expected tree, so they need a narrow rule: only a lockfile beside a manifest the plan writes.",
+      "Abort steps restore tracked files from the checkpoint and so would also revert user edits made after the interruption. The steps should warn about this, or the abort should refuse when such edits exist.",
+      "In dry-run mode the resume verification is skipped because there is no permit; whether that gap is acceptable was not settled.",
+      "PR #547 (redact the longest secret first) was edited and marked ready earlier in the session."
+    ]
+  }
+}
