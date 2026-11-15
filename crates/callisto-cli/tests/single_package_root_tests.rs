@@ -80,6 +80,7 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
         allow_empty_changesets: false,
         emit_decision: None,
         emit_preview: None,
+        abort: false,
     };
     assert_eq!(
         commands::version::handle(version, &global(root, false)).unwrap(),
@@ -202,6 +203,7 @@ fn root_package_release_commit_accepts_default_and_configured_changelog_paths() 
                         allow_empty_changesets: false,
                         emit_decision: Some(decision_path.into()),
                         emit_preview: None,
+                        abort: false,
                     },
                     &global(root, false),
                 )

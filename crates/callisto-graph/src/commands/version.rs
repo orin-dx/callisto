@@ -407,31 +407,39 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     })
 }
 
-/// What a resume found: the inputs that changed since the checkpoint (empty when it may resume) and the shell
-/// commands that discard the interrupted run.
-pub struct ResumeVerdict {
+/// What a checkpoint says about the real tree, for resuming or discarding an interrupted run.
+pub struct ResumeAnalysis {
+    /// Inputs that are neither as recorded nor as a finished run would leave them; a resume refuses when any exist.
     pub changes: Vec<String>,
-    pub abort: String,
+    /// Files the run wrote that still hold its output, to put back as the checkpoint recorded them.
+    pub restore: Vec<std::path::PathBuf>,
+    /// Files the run created, to delete.
+    pub remove: Vec<std::path::PathBuf>,
+    /// Files the run wrote that were edited since, which an abort leaves alone.
+    pub edited: Vec<std::path::PathBuf>,
 }
 
-/// Decides whether an interrupted run may resume, by checking that the real tree is the checkpoint plus some of the
-/// run's own writes.
+/// Analyses an interrupted run by checking that the real tree is the checkpoint plus some of the run's own writes.
 ///
 /// `scratch` is the workspace loaded from the checkpoint's worktree and `plan` was made from it. The plan is applied
-/// there, without a lockfile refresh, so the worktree becomes the tree a finished run would leave. Every file the plan
+/// there, without a lockfile refresh, so the worktree becomes the tree a finished run leaves. Every file the plan
 /// was derived from (the manifests the loader opened, `callisto.toml`, the changesets) and every file it writes must
-/// then be on disk either as the checkpoint recorded it or as that expected tree has it; anything else is a change the
-/// plan was not made for. `HEAD`, the tags and the Callisto version must match too. `scratch_permit` only ever writes
+/// then be on disk either as the checkpoint recorded it or as that expected tree has it, compared through Git's
+/// filters; a file the expected tree lacks counts as the run's deletion only when the index lacks it too, so a changeset
+/// the user deleted by hand is a change. `HEAD`, the tags and the Callisto version must match as well.
+///
+/// The same data gives the abort plan: files the run wrote and that still hold its output are restored, files it
+/// created are removed (never an ignored file), and a file edited since is reported and left. `permit` writes only
 /// into `scratch`.
-pub fn check_resume<R: CommandRunner, D: DependencyResolver>(
+pub fn analyze_resume<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     scratch: &Workspace<'_, R, D>,
     checkpoint: &callisto_model::vcs::Checkpoint,
     now: &callisto_model::vcs::CheckpointFacts,
     plan: &VersionPlan,
     runner: &R,
-    scratch_permit: &callisto_model::ApplyPermit,
-) -> Result<ResumeVerdict, GraphError> {
+    permit: &callisto_model::ApplyPermit,
+) -> Result<ResumeAnalysis, GraphError> {
     let then = &checkpoint.facts;
     let mut changes = Vec::new();
     if now.head != then.head {
@@ -451,7 +459,7 @@ pub fn check_resume<R: CommandRunner, D: DependencyResolver>(
         refresh_lockfiles: false,
         transient: false,
     };
-    crate::apply::apply_version_plan(&scratch.root, plan, runner, &apply_opts, scratch_permit)?;
+    crate::apply::apply_version_plan(&scratch.root, plan, runner, &apply_opts, permit)?;
 
     let git = ws.git_access();
     let expected = scratch.git_access();
@@ -472,39 +480,45 @@ pub fn check_resume<R: CommandRunner, D: DependencyResolver>(
         );
     }
     for path in &inputs {
-        let now = git.file_hash(path)?;
-        if now != git.blob_hash_at(rev, path)? && now != expected.file_hash(path)? {
+        let current = git.file_hash(path)?;
+        if current == git.blob_hash_at(rev, path)? {
+            continue;
+        }
+        // The run unstages a file before it deletes it, so a file that is gone but still staged was deleted by hand.
+        let run_output = current == expected.file_hash(path)? && !(current.is_none() && git.is_staged(path)?);
+        if !run_output {
             changes.push(format!("`{}` changed", path.display()));
         }
     }
 
-    // Abort touches only what the run writes: the plan's files and the lockfiles its refresh may create.
-    let mut touched: BTreeSet<std::path::PathBuf> = written;
-    touched.extend(crate::apply::lockfile_candidates(&scratch.root, plan)?);
-    let mut commands = vec!["  c=refs/callisto/checkpoint/version".to_string()];
+    // Abort touches only what the run writes: the plan's files and the lockfiles its refresh may have created.
+    let lockfiles = crate::apply::lockfile_candidates(&scratch.root, plan)?;
+    let touched: BTreeSet<&std::path::PathBuf> = written.iter().chain(lockfiles.iter()).collect();
+    let (mut restore, mut remove, mut edited) = (Vec::new(), Vec::new(), Vec::new());
     for path in touched {
-        if git.file_hash(&path)? == git.blob_hash_at(rev, &path)? {
+        let current = git.file_hash(path)?;
+        let recorded = git.blob_hash_at(rev, path)?;
+        if current == recorded {
             continue;
         }
-        let quoted = format!("'{}'", path.display());
-        if git.path_exists_at(rev, &path)? {
-            commands.push(format!("  git restore -W -s $c -- {quoted}"));
-            if git.path_exists_at(&format!("{rev}^2"), &path)? {
-                commands.push(format!("  git restore -S -s $c^2 -- {quoted}"));
-            } else {
-                commands.push(format!("  git rm -q --cached --ignore-unmatch -- {quoted}"));
+        // A tool rewrote a lockfile, so there is no expected output to compare it with.
+        let still_run_output = !written.contains(path) || current == expected.file_hash(path)?;
+        if !still_run_output {
+            edited.push(path.clone());
+        } else if recorded.is_none() {
+            // An ignored file may predate the run (the checkpoint leaves ignored files out), so it stays.
+            if !git.is_ignored(path)? {
+                remove.push(path.clone());
             }
         } else {
-            commands.push(format!("  git rm -q --cached --ignore-unmatch -- {quoted}"));
-            if ws.root.join(&path).is_file() {
-                commands.push(format!("  rm -- {quoted}"));
-            }
+            restore.push(path.clone());
         }
     }
-    commands.push("  git update-ref -d $c".to_string());
-    Ok(ResumeVerdict {
+    Ok(ResumeAnalysis {
         changes,
-        abort: commands.join("\n"),
+        restore,
+        remove,
+        edited,
     })
 }
 

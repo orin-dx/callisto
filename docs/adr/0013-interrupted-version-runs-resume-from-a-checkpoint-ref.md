@@ -9,18 +9,19 @@ Status: Proposed
 
 ## Decision
 
-Before its first write, `version` records its inputs (`HEAD`, the working tree, the index, and the tags and flags planning reads) as a commit at `refs/callisto/checkpoint/version`, and deletes the ref when the run completes. A re-run while the ref exists plans from those inputs and reapplies idempotently. It first applies the plan in a scratch worktree of the checkpoint to learn what a finished run leaves, and refuses, writing nothing, unless every file the plan was derived from or writes is on disk as recorded or as that expected tree has it.
+Before its first write, `version` records its inputs (`HEAD`, the working tree, the index, and the tags and flags planning reads) as a commit at `refs/worktree/callisto/checkpoint/version`, and deletes the ref when the run completes. A re-run while the ref exists plans from those inputs and reapplies idempotently. It first applies the plan in a scratch worktree of the checkpoint to learn what a finished run leaves, and refuses, writing nothing, unless every file the plan was derived from or writes is on disk as recorded or as that expected tree has it. The ref is per worktree, so a linked worktree has its own checkpoint. Discarding a run is a command, `callisto version --abort`: it puts back the files the run wrote that still hold its output, removes the files it created (never an ignored one), leaves and reports a file edited since, and keeps the checkpoint until nothing is left to put back.
 
 ## Options considered
 
 - **Restore the written files when a step fails** — rejected: each review of #543 found another file state Git already restores correctly (lockfiles from an earlier ecosystem, binary files, symlinks, read-only files).
 - **Re-plan from the versions at `HEAD`** — rejected: planning also reads dependency specs from disk, and a prototype resume dropped a dependent the first run had rewritten, exiting 0.
+- **Print shell commands that undo the run** — rejected: two reviews found five defects in the printed block (it overwrote edits made since, deleted a user's ignored lockfile, ran from the wrong directory and then dropped the checkpoint, needed quoting). A command decides per file, takes paths as arguments and can stop and be repeated. This departs from ADR 3's "no recovery commands", which concerns release execution, where providers stay observable; a `version` run has no provider to adopt from.
 - **Persist the plan itself** — rejected: it must be serialized and versioned and breaks across a Callisto upgrade; recorded inputs can be planned by any version.
 
 ## Consequences
 
 - A failed refresh, a crash or Ctrl-C is finished by running `version` again.
-- One `version` run at a time per repository. CI runners never resume; the ref is lost with the runner.
+- One `version` run at a time per worktree. CI runners never resume; the ref is lost with the runner.
 - The ref name and its recorded fields are read across Callisto versions.
 
 ## Enforcement

@@ -71,6 +71,7 @@ fn test_full_polyglot_workspace_release_lifecycle() {
             allow_empty_changesets: false,
             emit_decision: None,
             emit_preview: None,
+            abort: false,
         },
         &global,
     );
@@ -142,6 +143,7 @@ license = "MIT"
                 allow_empty_changesets: false,
                 emit_decision: None,
                 emit_preview: None,
+                abort: false,
             },
             &global,
         )
@@ -225,6 +227,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
                 allow_empty_changesets: false,
                 emit_decision: None,
                 emit_preview: None,
+                abort: false,
             },
             &global,
         )
@@ -281,6 +284,7 @@ fn test_dry_run_flag_preserves_disk_state() {
             allow_empty_changesets: false,
             emit_decision: None,
             emit_preview: None,
+            abort: false,
         },
         &global_dry,
     );

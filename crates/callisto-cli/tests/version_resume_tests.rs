@@ -205,7 +205,12 @@ fn state(root: &Path) -> (BTreeMap<PathBuf, Vec<u8>>, String, String) {
 
 fn has_checkpoint(root: &Path) -> bool {
     Command::new("git")
-        .args(["rev-parse", "-q", "--verify", "refs/callisto/checkpoint/version"])
+        .args([
+            "rev-parse",
+            "-q",
+            "--verify",
+            "refs/worktree/callisto/checkpoint/version",
+        ])
         .current_dir(root)
         .status()
         .unwrap()
@@ -274,7 +279,7 @@ fn assert_resume_matches(
     assert!(
         git(
             &resumed.root,
-            &["log", "-1", "--format=%B", "refs/callisto/checkpoint/version"]
+            &["log", "-1", "--format=%B", "refs/worktree/callisto/checkpoint/version"]
         )
         .contains("Callisto-Date: 20"),
         "{name}: the checkpoint records the date the run planned with"
@@ -424,7 +429,7 @@ fn the_printed_abort_steps_never_remove_a_file_the_user_added() {
     let refused = version(&repo.workspace, &bin, None);
     let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
     assert!(stderr.contains("E340"), "{stderr}");
-    run_abort_steps(&stderr, &repo.workspace);
+    run_abort_steps(&repo.workspace, &bin);
 
     assert!(
         repo.workspace.join(".changeset/two.md").exists()
@@ -434,20 +439,21 @@ fn the_printed_abort_steps_never_remove_a_file_the_user_added() {
     );
 }
 
-/// Runs the steps an E340 error prints, as one script in one shell, the way a user pastes them.
-fn run_abort_steps(stderr: &str, cwd: &Path) {
-    let script: Vec<&str> = stderr
-        .lines()
-        .map(|line| line.trim_start_matches(|c: char| c.is_whitespace() || c == '│'))
-        .filter(|step| step.starts_with("c=") || step.starts_with("git ") || step.starts_with("rm "))
-        .collect();
-    assert!(script.len() > 1, "no abort steps in: {stderr}");
-    let status = Command::new("sh")
-        .args(["-ec", &script.join("\n")])
-        .current_dir(cwd)
-        .status()
-        .unwrap();
-    assert!(status.success(), "abort steps failed:\n{}", script.join("\n"));
+/// Runs `callisto version --abort` against `workspace`, from `from` (the workspace itself unless given).
+fn abort_run(workspace: &Path, from: &Path, bin: &Path) -> Output {
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", workspace.to_str().unwrap(), "version", "--abort"])
+        .current_dir(from)
+        .env("PATH", path)
+        .output()
+        .unwrap()
+}
+
+/// Runs the abort and asserts it discards the run.
+fn run_abort_steps(workspace: &Path, bin: &Path) {
+    let out = abort_run(workspace, workspace, bin);
+    assert!(out.status.success(), "abort: {}", String::from_utf8_lossy(&out.stderr));
 }
 
 /// The abort steps run after a late failure, once a new changelog is staged, put back the state before the run.
@@ -483,7 +489,7 @@ fn the_abort_steps_remove_a_changelog_the_run_staged() {
     let refused = version(&repo.workspace, &bin, None);
     let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
     assert!(stderr.contains("E340"), "{stderr}");
-    run_abort_steps(&stderr, &repo.workspace);
+    run_abort_steps(&repo.workspace, &bin);
     write(&repo.workspace, "callisto.toml", "");
 
     assert_eq!(
@@ -573,6 +579,156 @@ fn a_resume_reads_commit_history_from_the_real_head() {
     );
 }
 
+fn failed_cargo_run(repo: &Repo, bin: &Path) -> Output {
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    version(&repo.workspace, bin, Some(("cargo", &flag)))
+}
+
+/// A run that cannot start (the changelog is ignored) must leave no checkpoint, so fixing `.gitignore` works.
+#[test]
+fn a_run_that_fails_before_writing_leaves_no_checkpoint() {
+    let repo = repo(
+        |ws| {
+            cargo_cascade(ws);
+            write(ws, ".gitignore", "CHANGELOG.md\n");
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+
+    let first = version(&repo.workspace, &bin, None);
+
+    assert!(
+        String::from_utf8_lossy(&first.stderr).contains("E314"),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(
+        !has_checkpoint(&repo.root),
+        "a run that cannot start leaves no checkpoint"
+    );
+    write(&repo.workspace, ".gitignore", "");
+    let second = version(&repo.workspace, &bin, None);
+    assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
+}
+
+/// An edit made after the interruption to a file the run wrote is not overwritten; the abort says so and can be
+/// repeated once the file is dealt with.
+#[test]
+fn an_abort_leaves_a_file_edited_since_the_interruption_and_can_be_repeated() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let before = state(&repo.root);
+    failed_cargo_run(&repo, &bin);
+    let changeset = repo.workspace.join(".changeset/one.md");
+    let original = fs::read_to_string(&changeset).unwrap();
+    fs::write(&changeset, format!("{original}extra line\n")).unwrap();
+
+    let out = abort_run(&repo.workspace, &repo.workspace, &bin);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains("E342") && stderr.contains(".changeset/one.md"),
+        "{stderr}"
+    );
+    assert!(
+        fs::read_to_string(&changeset).unwrap().contains("extra line"),
+        "the edit must survive"
+    );
+    assert!(has_checkpoint(&repo.root), "the checkpoint stays until nothing is left");
+
+    fs::write(&changeset, original).unwrap();
+    run_abort_steps(&repo.workspace, &bin);
+    assert!(!has_checkpoint(&repo.root));
+    assert_eq!(state(&repo.root), before);
+}
+
+/// A lockfile that is ignored may predate the run, so an abort leaves it.
+#[test]
+fn an_abort_keeps_an_ignored_lockfile() {
+    let repo = repo(
+        |ws| {
+            cargo_cascade(ws);
+            write(ws, ".gitignore", "Cargo.lock\n");
+            write(ws, "Cargo.lock", "# pinned by me\n");
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+    failed_cargo_run(&repo, &bin);
+    write(&repo.workspace, "callisto.toml", "# edited\n");
+    assert!(String::from_utf8_lossy(&version(&repo.workspace, &bin, None).stderr).contains("E340"));
+
+    run_abort_steps(&repo.workspace, &bin);
+
+    assert_eq!(
+        fs::read_to_string(repo.workspace.join("Cargo.lock")).unwrap(),
+        "# pinned by me\n"
+    );
+}
+
+/// The abort works from any directory, for a workspace below the repository root.
+#[test]
+fn the_abort_works_from_the_repository_root_for_a_workspace_below_it() {
+    let repo = repo(cargo_cascade, "ws", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let before = state(&repo.root);
+    failed_cargo_run(&repo, &bin);
+
+    let out = abort_run(&repo.workspace, &repo.root, &bin);
+
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!has_checkpoint(&repo.root));
+    assert_eq!(state(&repo.root), before);
+}
+
+/// A changeset the user deletes after the interruption is a change, not the run's own consumption.
+#[test]
+fn a_changeset_deleted_by_hand_after_the_failure_refuses_the_resume() {
+    let repo = repo(
+        |ws| {
+            cargo_cascade(ws);
+            write(ws, ".changeset/two.md", "---\n\"b\": patch\n---\n\nB change\n");
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+    failed_cargo_run(&repo, &bin);
+    fs::remove_file(repo.workspace.join(".changeset/one.md")).unwrap();
+
+    let out = version(&repo.workspace, &bin, None);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains("E340") && stderr.contains(".changeset/one.md"),
+        "{stderr}"
+    );
+}
+
+/// A checkpoint belongs to its own worktree: another worktree neither sees it nor discards it.
+#[test]
+fn linked_worktrees_keep_their_own_checkpoints() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    failed_cargo_run(&repo, &bin);
+    let other = repo.root.parent().unwrap().join("other");
+    git(
+        &repo.root,
+        &["worktree", "add", "--detach", "-q", other.to_str().unwrap()],
+    );
+
+    let out = version(&other, &bin, None);
+
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        has_checkpoint(&repo.root),
+        "the first worktree's checkpoint survives the other's run"
+    );
+}
+
 #[test]
 fn a_dry_run_leaves_other_worktrees_registered() {
     let repo = repo(cargo_cascade, "", None);
@@ -634,7 +790,7 @@ fn changed_inputs_refuse_the_resume_and_the_printed_steps_undo_the_run() {
             "{name}: resume should be refused: {stderr}"
         );
 
-        run_abort_steps(&stderr, &repo.workspace);
+        run_abort_steps(&repo.workspace, &bin);
         if name == "a tag" {
             git(&repo.root, &["tag", "-d", "a@1.0.0"]);
         } else {

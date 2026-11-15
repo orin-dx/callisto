@@ -17,6 +17,7 @@ fn version_args(emit_preview: Option<std::path::PathBuf>) -> VersionArgs {
         allow_empty_changesets: false,
         emit_decision: None,
         emit_preview,
+        abort: false,
     }
 }
 

@@ -82,6 +82,7 @@ fn test_version_strict_no_changesets_exits_nonzero() {
         no_refresh_lockfiles: true,
         emit_decision: None,
         emit_preview: None,
+        abort: false,
     };
 
     let result = commands::version::handle(args, &global);
@@ -111,6 +112,7 @@ fn test_version_no_strict_no_changesets_succeeds() {
         no_refresh_lockfiles: true,
         emit_decision: None,
         emit_preview: None,
+        abort: false,
     };
 
     let result = commands::version::handle(args, &global);
@@ -165,6 +167,7 @@ fn test_version_strict_fails_before_writing_a_pre_exit_bump() {
         no_refresh_lockfiles: true,
         emit_decision: None,
         emit_preview: None,
+        abort: false,
     };
 
     let result = commands::version::handle(args, &global);

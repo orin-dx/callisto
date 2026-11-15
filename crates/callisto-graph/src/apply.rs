@@ -272,6 +272,25 @@ pub fn apply_version_plan<R: CommandRunner>(
     Ok(outcome)
 }
 
+/// Everything `apply_version_plan` checks before its first write: that each target can be written and staged, and that
+/// the Cargo workspaces and lockfile directories it will refresh resolve. A caller that must not leave state behind
+/// when the apply cannot start (a checkpoint) runs this first.
+pub fn validate_plan<R: CommandRunner>(
+    root: &Path,
+    plan: &VersionPlan,
+    opts: &ApplyOptions,
+    permit: &ApplyPermit,
+    runner: &R,
+) -> Result<(), GraphError> {
+    preflight::check(root, plan, opts, permit, runner)?;
+    let active = active_ecosystems(plan);
+    if active.contains(&Ecosystem::Cargo) {
+        touched_cargo_workspaces(root, plan)?;
+    }
+    lockfile_dirs(root, plan, &active)?;
+    Ok(())
+}
+
 /// Every lockfile a run of `plan` may refresh or create, whether or not it exists: the known lockfile names beside each
 /// npm and Python workspace the plan wrote into, and each Cargo workspace's `Cargo.lock`. Apply refreshes and stages
 /// these; abort removes the ones the run created.

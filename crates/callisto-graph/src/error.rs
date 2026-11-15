@@ -265,11 +265,21 @@ pub enum GraphError {
     #[diagnostic(
         code(E340),
         help(
-            "Run `callisto version` again only with the inputs it started from. To discard the interrupted run instead, \
-             run these commands (they restore only the files the run writes), then run `callisto version` again:\n{abort}"
+            "Run `callisto version` again only with the inputs it started from. To discard the interrupted run \
+             instead, run `callisto version --abort`, then `callisto version` again."
         )
     )]
-    CheckpointInputsChanged { changes: Vec<String>, abort: String },
+    CheckpointInputsChanged { changes: Vec<String> },
+
+    #[error("the interrupted `version` run was only partly discarded: edited since, left as they are: {}", .edited.join(", "))]
+    #[diagnostic(
+        code(E342),
+        help(
+            "Put those files back as you want them, or restore them with `git restore`, then run `callisto version \
+             --abort` again. The checkpoint is kept until nothing is left."
+        )
+    )]
+    CheckpointAbortIncomplete { edited: Vec<String> },
 
     #[error("failed to update `{}` while applying the version plan: {message}", .path.display())]
     #[diagnostic(

@@ -46,6 +46,7 @@ fn test_changelog_content_uses_real_changeset_summary() {
                 allow_empty_changesets: false,
                 emit_decision: None,
                 emit_preview: None,
+                abort: false,
             },
             &global,
         )
@@ -120,6 +121,7 @@ fn test_changelog_content_includes_all_changeset_summaries() {
                 allow_empty_changesets: false,
                 emit_decision: None,
                 emit_preview: None,
+                abort: false,
             },
             &global,
         )
@@ -180,6 +182,7 @@ fn version_with_config(config: Option<&str>) -> String {
                 allow_empty_changesets: false,
                 emit_decision: None,
                 emit_preview: None,
+                abort: false,
             },
             &global,
         )

@@ -9,8 +9,9 @@ use super::access::GitAccess;
 use super::VcsError;
 use crate::CommitSha;
 
-/// Where an interrupted `callisto version` run keeps its inputs.
-pub const VERSION_CHECKPOINT: &str = "refs/callisto/checkpoint/version";
+/// Where an interrupted `callisto version` run keeps its inputs. A per-worktree ref, so a linked worktree has its own
+/// checkpoint and never sees or discards another's.
+pub const VERSION_CHECKPOINT: &str = "refs/worktree/callisto/checkpoint/version";
 
 const HEAD_TRAILER: &str = "Callisto-Head";
 const TAGS_TRAILER: &str = "Callisto-Tags";
@@ -110,6 +111,81 @@ impl GitAccess<'_> {
     /// Removes the checkpoint at `name`; removing one that does not exist is not an error.
     pub fn delete_checkpoint(&self, name: &str) -> Result<(), VcsError> {
         self.git_stdout(&["update-ref", "-d", name]).map(drop)
+    }
+
+    /// Whether `path` (relative to this root) has an entry in the index.
+    pub fn is_staged(&self, path: &Path) -> Result<bool, VcsError> {
+        let path = path.to_string_lossy();
+        let args = ["--literal-pathspecs", "ls-files", "--error-unmatch", "--", &path];
+        let output = self.runner().run("git", &args, self.root())?;
+        match output.exit_code {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(git_failed(&args, self.root(), &output.stderr)),
+        }
+    }
+
+    /// Whether a `.gitignore` or exclude rule ignores `path` (relative to this root).
+    pub fn is_ignored(&self, path: &Path) -> Result<bool, VcsError> {
+        let path = path.to_string_lossy();
+        let args = ["check-ignore", "-q", "--", &path];
+        let output = self.runner().run("git", &args, self.root())?;
+        match output.exit_code {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(git_failed(&args, self.root(), &output.stderr)),
+        }
+    }
+
+    /// Puts `path` (relative to this root) back as the checkpoint at `name` recorded it: the file from its tree and
+    /// the index entry from its second parent (no entry when it was not staged). Paths are passed as arguments and
+    /// matched literally, so no quoting or pathspec magic applies.
+    pub fn restore_path(&self, name: &str, path: &Path) -> Result<(), VcsError> {
+        let rev = self.resolve_commit(name)?.ok_or_else(|| VcsError::RefNotFound {
+            ref_name: name.to_string(),
+        })?;
+        let rev = rev.as_str();
+        let text = path.to_string_lossy();
+        self.git_stdout(&["--literal-pathspecs", "restore", "-W", "-s", rev, "--", &text])?;
+        if self.path_exists_at(&format!("{rev}^2"), path)? {
+            self.git_stdout(&[
+                "--literal-pathspecs",
+                "restore",
+                "-S",
+                "-s",
+                &format!("{rev}^2"),
+                "--",
+                &text,
+            ])
+            .map(drop)
+        } else {
+            self.unstage(path)
+        }
+    }
+
+    /// Removes `path`'s index entry, if any, and the file.
+    pub fn discard_created(&self, path: &Path) -> Result<(), VcsError> {
+        self.unstage(path)?;
+        match std::fs::remove_file(self.root().join(path)) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                Err(VcsError::Git(format!("could not remove `{}`: {error}", path.display())))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn unstage(&self, path: &Path) -> Result<(), VcsError> {
+        let text = path.to_string_lossy();
+        self.git_stdout(&[
+            "--literal-pathspecs",
+            "rm",
+            "-q",
+            "--cached",
+            "--ignore-unmatch",
+            "--",
+            &text,
+        ])
+        .map(drop)
     }
 
     /// Whether `path` (relative to this root) is on disk as `rev` recorded it, compared as Git compares: through its
