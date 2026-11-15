@@ -17,6 +17,7 @@ const HEAD_TRAILER: &str = "Callisto-Head";
 const TAGS_TRAILER: &str = "Callisto-Tags";
 const VERSION_TRAILER: &str = "Callisto-Version";
 const DATE_TRAILER: &str = "Callisto-Date";
+const EMIT_TRAILER: &str = "Callisto-Emit";
 
 /// The inputs a plan reads besides files, recorded in the checkpoint commit's message.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +35,9 @@ pub struct Checkpoint {
     pub facts: CheckpointFacts,
     /// The date the run planned with (`YYYY-MM-DD`), so a resume on a later day writes the same changelog dates.
     pub date: String,
+    /// Files inside the workspace the run was asked to write besides the plan's (`--emit-decision`, `--emit-preview`),
+    /// which an abort puts back or removes like any other output of the run.
+    pub emitted: Vec<std::path::PathBuf>,
 }
 
 impl GitAccess<'_> {
@@ -57,6 +61,11 @@ impl GitAccess<'_> {
                 callisto_version: trailer(VERSION_TRAILER),
             },
             date: trailer(DATE_TRAILER),
+            emitted: message
+                .lines()
+                .filter_map(|line| line.strip_prefix(EMIT_TRAILER)?.strip_prefix(": "))
+                .map(std::path::PathBuf::from)
+                .collect(),
             commit,
         }))
     }
@@ -78,20 +87,41 @@ impl GitAccess<'_> {
     ///
     /// [`VcsError::CheckpointHeld`] when `name` already exists, so two runs never share one; a failed git command
     /// otherwise.
-    pub fn create_checkpoint(&self, name: &str, facts: &CheckpointFacts, date: &str) -> Result<CommitSha, VcsError> {
+    pub fn create_checkpoint(
+        &self,
+        name: &str,
+        facts: &CheckpointFacts,
+        date: &str,
+        emitted: &[std::path::PathBuf],
+    ) -> Result<CommitSha, VcsError> {
         let git_dir = self.git_stdout(&["rev-parse", "--absolute-git-dir"])?;
         let index = Path::new(git_dir.trim()).join("callisto-checkpoint.index");
         let index_str = index.to_string_lossy().into_owned();
         let env = [("GIT_INDEX_FILE", index_str.as_str())];
+        let real_index = self.git_stdout(&["rev-parse", "--git-path", "index"])?;
+        let real_index = self.root().join(real_index.trim());
         let created = (|| {
             let index_commit = self.internal_commit(&self.git_stdout(&["write-tree"])?, &[&facts.head], "index")?;
-            self.git_stdout_env(&["read-tree", "HEAD"], &env)?;
-            self.git_stdout_env(&["add", "-A", "--", "."], &env)?;
+            // Seeded from the real index so Git's stat cache spares rehashing every tracked file; without one it is
+            // built from `HEAD`.
+            if std::fs::copy(&real_index, &index).is_err() {
+                self.git_stdout_env(&["read-tree", "HEAD"], &env)?;
+            }
+            // A file Git cannot read, or whose line endings `core.safecrlf` objects to, is not something `version`
+            // reads or writes, so it must not stop the run: it is left out of the record.
+            let args = ["-c", "core.safecrlf=false", "add", "-A", "--ignore-errors", "--", "."];
+            let output = self.runner().run_with_env("git", &args, self.root(), &env)?;
+            if !output.success() && !output.stderr.contains("unable to index") {
+                return Err(git_failed(&args, self.root(), &output.stderr));
+            }
             let tree = self.git_stdout_env(&["write-tree"], &env)?;
-            let message = format!(
+            let mut message = format!(
                 "callisto checkpoint\n\n{HEAD_TRAILER}: {}\n{TAGS_TRAILER}: {}\n{VERSION_TRAILER}: {}\n{DATE_TRAILER}: {date}\n",
                 facts.head, facts.tags, facts.callisto_version
             );
+            for path in emitted {
+                message.push_str(&format!("{EMIT_TRAILER}: {}\n", path.display()));
+            }
             self.internal_commit(&tree, &[&facts.head, index_commit.as_str()], &message)
         })();
         std::fs::remove_file(&index).ok();
@@ -116,13 +146,8 @@ impl GitAccess<'_> {
     /// Whether `path` (relative to this root) has an entry in the index.
     pub fn is_staged(&self, path: &Path) -> Result<bool, VcsError> {
         let path = path.to_string_lossy();
-        let args = ["--literal-pathspecs", "ls-files", "--error-unmatch", "--", &path];
-        let output = self.runner().run("git", &args, self.root())?;
-        match output.exit_code {
-            Some(0) => Ok(true),
-            Some(1) => Ok(false),
-            _ => Err(git_failed(&args, self.root(), &output.stderr)),
-        }
+        self.git_stdout(&["--literal-pathspecs", "ls-files", "--", &path])
+            .map(|listed| !listed.is_empty())
     }
 
     /// Whether a `.gitignore` or exclude rule ignores `path` (relative to this root).
@@ -221,12 +246,25 @@ impl GitAccess<'_> {
     /// from, so history reads (commit inference) see the real commits and not the checkpoint's own. The files and the
     /// index stay as the checkpoint recorded them.
     pub fn add_checkpoint_worktree(&self, name: &str, dir: &Path, head: &str) -> Result<(), VcsError> {
+        // The scratch checkout is internal: none of the user's hooks run in it, and a failed step takes its
+        // registration with it.
         let dir_text = dir.to_string_lossy();
-        self.git_stdout(&["worktree", "add", "--detach", "--quiet", &dir_text, name])?;
-        let args = ["reset", "--quiet", "--soft", head];
-        let output = self.runner().run("git", &args, dir)?;
+        let no_hooks = ["-c", "core.hooksPath=/dev/null"];
+        let add: Vec<&str> = no_hooks
+            .iter()
+            .copied()
+            .chain(["worktree", "add", "--detach", "--quiet", &dir_text, name])
+            .collect();
+        self.git_stdout(&add)?;
+        let reset: Vec<&str> = no_hooks
+            .iter()
+            .copied()
+            .chain(["reset", "--quiet", "--soft", head])
+            .collect();
+        let output = self.runner().run("git", &reset, dir)?;
         if !output.success() {
-            return Err(git_failed(&args, dir, &output.stderr));
+            self.remove_worktree(dir).ok();
+            return Err(git_failed(&reset, dir, &output.stderr));
         }
         Ok(())
     }
@@ -235,7 +273,17 @@ impl GitAccess<'_> {
     /// this root.
     pub fn created_since(&self, rev: &str) -> Result<Vec<std::path::PathBuf>, VcsError> {
         let mut created = self.untracked_files()?;
-        let added = self.git_stdout(&["diff", "--name-only", "--relative", "--diff-filter=A", rev, "--", "."])?;
+        let added = self.git_stdout(&[
+            "-c",
+            "core.quotepath=off",
+            "diff",
+            "--name-only",
+            "--relative",
+            "--diff-filter=A",
+            rev,
+            "--",
+            ".",
+        ])?;
         created.extend(added.lines().map(std::path::PathBuf::from));
         created.sort();
         created.dedup();
@@ -250,14 +298,31 @@ impl GitAccess<'_> {
 
     /// Untracked, not ignored files under this root, relative to it.
     pub fn untracked_files(&self) -> Result<Vec<std::path::PathBuf>, VcsError> {
-        let listed = self.git_stdout(&["ls-files", "--others", "--exclude-standard", "--", "."])?;
+        let listed = self.git_stdout(&[
+            "-c",
+            "core.quotepath=off",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+        ])?;
         Ok(listed.lines().map(std::path::PathBuf::from).collect())
     }
 
     /// The files under `dir` (relative to this root) in `rev`'s tree, relative to this root.
     pub fn files_at(&self, rev: &str, dir: &Path) -> Result<Vec<std::path::PathBuf>, VcsError> {
         let dir = dir.to_string_lossy();
-        let listed = self.git_stdout(&["ls-tree", "-r", "--name-only", rev, "--", &dir])?;
+        let listed = self.git_stdout(&[
+            "-c",
+            "core.quotepath=off",
+            "ls-tree",
+            "-r",
+            "--name-only",
+            rev,
+            "--",
+            &dir,
+        ])?;
         Ok(listed.lines().map(std::path::PathBuf::from).collect())
     }
 

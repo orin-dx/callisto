@@ -729,6 +729,140 @@ fn linked_worktrees_keep_their_own_checkpoints() {
     );
 }
 
+/// A file Git cannot read is not something `version` touches, so it must not stop the run.
+#[test]
+fn an_unreadable_untracked_file_does_not_stop_version() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    // Sorts before the file below, so a checkpoint that stopped at it would leave the later one out.
+    let secret = repo.workspace.join("aaa-unreadable.txt");
+    fs::write(&secret, "x").unwrap();
+    fs::set_permissions(&secret, fs::Permissions::from_mode(0o000)).unwrap();
+    write(&repo.workspace, "zzz-notes.txt", "kept\n");
+
+    let first = failed_cargo_run(&repo, &bin);
+
+    fs::set_permissions(&secret, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(
+        String::from_utf8_lossy(&first.stderr).contains("E208"),
+        "the run should reach the refresh: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let recorded = git(
+        &repo.root,
+        &[
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "refs/worktree/callisto/checkpoint/version",
+        ],
+    );
+    assert!(
+        recorded.contains("zzz-notes.txt"),
+        "the checkpoint stopped at the unreadable file: {recorded}"
+    );
+}
+
+#[test]
+fn a_plan_that_writes_nothing_records_no_checkpoint() {
+    let repo = repo(
+        |ws| {
+            cargo_cascade(ws);
+            fs::remove_file(ws.join(".changeset/one.md")).unwrap();
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+
+    let out = version(&repo.workspace, &bin, None);
+
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!has_checkpoint(&repo.root));
+}
+
+/// The scratch checkout is internal: a user's hook does not run in it, so a failing one cannot block a resume or
+/// an abort.
+#[test]
+fn a_failing_post_checkout_hook_does_not_block_a_resume() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    failed_cargo_run(&repo, &bin);
+    let hooks = repo.root.join(".git/hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    fs::write(hooks.join("post-checkout"), "#!/bin/sh\nexit 1\n").unwrap();
+    fs::set_permissions(hooks.join("post-checkout"), fs::Permissions::from_mode(0o755)).unwrap();
+
+    let out = version(&repo.workspace, &bin, None);
+
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(git(&repo.root, &["worktree", "list"]).lines().count(), 1);
+}
+
+#[test]
+fn abort_keeps_stdout_clean_under_format_json() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    failed_cargo_run(&repo, &bin);
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+
+    let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args([
+            "--format",
+            "json",
+            "--cwd",
+            repo.workspace.to_str().unwrap(),
+            "version",
+            "--abort",
+        ])
+        .env("PATH", path)
+        .output()
+        .unwrap();
+
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.stdout.is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+/// The decision a run emitted before it was interrupted is discarded with the rest of the run.
+#[test]
+fn an_abort_removes_the_decision_file_the_interrupted_run_emitted() {
+    let repo = repo(cargo_cascade, "", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let before = state(&repo.root);
+    let out_dir = repo.root.parent().unwrap().join("out");
+    fs::create_dir_all(&out_dir).unwrap();
+    fs::set_permissions(&out_dir, fs::Permissions::from_mode(0o555)).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let first = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args([
+            "--cwd",
+            repo.workspace.to_str().unwrap(),
+            "version",
+            "--emit-decision",
+            ".callisto/release-decision.json",
+            "--emit-preview",
+            out_dir.join("preview.json").to_str().unwrap(),
+        ])
+        .env("PATH", path)
+        .output()
+        .unwrap();
+    assert!(!first.status.success(), "the preview write should fail");
+    assert!(
+        repo.workspace.join(".callisto/release-decision.json").exists(),
+        "the decision was written before the preview failed"
+    );
+
+    run_abort_steps(&repo.workspace, &bin);
+
+    assert!(!repo.workspace.join(".callisto/release-decision.json").exists());
+    fs::remove_dir(repo.workspace.join(".callisto")).ok();
+    assert_eq!(state(&repo.root), before);
+}
+
 #[test]
 fn a_dry_run_leaves_other_worktrees_registered() {
     let repo = repo(cargo_cascade, "", None);

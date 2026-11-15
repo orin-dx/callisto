@@ -493,7 +493,13 @@ pub fn analyze_resume<R: CommandRunner, D: DependencyResolver>(
 
     // Abort touches only what the run writes: the plan's files and the lockfiles its refresh may have created.
     let lockfiles = crate::apply::lockfile_candidates(&scratch.root, plan)?;
-    let touched: BTreeSet<&std::path::PathBuf> = written.iter().chain(lockfiles.iter()).collect();
+    // Lockfiles and emitted files are outputs a tool or the run produced, so there is no expected content to compare
+    // them with: they are put back as recorded.
+    let touched: BTreeSet<&std::path::PathBuf> = written
+        .iter()
+        .chain(lockfiles.iter())
+        .chain(checkpoint.emitted.iter())
+        .collect();
     let (mut restore, mut remove, mut edited) = (Vec::new(), Vec::new(), Vec::new());
     for path in touched {
         let current = git.file_hash(path)?;

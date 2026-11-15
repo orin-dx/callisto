@@ -233,7 +233,7 @@ pub struct VersionArgs {
     pub emit_preview: Option<std::path::PathBuf>,
     /// Discards an interrupted run: puts back the files it wrote that you have not edited since, removes the files it
     /// created and deletes its checkpoint. Run it when `version` reports that the interrupted run cannot resume.
-    #[arg(long, conflicts_with_all = ["emit_decision", "emit_preview", "strict", "allow_empty_changesets", "no_refresh_lockfiles"])]
+    #[arg(long, conflicts_with_all = ["emit_decision", "emit_preview", "strict", "allow_empty_changesets", "no_refresh_lockfiles", "refresh_lockfiles"])]
     pub abort: bool,
 }
 
