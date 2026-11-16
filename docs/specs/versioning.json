@@ -311,7 +311,7 @@
       "is_error_case": true
     },
     {
-      "id": "VER-APPLY-17",
+      "id": "VER-APPLY-21",
       "criterion": "A bumped Cargo member whose version is inherited (`version.workspace = true` or `version = { workspace = true }`) gets a literal `version = \"<new>\"` in its own `[package]` table, in the position and with the comments of the line it replaces. `[workspace.package].version` is never written, so a member that still inherits keeps the shared version. Bumping every member of a fixed group pins each of them."
     },
     {
@@ -320,7 +320,7 @@
     },
     {
       "id": "VER-APPLY-20",
-      "criterion": "A run that finds the checkpoint refuses with E340 and writes nothing when `HEAD`, the tags or the Callisto version changed since it was recorded, , when the checkpoint belongs to another workspace of the worktree, or when a file the plan was derived from (a manifest the loader opened, `callisto.toml`, a changeset) or a file it writes is on disk neither as recorded nor as the tree a finished run would leave (the plan applied to the recorded tree without a lockfile refresh), compared through Git's line-ending filters; a file the expected tree lacks counts as the run's deletion only when the index lacks it too. A dry run reports the plan without this check. The planning date and the commit history come from the recorded run. A run that cannot start (its preflight or workspace resolution fails) leaves no checkpoint. A run that cannot create the checkpoint because another run created it first fails with E341. The checkpoint belongs to one worktree. The error names the way out: delete the checkpoint ref and follow the E121 steps.",
+      "criterion": "A run that finds the checkpoint refuses with E340 and writes nothing when `HEAD`, the tags or the Callisto version changed since it was recorded, when the checkpoint belongs to another workspace of the worktree, or when a file the plan was derived from (a manifest the loader opened, `callisto.toml`, a changeset) or a file it writes is on disk neither as recorded nor as the tree a finished run would leave (the plan applied to the recorded tree without a lockfile refresh), compared through Git's line-ending filters; a file the expected tree lacks counts as the run's deletion only when the index lacks it too. A dry run reports the plan without this check. The planning date and the commit history come from the recorded run. A run that cannot start (its preflight or workspace resolution fails) leaves no checkpoint. A run that cannot create the checkpoint because another run created it first fails with E341. The checkpoint belongs to one worktree. The error names the way out: delete the checkpoint ref and follow the E121 steps.",
       "is_error_case": true
     }
   ],
