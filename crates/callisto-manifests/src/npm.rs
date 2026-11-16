@@ -503,17 +503,19 @@ impl Manifest for PackageJson {
             return Ok(());
         }
 
+        let rendered = new.render();
         for extra in ["overrides", "resolutions"] {
-            // Only a plain range follows the dependency: `$name` refers to the direct dependency and a value with a
-            // protocol (`npm:`, `file:`, `catalog:`) points elsewhere.
-            if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut())
-                && tbl
-                    .get(name)
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|v| !v.starts_with('$') && !v.contains(':'))
-            {
-                tbl.insert(name.to_string(), Value::String(new.render()));
+            if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut()) {
+                follow_pin(tbl, name, &rendered);
             }
+        }
+        if let Some(tbl) = self
+            .doc
+            .get_mut("pnpm")
+            .and_then(|v| v.get_mut("overrides"))
+            .and_then(|v| v.as_object_mut())
+        {
+            follow_pin(tbl, name, &rendered);
         }
 
         Ok(())
@@ -555,6 +557,19 @@ impl Manifest for PackageJson {
             Some(Value::Object(bins)) => bins.keys().cloned().collect(),
             _ => Vec::new(),
         })
+    }
+}
+
+/// Moves an override of `name` to `rendered`. Only a plain range follows the dependency: `$name` refers to the
+/// direct dependency, a value with a protocol (`npm:`, `file:`, `catalog:`) points elsewhere, and pnpm's `-` removes
+/// the dependency.
+fn follow_pin(tbl: &mut Map<String, Value>, name: &str, rendered: &str) {
+    if tbl
+        .get(name)
+        .and_then(|v| v.as_str())
+        .is_some_and(|v| v != "-" && !v.starts_with('$') && !v.contains(':'))
+    {
+        tbl.insert(name.to_string(), Value::String(rendered.to_string()));
     }
 }
 
