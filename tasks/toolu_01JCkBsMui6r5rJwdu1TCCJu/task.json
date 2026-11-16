@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01JCkBsMui6r5rJwdu1TCCJu",
+  "agent_id": "a8f31b081fecd4304",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit michi adoption opportunities",
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 90190,
+    "cache_read_tokens": 1594341,
+    "output_tokens": 10255,
+    "api_call_count": 21
+  },
+  "started_at": "2026-11-15T22:22:28.638831-08:00",
+  "completed_at": "2026-11-15T22:24:43.974301-08:00"
+}

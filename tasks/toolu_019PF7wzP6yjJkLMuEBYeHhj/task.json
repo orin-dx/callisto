@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_019PF7wzP6yjJkLMuEBYeHhj",
+  "agent_id": "a2550ebb08718eaba",
+  "subagent_type": "general-purpose",
+  "task_description": "Verify owner decisions and michi state",
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 39774,
+    "cache_read_tokens": 169925,
+    "output_tokens": 3182,
+    "api_call_count": 4
+  },
+  "started_at": "2026-11-15T22:31:03.15214-08:00",
+  "completed_at": "2026-11-15T22:31:45.756609-08:00"
+}

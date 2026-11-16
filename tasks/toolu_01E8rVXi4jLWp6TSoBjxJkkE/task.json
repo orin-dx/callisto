@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01E8rVXi4jLWp6TSoBjxJkkE",
+  "agent_id": "ad78abcb0b727d146",
+  "subagent_type": "general-purpose",
+  "task_description": "Verify spec drift and stability claims",
+  "token_usage": {
+    "input_tokens": 232,
+    "cache_creation_tokens": 162733,
+    "cache_read_tokens": 14723860,
+    "output_tokens": 51675,
+    "api_call_count": 116
+  },
+  "started_at": "2026-11-15T22:31:03.152097-08:00",
+  "completed_at": "2026-11-15T22:42:09.375664-08:00"
+}

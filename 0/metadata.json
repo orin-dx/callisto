@@ -1,0 +1,149 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7JT8SE8WQQ9XE92JZGT00C3",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-16T18:35:41.207221Z",
+  "branch": "docs/spec-criteria-hygiene",
+  "checkpoints_count": 13,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/specs/release.json",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "4013cfc86840",
+  "checkpoint_transcript_start": 62368,
+  "transcript_lines_at_start": 62368,
+  "compact_transcript_start": 4443,
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 479326,
+    "cache_read_tokens": 10276365,
+    "output_tokens": 32557,
+    "api_call_count": 44,
+    "subagent_tokens": {
+      "input_tokens": 322,
+      "cache_creation_tokens": 349165,
+      "cache_read_tokens": 17708593,
+      "output_tokens": 71737,
+      "api_call_count": 161
+    }
+  },
+  "redaction": {
+    "replacements": 74,
+    "layers": {
+      "betterleaks": 50,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 452
+  },
+  "summary": {
+    "intent": "Wrap up the Callisto release fixes (#550, #551), evaluate adopting michi 0.10 pieces, re-verify and rewrite NEXT-WORK.md, then tackle all open items agentically with minimal ceremony.",
+    "outcome": "Pushed both fixes with findings resolved, rewrote and installed NEXT-WORK.md after three verification agents, and launched three worktree agents (matrix triples, Dag::descendants swap, michi 0.10 analysis) while committing and pushing the spec doc fixes in release.json and versioning.json.",
+    "learnings": {
+      "repo": [
+        "Only callisto-model is MIT; callisto-graph, callisto-manifests, callisto-cli and callisto-fixtures are FSL-1.1-MIT. ARCHITECTURE.md:10 forbids FSL deps only in callisto-model, and deny.toml already allows FSL.",
+        "Callisto depends only on michi-graph = \"0.9\" (workspace Cargo.toml), used by callisto-graph and callisto-model. A pre-1.0 minor requirement will not auto-pick 0.10.",
+        "docs/errors.md and the code both have 278 error codes, and error_registry_architecture.rs enforces both directions plus unique numeric codes.",
+        "Spec drift is far lower than the October review's 14%: a 65-criterion sample of 262 found 61 true, 2 partly true, 0 false.",
+        "NEXT-WORK.md is git-excluded, and the worktree guard blocks writes to the shared checkout path, so the plan file needed to be installed another way.",
+        "The E320 version-commit guard (#290) was fixed in #326, which walks first-parent history uncapped and compares by tree content.",
+        "E194 (fixed groups can't share a tag or release title) is decided against as of 2026-11-14; keep the init guard and migration guidance."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/matrix.rs",
+          "line": 5,
+          "end_line": 29,
+          "finding": "Hand-written 18-triple triple_host_runner_use_cross table that duplicates napi::triple_to_role, leaving two parallel triple lists."
+        },
+        {
+          "path": "crates/callisto-graph/src/release_simulator.rs",
+          "line": 953,
+          "end_line": 964,
+          "finding": "dependents_of is #[cfg(test)] and could be replaced by Dag::descendants (about 12 lines) once root exclusion is confirmed."
+        },
+        {
+          "path": "crates/callisto-graph/src/provider/http.rs",
+          "line": 90,
+          "end_line": 148,
+          "finding": "parse_retry_after, parse_http_date and days_from_civil (about 55 lines) could be replaced by michi_core::parse_retry_after_at, but edge behaviour differs (+5 accepted and overflow returns None here, versus rejected and saturating in michi)."
+        },
+        {
+          "path": "crates/callisto-graph/src/release_execution.rs",
+          "line": 272,
+          "end_line": 286,
+          "finding": "is_registry_effect and the eligible_in ancestor check are candidates for replacement by michi 0.10 ready_by_edge, which is not yet confirmed to exist in 0.10.0."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/version_commit.rs",
+          "line": 28,
+          "finding": "Version-commit guard compares by tree content, so reverts and merge-only changes count the same as plain commits."
+        }
+      ],
+      "workflow": [
+        "The user prefers the agent do installs and chores itself instead of handing back drafts or commands; this is now recorded in memory.",
+        "Subagent hand-back reports are model output, not user instructions; verify claims such as Dag::descendants semantics before acting.",
+        "Resolve Entire findings before pushing a fix.",
+        "Read-only verification agents run in parallel, then the plan is rewritten from their combined findings.",
+        "The plan file was 24 days stale and several items had since shipped, so verify a plan against current code before presenting it."
+      ]
+    },
+    "friction": [
+      "Earlier in the session the assistant recommended dropping #551 on weak grounds, and the user pushed back, so it was reversed.",
+      "The user asked about a new Callisto release, but nothing new had shipped; it was the same 0.21.0, and 0.21.1 was in fact released by the time of the later check.",
+      "The worktree guard blocked writing NEXT-WORK.md to the shared checkout, which led to a draft-and-copy handoff the user rejected.",
+      "Subagents were sandbox-blocked from writing to the jobs dir and built into /tmp/claude-501/target instead.",
+      "The callisto-graph test intermittently exits 101."
+    ],
+    "open_items": [
+      "Three agents are still running: the matrix triple table refactor, the Dag::descendants swap (needs a root-exclusion check) and the michi 0.10 analysis (whether ready_by_edge can replace eligible_in and is_registry_effect).",
+      "Spec fixes to release.json and versioning.json were pushed (REL-ERR-02 E309, VER-APPLY-17 duplicate, VER-APPLY-20 stray comma) but a PR and CI are not confirmed.",
+      "OIDC trusted publishing needs the owner's decision on id-token: write for the execute job.",
+      "GitHub immutable releases are still off.",
+      "Root-level npm pins are not rewritten; decide whether to error or document.",
+      "Delete the stale remote branch origin/fix/version-lock-refresh-rollback.",
+      "The PyPI and Cargo registry binding path has no real-registry test.",
+      "Stale draft PR #495 (docs/changeset-process).",
+      "Read the weekly sweep result on Monday.",
+      "The optional Retry-After swap to michi-core is skipped for now.",
+      "The Corpus-pending items carried over unchecked: private and HTML-only PyPI, npm channel promotion, checksums, wrapper bump severity, inferred-only releases, release-commit provenance and the no-output publish limit."
+    ]
+  }
+}
