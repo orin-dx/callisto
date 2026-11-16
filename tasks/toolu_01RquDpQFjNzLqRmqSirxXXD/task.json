@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01RquDpQFjNzLqRmqSirxXXD",
+  "agent_id": "a2531322f08c86736",
+  "subagent_type": "general-purpose",
+  "task_description": "Investigate npm overrides handling",
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 43491,
+    "cache_read_tokens": 1163126,
+    "output_tokens": 5682,
+    "api_call_count": 21
+  },
+  "started_at": "2026-11-15T17:54:16.875766-08:00",
+  "completed_at": "2026-11-15T17:55:53.168815-08:00"
+}

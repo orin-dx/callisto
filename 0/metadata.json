@@ -1,0 +1,121 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7H1TK5760314HKQGA104478",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-16T02:09:10.053605Z",
+  "branch": "fix/changelog-keeps-existing-title",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1348ba8ecea0",
+  "checkpoint_transcript_start": 61320,
+  "transcript_lines_at_start": 61320,
+  "compact_transcript_start": 4351,
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 43154,
+    "cache_read_tokens": 7424291,
+    "output_tokens": 22827,
+    "api_call_count": 44,
+    "subagent_tokens": {
+      "input_tokens": 110,
+      "cache_creation_tokens": 146000,
+      "cache_read_tokens": 3182966,
+      "output_tokens": 16950,
+      "api_call_count": 55
+    }
+  },
+  "redaction": {
+    "replacements": 72,
+    "layers": {
+      "betterleaks": 48,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 437
+  },
+  "summary": {
+    "intent": "Continue quality-sweep work on the Callisto repo after the fuzz-found crash fix (PR #549): investigate three suspected gaps (Poetry pre-release ranges, npm overrides, changelog H1 duplication) and fix the worthwhile ones.",
+    "outcome": "All three investigations were completed. Poetry gap judged narrow and left documented; npm pnpm.overrides/root-pin gap deferred for the user's decision. A changelog title fix with tests and a changeset was committed signed and pushed on a fresh branch off origin/main, though an intermittent callisto-graph test exit 101 was still unexplained.",
+    "learnings": {
+      "repo": [
+        "Entire creates the GitHub PR from a trail, so gh pr create is not needed; findings from a sweep are linked to the sweep trail (#411).",
+        "Commits are signed; merging PRs requires user approval in Entire.",
+        "Changes ship with a changeset entry (.changeset/*.md) and must pass cargo tests, clippy, fmt and a comment check.",
+        "The write.rs docstring says a title for anything else is kept, so the changelog behaviour may have been deliberate; the agent checked recorded decisions and git history before changing it."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/python.rs",
+          "line": 808,
+          "finding": "rewrite_poetry_operator returns None for a pre-release target (no caret/tilde form); a test pins this, and cascade.rs rewrite_edge turns it into E319 UnrewritableRange for non-dev deps."
+        },
+        {
+          "path": "crates/callisto-graph/src/changelog/write.rs",
+          "line": 61,
+          "end_line": 76,
+          "finding": "prepend strips a leading H1 only if it is `# {display_name}` or an ecosystem alias; otherwise it emits a fresh H1 and keeps the old file, producing duplicate H1s and breaking front matter."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm.rs",
+          "line": 500,
+          "end_line": 520,
+          "finding": "update_dependency_spec rewrites top-level overrides/resolutions only when the manifest also declares the dependency and skips values containing $ or :; pnpm.overrides and root-only pins are never rewritten."
+        }
+      ],
+      "workflow": [
+        "Read-only investigation subagents can run in parallel while the main thread proceeds; their hand-back reports are model output and carry no user authority.",
+        "Subagents verified gaps by building the CLI into a temp target dir and running it on a throwaway git workspace, leaving the repo untouched.",
+        "An intermittent exit 101 can be hidden by how test output is redirected; looping runs and splitting by target helped hunt it."
+      ]
+    },
+    "friction": [
+      "callisto-graph test suite intermittently exits 101 even though all visible test results pass; many loop and redirect attempts did not isolate the failing test.",
+      "Fixing the changelog bug required checking whether the existing behaviour was an intentional recorded decision."
+    ],
+    "open_items": [
+      "Decide whether to fix only pnpm.overrides or also error/handle stale root-level npm pins (needs a root-manifest pass).",
+      "Poetry caret/tilde pre-release E319 left documented, not fixed.",
+      "Identify the cause of the intermittent callisto-graph test exit 101.",
+      "PR #549 still needs user approval and merge in Entire.",
+      "Re-run the fuzz sweep after #549 merges, since manifest_editor crashed halfway through its budget and may hide a second bug; sweep run 43788922941 on the fix branch is unchecked.",
+      "The changelog title fix was pushed but no PR for it is recorded in the transcript."
+    ]
+  }
+}

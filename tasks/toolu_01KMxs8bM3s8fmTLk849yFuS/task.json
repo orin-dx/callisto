@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01KMxs8bM3s8fmTLk849yFuS",
+  "agent_id": "aef7286d765c7ae91",
+  "subagent_type": "general-purpose",
+  "task_description": "Investigate Poetry caret pre-release gap",
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 54132,
+    "cache_read_tokens": 1161445,
+    "output_tokens": 5451,
+    "api_call_count": 19
+  },
+  "started_at": "2026-11-15T17:54:16.875821-08:00",
+  "completed_at": "2026-11-15T17:55:46.486078-08:00"
+}
