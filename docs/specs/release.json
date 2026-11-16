@@ -411,7 +411,7 @@
     },
     {
       "id": "REL-ERR-02",
-      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest` or `release execute` fails with `E217`, `E216` or `E218` and writes nothing.",
+      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest`, `release execute` or `release build-python` fails with `E217`, `E216`, `E218` or `E309` and writes nothing.",
       "is_error_case": true
     },
     {
