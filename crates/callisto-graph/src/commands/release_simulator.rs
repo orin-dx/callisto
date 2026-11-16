@@ -27,7 +27,7 @@ use callisto_model::{
 
 use crate::commands::release::provider::preflight_from_observation;
 use crate::commands::release_artifacts::VerifiedArtifactManifest;
-use crate::commands::release_execution::execute_release;
+use crate::commands::release_execution::{execute_release, operation_dag};
 use crate::commands::release_test_support::{envelope, evidence_for};
 use crate::commands::{ReleasePreflight, ReleaseProviderSet};
 use crate::error::{CommandFailure, RemoteConflict};
@@ -926,13 +926,19 @@ fn check_convergence(intent: &ReleaseIntentV1, run: &ScenarioRun) -> Result<Clas
 }
 
 fn check_nothing_lands_after_a_conflict(intent: &ReleaseIntentV1, trace: &[TraceEvent]) -> Result<(), Violation> {
+    let dag = operation_dag(intent).expect("a test intent is a valid DAG");
     let mut blocked: BTreeSet<ReleaseOperationId> = BTreeSet::new();
     let mut conflicting: BTreeSet<ReleaseOperationId> = BTreeSet::new();
     for event in trace {
         match event {
             TraceEvent::Observed { id, tag, .. } if *tag == ObservationTag::Conflict => {
                 if conflicting.insert(id.clone()) {
-                    blocked = dependents_of(intent, &conflicting);
+                    let roots: Vec<_> = conflicting.iter().filter_map(|id| dag.index_of(id)).collect();
+                    blocked = dag
+                        .descendants(&roots)
+                        .into_iter()
+                        .filter_map(|ix| dag.key(ix).cloned())
+                        .collect();
                 }
             }
             TraceEvent::Effect { id, landed: true, .. } if blocked.contains(id) => {
@@ -948,23 +954,6 @@ fn check_nothing_lands_after_a_conflict(intent: &ReleaseIntentV1, trace: &[Trace
         }
     }
     Ok(())
-}
-
-fn dependents_of(intent: &ReleaseIntentV1, roots: &BTreeSet<ReleaseOperationId>) -> BTreeSet<ReleaseOperationId> {
-    let mut closure = roots.clone();
-    // The intent is a DAG in canonical order; one pass per operation converges.
-    for _ in 0..intent.operations.len() {
-        for operation in &intent.operations {
-            if operation
-                .prerequisites()
-                .iter()
-                .any(|prerequisite| closure.contains(prerequisite))
-            {
-                closure.insert(operation.id().clone());
-            }
-        }
-    }
-    closure.difference(roots).cloned().collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -1080,6 +1069,45 @@ fn trace_lines(context: &SimContext) -> String {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+/// A landed effect on any operation downstream of a conflicted one, direct or transitive, is a violation.
+#[test]
+fn a_dependent_landing_after_a_conflict_is_a_violation() {
+    let (intent, _) = simulator_intent();
+    let root = intent.operations.iter().find(|o| o.prerequisites().is_empty()).unwrap();
+    let child = intent
+        .operations
+        .iter()
+        .find(|o| o.prerequisites().contains(root.id()))
+        .unwrap();
+    let grandchild = intent
+        .operations
+        .iter()
+        .find(|o| o.prerequisites().contains(child.id()))
+        .unwrap();
+    let trace_landing = |id: &ReleaseOperationId| {
+        vec![
+            TraceEvent::Observed {
+                run: 0,
+                id: root.id().clone(),
+                tag: ObservationTag::Conflict,
+            },
+            TraceEvent::Effect {
+                run: 0,
+                id: id.clone(),
+                landed: true,
+            },
+        ]
+    };
+
+    for dependent in [child, grandchild] {
+        assert!(matches!(
+            check_nothing_lands_after_a_conflict(&intent, &trace_landing(dependent.id())),
+            Err(Violation::DependentLandedDespiteConflict { .. })
+        ));
+    }
+    assert!(check_nothing_lands_after_a_conflict(&intent, &trace_landing(root.id())).is_ok());
+}
 
 #[test]
 fn the_release_executor_survives_every_enumerated_crash_and_provider_fault() {
