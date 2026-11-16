@@ -64,6 +64,9 @@ pub fn prepend(
 
     let mut new_content = String::from(bom);
     new_content.push_str(front);
+    if !front.is_empty() && !front.ends_with('\n') {
+        new_content.push('\n');
+    }
     new_content.push_str(&format!("# {display_name}\n\n"));
     new_content.push_str(rendered);
     if !rendered.ends_with('\n') {
@@ -417,6 +420,7 @@ mod tests {
         );
         assert!(prepended("---\ntitle: x\n---\n## 1.0.0\n\n- Old\n")
             .starts_with("---\ntitle: x\n---\n# my-pkg\n\n## 2.0.0"));
+        assert!(prepended("---\ntitle: x\n---").starts_with("---\ntitle: x\n---\n# my-pkg\n\n## 2.0.0"));
     }
 
     #[test]
