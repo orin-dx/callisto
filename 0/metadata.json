@@ -29,9 +29,9 @@
     }
   },
   "redaction": {
-    "replacements": 72,
+    "replacements": 74,
     "layers": {
-      "betterleaks": 48,
+      "betterleaks": 50,
       "connection_string": 0,
       "credential_key": 0,
       "credential_value": 2,
