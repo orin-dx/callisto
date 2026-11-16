@@ -681,6 +681,35 @@ fn update_dependency_spec_co_mutates_overrides() {
 }
 
 #[test]
+fn update_dependency_spec_moves_a_pnpm_override_and_skips_one_that_points_elsewhere() {
+    let dir = tempdir().unwrap();
+    let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": { "lodash": "^4.17.0", "left-pad": "^1.0.0" },
+  "pnpm": { "overrides": { "lodash": "4.17.0", "left-pad": "npm:other@1.0.0" } }
+}
+"#;
+    let mut manifest = open_manifest(&dir, content);
+
+    for name in ["lodash", "left-pad"] {
+        manifest
+            .update_dependency_spec(
+                name,
+                DepKind::Runtime,
+                &Default::default(),
+                DepSpec::Opaque("^5.0.0".to_string()),
+                &permit(),
+            )
+            .unwrap();
+    }
+
+    let pins = manifest.doc["pnpm"]["overrides"].as_object().unwrap();
+    assert_eq!(pins["lodash"], "^5.0.0");
+    assert_eq!(pins["left-pad"], "npm:other@1.0.0");
+}
+
+#[test]
 fn update_dependency_spec_co_mutates_resolutions() {
     let dir = tempdir().unwrap();
     let content = r#"{
