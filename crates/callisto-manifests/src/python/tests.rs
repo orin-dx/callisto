@@ -124,6 +124,28 @@ dependencies = [
 }
 
 #[test]
+fn write_version_refuses_a_project_key_that_is_not_a_table() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("pyproject.toml"), "\"project\"=\"\"").unwrap();
+    let decl = ManifestDecl {
+        path: PathBuf::from("pyproject.toml"),
+        role: ManifestRole::Canonical,
+        format: ManifestFormat::PyprojectToml,
+    };
+    let ctx = OpenContext {
+        workspace_root: dir.path(),
+        cargo_workspace: None,
+        cargo_roots: Default::default(),
+        npm_workspace_kind: None,
+    };
+
+    let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+    let new_v = Version::parse("1.0.0", VersionGrammar::Pep440).unwrap();
+    let err = manifest.write_version(&new_v, &permit()).unwrap_err();
+    assert!(matches!(err, ManifestError::MissingField { .. }), "{err:?}");
+}
+
+#[test]
 fn write_version_does_not_touch_disk_until_persist_called() {
     let dir = tempdir().unwrap();
     let pyproject_path = dir.path().join("pyproject.toml");
