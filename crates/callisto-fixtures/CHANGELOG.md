@@ -1,5 +1,11 @@
 # callisto-fixtures
 
+## 0.21.1
+
+_2026-11-16_
+
+- Released together with the `workspace` fixed group.
+
 ## 0.21.0
 
 _2026-11-15_

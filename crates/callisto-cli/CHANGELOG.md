@@ -1,5 +1,27 @@
 # callisto-cli
 
+## 0.21.1
+
+_2026-11-16 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.21.0...callisto@0.21.1)_
+
+### Patch Changes
+
+- A changelog that already has a title such as `# Changelog` no longer ends up with two titles, and front matter stays on top.
+
+  - Before, the first release written to a `CHANGELOG.md` titled `# Changelog` (or anything other than the package name) added a second `# <package>` title above it. A file that started with `---` front matter got the new title above the front matter, which stopped it being front matter.
+  - Now the leading title is replaced by the package title, and front matter stays first.
+  - You do not need to do anything. Changelog sections already written are not changed.
+- A `pnpm.overrides` pin on a workspace package now follows the package's new version, as `overrides` and `resolutions` already did.
+
+  - Before, `pnpm.overrides` kept the old version after a release, so pnpm kept installing the old package even though the dependency range had moved.
+  - Now a plain range in `pnpm.overrides` is rewritten with the dependency, in a manifest that declares that dependency. Values that point elsewhere (`$name`, `npm:`, `catalog:`) are left alone.
+  - Pins in a root `package.json` that does not declare the dependency are still not changed. If you pin a workspace package there, update it by hand.
+- `callisto version` no longer crashes on a `pyproject.toml` whose `project` key is not a table.
+
+  - Before, a file like `project = ""` made the version write panic with "index not found".
+  - Now `version` stops with the missing-version error and changes nothing.
+  - You do not need to do anything. If you hit it, make `project` a `[project]` table with a `version`.
+
 ## 0.21.0
 
 _2026-11-15 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.20.0...callisto@0.21.0)_
