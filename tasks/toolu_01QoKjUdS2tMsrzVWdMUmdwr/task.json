@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01QoKjUdS2tMsrzVWdMUmdwr",
+  "agent_id": "a89fac8c59a851a85",
+  "subagent_type": "general-purpose",
+  "task_description": "Analyse michi 0.10 for adoption",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 47141,
+    "cache_read_tokens": 478914,
+    "output_tokens": 4576,
+    "api_call_count": 9
+  },
+  "started_at": "2026-11-16T10:34:42.2566-08:00",
+  "completed_at": "2026-11-16T10:36:12.917445-08:00"
+}
