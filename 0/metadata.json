@@ -1,0 +1,92 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7JTP2FZKCQ8N5PJQV1HPCCJ",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-16T18:42:46.904449Z",
+  "branch": "deps/michi-graph-0-10",
+  "checkpoints_count": 13,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "64b715bd5f9c",
+  "checkpoint_transcript_start": 63178,
+  "transcript_lines_at_start": 63178,
+  "compact_transcript_start": 4508,
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 6943,
+    "cache_read_tokens": 570687,
+    "output_tokens": 682,
+    "api_call_count": 2,
+    "subagent_tokens": {
+      "input_tokens": 16,
+      "cache_creation_tokens": 6310,
+      "cache_read_tokens": 667264,
+      "output_tokens": 1838,
+      "api_call_count": 8
+    }
+  },
+  "redaction": {
+    "replacements": 74,
+    "layers": {
+      "betterleaks": 50,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 452
+  },
+  "summary": {
+    "intent": "Bump the michi-graph dependency/version, stage the change, and commit it with a signed commit and push it.",
+    "outcome": "The transcript shows only two Bash steps: staging the michi-graph bump and a signed commit plus push. No output or results are shown, so success is not confirmed.",
+    "learnings": {
+      "repo": [
+        "The michi-graph bump is made as its own commit, separate from other changes.",
+        "Commits in this workflow are signed."
+      ],
+      "code": [],
+      "workflow": [
+        "Staging, signed commit, and push were done as two separate Bash steps.",
+        "The transcript has no tool output, so the push result cannot be verified from it."
+      ]
+    },
+    "friction": [
+      "The transcript has no command details or output, which limits what can be said about what changed or whether the push worked."
+    ],
+    "open_items": []
+  }
+}
