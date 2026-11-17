@@ -1,0 +1,158 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M4Y2QZP0B98WYPN5ED0Y48P9",
+  "session_id": "f21fbbf3-d9f7-4109-9c36-8de0a6e308fd",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-17T03:12:31.975115Z",
+  "checkpoints_count": 1,
+  "save_step_count": 510,
+  "files_touched": null,
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5894,
+    "cache_creation_tokens": 22510927,
+    "cache_read_tokens": 1462745868,
+    "output_tokens": 1695151,
+    "api_call_count": 2956
+  },
+  "redaction": {
+    "replacements": 1435,
+    "layers": {
+      "betterleaks": 15,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 3,
+      "credentialed_uri": 10,
+      "entropy": 2147,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012pqp9ZZhcrRstBhMtfFpK7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "trace:trace"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4054,
+        "end": 4055,
+        "entry_ids": [
+          "b7a9c8e2-39fb-480f-a958-2f1020580af0"
+        ],
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: trace:trace",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01WMSwBPyMoymRJbL5rBa9HZ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "delta:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 9827,
+        "end": 9828,
+        "entry_ids": [
+          "d494abb7-7585-41e0-87ae-71187cd54c7f"
+        ],
+        "tool_use_id": "toolu_01WMSwBPyMoymRJbL5rBa9HZ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WMSwBPyMoymRJbL5rBa9HZ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: delta:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01U63Fg7tzvDGwwZBCy5vDfD",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 19538,
+        "end": 19539,
+        "entry_ids": [
+          "7cf4c502-d629-41ad-a306-b5e329f3d17a"
+        ],
+        "tool_use_id": "toolu_01U63Fg7tzvDGwwZBCy5vDfD"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01U63Fg7tzvDGwwZBCy5vDfD"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01VGEw7w5hcTAnUzVAcu1rgh",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 26149,
+        "end": 26150,
+        "entry_ids": [
+          "76b2d0bf-8143-47ab-854b-fd5012550821"
+        ],
+        "tool_use_id": "toolu_01VGEw7w5hcTAnUzVAcu1rgh"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01VGEw7w5hcTAnUzVAcu1rgh"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "kind": "imported"
+}
