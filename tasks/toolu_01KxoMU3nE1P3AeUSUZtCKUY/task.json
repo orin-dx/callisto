@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01KxoMU3nE1P3AeUSUZtCKUY",
+  "agent_id": "ae868f5f574c119cf",
+  "subagent_type": "general-purpose",
+  "task_description": "Research npm-family OIDC publishing",
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 52339,
+    "cache_read_tokens": 462979,
+    "output_tokens": 4741,
+    "api_call_count": 8
+  },
+  "started_at": "2026-11-16T13:46:07.221843-08:00",
+  "completed_at": "2026-11-16T13:47:33.77167-08:00"
+}

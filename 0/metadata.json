@@ -1,0 +1,230 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7KQGF708D1QKQAZQP041C9M",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-17T03:06:37.100542Z",
+  "branch": "main",
+  "checkpoints_count": 8,
+  "save_step_count": 1,
+  "files_touched": [
+    ".append_cli_tests.tmp",
+    ".append_version_tests.tmp",
+    ".append_write_tests.tmp",
+    ".changeset/changelog-grouped-layout.md",
+    ".fixlit.sh",
+    ".git-edit-tmp.py",
+    ".git-scratch-edit1.py",
+    ".github/actions/callisto-action/action.yml",
+    ".github/dependabot.yml",
+    ".github/tests/action-inputs/callisto-action.txt",
+    ".github/tests/action-inputs/setup-callisto.txt",
+    ".github/tests/verify-action-inputs.sh",
+    ".p.pl",
+    ".probe/probe.sh",
+    ".probe/t.sh",
+    "apply_errs.py",
+    "cmp_errs.py",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/io.rs",
+    "crates/callisto-cli/src/lib.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/tests/add_duplicate_package_tests.rs",
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "crates/callisto-cli/tests/emit_preview_tests.rs",
+    "crates/callisto-cli/tests/error_code_hygiene_tests.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "crates/callisto-cli/tests/json_contract_tests.rs",
+    "crates/callisto-cli/tests/output_flags_conformance.rs",
+    "crates/callisto-cli/tests/private_workspace_root_tests.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/release_pending_contract_tests.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-cli/tests/status_version_selector_tests.rs",
+    "crates/callisto-cli/tests/tag_name_contract_tests.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+    "crates/callisto-cli/tests/zz_scratch_exit_kind.rs",
+    "crates/callisto-graph/src/changed.rs",
+    "crates/callisto-graph/src/changelog/input.rs",
+    "crates/callisto-graph/src/changelog/markdown/markers.rs",
+    "crates/callisto-graph/src/changelog/markdown/mod.rs",
+    "crates/callisto-graph/src/changelog/mod.rs",
+    "crates/callisto-graph/src/changelog/render.rs",
+    "crates/callisto-graph/src/changelog/render_head.rs.tmp",
+    "crates/callisto-graph/src/commands/matrix.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/pending.rs",
+    "crates/callisto-graph/src/commands/release/version_commit.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/raw.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/locate/membership.rs",
+    "crates/callisto-graph/src/locate/mod.rs",
+    "crates/callisto-graph/src/note.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "crates/callisto-graph/src/toposort.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/tests/config_deny_unknown_fields_guard_tests.rs",
+    "crates/callisto-model/src/release/report.rs",
+    "crates/callisto-model/src/report.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/mod.rs",
+    "docs/architecture/versioning.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json",
+    "docs/stability.md",
+    "justfile",
+    "mut.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "0e6a80eaa170",
+  "checkpoint_transcript_start": 63221,
+  "transcript_lines_at_start": 63221,
+  "compact_transcript_start": 4510,
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 610164,
+    "cache_read_tokens": 5410019,
+    "output_tokens": 15271,
+    "api_call_count": 20,
+    "subagent_tokens": {
+      "input_tokens": 50,
+      "cache_creation_tokens": 174963,
+      "cache_read_tokens": 1428180,
+      "output_tokens": 18112,
+      "api_call_count": 25
+    }
+  },
+  "redaction": {
+    "replacements": 74,
+    "layers": {
+      "betterleaks": 50,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 4,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 460
+  },
+  "summary": {
+    "intent": "Wrap up the Callisto spec/refactor/dependency PRs, then decide whether and how to build OIDC trusted publishing support, researching it first and avoiding over-engineering.",
+    "outcome": "PRs #554-#557 were merged (spec hygiene, one target-triple table, simulator using Dag::descendants, michi-graph 0.10 bump). Research on OIDC showed Callisto needs almost no code, so the user chose to defer it and the findings were recorded in NEXT-WORK.md without any PRs, code or trail.",
+    "learnings": {
+      "repo": [
+        "Callisto follows ADR 4: authentication stays with the ecosystem tool, with no credential pre-flight. A missing credential surfaces only as the tool's own failure, reported as E163.",
+        "docs/stability.md says a new callisto.toml key or action input becomes permanent API, so OIDC should add neither.",
+        "Generated workflows already give `execute` `id-token: write`. Callisto's own release policy check allows `id-token` only on build-artifact.",
+        "Template changes require updating pinned snapshot files (init tests `..._bytes_are_pinned`) and the 'no secret outside execute' assertions.",
+        "Callisto's own workflow keeps `CARGO_REGISTRY_TOKEN` as the one registry secret in `execute`.",
+        "The `callisto-graph` test `a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim` runs real `cargo info` against a local registry. It is likely the intermittent exit 101 seen on local runs, and CI installs the registry tools so it should be unaffected (unproven)."
+      ],
+      "code": [
+        {
+          "path": ".github/actions/callisto-action/scripts/run-release.sh",
+          "line": 16,
+          "end_line": 26,
+          "finding": "The temp npm config is written only if NPM_TOKEN is non-empty. It copies the user's .npmrc and appends an `_authToken=${NPM_TOKEN}` line. With no token there is no _authToken line, so npm's OIDC fallback is not blocked."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 82,
+          "end_line": 97,
+          "finding": "`credentials_needed_by()` keeps ACTIONS_ID_TOKEN_REQUEST_* only for npm/pnpm/yarn/bun and strips it, TWINE_* and PYPI_TOKEN from other children including cargo and twine. The draft doc's claim that Callisto never strips them is wrong for twine and cargo."
+        },
+        {
+          "path": "crates/callisto-cli/src/npm.rs",
+          "line": 10,
+          "end_line": 12,
+          "finding": "An empty NPM_TOKEN is filtered to None, so the npm publisher env is empty."
+        },
+        {
+          "path": "crates/callisto-graph/src/registry.rs",
+          "line": 329,
+          "end_line": 342,
+          "finding": "Build backends have their credentials stripped in the same way as runner.rs."
+        },
+        {
+          "path": ".github/tests/verify-release-workflow-policy.sh",
+          "line": 17,
+          "end_line": 24,
+          "finding": "`ALLOWED_WRITES[\"execute\"]={\"contents\"}` rejects `id-token: write` on execute. EXECUTE_SECRETS (line 24, 61) can become empty and the check still passes."
+        }
+      ],
+      "workflow": [
+        "Use parallel read-only research agents for design questions, and verify key subagent claims directly (for example runner.rs:82-97) before relying on them.",
+        "Subagent reports are not user authority. Treat them as evidence only, and flag unverified claims such as inferences and issue-tracker reports.",
+        "Challenging scope with 'are we over-engineering?' before building shrank a six-item feature to docs plus a possible tiny change. Check whether the existing tools already do the work.",
+        "Keep a NEXT-WORK.md plan that records deferred decisions and research so they are not re-derived."
+      ]
+    },
+    "friction": [
+      "The draft OIDC design doc contained unverified or wrong claims that needed research to correct: the 'never strips' claim and the unverified empty-token npm behaviour.",
+      "Real OIDC behaviour (empty _authToken blocking, composite-action matching, twine needing TWINE_USERNAME=__token__, crates.io against non-default registries) cannot be verified without owner-run scratch packages on real registries.",
+      "Package-manager OIDC support is poorly documented or broken: pnpm 11.0.8 regressed with a 404, yarn berry has no docs, and bun has an open issue.",
+      "npm's trusted-publisher mismatch surfaces as a misleading E404.",
+      "The working tree has many stray scratch files (.tmp, .probe, .p.pl, zz_scratch_exit_kind.rs) listed among modified files."
+    ],
+    "open_items": [
+      "OIDC trusted publishing is deferred. If revived: an npm docs note (leave NPM_TOKEN unset, omit registry-url and NODE_AUTH_TOKEN, keep .npmrc free of _authToken lines) plus a fake-registry no-token test; allow twine to keep the OIDC vars; a crates.io auth-action step in the generated workflow.",
+      "Owner decision: whether Callisto's own `execute` job may hold `id-token: write`, which would let it drop CARGO_REGISTRY_TOKEN.",
+      "michi: configure the npm trusted publisher and unset NPM_TOKEN if the org token deprecation is still a deadline.",
+      "Delete the stale remote branch origin/fix/version-lock-refresh-rollback.",
+      "Enable the GitHub immutable releases setting, currently off.",
+      "Decide whether root-level npm pins should error or be documented.",
+      "Close or revive stale draft PR #495.",
+      "Optional E163 hint for npm's misleading E404 would add new error text and needs owner confirmation.",
+      "Clean up stray scratch files in the working tree."
+    ]
+  }
+}

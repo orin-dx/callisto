@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Q1HKyEJx5b6wXLghzzuhU9",
+  "agent_id": "a48a9ba033ea46afe",
+  "subagent_type": "general-purpose",
+  "task_description": "Research crates.io and PyPI OIDC",
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 56299,
+    "cache_read_tokens": 552803,
+    "output_tokens": 7353,
+    "api_call_count": 10
+  },
+  "started_at": "2026-11-16T13:46:07.228707-08:00",
+  "completed_at": "2026-11-16T13:47:46.017726-08:00"
+}

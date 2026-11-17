@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01GJwHx39ydzXDvHaYwfwUri",
+  "agent_id": "aa72a10295a8a9601",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for flag-value exit 2",
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 32434,
+    "cache_read_tokens": 66401,
+    "output_tokens": 1828,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-11T15:11:05.499457-08:00",
+  "completed_at": "2026-11-16T18:41:17.633943-08:00"
+}

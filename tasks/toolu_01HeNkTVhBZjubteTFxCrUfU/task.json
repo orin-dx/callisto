@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01HeNkTVhBZjubteTFxCrUfU",
+  "agent_id": "a8e5a9f44a45e5691",
+  "subagent_type": "general-purpose",
+  "task_description": "Map Callisto OIDC design surface",
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 66325,
+    "cache_read_tokens": 412398,
+    "output_tokens": 6018,
+    "api_call_count": 7
+  },
+  "started_at": "2026-11-16T13:46:07.231545-08:00",
+  "completed_at": "2026-11-16T13:47:12.603947-08:00"
+}

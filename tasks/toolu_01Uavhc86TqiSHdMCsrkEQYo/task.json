@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Uavhc86TqiSHdMCsrkEQYo",
+  "agent_id": "acf5605da041cec43",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for errors.md alignment",
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 31977,
+    "cache_read_tokens": 64280,
+    "output_tokens": 1269,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-11T15:00:14.965265-08:00",
+  "completed_at": "2026-11-16T18:41:17.631009-08:00"
+}
