@@ -1,0 +1,342 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M5N751N94BAXDTRYKT2WABTQ",
+  "session_id": "a33915af-5e86-4584-9bde-f732d973cf9f",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-17T03:10:05.445742Z",
+  "checkpoints_count": 1,
+  "save_step_count": 389,
+  "files_touched": null,
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 9281,
+    "cache_creation_tokens": 24203494,
+    "cache_read_tokens": 1349480946,
+    "output_tokens": 1958754,
+    "api_call_count": 2682
+  },
+  "redaction": {
+    "replacements": 290,
+    "layers": {
+      "betterleaks": 47,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 10,
+      "entropy": 235,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_014sNpywnuApW884PZfwb2og",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "fewer-permission-prompts"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2701,
+        "end": 2702,
+        "entry_ids": [
+          "c5a0d0c0-5f67-4166-9ca7-4c3870d01e72"
+        ],
+        "tool_use_id": "toolu_014sNpywnuApW884PZfwb2og"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_014sNpywnuApW884PZfwb2og"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: fewer-permission-prompts",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_011JZUU3Mp6DugBuddPX9UZ3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 3615,
+        "end": 3616,
+        "entry_ids": [
+          "da02b5a3-832f-41c7-a384-b085dcf420a0"
+        ],
+        "tool_use_id": "toolu_011JZUU3Mp6DugBuddPX9UZ3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_011JZUU3Mp6DugBuddPX9UZ3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_0112Drzw8pwS3SHA5Ztz4Zyx",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "courier:commit"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7536,
+        "end": 7537,
+        "entry_ids": [
+          "a6e892ef-0e0e-44a8-8e61-8a864f19b9b3"
+        ],
+        "tool_use_id": "toolu_0112Drzw8pwS3SHA5Ztz4Zyx"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0112Drzw8pwS3SHA5Ztz4Zyx"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: courier:commit",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01CaU6Foi3LpjnJAn53TUiMC",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "courier:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7810,
+        "end": 7811,
+        "entry_ids": [
+          "c72c48ef-d540-4671-b5d0-a203afbbf9d2"
+        ],
+        "tool_use_id": "toolu_01CaU6Foi3LpjnJAn53TUiMC"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01CaU6Foi3LpjnJAn53TUiMC"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: courier:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01QuLE2FHXNy4c6Wvx67c2nc",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7952,
+        "end": 7953,
+        "entry_ids": [
+          "050bf3bb-86b5-4f7c-affc-09877cc2f18d"
+        ],
+        "tool_use_id": "toolu_01QuLE2FHXNy4c6Wvx67c2nc"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01QuLE2FHXNy4c6Wvx67c2nc"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Vrmb5cCzYteufGEevjQUMT",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "ranger:audit"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 12127,
+        "end": 12128,
+        "entry_ids": [
+          "83218113-281f-421f-805e-22579f4db9e8"
+        ],
+        "tool_use_id": "toolu_01Vrmb5cCzYteufGEevjQUMT"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Vrmb5cCzYteufGEevjQUMT"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: ranger:audit",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_014QVqqsBX1HCd15q7qtFaKp",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 18288,
+        "end": 18289,
+        "entry_ids": [
+          "e4f8a244-96ea-4351-ba5b-45793f377518"
+        ],
+        "tool_use_id": "toolu_014QVqqsBX1HCd15q7qtFaKp"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_014QVqqsBX1HCd15q7qtFaKp"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01JF7Py6paWQNbG8n229j2gd",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "entire-search"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 27545,
+        "end": 27546,
+        "entry_ids": [
+          "4fb44368-bba6-4da8-9d72-40cee88ff28a"
+        ],
+        "tool_use_id": "toolu_01JF7Py6paWQNbG8n229j2gd"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01JF7Py6paWQNbG8n229j2gd"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: entire-search",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "summary": {
+    "intent": "Fix the broken Callisto release CI (failing with `gh pr view null`), then get a real release published; later the user asked for a comprehensive, systemic remediation after Codex's incident audit found many issues beyond the symptom fixes.",
+    "outcome": "Fixed the original serde camelCase bug (PR #47, merged) and opened PRs #95 (remove environment approval gate), #96 (artifact retention), #97 (rustls advisory fix); cleared the GitHub Environment reviewer rule. No release has been published yet, and the pinned run 34702634375 is a dead end. The session ended with a review of the incident report and remediation plan, and no further action was taken.",
+    "learnings": {
+      "repo": [
+        "Serde `rename_all = \"camelCase\"` on an internally-tagged enum only renames the variant tag, not fields inside variants; `rename_all_fields = \"camelCase\"` (serde >=1.0.166) is needed. `ReleaseInclusionReason` in release.rs has the same latent pattern (group_id, edge_kind, policy_id) but nothing external parses it yet.",
+        "Shell 'contract tests' under .github/actions/*/tests/ stub `callisto`, `gh` and `git` with hand-typed JSON, so they cannot detect Rust-to-shell serialization drift. A real-binary test (test_release_pr_decide_binary_contract.sh, `just test-release-action-binary`) was added for release-pr decide only.",
+        "Callisto supersedes (closes and recreates) the managed release PR when `workflow_delta_from_base` is true, because GITHUB_TOKEN cannot push changes to .github/workflows/*. A rebase would yield the same tree and hit the same restriction.",
+        "PRs opened by github-actions[bot] have their `pull_request` CI runs stuck at `action_required` until a human approves them.",
+        "Release workflow artifacts had `retention-days: 1`. 'Re-run failed jobs' reuses expired plan/build artifacts, so a stale run fails at artifact download.",
+        "The release workflow's `verify` job runs cargo-deny, so new RUSTSEC advisories (e.g. RUSTSEC-2026-0285 in rustls) can break a re-run of an old pinned commit. Whether yanked crates (chacha20) fail or only warn is unverified.",
+        "Per the incident report, the executor can return success when no operation is eligible rather than when all are provider-verified terminal (F-007). `environment: release` is still on the `execute` job after the gate job was removed (F-009).",
+        "Changesets are used for the repo's own releases (.changeset/*.md); security bump commits also include one.",
+        "Merging the release PR triggers the durable pipeline plan -> build -> attestation -> execute."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/release_pr.rs",
+          "line": 220,
+          "end_line": 229,
+          "finding": "ReleasePrDecisionV1::derive returns the Supersede action with a replacement branch suffixed by the base commit when `pr.workflow_delta_from_base` is true."
+        },
+        {
+          "path": "crates/callisto-model/src/release.rs",
+          "line": 257,
+          "finding": "ReleaseInclusionReason uses camelCase with tag = \"kind\" without rename_all_fields, so group_id/edge_kind/policy_id serialize as snake_case. This is a latent mismatch that has not been fixed."
+        },
+        {
+          "path": ".github/actions/callisto-action/tests/test_release_pr_contract.sh",
+          "finding": "This stub-based test hand-writes correct camelCase fixtures and never invokes the real binary, which is why the casing bug was not caught."
+        }
+      ],
+      "workflow": [
+        "A git worktree shares the stash list with the main repo. `git stash pop` in the scratch worktree popped the user's unrelated WIP stash, and recovery needed `git fsck --unreachable` and `git stash store`. Avoid stash in worktrees.",
+        "Verification should reproduce the failure with the pre-fix binary and confirm the fix, rather than only checking that tests pass.",
+        "After fixing an error, read the whole log already fetched (the chacha20 yanked warning was missed next to the rustls error) and ask what the general class of bug is instead of patching each instance.",
+        "Do not assert provenance or policy intent (e.g. that the approval gate was a deliberate user choice) without verifying it.",
+        "'Merged' or 'CI green' is not the user's goal when the goal is a published release; confirm the real outcome externally.",
+        "Hard-to-reverse actions such as merging a release PR that triggers publication should be left to the user or done only on explicit instruction.",
+        "The auto-mode classifier intermittently blocked Bash calls (bash scripts, git add/commit, gh pr create). Retrying sometimes worked, and the user had to intervene.",
+        "entire-search can mine prior sessions for cross-session patterns and should be used proactively when the user asks for thoroughness."
+      ]
+    },
+    "friction": [
+      "The original fix covered only the immediate symptom; the user had to ask 'are we sure this is the only issue?' and then call out shallow work repeatedly.",
+      "A `git stash pop` in a scratch worktree surfaced the user's unrelated stash and left conflict markers, which required recovery.",
+      "The classifier intermittently blocked Bash commands, and the Environment rule PUT was blocked until the user explicitly asked for it.",
+      "Removing the environment protection rule invalidated the already-pending deployment approval, so the run failed with empty steps.",
+      "Re-running failed jobs hit expired artifacts (1-day retention), and the full rerun then hit a new `verify` failure from a fresh rustls advisory on the pinned old commit.",
+      "The user was frustrated by the defensive tone, by the answer on model comparison being hedged before it was checked, and by `entire-search` not being used until prompted.",
+      "Explanations of the supersede and workflow-delta logic confused the user and needed several rounds of clarification."
+    ],
+    "open_items": [
+      "Merge PRs #95, #96 and #97 in the order the plan recommends (#97 first, then rebase #95 and #96). Remove the leftover `environment: release` coupling on `execute`.",
+      "Abandon run 34702634375 (pinned to the stale September 12 commit). Do not attempt another blind self-release until false-success and recovery are fixed.",
+      "Fix executor terminality so exit zero requires every operation to be provider-verified terminal, with provider observation, recovery of abandoned Attempting operations, and a terminal receipt (the plan's Phase 3, highest priority).",
+      "Write failing tests for each observed incident (Phase 2), then build the staging/self-release rehearsal against the simplified lifecycle with provider-side verification.",
+      "Add `rename_all_fields = \"camelCase\"` to `ReleaseInclusionReason` and add real-binary contract tests for matrix, plan-publish/filter-plan and compose-pr-body.",
+      "Check whether deny.toml fails on yanked crates (chacha20) or only warns.",
+      "Decide scope (the plan's Phases 1, 5-9) and whether to defer binary distribution, the domain-model rewrite and performance work so they do not stall the release.",
+      "Perform two certification self-releases, one deliberately interrupted and resumed.",
+      "The user's pre-existing stash (WIP on hotfix-setup-callisto-crates-io-fallback) was restored to stash@{0}. The user was never asked whether to inspect it."
+    ]
+  },
+  "kind": "imported"
+}
