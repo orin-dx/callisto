@@ -147,36 +147,174 @@ pub fn napi_drift(group: &GroupDef, declared: &[String], root: &Path) -> Vec<Dia
     diagnostics
 }
 
+/// One napi-rs target triple with its platform naming and CI scheduling attributes.
+pub(crate) struct Target {
+    pub triple: &'static str,
+    pub platform: &'static str,
+    pub arch: &'static str,
+    pub abi: Option<&'static str>,
+    pub host_runner: &'static str,
+    pub use_cross: bool,
+}
+
+/// The one table of recognised target triples; every lookup derives from it.
+pub(crate) const TARGETS: &[Target] = &[
+    Target {
+        triple: "aarch64-apple-darwin",
+        platform: "darwin",
+        arch: "arm64",
+        abi: None,
+        host_runner: "macos-latest",
+        use_cross: false,
+    },
+    Target {
+        triple: "x86_64-apple-darwin",
+        platform: "darwin",
+        arch: "x64",
+        abi: None,
+        host_runner: "macos-latest",
+        use_cross: false,
+    },
+    Target {
+        triple: "x86_64-unknown-linux-gnu",
+        platform: "linux",
+        arch: "x64",
+        abi: Some("gnu"),
+        host_runner: "ubuntu-latest",
+        use_cross: false,
+    },
+    Target {
+        triple: "x86_64-unknown-linux-musl",
+        platform: "linux",
+        arch: "x64",
+        abi: Some("musl"),
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "aarch64-unknown-linux-gnu",
+        platform: "linux",
+        arch: "arm64",
+        abi: Some("gnu"),
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "aarch64-unknown-linux-musl",
+        platform: "linux",
+        arch: "arm64",
+        abi: Some("musl"),
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "x86_64-pc-windows-msvc",
+        platform: "win32",
+        arch: "x64",
+        abi: None,
+        host_runner: "windows-latest",
+        use_cross: false,
+    },
+    Target {
+        triple: "i686-pc-windows-msvc",
+        platform: "win32",
+        arch: "ia32",
+        abi: None,
+        host_runner: "windows-latest",
+        use_cross: false,
+    },
+    Target {
+        triple: "aarch64-pc-windows-msvc",
+        platform: "win32",
+        arch: "arm64",
+        abi: None,
+        host_runner: "windows-latest",
+        use_cross: false,
+    },
+    Target {
+        triple: "armv7-unknown-linux-gnueabihf",
+        platform: "linux",
+        arch: "arm",
+        abi: Some("gnueabihf"),
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "x86_64-unknown-freebsd",
+        platform: "freebsd",
+        arch: "x64",
+        abi: None,
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "aarch64-linux-android",
+        platform: "android",
+        arch: "arm64",
+        abi: None,
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "armv7-linux-androideabi",
+        platform: "android",
+        arch: "arm",
+        abi: None,
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "riscv64gc-unknown-linux-gnu",
+        platform: "linux",
+        arch: "riscv64",
+        abi: Some("gnu"),
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "powerpc64le-unknown-linux-gnu",
+        platform: "linux",
+        arch: "ppc64",
+        abi: Some("gnu"),
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "s390x-unknown-linux-gnu",
+        platform: "linux",
+        arch: "s390x",
+        abi: Some("gnu"),
+        host_runner: "ubuntu-latest",
+        use_cross: true,
+    },
+    Target {
+        triple: "wasm32-wasip1",
+        platform: "wasi",
+        arch: "wasm32",
+        abi: None,
+        host_runner: "ubuntu-latest",
+        use_cross: false,
+    },
+    Target {
+        triple: "wasm32-unknown-unknown",
+        platform: "unknown",
+        arch: "wasm32",
+        abi: None,
+        host_runner: "ubuntu-latest",
+        use_cross: false,
+    },
+];
+
 /// Maps a napi-rs target triple to a `ManifestRole::Platform` describing its
 /// platform, architecture, and (for Linux) ABI.
 ///
-/// Returns `None` for any triple not in the known napi-rs target table.
+/// Returns `None` for any triple not in `TARGETS`.
 pub fn triple_to_role(triple: &str) -> Option<ManifestRole> {
-    let (platform, arch, abi) = match triple {
-        "aarch64-apple-darwin" => ("darwin", "arm64", None),
-        "x86_64-apple-darwin" => ("darwin", "x64", None),
-        "x86_64-unknown-linux-gnu" => ("linux", "x64", Some("gnu")),
-        "x86_64-unknown-linux-musl" => ("linux", "x64", Some("musl")),
-        "aarch64-unknown-linux-gnu" => ("linux", "arm64", Some("gnu")),
-        "aarch64-unknown-linux-musl" => ("linux", "arm64", Some("musl")),
-        "x86_64-pc-windows-msvc" => ("win32", "x64", None),
-        "i686-pc-windows-msvc" => ("win32", "ia32", None),
-        "aarch64-pc-windows-msvc" => ("win32", "arm64", None),
-        "armv7-unknown-linux-gnueabihf" => ("linux", "arm", Some("gnueabihf")),
-        "x86_64-unknown-freebsd" => ("freebsd", "x64", None),
-        "aarch64-linux-android" => ("android", "arm64", None),
-        "armv7-linux-androideabi" => ("android", "arm", None),
-        "riscv64gc-unknown-linux-gnu" => ("linux", "riscv64", Some("gnu")),
-        "powerpc64le-unknown-linux-gnu" => ("linux", "ppc64", Some("gnu")),
-        "s390x-unknown-linux-gnu" => ("linux", "s390x", Some("gnu")),
-        "wasm32-wasip1" => ("wasi", "wasm32", None),
-        "wasm32-unknown-unknown" => ("unknown", "wasm32", None),
-        _ => return None,
-    };
+    let t = TARGETS.iter().find(|t| t.triple == triple)?;
     Some(ManifestRole::Platform {
-        platform: platform.to_string(),
-        arch: arch.to_string(),
-        abi: abi.map(str::to_string),
+        platform: t.platform.to_string(),
+        arch: t.arch.to_string(),
+        abi: t.abi.map(str::to_string),
     })
 }
 
@@ -187,28 +325,10 @@ pub fn role_to_triple(role: &ManifestRole) -> Option<String> {
     let ManifestRole::Platform { platform, arch, abi } = role else {
         return None;
     };
-    let triple = match (platform.as_str(), arch.as_str(), abi.as_deref()) {
-        ("darwin", "arm64", None) => "aarch64-apple-darwin",
-        ("darwin", "x64", None) => "x86_64-apple-darwin",
-        ("linux", "x64", Some("gnu")) => "x86_64-unknown-linux-gnu",
-        ("linux", "x64", Some("musl")) => "x86_64-unknown-linux-musl",
-        ("linux", "arm64", Some("gnu")) => "aarch64-unknown-linux-gnu",
-        ("linux", "arm64", Some("musl")) => "aarch64-unknown-linux-musl",
-        ("win32", "x64", None) => "x86_64-pc-windows-msvc",
-        ("win32", "ia32", None) => "i686-pc-windows-msvc",
-        ("win32", "arm64", None) => "aarch64-pc-windows-msvc",
-        ("linux", "arm", Some("gnueabihf")) => "armv7-unknown-linux-gnueabihf",
-        ("freebsd", "x64", None) => "x86_64-unknown-freebsd",
-        ("android", "arm64", None) => "aarch64-linux-android",
-        ("android", "arm", None) => "armv7-linux-androideabi",
-        ("linux", "riscv64", Some("gnu")) => "riscv64gc-unknown-linux-gnu",
-        ("linux", "ppc64", Some("gnu")) => "powerpc64le-unknown-linux-gnu",
-        ("linux", "s390x", Some("gnu")) => "s390x-unknown-linux-gnu",
-        ("wasi", "wasm32", None) => "wasm32-wasip1",
-        ("unknown", "wasm32", None) => "wasm32-unknown-unknown",
-        _ => return None,
-    };
-    Some(triple.to_string())
+    TARGETS
+        .iter()
+        .find(|t| t.platform == platform && t.arch == arch && t.abi == abi.as_deref())
+        .map(|t| t.triple.to_string())
 }
 
 #[cfg(test)]

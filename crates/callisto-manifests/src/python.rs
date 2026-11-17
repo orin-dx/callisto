@@ -467,6 +467,11 @@ impl Manifest for PyprojectToml {
             .and_then(|m| m.as_table_like_mut())
         {
             crate::common::set_scalar_preserving_decor(flit, "version", new_ver);
+        } else if self.document.get("project").is_some_and(|p| !p.is_table_like()) {
+            return Err(ManifestError::MissingField {
+                path: self.path.clone(),
+                field: "project.version / tool.poetry.version",
+            });
         } else {
             self.document["project"]["version"] = value(new_ver);
         }

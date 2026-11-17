@@ -58,20 +58,15 @@ pub fn prepend(
         return Ok(());
     }
 
-    // Every header shape splices the new entry the same way; only the rest of the file to keep differs.
-    let rest: &str = if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n\n")) {
-        rest
-    } else if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n")) {
-        rest
-    } else if let Some(rest) = strip_alias_title(&normalised, display_name) {
-        rest
-    } else {
-        // No matching H1 found: emit the correct H1 first so the output is
-        // well-formed, keeping the entire existing content as the body.
-        &normalised
-    };
+    // The package title is the one H1, so a leading title of any wording gives way to it. Front matter stays on top.
+    let (front, body) = split_front_matter(&normalised);
+    let rest = strip_leading_title(body);
 
     let mut new_content = String::from(bom);
+    new_content.push_str(front);
+    if !front.is_empty() && !front.ends_with('\n') {
+        new_content.push('\n');
+    }
     new_content.push_str(&format!("# {display_name}\n\n"));
     new_content.push_str(rendered);
     if !rendered.ends_with('\n') {
@@ -98,17 +93,31 @@ pub(in crate::changelog) fn has_heading(text: &str, heading: &str) -> bool {
         .any(|line| !fences.is_code(line) && line.trim_end() == heading)
 }
 
-/// The text after a leading `# title` that names this package under another display form: a bare name that later
-/// gained its ecosystem prefix, or the reverse. A title for anything else is kept.
-fn strip_alias_title<'a>(text: &'a str, display_name: &str) -> Option<&'a str> {
-    const ECOSYSTEMS: [&str; 3] = ["cargo", "npm", "pypi"];
-    let (first, rest) = text.split_once('\n')?;
-    let title = first.strip_prefix("# ")?.trim_end();
-    let is_alias = ECOSYSTEMS.iter().any(|ecosystem| {
-        display_name.strip_prefix(&format!("{ecosystem}/")) == Some(title)
-            || format!("{ecosystem}/{display_name}") == title
-    });
-    is_alias.then(|| rest.strip_prefix('\n').unwrap_or(rest))
+/// The leading `---` front matter block, if any, and the text after it.
+fn split_front_matter(text: &str) -> (&str, &str) {
+    let Some(after_open) = text.strip_prefix("---\n") else {
+        return ("", text);
+    };
+    let mut end = 0;
+    for line in after_open.split_inclusive('\n') {
+        end += line.len();
+        if line.trim_end() == "---" {
+            let after = &after_open[end..];
+            let blank = after.len() - after.trim_start_matches('\n').len();
+            return text.split_at("---\n".len() + end + blank);
+        }
+    }
+    ("", text)
+}
+
+/// The text after a leading `# title` line and the blank line below it; all of `text` when it has no title.
+fn strip_leading_title(text: &str) -> &str {
+    let (first, rest) = text.split_once('\n').unwrap_or((text, ""));
+    if first.starts_with("# ") {
+        rest.strip_prefix('\n').unwrap_or(rest)
+    } else {
+        text
+    }
 }
 
 /// The non-empty `## {version}` section body, trimmed.
@@ -378,6 +387,40 @@ mod tests {
         );
         assert!(result.starts_with("# cargo/a\n\n## 0.3.0"), "{result}");
         assert!(result.contains("## 0.2.0"), "old entry lost:\n{result}");
+    }
+
+    fn prepended(existing: &str) -> String {
+        let workspace = tempfile::tempdir().unwrap();
+        let full_path = workspace.path().join("CHANGELOG.md");
+        fs::write(&full_path, existing).unwrap();
+        prepend(
+            workspace.path(),
+            std::path::Path::new("CHANGELOG.md"),
+            "my-pkg",
+            "## 2.0.0\n\n- New\n",
+            &permit(),
+        )
+        .unwrap();
+        fs::read_to_string(&full_path).unwrap()
+    }
+
+    #[test]
+    fn prepend_leaves_one_title_when_the_changelog_is_titled_something_else() {
+        let result = prepended("# Changelog\n\n## 1.0.0\n\n- Old\n");
+        assert_eq!(result, "# my-pkg\n\n## 2.0.0\n\n- New\n\n## 1.0.0\n\n- Old\n");
+        assert_eq!(prepended("# only-a-title"), "# my-pkg\n\n## 2.0.0\n\n- New\n\n");
+    }
+
+    #[test]
+    fn prepend_keeps_front_matter_above_the_title() {
+        let result = prepended("---\ntitle: x\n---\n\n# Changelog\n\n## 1.0.0\n\n- Old\n");
+        assert_eq!(
+            result,
+            "---\ntitle: x\n---\n\n# my-pkg\n\n## 2.0.0\n\n- New\n\n## 1.0.0\n\n- Old\n"
+        );
+        assert!(prepended("---\ntitle: x\n---\n## 1.0.0\n\n- Old\n")
+            .starts_with("---\ntitle: x\n---\n# my-pkg\n\n## 2.0.0"));
+        assert!(prepended("---\ntitle: x\n---").starts_with("---\ntitle: x\n---\n# my-pkg\n\n## 2.0.0"));
     }
 
     #[test]

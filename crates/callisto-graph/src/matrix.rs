@@ -2,35 +2,11 @@
 //! Private helpers only -- the public entry point is
 //! `crate::commands::matrix::matrix`.
 
-/// Per-triple CI scheduling attributes for the 18 triples
-/// `crate::napi::triple_to_role` recognises today. This table is NEW code:
-/// `triple_to_role`'s `ManifestRole::Platform` carries only platform/arch/abi
-/// and has no concept of hostRunner/useCross, so this cannot be derived from
-/// it. Returns `None` for any triple `triple_to_role` does not recognise --
-/// callers must treat that as the unrecognised-triple diagnostic path, never a silent
-/// default.
+/// Per-triple CI scheduling attributes from `crate::napi::TARGETS`; `None` for an unrecognised triple, which callers
+/// must route to the unrecognised-triple diagnostic, never a silent default.
 pub(crate) fn triple_host_runner_use_cross(triple: &str) -> Option<(&'static str, bool)> {
-    Some(match triple {
-        "aarch64-apple-darwin" => ("macos-latest", false),
-        "x86_64-apple-darwin" => ("macos-latest", false),
-        "x86_64-unknown-linux-gnu" => ("ubuntu-latest", false),
-        "x86_64-unknown-linux-musl" => ("ubuntu-latest", true),
-        "aarch64-unknown-linux-gnu" => ("ubuntu-latest", true),
-        "aarch64-unknown-linux-musl" => ("ubuntu-latest", true),
-        "x86_64-pc-windows-msvc" => ("windows-latest", false),
-        "i686-pc-windows-msvc" => ("windows-latest", false),
-        "aarch64-pc-windows-msvc" => ("windows-latest", false),
-        "armv7-unknown-linux-gnueabihf" => ("ubuntu-latest", true),
-        "x86_64-unknown-freebsd" => ("ubuntu-latest", true),
-        "aarch64-linux-android" => ("ubuntu-latest", true),
-        "armv7-linux-androideabi" => ("ubuntu-latest", true),
-        "riscv64gc-unknown-linux-gnu" => ("ubuntu-latest", true),
-        "powerpc64le-unknown-linux-gnu" => ("ubuntu-latest", true),
-        "s390x-unknown-linux-gnu" => ("ubuntu-latest", true),
-        "wasm32-wasip1" => ("ubuntu-latest", false),
-        "wasm32-unknown-unknown" => ("ubuntu-latest", false),
-        _ => return None,
-    })
+    let t = crate::napi::TARGETS.iter().find(|t| t.triple == triple)?;
+    Some((t.host_runner, t.use_cross))
 }
 
 /// ArtifactName embeds the package's own (already workspace-unique)

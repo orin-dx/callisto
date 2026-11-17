@@ -247,7 +247,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "callisto-cli"
-version = "0.20.0"
+version = "0.21.1"
 dependencies = [
  "anstream",
  "base64",
@@ -276,7 +276,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-fixtures"
-version = "0.20.0"
+version = "0.21.1"
 dependencies = [
  "callisto-model",
  "tempfile",
@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-graph"
-version = "0.20.0"
+version = "0.21.1"
 dependencies = [
  "callisto-fixtures",
  "callisto-manifests",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-manifests"
-version = "0.20.0"
+version = "0.21.1"
 dependencies = [
  "callisto-fixtures",
  "callisto-model",
@@ -330,7 +330,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-model"
-version = "0.20.0"
+version = "0.21.1"
 dependencies = [
  "base64",
  "camino",
@@ -1140,9 +1140,9 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "michi-graph"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26a384d92c80eccebb5d21e0e374649c5dc87457331f566c4bd4c17d2364d5bb"
+checksum = "49cb36c28993a3c1c1d8373883fd0b73e97fc59aa012656f3fefef98c1316f77"
 
 [[package]]
 name = "micromap"

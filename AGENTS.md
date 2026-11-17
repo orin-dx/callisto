@@ -71,13 +71,11 @@ Use the first rung that works:
 
 ## Plugins
 
-Start work through these commands so their checks run:
+Start work through these commands so their checks run: `/wisp:explore` (options before deciding), `/wisp:spike` (does it work), `/wisp:fix` (bug or review findings), `/wisp:build` (real feature or shared change), `/wisp:check` (verify or find bugs), `/wisp:ship` (commit, changeset, PR, release). `/wisp:work` picks one when unsure.
 
-- Options before deciding: `/guide:explore`. Does it work: `/guide:spike`.
-- Bug or review findings: `/guide:fix`. Real feature or shared change: `/guide:build`.
-- Verify or find bugs: `/guide:check`. Commit: `/guide:ship`.
+Packs: rust-house
 
-Changesets are written with `callisto add` and follow the changeset rules in this file. `/guide:build` gates shared work through a spec; the owner-confirmation rule below still applies.
+Changesets are written with `callisto add` and follow the changeset rules in this file. `/wisp:build` writes a spec only where one pays; the owner-confirmation rule below still applies.
 
 Pull requests are opened by Entire from the branch's trail: push the branch and create or link its trail (`entire trail create`). Do not open the PR with `gh`.
 

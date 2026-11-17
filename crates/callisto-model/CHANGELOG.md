@@ -1,5 +1,17 @@
 # callisto-model
 
+## 0.21.1
+
+_2026-11-16 · [compare](https://github.com/orin-dx/callisto/compare/callisto-model@0.21.0...callisto-model@0.21.1)_
+
+- Released together with the `workspace` fixed group.
+
+## 0.21.0
+
+_2026-11-15 · [compare](https://github.com/orin-dx/callisto/compare/callisto-model@0.20.0...callisto-model@0.21.0)_
+
+- Released together with the `workspace` fixed group.
+
 ## 0.20.0
 
 _2026-11-12 · [compare](https://github.com/orin-dx/callisto/compare/callisto-model@0.19.0...callisto-model@0.20.0)_
