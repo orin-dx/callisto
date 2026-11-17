@@ -1,0 +1,94 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M5N6XFXTMAYJCVRNX5GR8HF9",
+  "session_id": "01a0e02c-c67f-7d70-b5a4-1cb433d80074",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-17T02:41:39.441132Z",
+  "checkpoints_count": 1,
+  "save_step_count": 127,
+  "files_touched": null,
+  "agent": "Codex",
+  "model": "",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 6404538,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 269101568,
+    "output_tokens": 961216,
+    "api_call_count": 2188,
+    "subagent_tokens_complete": false
+  },
+  "redaction": {
+    "replacements": 503,
+    "layers": {
+      "betterleaks": 21,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 98,
+      "credentialed_uri": 12,
+      "entropy": 409,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Evaluate Callisto's readiness for v1 (architecture, semantic model, last week's PRs, competitors), find what the recent changes broke elsewhere in the system, and then rework the README and user docs so they are clear, scannable, and not shallow or wordy.",
+    "outcome": "Identified and reproduced the E281 release-PR failure (decide/verify JSON envelope mismatch) and a local-retry gap after tag creation, and delivered an assessment with a v0.9 vs v1 split. Rewrote the README with a verified cascade example, consolidated a single how-callisto-works guide, trimmed releasing/publishing to user-facing content (internals moved to architecture), and updated the GitHub repo description. All doc edits are uncommitted and not in a PR.",
+    "learnings": {
+      "repo": [
+        "Release workflow on main fails since #166: `release-pr decide --format json` now emits the shared envelope (`command`, `dryRun`), and `release-pr verify --decision` rejects unknown fields with E281, so the bot cannot refresh release PR #113.",
+        "Merging main into a release PR updates source but does not regenerate its release decision or changelogs; source freshness and release-metadata freshness differ.",
+        "Local `callisto release` selects packages by tag absence, so a failed push or forge step after tag creation can yield 'Nothing to release'; CI recovers because it uses the committed release-decision.json.",
+        "Existing contract tests check extracted fields but never pipe real `decide` output into real `verify`.",
+        "Docs drift after #167/#168: architecture diagram, identity docs, ADR 11 ('promotion is display-only'), and REQ-DX-V1 (Cargo registry testing listed as missing) are outdated.",
+        "Minimal quick start (init --yes --versioning independent --no-workflow, add, status, version, release --dry-run) plans a crates.io publish and tag but no GitHub Release unless a release destination is configured.",
+        "User-facing docs (README, releasing, publishing) must not link to internals such as findings, specs, ADRs, or AGENTS.md; internals belong in docs/architecture/."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/release_pr.rs",
+          "line": 79,
+          "finding": "Producer: `decide` emits the wrapped JSON including command/dryRun."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release_pr.rs",
+          "line": 47,
+          "finding": "Consumer: `verify` parses --decision strictly and rejects wrapper fields (E281)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 195,
+          "finding": "derive_unreleased_decision skips packages whose current version already has a (local) tag, causing the local retry gap."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "line": 72,
+          "finding": "Tag effect; once the tag exists, remaining steps (push, GitHub Release) are not revisited by bare local release."
+        },
+        {
+          "path": ".github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh",
+          "finding": "Calls decide but never passes its output to verify; needs extending to cover the handoff."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Entire authentication missing/expired, blocking session-history search.",
+      "Assistant missed the stale #113 / failing Release workflow in the first assessment and had to be corrected by the user's other-agent review.",
+      "Repeated doc rework: shallow how-callisto-works page, wordy prose in releasing/publishing, internals leaking into user docs, README lacking what/why; the user expressed frustration at inconsistency and at the assistant stopping early.",
+      "Assistant overstated completion several times before the user pushed back.",
+      "Pasted Codex text unrelated to Callisto (plugins repo) caused confusion."
+    ],
+    "open_items": [
+      "Fix E281: make `release-pr verify --decision` accept decide's output as-is, extend the binary contract test to pipe decide into verify, add a patch changeset, then let a new main run regenerate #113 before releasing 0.9.0.",
+      "Fix local retry so packages with an existing tag still check remaining steps (push, GitHub Release, assets) (v1 item).",
+      "Reconcile architecture diagram, identity docs, ADR 11 wording, and REQ-DX-V1 with the current implementation.",
+      "Commit the README/docs changes and open a PR; they are currently uncommitted on work/v1-implementation-stack.",
+      "Run fresh-repo onboarding to validate the 'first release in under ten minutes' goal and the full docs.",
+      "Decide whether v1 needs registry checksum verification; Cargo/PyPI e2e coverage is thinner than npm's.",
+      "Supported-workspaces matrix split (core ecosystems vs special layouts) and releasing.md length were discussed and may need more polish."
+    ]
+  },
+  "kind": "imported"
+}
