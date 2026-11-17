@@ -1,0 +1,3 @@
+We've done a lot of work to get callisto to a v1 alpha stage. We might be approaching it but I wants us to do some deep research of the current state of the industry. Understand where chagesets is, knope, nx release and release please (and any other alternatives that are worthy). I want to compare market fit, where we are ahead and where we are not. I want us to understand the space and evaluate callisto from a purely user/developer/monorepo owner POV.
+
+Do the research, analyze our offerings (validate what we have, don't assume) and give me a report.

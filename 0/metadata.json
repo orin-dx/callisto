@@ -1,0 +1,115 @@
+{
+  "cli_version": "0.13.5-nightly.202611131617.95eabf579",
+  "checkpoint_id": "01M7NM6Z6XDFCF7F3CF85P2QEX",
+  "session_id": "01a1eb3d-e60c-7e41-87b6-e06f93307a90",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-17T20:47:22.399531Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "cd83bf786315",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 128281,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1730176,
+    "output_tokens": 4964,
+    "api_call_count": 22,
+    "subagent_tokens": {
+      "input_tokens": 176642,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2701312,
+      "output_tokens": 7244,
+      "api_call_count": 30
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 128281,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1730176,
+    "output_tokens": 4964,
+    "api_call_count": 22,
+    "subagent_tokens": {
+      "input_tokens": 176642,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2701312,
+      "output_tokens": 7244,
+      "api_call_count": 30
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 46,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 60,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Deep-research the release-management tool landscape (Changesets, Knope, Nx Release, release-please, others) and compare it against Callisto's actually verified behavior, to assess market fit and readiness for a v1 alpha from a developer/monorepo-owner point of view.",
+    "outcome": "The session was still in the research phase and no final report had been produced. It gathered competitor info via web search, registry/GitHub API checks and sub-agents, and checked Callisto's docs and source, reaching preliminary findings on positioning, differentiators and limitations.",
+    "learnings": {
+      "repo": [
+        "Callisto is a Rust workspace (crates/callisto-cli, callisto-graph, callisto-model) with docs under docs/ (config.md, stability.md, publishing.md, architecture/release.md, architecture/polyglot-v1.md, projects/ROAD-TO-V1.md).",
+        "Documented adoption limits: no Windows support, token-based publishing only, and a gap between commit-inferred version bumps and release PRs.",
+        "The managed release-PR path rejects active prerelease mode. This is a user-visible limitation beyond what the README states.",
+        "Callisto's most distinctive area is its release-recovery model, plus cross-ecosystem (Cargo, npm, PyPI) dependency updates and publishing that are reviewable and recoverable.",
+        "Release-related logic lives in crates/callisto-cli/src/commands/release_pr.rs, crates/callisto-graph/src/commands/release/execute.rs, crates/callisto-graph/src/cascade.rs, crates/callisto-graph/src/groups.rs (linked/fixed groups) and crates/callisto-model/src/release_transition.rs.",
+        "Native resolution behavior is covered by crates/callisto-cli/tests/native_resolution.rs."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/release_pr.rs",
+          "line": 70,
+          "end_line": 160,
+          "finding": "Managed release-PR flow; this is where the rejection of active prerelease mode was verified."
+        },
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "line": 290,
+          "end_line": 385,
+          "finding": "Dependency cascade logic, read to validate how version bumps propagate."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 525,
+          "end_line": 620,
+          "finding": "Init behavior, read to evaluate onboarding and adoption effort."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/status.rs",
+          "line": 1,
+          "end_line": 110,
+          "finding": "Status command, read to confirm what is a real end-to-end user-facing command."
+        }
+      ],
+      "workflow": [
+        "The research workflow pairs the repo's own docs and source (to validate claims) with web search and registry/GitHub API queries for current competitor versions and releases.",
+        "The Entire local research/brain index was unavailable, so the source was used directly.",
+        "Competitor findings changed the picture: Knope already combines changesets with multi-language support, Nx has file-based version plans, Changesets v3 preserves package.json formatting, and pnpm has built-in change files and monorepo versioning. Together these weaken the case for an npm-only repo to switch to Callisto.",
+        "Sub-agents (spawn_agent/interact_agent) were used in parallel for research."
+      ]
+    },
+    "friction": [
+      "Entire's local research index (brain brief) was unavailable, forcing a fallback to reading source directly.",
+      "Locating the research-report schema and guide files in the plugin cache took several searches (repeated rg attempts).",
+      "Feature claims in the docs had to be checked against the implementation, since some features exist as CLI commands but do not work end to end."
+    ],
+    "open_items": [
+      "Produce the final structured research report (the schema is research-report@1.json), covering market fit and where Callisto is ahead and behind.",
+      "Finish checking the remaining Callisto claims (cascade, peer escalation, preserve-npm-ranges, linked groups, registry confirmation) against the implementation.",
+      "Address the gaps found: Windows support, trusted/OIDC publishing instead of tokens, commit-inferred bumps vs release PRs, and prerelease support in the release-PR path.",
+      "Decide on positioning, given that Knope, Nx, Changesets and pnpm already cover much of the npm-only use case."
+    ]
+  }
+}
