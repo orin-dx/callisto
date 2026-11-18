@@ -1,0 +1,131 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QTR6JA5JJ3GAVSG0C3RPCQ",
+  "session_id": "c41160ca-8cdd-42c0-b6d2-1559a9591483",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T17:20:07.953449Z",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1132480b2df9",
+  "checkpoint_transcript_start": 351,
+  "transcript_lines_at_start": 351,
+  "compact_transcript_start": 35,
+  "session_token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 79384,
+    "cache_read_tokens": 2101465,
+    "output_tokens": 11125,
+    "api_call_count": 23,
+    "subagent_tokens": {
+      "input_tokens": 330,
+      "cache_creation_tokens": 842942,
+      "cache_read_tokens": 10182926,
+      "output_tokens": 72076,
+      "api_call_count": 172
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01SvrZxCtEgCSLfs1aZ7vFfe",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "17e6d37426df",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 41,
+        "end": 42,
+        "entry_ids": [
+          "dbc89fb4-71da-4179-bc3e-567d58ea713b"
+        ],
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "summary": {
+    "intent": "Implement work package N in the callisto repo: change the `cascade.peer-escalation` default to false so peer-dependent bumps get a patch (matching Changesets v3), and also update PR bodies for #562 and #564 with observed flakes.",
+    "outcome": "Pushed PR #568 on branch feat/peer-default-patch (linked to trail #458) with the default flipped, docs, changeset, and tests updated. The #562 and #564 PR bodies were updated. Lint, pre-push, doc-check and doctests pass; full test run has 1 failure, a registry test that was not confirmed as the known flake.",
+    "learnings": {
+      "repo": [
+        "The peer-escalation default is resolved in crates/callisto-graph/src/config/resolve.rs and documented in docs/config.md; cascade scenario tests live in crates/callisto-cli/tests/cascade_scenarios_tests.rs.",
+        "Changesets are created with `cargo run -p callisto-cli -- add --package cargo/<name>:<level> --summary ...`; breaking changes get a `**Breaking:**` paragraph in the summary.",
+        "Gate commands are `just pre-push`, `just lint`, `just doc-check`, `just test` (nextest) and `cargo test --doc --workspace`; `just test` exits 100 on any failing test.",
+        "Flipping the default broke two existing tests that relied on major escalation: promoted_dual_dependent_preserves_aliases_across_cascade_and_release_floor and release_decision_names_the_dual_source_distribution_each_dependent_uses. A test fixture also needed edge kind \"Peer\" capitalized in version_tests.rs.",
+        "The test `callisto-graph registry::tests::a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim` runs the real `cargo info` and intermittently fails with CommandFailed; it is believed (not confirmed) to be the fixture-portability flake that #560 addresses.",
+        "Branches are linked to trails with `entire trail link <n>`, and `entire trail ci-pr` shows which PR backs a trail. PR bodies carry an `<!-- entire-shadow-pr -->` marker.",
+        "Builds are run with CARGO_PROFILE_DEV_DEBUG=0, CARGO_PROFILE_TEST_DEBUG=0 and CARGO_BUILD_JOBS=2 to limit resource use; `rm -rf target` is run afterwards in the worktree."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "finding": "The peer_escalation default and its resolve test were edited here to default to false."
+        },
+        {
+          "path": "crates/callisto-graph/tests/cascade_tests.rs",
+          "finding": "The promoted dual dependent assertion was simplified to always expect Severity::Patch, since the co_release branch no longer yields Major."
+        },
+        {
+          "path": "crates/callisto-graph/tests/version_tests.rs",
+          "finding": "The peer-app fixture edge kind changed from \"peer\" to \"Peer\" so it matches the edge kind casing the code expects."
+        }
+      ],
+      "workflow": [
+        "Compound shell commands combining git switch/add/commit/push were split into separate plain commands after the combined call failed to run.",
+        "Verifying commit signatures via `gh api .../commits/<sha> --jq .commit.verification.reason` is part of the PR routine.",
+        "Temp files were moved from $TMPDIR to a job-specific tmp directory when the variable was unreliable in the shell."
+      ]
+    },
+    "friction": [
+      "`just test` repeatedly failed, with failures varying between runs, making it hard to tell regressions from flakes.",
+      "A flaky registry test (real `cargo info`) failed with CommandFailed on several full-workspace runs but passed in isolation; its cause was not found.",
+      "`just test` once reported `commands::init::tests::an_existing_config_errors` as leaky, with an unknown cause.",
+      "`just pre-push` initially failed on formatting only, requiring `cargo fmt`.",
+      "The first combined git command chain did not run as written and had to be split into individual commands.",
+      "The command for locating the plan file and worktree path needed several attempts because of path differences between the main repo and the worktree."
+    ],
+    "open_items": [
+      "PRs #560, #562, #564 and #568 are not yet merged.",
+      "The remaining failing registry test is assumed, not confirmed, to be the flake fixed by #560; verify once #560 lands.",
+      "The cause of the intermittent `just test` failures (exit 100) and the leaky init test is still unexplained.",
+      "`just ci`, `just bench` and mutants were not run for WP N.",
+      "WP K is not started, as it waits on Session 1 merging G; it goes on trail #458."
+    ]
+  }
+}
