@@ -812,8 +812,14 @@ mod tests {
     }
 
     #[test]
-    fn pending_release_is_never_empty() {
+    fn pending_release_is_never_empty_and_keeps_its_packages() {
         assert_eq!(PendingRelease::new([]), None);
+        let id = crate::PackageId::parse("cargo/pkg").unwrap();
+        let pending = pending();
+        assert_eq!(
+            pending.packages().collect::<Vec<_>>(),
+            vec![(&id, &crate::Version::semver(1, 0, 1))]
+        );
     }
 
     fn config() -> ReleasePrConfigV1 {
