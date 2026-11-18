@@ -174,8 +174,8 @@ pub enum DiagnosticCode {
     /// package and no commit inference releases it.
     ChangedWithoutChangeset,
     /// Release derivation selected a `[release].product` artifact's owner package without
-    /// selecting the product package itself, so the owner's declared asset has no release to
-    /// upload into.
+    /// selecting the product package itself, or found no forge destination, so the declared asset
+    /// has no release to upload into.
     ProductArtifactOwnerWithoutProduct,
     /// `callisto init` found no `origin` remote: it writes the config but skips the release
     /// workflow and shipping-binaries questions until one is added.

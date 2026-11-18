@@ -558,6 +558,44 @@ fn non_tty_without_yes_names_yes() {
     assert!(nothing_written(dir.path()));
 }
 
+// Shipping binaries needs a GitHub origin: the release goes to origin's repository, so a config written against
+// another host would fail later with E198.
+#[test]
+fn shipping_binaries_with_a_non_github_origin_errors_without_writing() {
+    let dir = workspace(1);
+    git(
+        dir.path(),
+        &["remote", "set-url", "origin", "https://example.com/o/tools.git"],
+    );
+    let args = InitArgs {
+        artifact_targets: vec!["x86_64-unknown-linux-gnu".to_owned()],
+        ..yes(InitVersioning::Independent)
+    };
+    let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
+    assert!(
+        matches!(&error, CliError::Graph(GraphError::ReleaseForgeRepositoryMissing)),
+        "{error}"
+    );
+    assert!(nothing_written(dir.path()));
+
+    let run = run_init(
+        dir.path(),
+        InitArgs::default(),
+        true,
+        vec![Answer::Select(0), Answer::Confirm(true)],
+        false,
+    );
+    assert!(
+        matches!(
+            &run.result,
+            Err(CliError::Graph(GraphError::ReleaseForgeRepositoryMissing))
+        ),
+        "{:?}",
+        run.result
+    );
+    assert!(nothing_written(dir.path()));
+}
+
 // Several binary packages need --product-package; with targets given and no --yes it is named beside --yes.
 #[test]
 fn non_tty_without_yes_names_the_product_package_flag_too() {

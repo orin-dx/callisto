@@ -105,7 +105,7 @@
     },
     {
       "id": "REL-CMD-05",
-      "criterion": "Without an `origin` push URL, `--dry-run` prints one stderr note that tag operations are unbound, and `callisto release` fails with E132 before any effect.",
+      "criterion": "Without an `origin` push URL, `--dry-run` prints one stderr note that tag operations are unbound, and `callisto release` fails with E132 before any effect. With neither `forge-repository` nor a GitHub `origin`, `--dry-run` still validates each artifact's owner (E179) and reports every configured asset as a warning that it is not bound to a destination.",
       "is_error_case": true
     },
     {

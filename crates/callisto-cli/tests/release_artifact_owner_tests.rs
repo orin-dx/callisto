@@ -226,6 +226,24 @@ fn a_preview_without_forge_repository_or_origin_still_plans() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "preview must succeed: {stderr}");
     assert!(!stderr.contains("E198"), "stderr: {stderr}");
+    // The configured assets are reported as having no destination, not silently dropped.
+    let plan: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let text = plan.to_string();
+    assert!(
+        text.contains("core-linux.tar.gz") && text.contains("plugin.wasm"),
+        "{plan}"
+    );
+    assert!(text.contains("no forge destination"), "{plan}");
+}
+
+// Owner validation does not depend on a destination: an artifact whose package is not released still fails a preview.
+#[test]
+fn a_preview_without_a_destination_still_rejects_an_unreleased_artifact_owner() {
+    let (dir, _) = release_fixture(false, false, false);
+    let out = callisto(dir.path(), &["release", "--dry-run"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "preview must fail");
+    assert!(stderr.contains("E179"), "expected E179, got: {stderr}");
 }
 
 // An origin that cannot be read prints nothing, not git's own error, while the preview still plans.

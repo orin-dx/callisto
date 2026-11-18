@@ -693,7 +693,7 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
     } = ops;
 
     let mut artifact_slots = Vec::new();
-    if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
+    if let Some(product) = &workspace.config.product_release {
         require_product_package_publishes_to_forge(workspace, &product.package)?;
         // Resolved through IdentityIndex, not `PackageId::matches`: a Bare
         // package id is not an ecosystem wildcard here -- a same-name
@@ -742,6 +742,11 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
                         asset: artifact.asset_name.clone(),
                         package: artifact.package.to_string(),
                     })?;
+                // A preview with no destination keeps the owner checks above but binds no slot.
+                let Some(policy) = artifact_policy else {
+                    diagnostics.push(unbound_product_artifact_diagnostic(&product.package, artifact));
+                    continue;
+                };
                 let slot = ArtifactSlotId::new(
                     owner_id.clone(),
                     owner_version.clone(),
@@ -922,6 +927,24 @@ fn unreleased_product_artifact_diagnostic(
             artifact.asset_name
         ),
         package: callisto_model::PackageId::parse(&owner.to_string()).ok(),
+        path: None,
+        escalated_by: None,
+        governed_by: None,
+    }
+}
+
+fn unbound_product_artifact_diagnostic(
+    product: &callisto_model::PackageId,
+    artifact: &crate::config::resolve::ProductArtifactConfig,
+) -> Diagnostic {
+    Diagnostic {
+        code: DiagnosticCode::ProductArtifactOwnerWithoutProduct,
+        severity: DiagnosticSeverity::Warning,
+        message: format!(
+            "no forge destination (set `[release] forge-repository` or point origin at GitHub): the `{}` asset of product `{product}` is not bound and will not be uploaded",
+            artifact.asset_name
+        ),
+        package: Some(product.clone()),
         path: None,
         escalated_by: None,
         governed_by: None,

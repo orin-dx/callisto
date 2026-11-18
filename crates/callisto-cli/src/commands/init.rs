@@ -494,6 +494,10 @@ fn collect_answers(
     if !ship {
         return Ok(no_binaries);
     }
+    // A release goes to origin's GitHub repository, so shipping needs one.
+    if facts.origin_repository.is_none() {
+        return Err(GraphError::ReleaseForgeRepositoryMissing.into());
+    }
 
     let product = match (requested_product, binaries.as_slice()) {
         (Some(product), _) => product,
