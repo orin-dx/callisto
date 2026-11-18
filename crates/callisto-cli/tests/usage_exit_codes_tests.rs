@@ -127,23 +127,11 @@ fn init_flag_values_checked_against_the_workspace_exit_2() {
     let dir = workspace();
     let root = dir.path();
     git(root, &["remote", "add", "origin", "https://github.com/o/r.git"]);
-    let init = [
-        "init",
-        "--yes",
-        "--artifact-target",
-        "x86_64-unknown-linux-gnu",
-        "--forge-repository",
-    ];
+    let init = ["init", "--yes", "--artifact-target", "x86_64-unknown-linux-gnu"];
     // A library has no binary to ship: workspace state, not a flag value.
-    assert_exit(root, &[&init[..], &["o/r"]].concat(), 1, "E188");
+    assert_exit(root, &init, 1, "E188");
     fs::write(root.join("src/main.rs"), "fn main() {}\n").unwrap();
-    assert_exit(root, &[&init[..], &["o/other"]].concat(), 2, "E187");
-    assert_exit(
-        root,
-        &[&init[..], &["o/r", "--product-package", "nope"]].concat(),
-        2,
-        "E189",
-    );
+    assert_exit(root, &[&init[..], &["--product-package", "nope"]].concat(), 2, "E189");
 }
 
 #[test]

@@ -31,6 +31,12 @@ pub struct RawProductReleaseConfig {
     /// package that builds it, so an artifact need not come from the product.
     #[serde(default)]
     pub artifact: Vec<RawArtifactConfig>,
+    /// Targets the product is built for; each becomes an artifact named by `asset-name`.
+    #[serde(default)]
+    pub targets: Vec<String>,
+    /// Template naming each of `targets`; `{target}` is the only placeholder.
+    #[serde(rename = "asset-name")]
+    pub asset_name: Option<String>,
     /// The GitHub repository (`owner/repo`) the product release publishes to.
     #[serde(rename = "forge-repository")]
     pub forge_repository: Option<String>,

@@ -198,6 +198,21 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         self.git.get_or_init(|| GitAccess::new(&self.root, self.runner))
     }
 
+    /// The GitHub repository a product release publishes to: `[release] forge-repository` when set, else `origin`'s.
+    /// No remote, or one that is not on GitHub, means none; an `origin` that cannot be read safely is an error.
+    pub fn forge_repository(&self) -> Result<Option<callisto_model::GitHubRepository>, GraphError> {
+        if let Some(configured) = self
+            .config
+            .product_release
+            .as_ref()
+            .and_then(|release| release.forge_repository.clone())
+        {
+            return Ok(Some(configured));
+        }
+        Ok(crate::commands::release::optional_git_remote(&self.root, self.runner)?
+            .and_then(|remote| remote.github_repository))
+    }
+
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {
         let ctx = callisto_manifests::OpenContext::for_workspace_root(&self.root)?;
 

@@ -147,7 +147,6 @@ impl InitFacts {
 pub struct BinaryRelease {
     /// Qualified id of the product package.
     pub product: String,
-    pub forge_repository: GitHubRepository,
     pub targets: Vec<String>,
 }
 
@@ -492,24 +491,34 @@ pub fn render_config(facts: &InitFacts, answers: &InitAnswers) -> String {
         doc["package"] = Item::ArrayOfTables(tables);
     }
     if let Some(release) = &answers.binaries {
-        let bin_names = product
-            .map(|package| package.cargo_bin_names.as_slice())
-            .unwrap_or_default();
+        // One archive holds every binary of the package, so a package with several is named after the package.
+        let asset_stem = match product.map(|package| package.cargo_bin_names.as_slice()) {
+            Some([only]) => only.as_str(),
+            _ => release
+                .product
+                .split_once('/')
+                .map_or(release.product.as_str(), |(_, name)| name),
+        };
+        let (windows, others): (Vec<&String>, Vec<&String>) =
+            release.targets.iter().partition(|target| target.contains("windows"));
         let mut table = Table::new();
         table["product-package"] = value(release.product.as_str());
-        table["forge-repository"] = value(release.forge_repository.as_slug());
-        let mut artifacts = ArrayOfTables::new();
-        for target in &release.targets {
-            for bin in bin_names {
-                let extension = if target.contains("windows") { "zip" } else { "tar.gz" };
-                let mut artifact = Table::new();
-                artifact["package"] = value(release.product.as_str());
-                artifact["target"] = value(target.as_str());
-                artifact["asset-name"] = value(format!("{bin}-{target}.{extension}"));
-                artifacts.push(artifact);
-            }
+        if !others.is_empty() {
+            table["targets"] = value(others.iter().map(|target| target.as_str()).collect::<Array>());
+            table["asset-name"] = value(format!("{asset_stem}-{{target}}.tar.gz"));
         }
-        table["artifact"] = Item::ArrayOfTables(artifacts);
+        // A Windows archive is a `.zip`, which the one template cannot name.
+        let mut artifacts = ArrayOfTables::new();
+        for target in windows {
+            let mut artifact = Table::new();
+            artifact["package"] = value(release.product.as_str());
+            artifact["target"] = value(target.as_str());
+            artifact["asset-name"] = value(format!("{asset_stem}-{target}.zip"));
+            artifacts.push(artifact);
+        }
+        if !artifacts.is_empty() {
+            table["artifact"] = Item::ArrayOfTables(artifacts);
+        }
         doc["release"] = Item::Table(table);
     }
     let body = doc.to_string();
@@ -539,25 +548,6 @@ pub fn preview<L: ProjectLocator, R: CommandRunner>(
     let resolved = resolve_config_text(&facts.root, config)?;
     let workspace = Workspace::load_with_config(facts.root.clone(), resolved, locator, runner)?;
     plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)
-}
-
-/// Parses a forge repository answer, which the release plan requires to be `origin`'s GitHub repository.
-///
-/// # Errors
-///
-/// `value` is not a GitHub `owner/repo`, or is not `origin`'s.
-pub fn forge_repository(facts: &InitFacts, value: &str) -> Result<GitHubRepository, GraphError> {
-    let repository = GitHubRepository::parse(value.trim()).map_err(|error| GraphError::InitInvalidForgeRepository {
-        value: value.to_owned(),
-        reason: error.to_string(),
-    })?;
-    if facts.origin_repository.as_ref() != Some(&repository) {
-        return Err(GraphError::InitForgeRepositoryMismatch {
-            configured: repository.as_slug(),
-            origin: facts.origin.clone().unwrap_or_else(|| "none".to_owned()),
-        });
-    }
-    Ok(repository)
 }
 
 /// Validates artifact target triples.

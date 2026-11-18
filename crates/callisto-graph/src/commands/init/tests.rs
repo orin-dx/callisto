@@ -72,7 +72,6 @@ fn release(targets: &[&str]) -> InitAnswers {
         versioning: Versioning::Independent,
         binaries: Some(BinaryRelease {
             product: "cargo/app".to_owned(),
-            forge_repository: GitHubRepository::parse("example/tools").unwrap(),
             targets: targets.iter().map(|target| (*target).to_owned()).collect(),
         }),
     }
@@ -386,9 +385,9 @@ fn fixed_versioning_writes_one_all_group_of_qualified_non_platform_members() {
     assert!(parse(&independent).is_empty());
 }
 
-// One artifact per target per bin; no profiles or registry-routes.
+// Targets and one asset-name template; a Windows target keeps an explicit `.zip` artifact; no forge-repository.
 #[test]
-fn shipping_binaries_writes_release_and_artifacts() {
+fn shipping_binaries_writes_release_targets_and_template() {
     let config = render_config(
         &facts_for_render(),
         &release(&["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]),
@@ -396,39 +395,20 @@ fn shipping_binaries_writes_release_and_artifacts() {
     let doc = parse(&config);
     let release_table = doc["release"].as_table().unwrap();
     assert_eq!(release_table["product-package"].as_str(), Some("cargo/app"));
-    assert_eq!(release_table["forge-repository"].as_str(), Some("example/tools"));
-    let assets: Vec<(&str, &str, &str)> = release_table["artifact"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|artifact| {
-            (
-                artifact["package"].as_str().unwrap(),
-                artifact["target"].as_str().unwrap(),
-                artifact["asset-name"].as_str().unwrap(),
-            )
-        })
-        .collect();
+    assert!(release_table.get("forge-repository").is_none());
     assert_eq!(
-        assets,
-        [
-            (
-                "cargo/app",
-                "x86_64-unknown-linux-gnu",
-                "app-x86_64-unknown-linux-gnu.tar.gz"
-            ),
-            (
-                "cargo/app",
-                "x86_64-unknown-linux-gnu",
-                "appctl-x86_64-unknown-linux-gnu.tar.gz"
-            ),
-            ("cargo/app", "x86_64-pc-windows-msvc", "app-x86_64-pc-windows-msvc.zip"),
-            (
-                "cargo/app",
-                "x86_64-pc-windows-msvc",
-                "appctl-x86_64-pc-windows-msvc.zip"
-            ),
-        ]
+        release_table["targets"],
+        toml::Value::Array(vec!["x86_64-unknown-linux-gnu".into()])
+    );
+    // Several bins ship in one archive named after the package.
+    assert_eq!(release_table["asset-name"].as_str(), Some("app-{target}.tar.gz"));
+    let artifacts = release_table["artifact"].as_array().unwrap();
+    assert_eq!(artifacts.len(), 1);
+    assert_eq!(artifacts[0]["package"].as_str(), Some("cargo/app"));
+    assert_eq!(artifacts[0]["target"].as_str(), Some("x86_64-pc-windows-msvc"));
+    assert_eq!(
+        artifacts[0]["asset-name"].as_str(),
+        Some("app-x86_64-pc-windows-msvc.zip")
     );
     let rules = doc["package"].as_array().unwrap();
     assert_eq!(rules.len(), 1);
@@ -486,34 +466,19 @@ fn preview_includes_artifact_uploads() {
     )));
 }
 
+// A product with one binary names its archive after that binary, not the package.
 #[test]
-fn forge_repository_must_be_origins_owner_repo() {
-    let facts = facts_for_render();
-    assert_eq!(
-        forge_repository(&facts, "Example/Tools").unwrap().as_slug(),
-        "example/tools"
-    );
-    let error = forge_repository(&facts, "not a repo").unwrap_err();
-    assert!(error.to_string().contains("`not a repo`"), "{error}");
-
-    let error = forge_repository(&facts, "other/tools").unwrap_err();
-    assert!(
-        matches!(&error, GraphError::InitForgeRepositoryMismatch { configured, origin }
-                if configured == "other/tools" && origin == ORIGIN),
-        "{error}"
-    );
-    assert!(error.to_string().contains("`other/tools`") && error.to_string().contains(ORIGIN));
-    let help = miette::Diagnostic::help(&error).unwrap().to_string();
-    assert!(help.contains("release plan requires"), "{help}");
-
-    let non_github = InitFacts {
-        origin_repository: None,
-        ..facts
-    };
-    assert!(matches!(
-        forge_repository(&non_github, "example/tools").unwrap_err(),
-        GraphError::InitForgeRepositoryMismatch { .. }
-    ));
+fn a_single_binary_names_the_asset_template() {
+    let mut facts = facts_for_render();
+    for package in &mut facts.packages {
+        if package.id == "cargo/app" {
+            package.cargo_bin_names = vec!["appctl".to_owned()];
+        }
+    }
+    let config = render_config(&facts, &release(&["x86_64-unknown-linux-gnu"]));
+    let doc = parse(&config);
+    assert_eq!(doc["release"]["asset-name"].as_str(), Some("appctl-{target}.tar.gz"));
+    assert!(doc["release"].as_table().unwrap().get("artifact").is_none());
 }
 
 #[test]
