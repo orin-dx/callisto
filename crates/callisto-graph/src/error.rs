@@ -777,10 +777,10 @@ pub enum GraphError {
         cause: callisto_model::ProviderIndeterminateCause,
     },
 
-    #[error("[release] declares no forge-repository")]
+    #[error("[release] has no forge repository: origin is not a GitHub repository and no forge-repository is set")]
     #[diagnostic(
         code(E198),
-        help("Add forge-repository = \"owner/repo\" under [release] in callisto.toml.")
+        help("Point origin at the GitHub repository, or set `[release] forge-repository`.")
     )]
     ReleaseForgeRepositoryMissing,
 
@@ -828,17 +828,6 @@ pub enum GraphError {
         help("Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{{version}}` tags).")
     )]
     InitSharedVersionTag { packages: Vec<String> },
-
-    #[error("forge repository `{value}` is invalid: {reason}")]
-    #[diagnostic(code(E195), help("Use the GitHub `owner/repo` the product releases to."))]
-    InitInvalidForgeRepository { value: String, reason: String },
-
-    #[error("forge repository `{configured}` does not match the origin remote `{origin}`")]
-    #[diagnostic(
-        code(E187),
-        help("The release plan requires [release].forge-repository to be origin's GitHub repository. Use that `owner/repo`, or point origin at the repository binaries release to.")
-    )]
-    InitForgeRepositoryMismatch { configured: String, origin: String },
 
     #[error("artifact target `{triple}` is invalid: {reason}")]
     #[diagnostic(code(E196), help("Use distinct, non-empty Rust target triples."))]
@@ -1096,6 +1085,11 @@ mod tests {
         };
         assert_eq!(bare("--package").exit_kind(), ExitKind::Usage);
         assert_eq!(colon("--package").exit_kind(), ExitKind::Usage);
+        assert_eq!(GraphError::Config(colon("--package")).exit_kind(), ExitKind::Usage);
+        assert_eq!(
+            GraphError::Config(colon("callisto.toml")).exit_kind(),
+            ExitKind::Runtime
+        );
         assert_eq!(bare("callisto.toml [[package]]").exit_kind(), ExitKind::Runtime);
         assert_eq!(colon("callisto.toml [[package]]").exit_kind(), ExitKind::Runtime);
     }
@@ -1397,9 +1391,7 @@ impl GraphError {
     pub fn exit_kind(&self) -> ExitKind {
         match self {
             Self::Config(error) => error.exit_kind(),
-            Self::InitInvalidForgeRepository { .. }
-            | Self::InitInvalidTargetTriple { .. }
-            | Self::InitForgeRepositoryMismatch { .. }
+            Self::InitInvalidTargetTriple { .. }
             | Self::InitInvalidProductPackage { .. }
             | Self::UnknownPackage { .. }
             | Self::PendingFromNotReleaseCommit { .. }

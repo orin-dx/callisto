@@ -6,7 +6,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
-Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254, E257, E258. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338).
+Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248, E253, E254, E257, E258. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338).
 
 ## callisto-model
 
@@ -229,7 +229,6 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E178 | Release run envelope is not valid for this intent | Re-plan the release intent, or run execute with the orchestration revision and artifact manifest the intent was planned against. |
 | E179 | An asset's owning package is not part of this release | Release `<package>` in the same run: add a changeset for it, or put it in the product's [[fixed-group]]. |
 | E180 | Remote refused a tag push: a GitHub App token cannot push a commit whose `.github/workflows/` differs from every branch tip | This happens when releasing a commit that is not a branch tip (for example, recovering an older release) with GITHUB_TOKEN, which cannot be granted the `workflows` scope. Push tag `<tag>`, and every other tag of this release, as an annotated tag at <target> with a non-App credential (a PAT or deploy key), then re-run the release. |
-| E187 | Configured forge repository doesn't match the origin remote | The release plan requires [release].forge-repository to be origin's GitHub repository. Use that `owner/repo`, or point origin at the repository binaries release to. |
 | E188 | No package produces a binary artifact; nothing to ship | Remove --artifact-target, or add a binary target ([[bin]], an npm `bin`, or [project.scripts]). |
 | E189 | `--product-package` value is invalid | Name one of the binary-producing packages: <candidates>. |
 | E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. `callisto init --workflow` adds the release workflow to an initialized workspace. |
@@ -237,9 +236,8 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E278 | `callisto init` failed to write a file it needed to write | Check file permissions and that the path still exists, then re-run `callisto init` (or `callisto init --workflow` if `callisto.toml` was already written). |
 | E193 | Package matches more than one tag naming convention | Write a [[package]] entry for it with `tag-template` set to the current convention and `previous-tag-templates` listing the older ones. |
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
-| E195 | `--forge-repository` value is invalid | Use the GitHub `owner/repo` the product releases to. |
 | E196 | `--artifact-target` triple is invalid | Use distinct, non-empty Rust target triples. |
-| E198 | `[release]` declares no `forge-repository` | Add forge-repository = "owner/repo" under [release] in callisto.toml. |
+| E198 | `[release]` has no forge repository: origin is not a GitHub repository and no `forge-repository` is set | Point origin at the GitHub repository, or set `[release] forge-repository`. |
 | E199 | Package configures a `publish-to` target that release cannot dispatch yet | Remove the target from `publish-to` for this package, or publish it outside `callisto release`. |
 | E200 | Generated workflow file already exists; `callisto init` refuses to overwrite it | Remove or edit the existing file directly; `callisto init` never merges into it. |
 | E201 | Couldn't resolve `callisto@{version}` to a commit on `orin-dx/callisto` | check network access to github.com, or run `callisto init --no-workflow` to skip workflow generation |
@@ -280,7 +278,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E227 | `--package` value is not a valid ecosystem-qualified package identity | name each package as <ecosystem>/<name>, for example cargo/callisto-cli |
 | E228 | `--orchestration-revision` value is invalid | pass the full commit SHA of the orchestration workflow revision |
 | E229 | `--artifact-repository` value is invalid | pass the forge repository as <owner>/<repo> |
-| E230 | `--artifact-repository` doesn't match `[release].forge-repository` in callisto.toml | plan with an --artifact-repository matching [release].forge-repository in callisto.toml |
+| E230 | `--artifact-repository` doesn't match an explicit `[release].forge-repository` in callisto.toml | plan with an --artifact-repository matching [release].forge-repository in callisto.toml |
 | E231 | Product release planning requires both `--orchestration-revision` and `--artifact-repository` | pass both --orchestration-revision and --artifact-repository |
 | E232 | `--artifact-manifest`/`--artifact-dir` given, but the intent declares no artifact slots and the manifest seals no Python files | drop --artifact-manifest and --artifact-dir for an intent without artifact slots or sealed Python files |
 | E233 | Intent declares artifact slots or the manifest seals Python files, but `--artifact-manifest`/`--artifact-dir` are missing | pass both --artifact-manifest and --artifact-dir |
@@ -309,7 +307,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E281 | A `release-pr` `--decision`/`--snapshot` argument given inline or on stdin is not valid JSON | check the JSON is well-formed and matches the expected schema |
 | E282 | `release-pr commit-plan` was run with both `--out` and `--dry-run` | re-run without --dry-run, or drop --out |
 | E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
-| E298 | `init --forge-repository`/`--product-package` given without `--artifact-target` | drop --<flag>, or pass --artifact-target to ship the product's binaries |
+| E298 | `init --product-package` given without `--artifact-target` | drop --<flag>, or pass --artifact-target to ship the product's binaries |
 | E299 | `init --workflow`/`--artifact-target` given with no `origin` remote configured | add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init |
 | E308 | `release build-python` or `artifact-manifest --seal-python` on an intent that publishes no Python package | drop --seal-python and `release build-python` for an intent without a Python publish |
 | E309 | `release build-python` run with `--dry-run`, which cannot write build output | re-run `callisto release build-python` without --dry-run |

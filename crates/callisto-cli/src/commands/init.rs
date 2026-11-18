@@ -22,7 +22,6 @@ use crate::workspace::workspace_root;
 pub const VERSIONING_PROMPT: &str = "How should packages be versioned?";
 pub const SHIP_PROMPT: &str = "Ship binaries as GitHub release assets?";
 pub const PRODUCT_PROMPT: &str = "Which package is the product whose binaries ship?";
-pub const FORGE_PROMPT: &str = "GitHub repository to release to (owner/repo)";
 pub const TARGETS_PROMPT: &str = "Artifact target triples (comma-separated)";
 pub const WRITE_PROMPT: &str = "Write callisto.toml?";
 pub const WORKFLOW_PROMPT: &str = "Generate a GitHub Actions release workflow?";
@@ -398,17 +397,10 @@ fn validate_flags(args: &InitArgs) -> Result<(), CliError> {
     if args.workflow && args.no_workflow {
         return Err(CliError::InitWorkflowFlagsConflict);
     }
-    if args.artifact_targets.is_empty() {
-        if args.forge_repository.is_some() {
-            return Err(CliError::InitFlagRequiresArtifactTarget {
-                flag: "forge-repository",
-            });
-        }
-        if args.product_package.is_some() {
-            return Err(CliError::InitFlagRequiresArtifactTarget {
-                flag: "product-package",
-            });
-        }
+    if args.artifact_targets.is_empty() && args.product_package.is_some() {
+        return Err(CliError::InitFlagRequiresArtifactTarget {
+            flag: "product-package",
+        });
     }
     Ok(())
 }
@@ -433,13 +425,12 @@ fn write_facts(facts: &InitFacts, out: &mut dyn Write) -> Result<(), CliError> {
 /// Flags `--yes` needs that were not supplied.
 fn missing_flags(args: &InitArgs, facts: &InitFacts) -> Vec<&'static str> {
     let mut missing = Vec::new();
-    if !args.artifact_targets.is_empty() && facts.binary_packages().next().is_some() {
-        if args.forge_repository.is_none() {
-            missing.push("--forge-repository");
-        }
-        if args.product_package.is_none() && facts.binary_packages().nth(1).is_some() {
-            missing.push("--product-package");
-        }
+    if !args.artifact_targets.is_empty()
+        && facts.binary_packages().next().is_some()
+        && args.product_package.is_none()
+        && facts.binary_packages().nth(1).is_some()
+    {
+        missing.push("--product-package");
     }
     missing
 }
@@ -514,15 +505,6 @@ fn collect_answers(
         (None, _) => return Err(missing("--product-package")),
     };
 
-    let forge_repository = match &args.forge_repository {
-        Some(value) => scaffold::forge_repository(facts, value)?,
-        None if prompting => {
-            let detected = facts.origin_repository.as_ref().map(|repository| repository.as_slug());
-            scaffold::forge_repository(facts, &prompter.input(FORGE_PROMPT, detected.as_deref())?)?
-        }
-        None => return Err(missing("--forge-repository")),
-    };
-
     let targets = if args.artifact_targets.is_empty() {
         loop {
             let answer = prompter.input(TARGETS_PROMPT, None)?;
@@ -542,7 +524,6 @@ fn collect_answers(
         versioning,
         binaries: Some(BinaryRelease {
             product: product.id.clone(),
-            forge_repository,
             targets,
         }),
     })

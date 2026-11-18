@@ -51,7 +51,7 @@ pub fn pending_releases<R: CommandRunner, D: DependencyResolver>(
         .config
         .product_release
         .as_ref()
-        .and_then(|release| release.forge_repository.as_ref())
+        .and_then(|_| workspace.forge_repository().ok().flatten())
         .map(|repository| format!("{}/{}", repository.owner(), repository.repo()));
     let context = ProviderContext::new(&workspace.root, workspace.runner, None);
 

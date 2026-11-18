@@ -86,23 +86,6 @@ fn dependency_update_entries(
         .collect()
 }
 
-/// The GitHub repository compare links point to: the configured `[release] forge-repository`, else `origin`'s. No remote
-/// or a remote that is not on github.com means no link, not an error.
-fn changelog_repository<R: CommandRunner, D: DependencyResolver>(
-    ws: &Workspace<'_, R, D>,
-) -> Option<callisto_model::GitHubRepository> {
-    ws.config
-        .product_release
-        .as_ref()
-        .and_then(|release| release.forge_repository.clone())
-        .or_else(|| {
-            crate::commands::release::optional_git_remote(&ws.root, ws.runner)
-                .ok()
-                .flatten()
-                .and_then(|remote| remote.github_repository)
-        })
-}
-
 /// `reference` as a URL path segment. A tag template may use `#`, `?` or `%`, which would turn the rest of the compare
 /// range into a fragment or a query; `/`, `@`, `+` and `:` are fine in a path and git refs use them.
 fn encode_ref(reference: &str) -> String {
@@ -161,7 +144,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
 ) -> Result<VersionPlan, GraphError> {
     let base_versions = ws.base_versions()?;
     let tags = ws.tags()?;
-    let repository = changelog_repository(ws);
+    let repository = ws.forge_repository().ok().flatten();
 
     let pre_path = ws.root.join(ws.config.pre_json_path());
     let pre_text = callisto_model::strict_fs::read_optional(&pre_path).map_err(|e| GraphError::PreJsonRead {

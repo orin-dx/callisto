@@ -6,7 +6,7 @@ The types that make a release run safe to crash and rerun, and how the two relea
 
 - Package: a dependency-graph node owned by a directory; it can expose several canonical manifest/distribution identities.
 - Distribution identity: `ReleasePackageId`, an ecosystem-qualified native package name. A graph package with several identities has one tag, one forge release and one forge publish, each carried by the package's owner: its first selected identity in manifest order (Cargo, then npm, then PyPI).
-- Artifact: the bytes of one *(package, version, target)*, declared by `[[release.artifact]]`. It has no version, tag or changelog of its own. Callisto does not parse `target`; CI supplies product-slot bytes and Callisto records where they go. Registry publishing can invoke native build/pack tools, including Python's build backend.
+- Artifact: the bytes of one *(package, version, target)*, declared by `[release] targets` with an `asset-name` template or by `[[release.artifact]]`. It has no version, tag or changelog of its own. Callisto does not parse `target`; CI supplies product-slot bytes and Callisto records where they go. Registry publishing can invoke native build/pack tools, including Python's build backend.
 - Product package: `[release].product-package`. Every artifact slot uploads to the product's one GitHub Release, even when another package built the bytes (`ArtifactSlotId.package`).
 - Decision: the package and version roster (`ReleaseDecisionV1`).
 - Intent: the decision plus the source snapshot, every operation with its prerequisites, and the artifact slots, sealed by a digest (`ReleaseIntentV1`).

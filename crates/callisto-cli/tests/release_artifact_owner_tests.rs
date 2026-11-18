@@ -10,13 +10,25 @@ use tempfile::TempDir;
 /// Product `core` plus a `plugin` crate that ships `plugin.wasm` on the product's
 /// release. Only `core` has a changeset; `plugin` is released only via the group.
 fn plugin_artifact_fixture(plugin_in_fixed_group: bool) -> (TempDir, String) {
+    release_fixture(plugin_in_fixed_group, true, true)
+}
+
+/// `forge_key` writes `[release] forge-repository`; `origin` adds the GitHub remote.
+fn release_fixture(plugin_in_fixed_group: bool, forge_key: bool, origin: bool) -> (TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     callisto_fixtures::git::init_repo(root);
-    git(
-        root,
-        &["remote", "add", "origin", "https://github.com/example/core-crate.git"],
-    );
+    if origin {
+        git(
+            root,
+            &["remote", "add", "origin", "https://github.com/example/core-crate.git"],
+        );
+    }
+    let forge_line = if forge_key {
+        "forge-repository = \"example/core-crate\"\n"
+    } else {
+        ""
+    };
     fs::write(
         root.join("Cargo.toml"),
         "[workspace]\nmembers = [\"crates/core\", \"crates/plugin\"]\nresolver = \"2\"\n",
@@ -47,7 +59,7 @@ fn plugin_artifact_fixture(plugin_in_fixed_group: bool) -> (TempDir, String) {
     fs::write(
         root.join("callisto.toml"),
         format!(
-            "{config}\n[release]\nproduct-package = \"cargo/core-crate\"\nforge-repository = \"example/core-crate\"\n\n\
+            "{config}\n[release]\nproduct-package = \"cargo/core-crate\"\n{forge_line}\n\
              [[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"core-linux.tar.gz\"\n\n\
              [[release.artifact]]\npackage = \"cargo/plugin-crate\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"plugin.wasm\"\n\n\
              [[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n{group}"
@@ -133,6 +145,29 @@ fn a_plugin_artifact_is_owned_by_the_package_that_builds_it() {
     );
 }
 
+/// `[release] forge-repository` is optional: the release goes to origin's GitHub repository.
+#[test]
+fn a_release_without_forge_repository_plans_against_origin() {
+    let (dir, commit) = release_fixture(true, false, true);
+    let external = tempfile::tempdir().unwrap();
+    let intent_path = external.path().join("intent.json");
+    let out = plan(dir.path(), &intent_path, &commit);
+    assert!(out.status.success(), "plan: {}", String::from_utf8_lossy(&out.stderr));
+    let intent: serde_json::Value = serde_json::from_slice(&fs::read(&intent_path).unwrap()).unwrap();
+    let repository = intent["artifactSlots"][0]["attestationPolicy"]["repository"].to_string();
+    assert!(repository.contains("example/core-crate"), "{intent}");
+}
+
+#[test]
+fn a_release_with_neither_forge_repository_nor_origin_fails_with_e198() {
+    let (dir, commit) = release_fixture(true, false, false);
+    let external = tempfile::tempdir().unwrap();
+    let out = plan(dir.path(), &external.path().join("intent.json"), &commit);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "plan must fail");
+    assert!(stderr.contains("E198"), "expected E198, got: {stderr}");
+}
+
 // A push checkout leaves HEAD on the branch; generated workflows check out the commit so `plan` can run.
 #[test]
 fn plan_from_an_attached_head_fails_with_e170() {
@@ -181,6 +216,16 @@ fn a_preview_without_origin_plans_an_artifact_release() {
         "stderr: {}",
         String::from_utf8_lossy(&run.stderr)
     );
+}
+
+// With no `forge-repository` either, the preview still plans: only a real run needs a destination.
+#[test]
+fn a_preview_without_forge_repository_or_origin_still_plans() {
+    let (dir, _) = release_fixture(true, false, false);
+    let out = callisto(dir.path(), &["release", "--dry-run"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "preview must succeed: {stderr}");
+    assert!(!stderr.contains("E198"), "stderr: {stderr}");
 }
 
 // An origin that cannot be read prints nothing, not git's own error, while the preview still plans.

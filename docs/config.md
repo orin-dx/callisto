@@ -36,7 +36,7 @@ Example: `dir = ".changeset"`.
 | `peer-escalation` | bool | `false` | Escalate an out-of-range peer-dependency bump to a major bump for the dependent; off, the dependent gets `bump-severity` |
 | `preserve-npm-ranges` | bool | `true` | Keep existing npm semver range operators (`^`, `~`) when rewriting dependency versions |
 
-Example (this repo's own `callisto.toml`):
+Example:
 ```toml
 [cascade]
 mode = "out-of-range"
@@ -66,8 +66,12 @@ Credentials and registry endpoints are deliberately excluded — this table only
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `product-package` | string | required | Ecosystem-qualified package whose binaries ship as release assets, e.g. `cargo/callisto-cli` |
-| `forge-repository` | string | none | `owner/repo` the product release publishes to |
-| `[[release.artifact]]` | array of tables | `[]` | Declared binary artifacts (see below) |
+| `forge-repository` | string | origin's GitHub repository | `owner/repo` the product release publishes to; a release always publishes to origin's GitHub repository, so the key changes only the compare-link repository when it differs from origin's |
+| `targets` | array of strings | `[]` | Target triples the product is built for. Needs `asset-name` |
+| `asset-name` | string | none | Names each of `targets`; `{target}` is the only placeholder. Needs `targets` |
+| `[[release.artifact]]` | array of tables | `[]` | Another package's artifact, or an irregular name such as a Windows `.zip` (see below) |
+
+At least one target or artifact is required. A target in `targets` that a `[[release.artifact]]` also names for the same package is an error (E197).
 
 ### `[[release.artifact]]`
 
@@ -81,12 +85,13 @@ Example (this repo's own `callisto.toml`):
 ```toml
 [release]
 product-package = "cargo/callisto-cli"
-forge-repository = "orin-dx/callisto"
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+asset-name = "callisto-{target}.tar.gz"
 
 [[release.artifact]]
 package = "cargo/callisto-cli"
-target = "aarch64-apple-darwin"
-asset-name = "callisto-aarch64-apple-darwin.tar.gz"
+target = "x86_64-pc-windows-msvc"
+asset-name = "callisto-x86_64-pc-windows-msvc.zip"
 ```
 
 ## `[registries]`
