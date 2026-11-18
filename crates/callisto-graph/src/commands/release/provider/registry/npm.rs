@@ -308,17 +308,13 @@ impl NpmRegistry {
         let manifest: serde_json::Value = serde_json::from_str(&manifest.stdout).unwrap_or_default();
         let named = manifest["name"].as_str() == Some(operation.package_name.as_str())
             && manifest["version"].as_str() == Some(operation.version.render());
-        if !manifest_ok(&manifest) || !named {
+        if !named {
             return Err(incomplete("tarball of this package and version"));
         }
         let target = outdir.join(&expected);
         std::fs::rename(packed, &target).map_err(io)?;
         Ok(target)
     }
-}
-
-fn manifest_ok(manifest: &serde_json::Value) -> bool {
-    manifest["name"].is_string() && manifest["version"].is_string()
 }
 
 /// Re-hashes a sealed file just before it is uploaded: a file changed after verification must not reach the registry.

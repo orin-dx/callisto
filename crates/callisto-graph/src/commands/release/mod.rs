@@ -504,6 +504,133 @@ pub(crate) mod tests {
         assert!(eligible.is_empty(), "the owner must not publish: {eligible:?}");
     }
 
+    /// Git is real; a pack writes the tarball its package.json names, and `tar` reads that package.json back.
+    struct PackFake {
+        packed: std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, String>>,
+        packs: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl CommandRunner for PackFake {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            let ok = |stdout: String| {
+                Ok(CommandOutput {
+                    exit_code: Some(0),
+                    stdout,
+                    stderr: String::new(),
+                })
+            };
+            if program == "tar" {
+                let tarball = Path::new(args[1]);
+                return ok(self.packed.lock().unwrap()[tarball.parent().unwrap()].clone());
+            }
+            let Some(at) = args.iter().position(|arg| *arg == "--pack-destination") else {
+                return RealGitRunner.run(program, args, cwd);
+            };
+            let destination = std::path::PathBuf::from(args[at + 1]);
+            let json = std::fs::read_to_string(cwd.join("package.json")).unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&json).unwrap();
+            let name = manifest["name"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches('@')
+                .replace('/', "-");
+            std::fs::write(
+                destination.join(format!("{name}-{}.tgz", manifest["version"].as_str().unwrap())),
+                b"tarball",
+            )
+            .unwrap();
+            self.packs.lock().unwrap().push(program.to_owned());
+            self.packed.lock().unwrap().insert(destination, json);
+            ok(String::new())
+        }
+
+        fn run_with_timeout_env_filtered(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            _timeout: std::time::Duration,
+            _removed: &[&str],
+        ) -> Result<CommandOutput, CommandError> {
+            self.run(program, args, cwd)
+        }
+    }
+
+    /// The pack job packs each npm publish of the plan, an owner and its platform packages each once, and nothing else.
+    #[test]
+    fn packing_covers_every_npm_publish_of_the_plan_and_no_other_publish() {
+        let dir = platform_owner_fixture();
+        let runner = PackFake {
+            packed: Default::default(),
+            packs: Default::default(),
+        };
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let owner = ReleasePackageId::new(Ecosystem::Npm, "@s/cli").unwrap();
+        let decision = ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+            package: owner,
+            target_version: Version::parse("0.1.0", VersionGrammar::SemVer).unwrap(),
+            reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+        }])
+        .unwrap();
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision,
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
+        let out = tempfile::tempdir().unwrap();
+
+        let packed = validated.pack_npm_tarballs(out.path()).unwrap();
+        assert_eq!(packed, ["@s/cli", "@s/cli-darwin-arm64", "@s/cli-linux-x64-gnu"]);
+        let mut files: Vec<String> = std::fs::read_dir(out.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        assert_eq!(
+            files,
+            [
+                "s-cli-0.1.0.tgz",
+                "s-cli-darwin-arm64-0.1.0.tgz",
+                "s-cli-linux-x64-gnu-0.1.0.tgz"
+            ]
+        );
+        let mut programs = runner.packs.lock().unwrap().clone();
+        programs.sort();
+        assert_eq!(
+            programs,
+            ["npm", "npm", "pnpm"],
+            "the owner packs with pnpm, platform packages with npm"
+        );
+    }
+
+    /// A plan that publishes only a crate has nothing to pack.
+    #[test]
+    fn packing_a_plan_with_no_npm_publish_runs_no_pack() {
+        let (dir, _) = fixture();
+        let runner = PackFake {
+            packed: Default::default(),
+            packs: Default::default(),
+        };
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision(),
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        assert!(validated.pack_npm_tarballs(out.path()).unwrap().is_empty());
+        assert!(runner.packs.lock().unwrap().is_empty());
+        assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
+    }
+
     #[test]
     fn fresh_validation_rejects_manifest_change() {
         let (dir, runner) = fixture();

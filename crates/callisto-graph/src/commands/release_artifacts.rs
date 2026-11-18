@@ -502,6 +502,79 @@ mod tests {
         assert!(require_sealed_publishes(&no_publishes, None).is_ok());
     }
 
+    fn npm_set(package: &str, version: &str) -> callisto_model::DistributionSetV1 {
+        callisto_model::DistributionSetV1 {
+            package: ReleasePackageId::new(Ecosystem::Npm, package).unwrap(),
+            version: version.to_owned(),
+            files: vec![callisto_model::DistributionFileV1 {
+                filename: format!("{package}-{version}.tgz"),
+                digest: ArtifactDigest::from_bytes(b"tarball"),
+                byte_length: 7,
+            }],
+        }
+    }
+
+    fn manifest_sealing(intent: &ReleaseIntentV1, sets: Vec<callisto_model::DistributionSetV1>) -> ArtifactManifestV1 {
+        ArtifactManifestV1 {
+            schema_version: 1,
+            intent_digest: intent.digest().clone(),
+            source_commit: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+            entries: Vec::new(),
+            distributions: sets,
+        }
+    }
+
+    /// Sealing names, sizes and hashes the one tarball npm names for each npm publish of the plan.
+    #[test]
+    fn sealing_records_the_tarball_of_every_npm_publish_and_refuses_a_missing_or_irregular_one() {
+        let intent = intent_with_slot_and_npm_publish(slot("artifact.tar.gz"));
+        let directory = tempdir().unwrap();
+        fs::write(directory.path().join("package-1.0.0.tgz"), b"tarball").unwrap();
+
+        let sets = seal_npm_tarballs(&intent, directory.path()).unwrap();
+        assert_eq!(sets.len(), 1);
+        assert_eq!(
+            sets[0].package,
+            ReleasePackageId::new(Ecosystem::Npm, "package").unwrap()
+        );
+        assert_eq!(sets[0].version, "1.0.0");
+        assert_eq!(sets[0].files.len(), 1);
+        assert_eq!(sets[0].files[0].filename, "package-1.0.0.tgz");
+        assert_eq!(sets[0].files[0].digest, ArtifactDigest::from_bytes(b"tarball"));
+        assert_eq!(sets[0].files[0].byte_length, 7);
+
+        let empty = tempdir().unwrap();
+        assert!(matches!(
+            seal_npm_tarballs(&intent, empty.path()),
+            Err(GraphError::BuildOutputIncomplete { tool: "npm pack", .. })
+        ));
+        let directory_named_like_it = tempdir().unwrap();
+        fs::create_dir(directory_named_like_it.path().join("package-1.0.0.tgz")).unwrap();
+        assert!(matches!(
+            seal_npm_tarballs(&intent, directory_named_like_it.path()),
+            Err(GraphError::BuildOutputIncomplete { tool: "npm pack", .. })
+        ));
+    }
+
+    /// A seal counts only for the package and the version it names.
+    #[test]
+    fn a_publish_is_sealed_only_by_a_set_for_its_own_package_and_version() {
+        let intent = intent_with_slot_and_npm_publish(slot("artifact.tar.gz"));
+        let sealed = |sets| require_sealed_publishes(&intent, Some(&manifest_sealing(&intent, sets)));
+        assert!(sealed(vec![npm_set("package", "1.0.0")]).is_ok());
+        for wrong in [
+            vec![npm_set("package", "2.0.0")],
+            vec![npm_set("other", "1.0.0")],
+            vec![npm_set("other", "2.0.0")],
+            vec![],
+        ] {
+            assert!(
+                matches!(sealed(wrong), Err(GraphError::BuildOutputIncomplete { .. })),
+                "a set for another package or version must not seal this publish"
+            );
+        }
+    }
+
     #[test]
     fn verifies_exact_bytes_and_pinned_github_policy() {
         let directory = tempdir().unwrap();

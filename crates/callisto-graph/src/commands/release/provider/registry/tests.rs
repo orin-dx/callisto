@@ -1345,6 +1345,26 @@ fn a_platform_package_is_packed_by_directory_with_npm_and_published_as_a_tarball
     });
 }
 
+/// The tarball must be this package at this version: a right name at another version, or the reverse, is not it.
+#[test]
+fn a_tarball_whose_manifest_differs_from_the_plan_in_name_or_version_alone_is_rejected() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        for (name, version) in [("pkg", "2.0.0"), ("other", "1.0.0")] {
+            let runner = PackingRunner::new("pkg-1.0.0.tgz", name, version);
+            let context = ProviderContext::new(root.path(), &runner, None);
+            let package = operation("npm", "pkg", "1.0.0");
+            let out = tempfile::tempdir().unwrap();
+            let error = NpmRegistry::pack_into(&context, &package, out.path()).unwrap_err();
+            assert!(
+                matches!(error, GraphError::BuildOutputIncomplete { tool: "npm pack", .. }),
+                "{name} {version}: {error:?}"
+            );
+            assert!(!out.path().join("pkg-1.0.0.tgz").exists());
+        }
+    });
+}
+
 /// A manager's own file name is not trusted: the manifest inside decides, so a tool that names a scoped package its own
 /// way still yields the planned tarball.
 #[test]

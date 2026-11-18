@@ -194,6 +194,21 @@ mod tests {
     use super::*;
     use crate::release::*;
 
+    #[test]
+    fn the_pack_npm_report_carries_the_shared_schema_version_and_the_built_packages() {
+        use crate::report::Report;
+        let report = ReleasePackNpmReport {
+            built: vec!["@s/cli".to_owned()],
+        };
+        assert_eq!(report.schema_version(), crate::SCHEMA_VERSION);
+        assert!(report.diagnostics().is_empty());
+        assert_eq!(ReleasePackNpmReport::COMMAND, "release pack-npm");
+        assert_eq!(
+            serde_json::to_value(&report).unwrap(),
+            serde_json::json!({"built": ["@s/cli"]})
+        );
+    }
+
     /// `ReleasePlanReport` must flatten `ReleaseIntentV1`'s own fields (not nest them
     /// under an `intent` key) and add a `diagnostics` array only when non-empty --
     /// the one JSON envelope `output::emit_report` gives every command alike.
