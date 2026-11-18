@@ -1,0 +1,132 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7R1HT7HV4F5XB4VXQ0FTP2N",
+  "session_id": "25b5d2e3-801a-4c94-9d8b-527c66878712",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T19:19:03.250369Z",
+  "branch": "fix/native-publish-edges",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "fe0cf039bed4",
+  "checkpoint_transcript_start": 2512,
+  "transcript_lines_at_start": 2512,
+  "compact_transcript_start": 209,
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 35932,
+    "cache_read_tokens": 8391652,
+    "output_tokens": 13568,
+    "api_call_count": 25,
+    "subagent_tokens": {
+      "input_tokens": 44,
+      "cache_creation_tokens": 91672,
+      "cache_read_tokens": 1565603,
+      "output_tokens": 11528,
+      "api_call_count": 22
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 440,
+    "cache_creation_tokens": 325594,
+    "cache_read_tokens": 46600102,
+    "output_tokens": 104280,
+    "api_call_count": 211,
+    "subagent_tokens": {
+      "input_tokens": 112,
+      "cache_creation_tokens": 278232,
+      "cache_read_tokens": 3968624,
+      "output_tokens": 37468,
+      "api_call_count": 56
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "summary": {
+    "intent": "Work through a series of work packages (S, T, V) in the callisto repo, each in its own worktree and PR; in this stretch, finish and push T (PR #579), then implement V so dual-ecosystem owners order each output only by its own native dependency edges (per ADR 12).",
+    "outcome": "T passed cargo mutants (0 missed) and was pushed as PR #579. V was implemented test-first and committed, a subagent review found no blockers, and the unreachable fallback branch was then simplified to `id.ecosystem() != ecosystem` with spec/doc/comment updates. The full gate for V was re-running at the end.",
+    "learnings": {
+      "repo": [
+        "ADR 12 states a dependent waits only for the dependency's distribution in its own ecosystem, so dependency edges must be filtered on the dependent side as well as the dependency side.",
+        "Dual publishing (Cargo+npm owners) has already shipped (CHANGELOG ~line 401), so a fix to it warrants a changeset; AGENTS.md says fixes to unreleased behaviour get none.",
+        "Owner-level `PublishEdgeFilter` (cycle policy) and `require_dependencies_selected` are intentionally owner-level and out of scope for V.",
+        "Tag prerequisites deliberately wait for every publish of an owner; this is a barrier, not a dependency edge, and must not be filtered per ecosystem.",
+        "Changing edge projection alters the operation graph and thus the intent digest, so a release intent planned with the old binary fails as stale under the new one and requires `release plan` again (expected fail-closed behaviour).",
+        "Behaviour change: napi-rs (Cargo+package.json, publish-to npm only) and maturin (Cargo+pyproject, publish-to pypi only) packages lose their Cargo.toml-edge ordering entirely, since the edge lands on the Cargo id which has no publish. This is judged safe because napi ships prebuilt binaries and maturin sdists vendor path deps.",
+        "`manifest_ecosystem` maps Gradle/sbt file names to Npm as a fallback, which is wrong but harmless because Maven has no implemented publish and those files are not canonical manifests.",
+        "Release spec criterion is REL-ORD-02 in docs/specs/release.json; the matching architecture text is at docs/architecture/release.md:118."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 516,
+          "finding": "Skip condition for projecting a dependency edge onto a dependent's outputs; only the id whose ecosystem matches the declaring manifest keeps the edge. The 'owner with no id in that ecosystem keeps edge on every output' fallback was unreachable and was removed."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 405,
+          "finding": "publishes_by_package[id] only holds publishes whose target ecosystem equals id.ecosystem(), so attaching an edge to the matching id places it only on that registry's publish."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 542,
+          "finding": "npm platform packages are added after the dependency edges and their publishes have no prerequisites, so the owner's npm publish still waits on its platforms."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 197,
+          "finding": "OpIndex::tag_prerequisites deliberately waits on every publish of the owner."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 2117,
+          "finding": "Test a_dual_dependents_native_edge_orders_only_its_own_distribution covers both directions (Cargo-only edge and npm-only edge) plus the kept positive edge; it does not cover the napi/maturin single-registry case."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/release_decision.rs",
+          "line": 944,
+          "end_line": 970,
+          "finding": "cascade_source only labels the inclusion reason and already prefers the entry's own ecosystem; not affected by the dual-owner edge defect."
+        }
+      ],
+      "workflow": [
+        "Write the regression test first and confirm it is red before implementing the fix (done for V).",
+        "Run cargo mutants on the diff before pushing (T: 12 caught, 4 unviable, 0 missed).",
+        "Delegate a fresh review of the diff to a subagent; its hand-back is advisory model output, and its findings (e.g. dead fallback) were verified against the code before acting.",
+        "Stop an in-flight full gate when a review prompts a code change, then re-run it after committing the simplification.",
+        "Stacked PRs: check whether the prerequisite PR (#571) has merged before starting dependent work (#577 waits on it)."
+      ]
+    },
+    "friction": [
+      "PR #571 is not yet merged, so #577 (S) is blocked and cannot proceed.",
+      "The full gate for V had to be aborted and restarted after the review prompted a simplification, wasting a run."
+    ],
+    "open_items": [
+      "Wait for #571 to merge before #577 can proceed.",
+      "Full gate for WP V (re-run after the simplification) had not finished at the end of the transcript; V is not yet pushed or opened as a PR.",
+      "The napi/maturin single-registry case (edge now vanishes) has no test coverage; optionally keep the old ordering via a 'has a publish in that ecosystem' check if desired (ADR says not needed).",
+      "Release intents in flight across the upgrade need `release plan` re-run because the intent digest changes."
+    ]
+  }
+}

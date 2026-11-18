@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01PDciMgaMypNLZz2A3NDQba",
+  "agent_id": "af22f0bb5353b6763",
+  "subagent_type": "general-purpose",
+  "task_description": "Review WP V diff",
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 91672,
+    "cache_read_tokens": 1565603,
+    "output_tokens": 11528,
+    "api_call_count": 22
+  },
+  "started_at": "2026-11-18T11:15:33.294352-08:00",
+  "completed_at": "2026-11-18T11:18:14.880551-08:00"
+}

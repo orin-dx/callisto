@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7R1HT7HV4F5XB4VXQ0FTP2N",
+  "strategy": "manual-commit",
+  "branch": "fix/native-publish-edges",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "docs/specs/release.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 35932,
+    "cache_read_tokens": 8391652,
+    "output_tokens": 13568,
+    "api_call_count": 25,
+    "subagent_tokens": {
+      "input_tokens": 44,
+      "cache_creation_tokens": 91672,
+      "cache_read_tokens": 1565603,
+      "output_tokens": 11528,
+      "api_call_count": 22
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
