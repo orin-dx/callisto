@@ -125,12 +125,13 @@ features-boundary:
 verify-real-tools:
     #!/usr/bin/env bash
     set -euo pipefail
-    for tool in npm pnpm uv; do
+    for tool in npm uv; do
         command -v "$tool" >/dev/null || { echo "$tool is required: the install matrix uses npm, pnpm and uv" >&2; exit 1; }
     done
     tools=target/verify-real
     mkdir -p "$tools"
-    npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4
+    npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4 pnpm@10.11.0
+    PATH="$PWD/$tools/npm/node_modules/.bin:$PATH" pnpm --version
     uv venv -q --seed --allow-existing --python 3.12 "$tools/venv"
     python_pins="pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0 setuptools==80.9.0 wheel==0.45.1"
     "$tools/venv/bin/python" -m pip install -q $python_pins
