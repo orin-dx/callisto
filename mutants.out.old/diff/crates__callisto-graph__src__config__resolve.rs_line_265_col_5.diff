@@ -1,0 +1,25 @@
+--- crates/callisto-graph/src/config/resolve.rs
++++ replace rule_applies -> bool with true
+@@ -257,21 +257,17 @@
+ 
+ /// A `[[package]]` rule applies to a package when it has a manifest in the rule's ecosystem whose own name is the
+ /// rule's name.
+ ///
+ /// `native_names` is the package's name in each ecosystem it has a manifest in. A dual package's names can differ per
+ /// ecosystem, so `npm/michi-node` does not apply to the package whose npm name is `@orin-dx/michi`, whatever its
+ /// directory or Cargo name is, which is the same identity a `[[fixed-group]]` member must give.
+ pub(crate) fn rule_applies(rule_id: &PackageId, native_names: &[(Ecosystem, &str)]) -> bool {
+-    rule_id.ecosystem().is_some_and(|eco| {
+-        native_names
+-            .iter()
+-            .any(|(ecosystem, name)| NativeName::new(*ecosystem, name) == NativeName::new(eco, rule_id.name()))
+-    })
++    true /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// The first `[[package]]` rule, in TOML declaration order, that applies to `id`; `None` if none does.
+ ///
+ /// MUST NOT sort or partition `cfg.packages`: declaration order is the specificity.
+ pub(crate) fn resolve_package_config<'a>(
+     native_names: &[(Ecosystem, &str)],
+     cfg: &'a ResolvedConfig,

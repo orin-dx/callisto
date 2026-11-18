@@ -1,0 +1,56 @@
+--- crates/callisto-graph/src/identity.rs
++++ replace IdentityIndex::resolve_native_with_fallback -> Option<&'a PackageId> with None
+@@ -471,52 +471,17 @@
+     /// Resolves within the declaring ecosystem, using PEP 503 equivalence for Python.
+     /// Ambiguous Python names and cross-ecosystem candidates produce a warning and no match.
+     pub fn resolve_native_with_fallback<'a>(
+         &'a self,
+         eco: Ecosystem,
+         name: &str,
+         diagnostics: &mut Vec<callisto_model::Diagnostic>,
+     ) -> Option<&'a PackageId> {
+-        if let Some(id) = self.native_in_ecosystem(eco, name) {
+-            return Some(id);
+-        }
+-
+-        // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.
+-        let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self
+-            .native
+-            .iter()
+-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)
+-            .map(|(native, id)| (native.ecosystem(), native.as_str(), id))
+-            .collect();
+-        candidates.dedup_by(|a, b| a.2 == b.2);
+-
+-        match candidates.len() {
+-            0 => None,
+-            _ => {
+-                let candidate_names: Vec<String> = candidates
+-                    .iter()
+-                    .map(|(e, n, _)| format!("{}/{n}", e.prefix()))
+-                    .collect();
+-                diagnostics.push(callisto_model::Diagnostic {
+-                    code: callisto_model::DiagnosticCode::UnknownPackage,
+-                    severity: callisto_model::DiagnosticSeverity::Warning,
+-                    // No prefix advice: a dependency field cannot carry `eco:name`, so only renaming resolves it.
+-                    message: format!(
+-                        "dependency name `{name}` is ambiguous across ecosystems: {}",
+-                        candidate_names.join(", "),
+-                    ),
+-                    package: None,
+-                    path: None,
+-                    escalated_by: None,
+-                    governed_by: None,
+-                });
+-                None
+-            }
+-        }
++        None /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {
+         self.native.get(&NativeName::new(eco, name))
+     }
+ 
+     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {
+         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());

@@ -1,0 +1,21 @@
+--- crates/callisto-model/src/identity.rs
++++ replace NativeName::ecosystem -> Ecosystem with Default::default()
+@@ -240,17 +240,17 @@
+         NativeName {
+             ecosystem,
+             spelling: name.to_owned(),
+             key,
+         }
+     }
+ 
+     pub fn ecosystem(&self) -> Ecosystem {
+-        self.ecosystem
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// The spelling the manifest declared.
+     pub fn as_str(&self) -> &str {
+         &self.spelling
+     }
+ }
+ 

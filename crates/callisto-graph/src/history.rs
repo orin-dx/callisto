@@ -82,9 +82,9 @@ fn declares(
     format: ManifestFormat,
     file_name: &str,
 ) -> Result<bool, GraphError> {
-    // A normalized Python name may be spelled with other separators, so search its first word.
+    // Registry-equivalent names may be spelled with other separators, so search the first word.
     let needle = match ecosystem {
-        Ecosystem::Pypi => name
+        Ecosystem::Pypi | Ecosystem::Cargo => name
             .split(['-', '_', '.'])
             .find(|word| !word.is_empty())
             .unwrap_or(name),
@@ -190,4 +190,120 @@ pub(crate) fn may_have_held_name_at(
             .native_name(&pkg.id, *ecosystem)
             .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use callisto_fixtures::git::{init_repo, GitRunner};
+    use callisto_model::vcs::GitAccess;
+    use callisto_model::Package;
+
+    use super::*;
+    use crate::resolver::DependencyResolver;
+
+    fn git(root: &Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+    }
+
+    fn write(root: &Path, rel: &str, text: &str) {
+        std::fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
+        std::fs::write(root.join(rel), text).unwrap();
+    }
+
+    fn commit(root: &Path, message: &str) {
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-q", "-m", message]);
+    }
+
+    fn pyproject(name: &str) -> String {
+        format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n")
+    }
+
+    fn cargo_toml(name: &str) -> String {
+        format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
+    }
+
+    /// `a/` holds PyPI `my_pkg` and `c/` holds Cargo `foo_bar` at the first commit; at the second the PyPI manifest
+    /// has moved to `b/`.
+    fn repository() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init_repo(root);
+        write(root, "a/pyproject.toml", &pyproject("my_pkg"));
+        write(root, "c/Cargo.toml", &cargo_toml("foo_bar"));
+        commit(root, "first");
+        git(root, &["mv", "a", "b"]);
+        commit(root, "move");
+        dir
+    }
+
+    #[test]
+    fn a_manifest_declares_a_name_its_registry_treats_as_equal() {
+        let dir = repository();
+        let git = GitAccess::new(dir.path(), &GitRunner);
+        let declares = |name, ecosystem, format, file| declares(&git, "HEAD~1", name, ecosystem, format, file).unwrap();
+        assert!(declares(
+            "my-pkg",
+            Ecosystem::Pypi,
+            ManifestFormat::PyprojectToml,
+            "pyproject.toml"
+        ));
+        assert!(!declares(
+            "my-other",
+            Ecosystem::Pypi,
+            ManifestFormat::PyprojectToml,
+            "pyproject.toml"
+        ));
+        assert!(declares(
+            "Foo-Bar",
+            Ecosystem::Cargo,
+            ManifestFormat::CargoToml,
+            "Cargo.toml"
+        ));
+        assert!(!declares(
+            "foo-baz",
+            Ecosystem::Cargo,
+            ManifestFormat::CargoToml,
+            "Cargo.toml"
+        ));
+    }
+
+    #[test]
+    fn ownership_of_a_bare_name_follows_registry_equivalence() {
+        let dir = repository();
+        let locator = crate::locate::IgnoreWalkLocator::new(dir.path());
+        let ws = crate::Workspace::load(dir.path().to_path_buf(), &locator, &GitRunner).expect("load");
+        let git = GitAccess::new(dir.path(), &GitRunner);
+        let packages: Vec<&Package> = ws.graph.packages().collect();
+        let python = *packages.iter().find(|p| p.id.name() == "my_pkg").expect("pypi package");
+        let cargo = *packages
+            .iter()
+            .find(|p| p.id.name() == "foo_bar")
+            .expect("cargo package");
+        let mut rosters = Rosters::default();
+
+        // The package's own manifest path held the name at the second commit.
+        assert!(first_manifest_declares_at(&git, "HEAD", python, "my-pkg", &mut rosters).unwrap());
+        assert!(!first_manifest_declares_at(&git, "HEAD", python, "my-other", &mut rosters).unwrap());
+        assert!(first_manifest_declares_at(&git, "HEAD", cargo, "Foo-Bar", &mut rosters).unwrap());
+        assert!(!first_manifest_declares_at(&git, "HEAD", cargo, "foo-baz", &mut rosters).unwrap());
+
+        // At the first commit the PyPI manifest sat elsewhere, so ownership falls back to the declaring roster.
+        let both = [python, cargo];
+        let owner = sole_owner_at(&git, "HEAD~1", "my-pkg", &both, &ws.identity, &mut rosters).unwrap();
+        assert_eq!(owner.map(|p| p.id.clone()), Some(python.id.clone()));
+        let owner = sole_owner_at(&git, "HEAD~1", "foo-bar", &both, &ws.identity, &mut rosters).unwrap();
+        assert_eq!(owner.map(|p| p.id.clone()), Some(cargo.id.clone()));
+
+        assert!(may_have_held_name_at(&git, "HEAD~1", "my-pkg", python, &ws.identity, &mut rosters).unwrap());
+        assert!(!may_have_held_name_at(&git, "HEAD~1", "my-pkg", cargo, &ws.identity, &mut rosters).unwrap());
+        assert!(may_have_held_name_at(&git, "HEAD~1", "nobody", python, &ws.identity, &mut rosters).unwrap());
+    }
 }

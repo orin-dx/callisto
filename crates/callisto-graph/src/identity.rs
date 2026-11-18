@@ -242,6 +242,22 @@ mod tests {
     }
 
     #[test]
+    fn the_cross_ecosystem_fallback_needs_exactly_one_exact_spelling() {
+        let mut index = IdentityIndex::default();
+        let cargo = PackageId::Bare("cargo-owner".to_string());
+        index
+            .native
+            .insert(NativeName::new(Ecosystem::Cargo, "shared"), cargo.clone());
+        assert_eq!(index.resolve_native(Ecosystem::Npm, "shared"), Some(&cargo));
+        assert!(index.resolve_native(Ecosystem::Npm, "other").is_none());
+        index.native.insert(
+            NativeName::new(Ecosystem::Pypi, "shared"),
+            PackageId::Bare("pypi-owner".to_string()),
+        );
+        assert!(index.resolve_native(Ecosystem::Npm, "shared").is_none());
+    }
+
+    #[test]
     fn native_lookup_applies_only_the_registrys_own_equivalence() {
         let owner = PackageId::Bare("my-lib".to_string());
         let mut cargo = IdentityIndex::default();

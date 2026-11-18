@@ -473,7 +473,35 @@ where
 #[cfg(test)]
 #[allow(deprecated)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
+
+    #[test]
+    fn native_names_equal_under_their_registry_rules() {
+        let name = |ecosystem, text| NativeName::new(ecosystem, text);
+        assert_eq!(name(Ecosystem::Pypi, "My_Pkg"), name(Ecosystem::Pypi, "my.pkg"));
+        assert_eq!(name(Ecosystem::Cargo, "Foo_Bar"), name(Ecosystem::Cargo, "foo-bar"));
+        assert_ne!(name(Ecosystem::Cargo, "foo.bar"), name(Ecosystem::Cargo, "foo-bar"));
+        assert_ne!(name(Ecosystem::Npm, "foo_bar"), name(Ecosystem::Npm, "foo-bar"));
+        assert_ne!(name(Ecosystem::Npm, "foo-bar"), name(Ecosystem::Cargo, "foo-bar"));
+        assert_ne!(name(Ecosystem::Pypi, "foo"), name(Ecosystem::Pypi, "bar"));
+    }
+
+    #[test]
+    fn a_native_name_keeps_its_spelling_and_hashes_and_orders_by_key() {
+        let a = NativeName::new(Ecosystem::Pypi, "My_Pkg");
+        let b = NativeName::new(Ecosystem::Pypi, "my-pkg");
+        assert_eq!(a.as_str(), "My_Pkg");
+        assert_eq!(a.ecosystem(), Ecosystem::Pypi);
+        assert_eq!(a.cmp(&b), Ordering::Equal);
+        assert_eq!(a.partial_cmp(&b), Some(Ordering::Equal));
+        let later = NativeName::new(Ecosystem::Pypi, "zzz");
+        assert_eq!(a.partial_cmp(&later), Some(Ordering::Less));
+        assert_eq!(later.cmp(&a), Ordering::Greater);
+        let set: HashSet<NativeName> = [a, b].into_iter().collect();
+        assert_eq!(set.len(), 1);
+    }
 
     #[test]
     fn package_id_schema_describes_bare_and_qualified_strings() {

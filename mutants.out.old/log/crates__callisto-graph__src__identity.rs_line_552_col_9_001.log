@@ -1,0 +1,226 @@
+
+*** crates/callisto-graph/src/identity.rs:552:9: replace IdentityIndex::native_ids -> impl Iterator<Item = PackageId>+'_ with ::std::iter::once(Default::default())
+
+*** mutation diff:
+--- crates/callisto-graph/src/identity.rs
++++ replace IdentityIndex::native_ids -> impl Iterator<Item = PackageId>+'_ with ::std::iter::once(Default::default())
+@@ -544,20 +544,17 @@
+             })
+             .map(|(native, _)| format!("{prefix}/{}", native.as_str()));
+         let first = candidates.next()?;
+         candidates.next().is_none().then_some(first)
+     }
+ 
+     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.
+     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {
+-        self.native.keys().map(|native| PackageId::Prefixed {
+-            ecosystem: native.ecosystem(),
+-            name: native.as_str().to_owned(),
+-        })
++        ::std::iter::once(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {
+         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());
+         let results: Vec<(Ecosystem, &str)> = keys
+             .iter()
+             .filter_map(|key| self.native.get_key_value(key))
+             .map(|(native, _)| (native.ecosystem(), native.as_str()))
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --no-run --verbose --package=callisto-graph@0.21.1
+       Fresh unicode-ident v1.0.24
+       Fresh memchr v2.8.3
+       Fresh cfg-if v1.0.4
+       Fresh stable_deref_trait v1.2.1
+       Fresh equivalent v1.0.2
+       Fresh rand_core v0.10.1
+       Fresh regex-syntax v0.8.11
+       Fresh bitflags v2.13.1
+       Fresh foldhash v0.2.0
+       Fresh once_cell v1.21.4
+       Fresh winnow v1.0.4
+       Fresh typenum v1.20.1
+       Fresh proc-macro2 v1.0.107
+       Fresh smallvec v1.15.2
+       Fresh hybrid-array v0.4.15
+       Fresh toml_parser v1.1.5+spec-1.1.0
+       Fresh adler2 v2.0.1
+       Fresh litemap v0.8.2
+       Fresh fastrand v2.5.0
+       Fresh writeable v0.6.3
+       Fresh gimli v0.32.3
+       Fresh quote v1.0.47
+       Fresh libc v0.2.189
+       Fresh serde_core v1.0.229
+       Fresh object v0.37.3
+       Fresh addr2line v0.25.1
+       Fresh miniz_oxide v0.8.9
+       Fresh log v0.4.33
+       Fresh unicode-width v0.2.2
+       Fresh utf8_iter v1.0.4
+       Fresh rustc-demangle v0.1.28
+       Fresh crypto-common v0.2.2
+       Fresh syn v2.0.119
+       Fresh syn v3.0.3
+       Fresh errno v0.3.14
+       Fresh getrandom v0.4.3
+       Fresh zmij v1.0.23
+       Fresh backtrace v0.3.76
+       Fresh block-buffer v0.12.1
+       Fresh bstr v1.13.0
+       Fresh itoa v1.0.18
+       Fresh is_ci v1.2.0
+       Fresh const-oid v0.10.2
+       Fresh unicode-linebreak v0.1.5
+       Fresh synstructure v0.13.2
+       Fresh zerovec-derive v0.11.3
+       Fresh displaydoc v0.2.7
+       Fresh rustix v1.1.4
+       Fresh serde_derive v1.0.229
+       Fresh serde_derive_internals v0.30.0
+       Fresh ref-cast-impl v1.0.27
+       Fresh digest v0.11.3
+       Fresh textwrap v0.16.2
+       Fresh supports-color v3.0.2
+       Fresh globset v0.4.21
+       Fresh serde_json v1.0.154
+       Fresh icu_normalizer_data v2.2.0
+       Fresh backtrace-ext v0.2.1
+       Fresh thiserror-impl v2.0.21
+       Fresh icu_properties_data v2.2.0
+       Fresh zerofrom-derive v0.1.7
+       Fresh yoke-derive v0.8.2
+       Fresh tempfile v3.27.0
+       Fresh serde v1.0.229
+       Fresh schemars_derive v1.2.3
+       Fresh ref-cast v1.0.27
+       Fresh terminal_size v0.4.4
+       Fresh owo-colors v4.3.0
+       Fresh miette-derive v7.6.0
+       Fresh cpufeatures v0.3.1
+       Fresh supports-hyperlinks v3.2.0
+       Fresh dyn-clone v1.0.20
+       Fresh ucd-trie v0.1.7
+       Fresh unscanny v0.1.0
+       Fresh supports-unicode v3.0.0
+       Fresh zerofrom v0.1.8
+       Fresh hashbrown v0.17.1
+       Fresh unicode-width v0.1.14
+       Fresh schemars v1.2.3
+       Fresh camino v1.2.6
+       Fresh pest v2.8.8
+       Fresh crossbeam-utils v0.8.22
+       Fresh pep440_rs v0.7.3
+       Fresh sha2 v0.11.1
+       Fresh rustc_version v0.4.1
+       Fresh thiserror v2.0.21
+       Fresh semver v1.0.28
+       Fresh aho-corasick v1.1.4
+       Fresh michi-graph v0.10.0
+       Fresh autocfg v1.5.1
+       Fresh dunce v1.0.5
+       Fresh yoke v0.8.3
+       Fresh indexmap v2.14.2
+       Fresh miette v7.6.0
+       Fresh futures-task v0.3.33
+       Fresh path-slash v0.2.1
+       Fresh base64 v0.23.1
+       Fresh futures-core v0.3.33
+       Fresh toml_writer v1.2.0+spec-1.1.0
+       Fresh scopeguard v1.2.0
+       Fresh slab v0.4.12
+       Fresh toml_datetime v1.1.2+spec-1.1.0
+       Fresh pin-project-lite v0.2.17
+       Fresh pest_meta v2.8.8
+       Fresh crossbeam-epoch v0.9.20
+       Fresh regex-automata v0.4.18
+       Fresh zerovec v0.11.6
+       Fresh zerotrie v0.2.4
+       Fresh callisto-model v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-model)
+       Fresh parking_lot_core v0.9.12
+       Fresh lock_api v0.4.14
+       Fresh futures-util v0.3.33
+       Fresh percent-encoding v2.3.2
+       Fresh same-file v1.0.6
+       Fresh toml_edit v0.25.18+spec-1.1.0
+       Fresh regex v1.13.1
+       Fresh pest_generator v2.8.8
+       Fresh serde_spanned v1.1.2
+       Fresh wait-timeout v0.2.1
+       Fresh hashlink v0.12.2
+       Fresh quick-error v1.2.3
+       Fresh tinystr v0.8.3
+       Fresh potential_utf v0.1.5
+       Fresh proc-macro-crate v3.5.0
+       Fresh walkdir v2.5.0
+       Fresh form_urlencoded v1.2.2
+       Fresh parking_lot v0.12.5
+       Fresh crossbeam-deque v0.8.7
+       Fresh fnv v1.0.7
+       Fresh arraydeque v0.5.1
+       Fresh bit-vec v0.10.1
+       Fresh jsonc-parser v0.34.0
+       Fresh glob v0.3.4
+       Fresh relative-path v1.9.3
+       Fresh num-traits v0.2.19
+       Fresh pest_derive v2.8.8
+       Fresh toml v1.2.0+spec-1.1.0
+       Fresh futures-executor v0.3.33
+       Fresh serial_test_derive v4.0.1
+       Fresh rand v0.10.3
+       Fresh icu_locale_core v2.2.0
+       Fresh icu_collections v2.2.0
+       Fresh callisto-manifests v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-manifests)
+       Fresh bit-set v0.11.1
+       Fresh ignore v0.4.34
+       Fresh rstest_macros v0.28.0
+       Fresh rusty-fork v0.3.1
+       Fresh yaml-rust2 v0.13.0
+       Fresh console v0.16.4
+       Fresh rand_xorshift v0.5.0
+       Fresh chacha20 v0.10.2
+       Fresh unarray v0.1.4
+       Fresh core_detect v1.0.0
+       Fresh futures-timer v3.0.4
+       Fresh similar v2.7.0
+       Fresh serial_test v4.0.1
+       Fresh temp-env v0.3.6
+       Fresh callisto-fixtures v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-fixtures)
+       Fresh icu_provider v2.2.0
+       Fresh rstest v0.28.0
+       Fresh insta v1.49.0
+       Fresh proptest v1.12.0
+       Fresh icu_properties v2.2.0
+       Fresh icu_normalizer v2.2.0
+       Fresh idna_adapter v1.2.2
+       Fresh idna v1.1.0
+       Fresh url v2.5.8
+       Dirty callisto-graph v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-graph): the file `crates/callisto-graph/src/identity.rs` has changed (1794973476.276551392s, 18s after last build at 1794973458.721626253s)
+   Compiling callisto-graph v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-graph)
+     Running `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc --crate-name callisto_graph --edition=2024 crates/callisto-graph/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=3fec250cdb512e9a -C extra-filename=-8c6ebf2446f6227e --out-dir /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C incremental=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/incremental -C strip=debuginfo -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps --extern callisto_fixtures=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_fixtures-d37d85579ed361db.rlib --extern callisto_manifests=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_manifests-a27250a5bd68697a.rlib --extern callisto_model=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_model-42a50e767156d96c.rlib --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rlib --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-ca85c5bc78d8ad4a.rlib --extern ignore=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libignore-3536443d270916d4.rlib --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-7da3115702aded2c.rlib --extern insta=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libinsta-c8b3a620fb10ce12.rlib --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rlib --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6b24789b30cb5e17.rlib --extern proptest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libproptest-5cf94c40ff6944e5.rlib --extern rstest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/librstest-543882de942af483.rlib --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rlib --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-46b6909870692f2a.rlib --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-cb06f8b796bb40b6.rlib --extern serial_test=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserial_test-68e3a9d8b72fec7a.rlib --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rlib --extern temp_env=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtemp_env-97e0b5b89f9cb448.rlib --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rlib --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-1f5dca670623f13f.rlib --extern toml=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtoml-a7c9474a546797a6.rlib --extern toml_edit=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtoml_edit-7aed3033c1338a24.rlib --extern url=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/liburl-38fa3808c58a6f3f.rlib --extern yaml_rust2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libyaml_rust2-e5f1d86c25a04701.rlib`
+     Running `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc --crate-name callisto_graph --edition=2024 crates/callisto-graph/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=71a3988698189eda -C extra-filename=-59e895280b1ca1fd --out-dir /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C incremental=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/incremental -C strip=debuginfo -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps --extern callisto_manifests=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_manifests-a27250a5bd68697a.rmeta --extern callisto_model=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_model-42a50e767156d96c.rmeta --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rmeta --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-ca85c5bc78d8ad4a.rmeta --extern ignore=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libignore-3536443d270916d4.rmeta --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-7da3115702aded2c.rmeta --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rmeta --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6b24789b30cb5e17.rmeta --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rmeta --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-46b6909870692f2a.rmeta --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-cb06f8b796bb40b6.rmeta --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rmeta --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rmeta --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-1f5dca670623f13f.rmeta --extern toml=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtoml-a7c9474a546797a6.rmeta --extern toml_edit=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtoml_edit-7aed3033c1338a24.rmeta --extern url=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/liburl-38fa3808c58a6f3f.rmeta --extern yaml_rust2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libyaml_rust2-e5f1d86c25a04701.rmeta`
+error[E0277]: the trait bound `PackageId: Default` is not satisfied
+   --> crates/callisto-graph/src/identity.rs:552:27
+    |
+552 |         ::std::iter::once(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |                           ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `PackageId`
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `callisto-graph` (lib) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc --crate-name callisto_graph --edition=2024 crates/callisto-graph/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=71a3988698189eda -C extra-filename=-59e895280b1ca1fd --out-dir /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C incremental=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/incremental -C strip=debuginfo -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps --extern callisto_manifests=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_manifests-a27250a5bd68697a.rmeta --extern callisto_model=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_model-42a50e767156d96c.rmeta --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rmeta --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-ca85c5bc78d8ad4a.rmeta --extern ignore=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libignore-3536443d270916d4.rmeta --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-7da3115702aded2c.rmeta --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rmeta --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6b24789b30cb5e17.rmeta --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rmeta --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-46b6909870692f2a.rmeta --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-cb06f8b796bb40b6.rmeta --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rmeta --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rmeta --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-1f5dca670623f13f.rmeta --extern toml=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtoml-a7c9474a546797a6.rmeta --extern toml_edit=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtoml_edit-7aed3033c1338a24.rmeta --extern url=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/liburl-38fa3808c58a6f3f.rmeta --extern yaml_rust2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libyaml_rust2-e5f1d86c25a04701.rmeta` (exit status: 1)
+warning: build failed, waiting for other jobs to finish...
+error[E0277]: the trait bound `callisto_model::PackageId: Default` is not satisfied
+   --> crates/callisto-graph/src/identity.rs:552:27
+    |
+552 |         ::std::iter::once(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |                           ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `callisto_model::PackageId`
+
+error: could not compile `callisto-graph` (lib test) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc --crate-name callisto_graph --edition=2024 crates/callisto-graph/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=3fec250cdb512e9a -C extra-filename=-8c6ebf2446f6227e --out-dir /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C incremental=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/incremental -C strip=debuginfo -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps --extern callisto_fixtures=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_fixtures-d37d85579ed361db.rlib --extern callisto_manifests=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_manifests-a27250a5bd68697a.rlib --extern callisto_model=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_model-42a50e767156d96c.rlib --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rlib --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-ca85c5bc78d8ad4a.rlib --extern ignore=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libignore-3536443d270916d4.rlib --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-7da3115702aded2c.rlib --extern insta=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libinsta-c8b3a620fb10ce12.rlib --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rlib --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6b24789b30cb5e17.rlib --extern proptest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libproptest-5cf94c40ff6944e5.rlib --extern rstest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/librstest-543882de942af483.rlib --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rlib --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-46b6909870692f2a.rlib --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-cb06f8b796bb40b6.rlib --extern serial_test=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserial_test-68e3a9d8b72fec7a.rlib --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rlib --extern temp_env=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtemp_env-97e0b5b89f9cb448.rlib --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rlib --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-1f5dca670623f13f.rlib --extern toml=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtoml-a7c9474a546797a6.rlib --extern toml_edit=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtoml_edit-7aed3033c1338a24.rlib --extern url=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/liburl-38fa3808c58a6f3f.rlib --extern yaml_rust2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libyaml_rust2-e5f1d86c25a04701.rlib` (exit status: 1)
+
+*** result: Failure(101)

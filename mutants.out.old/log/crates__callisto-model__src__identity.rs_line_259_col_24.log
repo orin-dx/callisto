@@ -1,0 +1,703 @@
+
+*** crates/callisto-model/src/identity.rs:259:24: replace == with != in <impl PartialEq for NativeName>::eq
+
+*** mutation diff:
+--- crates/callisto-model/src/identity.rs
++++ replace == with != in <impl PartialEq for NativeName>::eq
+@@ -251,17 +251,17 @@
+     /// The spelling the manifest declared.
+     pub fn as_str(&self) -> &str {
+         &self.spelling
+     }
+ }
+ 
+ impl PartialEq for NativeName {
+     fn eq(&self, other: &Self) -> bool {
+-        self.ecosystem == other.ecosystem && self.key == other.key
++        self.ecosystem != /* ~ changed by cargo-mutants ~ */ other.ecosystem && self.key == other.key
+     }
+ }
+ 
+ impl Eq for NativeName {}
+ 
+ impl std::hash::Hash for NativeName {
+     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+         self.ecosystem.hash(state);
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --no-run --verbose --package=callisto-model@0.21.1
+       Fresh unicode-ident v1.0.24
+       Fresh memchr v2.8.3
+       Fresh cfg-if v1.0.4
+       Fresh hashbrown v0.17.1
+       Fresh equivalent v1.0.2
+       Fresh regex-syntax v0.8.11
+       Fresh rand_core v0.10.1
+       Fresh bitflags v2.13.1
+       Fresh typenum v1.20.1
+       Fresh adler2 v2.0.1
+       Fresh once_cell v1.21.4
+       Fresh proc-macro2 v1.0.107
+       Fresh hybrid-array v0.4.15
+       Fresh gimli v0.32.3
+       Fresh winnow v1.0.4
+       Fresh miniz_oxide v0.8.9
+       Fresh autocfg v1.5.1
+       Fresh quote v1.0.47
+       Fresh libc v0.2.189
+       Fresh serde_core v1.0.229
+       Fresh addr2line v0.25.1
+       Fresh rustc_version v0.4.1
+       Fresh object v0.37.3
+       Fresh toml_parser v1.1.5+spec-1.1.0
+       Fresh fastrand v2.5.0
+       Fresh unicode-width v0.2.2
+       Fresh toml_datetime v1.1.2+spec-1.1.0
+       Fresh rustc-demangle v0.1.28
+       Fresh crypto-common v0.2.2
+       Fresh block-buffer v0.12.1
+       Fresh syn v3.0.3
+       Fresh errno v0.3.14
+       Fresh getrandom v0.4.3
+       Fresh syn v2.0.119
+       Fresh backtrace v0.3.76
+       Fresh zmij v1.0.23
+       Fresh indexmap v2.14.2
+       Fresh toml_edit v0.25.18+spec-1.1.0
+       Fresh aho-corasick v1.1.4
+       Fresh itoa v1.0.18
+       Fresh unicode-linebreak v0.1.5
+       Fresh const-oid v0.10.2
+       Fresh foldhash v0.2.0
+       Fresh is_ci v1.2.0
+       Fresh rustix v1.1.4
+       Fresh serde_derive v1.0.229
+       Fresh serde_derive_internals v0.30.0
+       Fresh ref-cast-impl v1.0.27
+       Fresh digest v0.11.3
+       Fresh textwrap v0.16.2
+       Fresh supports-color v3.0.2
+       Fresh owo-colors v4.3.0
+       Fresh miette-derive v7.6.0
+       Fresh proc-macro-crate v3.5.0
+       Fresh regex-automata v0.4.18
+       Fresh backtrace-ext v0.2.1
+       Fresh thiserror-impl v2.0.21
+       Fresh serde_json v1.0.154
+       Fresh cpufeatures v0.3.1
+       Fresh wait-timeout v0.2.1
+       Fresh tempfile v3.27.0
+       Fresh serde v1.0.229
+       Fresh schemars_derive v1.2.3
+       Fresh ref-cast v1.0.27
+       Fresh terminal_size v0.4.4
+       Fresh regex v1.13.1
+       Fresh bstr v1.13.0
+       Fresh pin-project-lite v0.2.17
+       Fresh futures-core v0.3.33
+       Fresh quick-error v1.2.3
+       Fresh dyn-clone v1.0.20
+       Fresh relative-path v1.9.3
+       Fresh supports-unicode v3.0.0
+       Fresh futures-task v0.3.33
+       Fresh fnv v1.0.7
+       Fresh bit-vec v0.10.1
+       Fresh unscanny v0.1.0
+       Fresh unicode-width v0.1.14
+       Fresh log v0.4.33
+       Fresh supports-hyperlinks v3.2.0
+       Fresh glob v0.3.4
+       Fresh rusty-fork v0.3.1
+       Fresh globset v0.4.21
+       Fresh bit-set v0.11.1
+       Fresh pep440_rs v0.7.3
+       Fresh schemars v1.2.3
+       Fresh futures-util v0.3.33
+       Fresh camino v1.2.6
+       Fresh thiserror v2.0.21
+       Fresh sha2 v0.11.1
+       Fresh num-traits v0.2.19
+       Fresh rand v0.10.3
+       Fresh semver v1.0.28
+       Fresh chacha20 v0.10.2
+       Fresh rand_xorshift v0.5.0
+       Fresh michi-graph v0.10.0
+       Fresh base64 v0.23.1
+       Fresh futures-timer v3.0.4
+       Fresh rstest_macros v0.28.0
+       Fresh miette v7.6.0
+       Fresh unarray v0.1.4
+       Fresh core_detect v1.0.0
+       Fresh path-slash v0.2.1
+       Fresh dunce v1.0.5
+       Fresh proptest v1.12.0
+       Fresh rstest v0.28.0
+       Dirty callisto-model v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-model): the file `crates/callisto-model/src/identity.rs` has changed (1794973590.598053678s, 3s after last build at 1794973587.719873673s)
+   Compiling callisto-model v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-model)
+     Running `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc --crate-name callisto_model --edition=2024 crates/callisto-model/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("test-util"))' -C metadata=0045b52bfc283e0c -C extra-filename=-089e4c091f8e5aae --out-dir /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C incremental=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/incremental -C strip=debuginfo -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps --extern base64=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libbase64-e819bc9ac42d5354.rlib --extern camino=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcamino-d07970a01a13ca41.rlib --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rlib --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-c0c2f72a64bc6f32.rlib --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-38ea2debc3555df5.rlib --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rlib --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6a5dd729d5600116.rlib --extern path_slash=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpath_slash-4001f91ace54e444.rlib --extern pep440_rs=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpep440_rs-813a498e68f3421b.rlib --extern proptest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libproptest-5cf94c40ff6944e5.rlib --extern rstest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/librstest-baf7ab6b9e65ef25.rlib --extern schemars=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libschemars-c514d877d48f5bdf.rlib --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rlib --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-c8c2c9f0304859ef.rlib --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-ae9a23b4a3e2e800.rlib --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rlib --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rlib --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-78b06f3eb164d1d2.rlib`
+     Running `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc --crate-name callisto_model --edition=2024 crates/callisto-model/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("test-util"))' -C metadata=63c5177f7fdac7ea -C extra-filename=-c74ab85cac527765 --out-dir /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C incremental=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/incremental -C strip=debuginfo -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps --extern base64=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libbase64-e819bc9ac42d5354.rmeta --extern camino=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcamino-d07970a01a13ca41.rmeta --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rmeta --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-c0c2f72a64bc6f32.rmeta --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-38ea2debc3555df5.rmeta --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rmeta --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6a5dd729d5600116.rmeta --extern path_slash=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpath_slash-4001f91ace54e444.rmeta --extern pep440_rs=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpep440_rs-813a498e68f3421b.rlib --extern schemars=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libschemars-c514d877d48f5bdf.rmeta --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rmeta --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-c8c2c9f0304859ef.rmeta --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-ae9a23b4a3e2e800.rmeta --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rmeta --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rmeta --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-78b06f3eb164d1d2.rmeta`
+     Running `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc --crate-name release_envelope_transition_tests --edition=2024 crates/callisto-model/tests/release_envelope_transition_tests.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("test-util"))' -C metadata=c13658b76175affc -C extra-filename=-a9e45736a47e1c43 --out-dir /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C incremental=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/incremental -C strip=debuginfo -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps --extern base64=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libbase64-e819bc9ac42d5354.rlib --extern callisto_model=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_model-c74ab85cac527765.rlib --extern camino=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcamino-d07970a01a13ca41.rlib --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rlib --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-c0c2f72a64bc6f32.rlib --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-38ea2debc3555df5.rlib --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rlib --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6a5dd729d5600116.rlib --extern path_slash=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpath_slash-4001f91ace54e444.rlib --extern pep440_rs=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpep440_rs-813a498e68f3421b.rlib --extern proptest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libproptest-5cf94c40ff6944e5.rlib --extern rstest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/librstest-baf7ab6b9e65ef25.rlib --extern schemars=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libschemars-c514d877d48f5bdf.rlib --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rlib --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-c8c2c9f0304859ef.rlib --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-ae9a23b4a3e2e800.rlib --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rlib --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rlib --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-78b06f3eb164d1d2.rlib`
+     Running `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc --crate-name release_evidence_tests --edition=2024 crates/callisto-model/tests/release_evidence_tests.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("test-util"))' -C metadata=18e02d025350174c -C extra-filename=-85bdb20408b4f318 --out-dir /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C incremental=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/incremental -C strip=debuginfo -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps --extern base64=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libbase64-e819bc9ac42d5354.rlib --extern callisto_model=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_model-c74ab85cac527765.rlib --extern camino=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcamino-d07970a01a13ca41.rlib --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rlib --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-c0c2f72a64bc6f32.rlib --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-38ea2debc3555df5.rlib --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rlib --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6a5dd729d5600116.rlib --extern path_slash=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpath_slash-4001f91ace54e444.rlib --extern pep440_rs=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpep440_rs-813a498e68f3421b.rlib --extern proptest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libproptest-5cf94c40ff6944e5.rlib --extern rstest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/librstest-baf7ab6b9e65ef25.rlib --extern schemars=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libschemars-c514d877d48f5bdf.rlib --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rlib --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-c8c2c9f0304859ef.rlib --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-ae9a23b4a3e2e800.rlib --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rlib --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rlib --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-78b06f3eb164d1d2.rlib`
+    Finished `test` profile [unoptimized] target(s) in 1.14s
+  Executable `/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/callisto_model-089e4c091f8e5aae`
+  Executable `/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/release_envelope_transition_tests-a9e45736a47e1c43`
+  Executable `/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/release_evidence_tests-85bdb20408b4f318`
+
+*** result: Success
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --verbose --package=callisto-model@0.21.1
+       Fresh unicode-ident v1.0.24
+       Fresh memchr v2.8.3
+       Fresh cfg-if v1.0.4
+       Fresh hashbrown v0.17.1
+       Fresh equivalent v1.0.2
+       Fresh regex-syntax v0.8.11
+       Fresh rand_core v0.10.1
+       Fresh bitflags v2.13.1
+       Fresh typenum v1.20.1
+       Fresh once_cell v1.21.4
+       Fresh proc-macro2 v1.0.107
+       Fresh hybrid-array v0.4.15
+       Fresh gimli v0.32.3
+       Fresh adler2 v2.0.1
+       Fresh winnow v1.0.4
+       Fresh rustc_version v0.4.1
+       Fresh toml_datetime v1.1.2+spec-1.1.0
+       Fresh quote v1.0.47
+       Fresh libc v0.2.189
+       Fresh serde_core v1.0.229
+       Fresh addr2line v0.25.1
+       Fresh object v0.37.3
+       Fresh miniz_oxide v0.8.9
+       Fresh toml_parser v1.1.5+spec-1.1.0
+       Fresh autocfg v1.5.1
+       Fresh unicode-width v0.2.2
+       Fresh fastrand v2.5.0
+       Fresh rustc-demangle v0.1.28
+       Fresh crypto-common v0.2.2
+       Fresh block-buffer v0.12.1
+       Fresh syn v3.0.3
+       Fresh errno v0.3.14
+       Fresh getrandom v0.4.3
+       Fresh syn v2.0.119
+       Fresh backtrace v0.3.76
+       Fresh indexmap v2.14.2
+       Fresh zmij v1.0.23
+       Fresh toml_edit v0.25.18+spec-1.1.0
+       Fresh aho-corasick v1.1.4
+       Fresh unicode-linebreak v0.1.5
+       Fresh itoa v1.0.18
+       Fresh const-oid v0.10.2
+       Fresh foldhash v0.2.0
+       Fresh is_ci v1.2.0
+       Fresh rustix v1.1.4
+       Fresh serde_derive v1.0.229
+       Fresh serde_derive_internals v0.30.0
+       Fresh ref-cast-impl v1.0.27
+       Fresh thiserror-impl v2.0.21
+       Fresh textwrap v0.16.2
+       Fresh serde_json v1.0.154
+       Fresh supports-color v3.0.2
+       Fresh digest v0.11.3
+       Fresh owo-colors v4.3.0
+       Fresh miette-derive v7.6.0
+       Fresh regex-automata v0.4.18
+       Fresh backtrace-ext v0.2.1
+       Fresh proc-macro-crate v3.5.0
+       Fresh cpufeatures v0.3.1
+       Fresh wait-timeout v0.2.1
+       Fresh tempfile v3.27.0
+       Fresh serde v1.0.229
+       Fresh schemars_derive v1.2.3
+       Fresh ref-cast v1.0.27
+       Fresh terminal_size v0.4.4
+       Fresh regex v1.13.1
+       Fresh bstr v1.13.0
+       Fresh glob v0.3.4
+       Fresh pin-project-lite v0.2.17
+       Fresh futures-core v0.3.33
+       Fresh supports-unicode v3.0.0
+       Fresh quick-error v1.2.3
+       Fresh dyn-clone v1.0.20
+       Fresh bit-vec v0.10.1
+       Fresh unscanny v0.1.0
+       Fresh relative-path v1.9.3
+       Fresh unicode-width v0.1.14
+       Fresh futures-task v0.3.33
+       Fresh supports-hyperlinks v3.2.0
+       Fresh fnv v1.0.7
+       Fresh log v0.4.33
+       Fresh miette v7.6.0
+       Fresh rstest_macros v0.28.0
+       Fresh schemars v1.2.3
+       Fresh futures-util v0.3.33
+       Fresh bit-set v0.11.1
+       Fresh pep440_rs v0.7.3
+       Fresh num-traits v0.2.19
+       Fresh camino v1.2.6
+       Fresh thiserror v2.0.21
+       Fresh sha2 v0.11.1
+       Fresh rand v0.10.3
+       Fresh semver v1.0.28
+       Fresh rand_xorshift v0.5.0
+       Fresh chacha20 v0.10.2
+       Fresh michi-graph v0.10.0
+       Fresh core_detect v1.0.0
+       Fresh base64 v0.23.1
+       Fresh rusty-fork v0.3.1
+       Fresh globset v0.4.21
+       Fresh path-slash v0.2.1
+       Fresh futures-timer v3.0.4
+       Fresh unarray v0.1.4
+       Fresh dunce v1.0.5
+       Fresh proptest v1.12.0
+       Fresh rstest v0.28.0
+       Fresh callisto-model v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-model)
+    Finished `test` profile [unoptimized] target(s) in 0.04s
+     Running `/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/callisto_model-089e4c091f8e5aae`
+
+running 405 tests
+test commit::tests::test_commit_walker_is_object_safe ... ok
+test dependency::tests::dep_spec_render_covers_every_variant ... ok
+test commit::tests::test_command_error_converts_transparently ... ok
+test diagnostic::tests::unrecognised_platform_triple_serializes_to_kebab_case ... ok
+test diagnostic::tests::package_rule_matched_nothing_serializes_to_kebab_case ... ok
+test dependency::tests::workspace_shorthand_covers_current_versions_including_prereleases ... ok
+test dependency::tests::workspace_protocol_keeps_suffix_and_identity_source ... ok
+test dependency::tests::workspace_explicit_ranges_use_npm_bounds_and_exact_pins ... ok
+test ecosystem::tests::a_distribution_filename_splits_into_its_name_and_version ... ok
+test ecosystem::tests::canonical_ecosystems_each_have_a_canonical_manifest_format ... ok
+test ecosystem::tests::a_distribution_belongs_to_its_package_name_in_any_spelling_and_its_exact_version ... ok
+test atomic::tests::a_write_only_directory_is_skipped_not_reported ... ok
+test ecosystem::tests::identifies_implemented_ecosystems ... ok
+test ecosystem::tests::maps_ecosystem_prefixes ... ok
+test atomic::tests::a_directory_that_cannot_be_opened_or_synced_is_skipped_but_an_io_failure_is_reported ... ok
+test ecosystem::tests::non_canonical_ecosystems_have_no_canonical_manifest_format ... ok
+test ecosystem::tests::normalize_pypi_package_name_collapses_mixed_runs ... ok
+test ecosystem::tests::normalize_pypi_package_name_treats_hyphen_underscore_dot_as_equivalent ... ok
+test ecosystem::tests::publish_target_is_implemented_matches_dispatchable_variants ... ok
+test atomic::tests::probe_leaves_no_file_or_directory_and_accepts_existing_target ... ok
+test ecosystem::tests::publish_target_registry_override_extracts_payload_field ... ok
+test atomic::tests::atomic_write_creates_file_with_correct_content ... ok
+test atomic::tests::atomic_write_new_never_replaces_what_is_there ... ok
+test exec::tests::a_failed_command_error_message_hides_credentials_in_its_stderr ... ok
+test atomic::tests::atomic_write_leaves_no_temp_files_behind ... ok
+test exec::tests::accepts_hyphenated_prerelease_suffix_above_the_floor ... ok
+test exec::tests::ignores_trailing_windows_suffix ... ok
+test exec::tests::parses_git_version ... ok
+test exec::tests::rejects_unparseable_version_string ... ok
+test exec::tests::redacted_stderr_strips_authenticated_remote_url_userinfo ... ok
+test exec::tests::rejects_versions_just_below_the_required_floor ... ok
+test exec::tests::treats_missing_patch_as_zero ... ok
+test format::bump::tests::bump_prerelease_from_undotted_tag_produces_higher_version ... ok
+test format::bump::tests::bump_prerelease_monotonic_counter ... ok
+test format::bump::tests::pep440_bump_prerelease_falls_back_to_dev_for_unrecognized_tag ... ok
+test format::bump::tests::pep440_bump_prerelease_uses_recognized_letter_and_is_monotonic ... ok
+test format::bump::tests::pep440_bump_rejects_non_pep440_grammar ... ok
+test format::bump::tests::pep440_parse_malformed_string_returns_err_not_panic ... ok
+test atomic::tests::atomic_write_over_existing_file_replaces_content ... ok
+test format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_1 ... ok
+test format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_2 ... ok
+test atomic::tests::atomic_write_creates_missing_parent_directories ... ok
+test format::bump::tests::pep440_zero_base_plain_bump ... ok
+test format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_3 ... ok
+test format::bump::tests::pep440_zero_base_prerelease_bump_hits_zero_guards ... ok
+test format::bump::tests::semver_zero_base_plain_bump ... ok
+test atomic::tests::concurrent_exclusive_writes_to_one_name_have_one_winner ... ok
+test format::bump::tests::semver_zero_base_prerelease_bump_hits_zero_guards ... ok
+test format::bump::tests::test_pep440_bump_at_max_returns_error ... ok
+test format::bump::tests::test_pep440_bump_drops_local_version_label::case_1 ... ok
+test format::bump::tests::test_pep440_bump_drops_local_version_label::case_2 ... ok
+test format::bump::tests::test_pep440_bump_drops_local_version_label::case_3 ... ok
+test format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_1 ... ok
+test format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_2 ... ok
+test format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_3 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_01 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_02 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_03 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_04 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_05 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_06 ... ok
+test atomic::tests::concurrent_atomic_write_to_same_path_does_not_corrupt_file ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_07 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_08 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_09 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_10 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_11 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_12 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_13 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_14 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_15 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_16 ... ok
+test format::bump::tests::test_pep440_bump_matrix::case_17 ... ok
+test format::bump::tests::test_semver_bump_major_at_max_returns_error ... ok
+test format::bump::tests::test_semver_bump_matrix::case_01 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_02 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_03 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_04 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_05 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_06 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_07 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_08 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_09 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_11 ... ok
+test format::bump::tests::test_semver_bump_matrix::case_10 ... ok
+test format::bump::tests::test_semver_bump_patch_at_max_returns_error ... ok
+test format::bump::tests::versioning_for_pep440_returns_an_impl ... ok
+test format::changeset::frontmatter::tests::bare_line_with_no_colon_is_missing_separator ... ok
+test format::changeset::frontmatter::tests::bare_name_uses_rsplit_once_on_colon ... ok
+test format::changeset::frontmatter::tests::content_between_closing_quote_and_colon_is_ambiguous ... ok
+test format::changeset::frontmatter::tests::needs_quoting_allows_bare_cargo_style_names ... ok
+test format::changeset::frontmatter::tests::needs_quoting_flags_empty_name ... ok
+test format::changeset::frontmatter::tests::needs_quoting_flags_names_containing_colon ... ok
+test format::changeset::frontmatter::tests::needs_quoting_flags_npm_scoped_names ... ok
+test format::changeset::frontmatter::tests::needs_quoting_flags_trailing_space ... ok
+test format::changeset::frontmatter::tests::parse_entry_line_rejects_empty_name ... ok
+test format::changeset::frontmatter::tests::parse_entry_line_rejects_invalid_severity ... ok
+test format::changeset::frontmatter::tests::parse_entry_line_severity_is_case_insensitive ... ok
+test format::changeset::frontmatter::tests::quoted_name_containing_colon_is_not_mis_split ... ok
+test format::changeset::frontmatter::tests::parses_full_entry_line ... ok
+test format::changeset::frontmatter::tests::splits_bare_name_from_severity ... ok
+test format::changeset::frontmatter::tests::splits_quoted_name_from_severity ... ok
+test format::changeset::frontmatter::tests::unclosed_quote_is_an_error ... ok
+test format::changeset::tests::duplicate_raw_name_is_an_error ... ok
+test format::changeset::tests::crlf_input_parses_the_same_as_its_lf_twin ... ok
+test format::changeset::tests::a_byte_order_mark_and_every_line_ending_style_parse_the_same ... ok
+test format::changeset::tests::empty_frontmatter_and_empty_summary_is_valid ... ok
+test format::changeset::tests::empty_frontmatter_with_nonempty_summary_is_valid ... ok
+test format::changeset::tests::line_numbers_in_errors_are_absolute_not_frontmatter_relative ... ok
+test format::changeset::tests::missing_opening_delimiter_is_an_error ... ok
+test format::changeset::tests::parse_rejects_empty_summary_with_entries ... ok
+test format::changeset::tests::parse_rejects_whitespace_only_summary_with_entries ... ok
+test format::changeset::tests::parses_a_single_entry_changeset ... ok
+test format::changeset::tests::parses_multiple_entries_mixed_quoted_and_bare ... ok
+test format::changeset::tests::round_trip_write_then_parse_reproduces_the_changeset ... ok
+test format::changeset::tests::skips_comment_and_blank_lines_in_frontmatter ... ok
+test format::changeset::tests::unclosed_frontmatter_is_an_error ... ok
+test format::changeset::tests::write_always_uses_lf_and_ends_with_trailing_newline ... ok
+test format::changeset::tests::write_accepts_empty_changeset ... ok
+test format::changeset::tests::write_quotes_names_only_when_necessary ... ok
+test format::changeset::tests::write_rejects_empty_summary_with_entries ... ok
+test format::changeset::tests::write_rejects_name_containing_a_literal_quote ... ok
+test format::changeset::tests::write_rejects_whitespace_only_summary_with_entries ... ok
+test format::pre::tests::baseline_rejects_a_version_valid_only_in_a_different_ecosystem ... ok
+test format::pre::tests::parse_pre_json_rejects_initial_version_that_is_neither_semver_nor_pep440 ... ok
+test format::pre::tests::baseline_validation_uses_original_wire_spelling_after_pep440_fallback ... ok
+test format::pre::tests::baseline_grammars_follow_their_owners_without_changing_the_wire_shape ... ok
+test format::pre::tests::parse_pre_json_rejects_non_object_json ... ok
+test format::pre::tests::parse_pre_json_rejects_unrecognized_mode_string ... ok
+test format::pre::tests::pre_json_accepts_pep440_initial_versions ... ok
+test format::pre::tests::pre_json_round_trips ... ok
+test format::pre::tests::pre_state_exiting_flips_mode_and_round_trips_as_exit ... ok
+test format::pre::tests::pre_json_round_trips_pep440_version ... ok
+test format::pre::tests::write_pre_json_preserving_keeps_bom ... ok
+test format::pre::tests::write_pre_json_preserving_keeps_crlf ... ok
+test identity::tests::package_id_rejects_leading_hyphen_with_accurate_error ... ok
+test identity::tests::package_id_rejects_path_traversal ... ok
+test format::pre::tests::write_pre_json_preserving_keeps_tab_indent ... ok
+test identity::tests::parses_package_ids ... ok
+test identity::tests::commit_sha_schema_describes_the_normalized_string ... ok
+test identity::tests::parses_valid_commit_sha ... ok
+test identity::tests::test_package_id_matches ... ok
+test matrix::tests::empty_matrix_report_serializes_with_no_diagnostics_key ... ok
+test identity::tests::package_id_schema_describes_bare_and_qualified_strings ... ok
+test matrix::tests::runtime_ecosystem_rejects_unknown_dotnet_variant ... ok
+test matrix::tests::platform_target_kind_rejects_unknown_dotnet_aot_variant ... ok
+test package::tests::is_dual_published_false_with_a_single_canonical_ecosystem ... ok
+test package::tests::is_dual_published_true_with_two_distinct_canonical_ecosystems ... ok
+test package::tests::is_release_point_false_when_all_publish_targets_are_none ... ok
+test atomic::tests::a_rewritten_file_keeps_its_mode_and_a_new_file_follows_the_umask ... ok
+test package::tests::is_release_point_true_when_any_publish_target_is_not_none ... ok
+test package::tests::lockfiles_filters_to_lockfile_role_only ... ok
+test package::tests::manifest_decl_new_rejects_lockfile_format_with_non_lockfile_role ... ok
+test package::tests::manifest_decl_new_rejects_platform_role_with_cargo_toml_format ... ok
+test package::tests::manifest_format_file_name_and_is_writable_cover_every_variant ... ok
+test package::tests::manifest_format_from_path_reads_recognized_names_and_rejects_unknown ... ok
+test package::tests::mixed_grammars_are_listed_in_a_stable_order ... ok
+test package::tests::platform_manifests_filters_to_platform_role_only ... ok
+test package::tests::validates_manifest_role_and_format ... ok
+test package::tests::version_grammar_errors_on_mixed_grammars_across_canonical_manifests ... ok
+test package::tests::version_grammar_errors_with_no_canonical_manifest ... ok
+test package::tests::version_grammar_returns_the_single_canonical_ecosystems_grammar ... ok
+test path::tests::normalizes_relative_paths_lexically ... ok
+test path::tests::preserves_literal_backslash_in_posix_filename ... ok
+test path::tests::rejects_absolute_path ... ok
+test path::tests::rejects_path_traversal_outside_workspace ... ok
+test permit::tests::dry_run_yields_no_permit ... ok
+test permit::tests::real_run_yields_a_permit ... ok
+test registry::tests::a_secret_that_contains_another_is_redacted_whole_in_either_order ... ok
+test registry::tests::a_variable_named_like_a_secret_has_its_value_redacted ... ok
+test registry::tests::conservatively_redacts_a_bare_at_sign_after_a_path_segment_too ... ok
+test registry::tests::does_not_touch_a_url_with_no_userinfo ... ok
+test registry::tests::empty_string_secret_in_the_list_does_not_corrupt_output ... ok
+test registry::tests::known_credential_env_values_ignores_non_secret_credential_variables ... ok
+test registry::tests::known_credential_env_values_matches_every_secret_the_publish_flow_reads ... ok
+test registry::tests::known_credential_env_values_matches_fixed_and_dynamic_names ... ok
+test registry::tests::known_credential_env_values_matches_github_token_names ... ok
+test registry::tests::known_credential_env_values_matches_node_auth_token ... ok
+test registry::tests::known_credential_env_values_skips_empty_values ... ok
+test registry::tests::leaves_words_that_only_resemble_a_token_prefix ... ok
+test registry::tests::leaves_text_unchanged_when_no_secrets_match ... ok
+test registry::tests::redacts_a_bearer_credential_but_not_prose_after_the_word ... ok
+test registry::tests::redacts_a_known_secret_value_from_text ... ok
+test registry::tests::redacts_a_prefixed_token_that_is_in_no_known_variable ... ok
+test registry::tests::redacts_an_npmrc_credential_value_but_keeps_an_interpolation_placeholder ... ok
+test registry::tests::redacts_multiple_occurrences_of_the_same_secret ... ok
+test registry::tests::redacts_url_userinfo_even_when_it_matches_no_known_secret ... ok
+test registry::tests::redacts_userinfo_when_the_password_itself_contains_a_slash ... ok
+test registry::tests::redacts_userinfo_when_the_password_itself_contains_an_at_sign ... ok
+test release::artifact::tests::artifact_slot_components_reject_dot_and_dot_dot ... ok
+test release::artifact::tests::artifact_slot_ids_differing_only_by_version_grammar_stay_distinct_under_ord ... ok
+test release::artifact::tests::artifact_manifest_source_commit_is_release_source_not_orchestration_revision ... ok
+test release::artifact::tests::artifact_manifest_requires_exact_slot_digest_and_source_binding ... ok
+test release::artifact::tests::artifact_manifest_rejects_attestation_source_commit_swapped_for_release_source ... ok
+test release::artifact::tests::artifact_upload_ids_differing_only_by_attestation_policy_stay_distinct_under_ord ... ok
+test release::artifact::tests::sealed_python_sets_must_cover_exactly_the_intent_python_publishes ... ok
+test release::artifact::tests::a_python_only_intent_accepts_a_manifest_digest_in_its_envelope ... ok
+test release::artifact::tests::a_manifest_without_python_sets_serializes_without_the_field ... ok
+test release::artifact::tests::contextual_release_wire_keeps_unknown_and_duplicate_field_rejection ... ok
+test release::artifact::tests::a_sealed_python_set_is_rejected_when_malformed ... ok
+test release::artifact::tests::contextual_release_decoders_reject_an_unimplemented_version_grammar ... ok
+test release::decision::tests::decision_rejects_divergent_target_versions_within_a_fixed_group ... ok
+test release::decision::tests::decision_accepts_agreeing_target_versions_within_a_fixed_group ... ok
+test release::decision::tests::decision_deserialization_rejects_divergent_group_targets_even_with_a_self_consistent_digest ... ok
+test release::decision::tests::decision_rejects_divergent_target_versions_within_a_linked_group ... ok
+test release::artifact::tests::sealed_python_sets_round_trip_sorted_and_bind_to_the_intent ... ok
+test release::decision::tests::committed_v1_decision_file_still_reads_and_writes_as_v2 ... ok
+test release::decision::tests::inclusion_reason_variant_fields_serialize_as_camel_case ... ok
+test release::digest::tests::artifact_digest_hashes_exact_bytes ... ok
+test release::digest::tests::digests_are_distinct_validated_lowercase_hex_newtypes ... ok
+test release::decision::tests::unreleased_version_reason_is_decision_schema_two ... ok
+test release::digest::tests::transcript_domain_separation_prevents_decision_intent_and_snapshot_collisions ... ok
+test release::digest::tests::transcript_has_a_fixed_sha256_vector ... ok
+test release::digest::tests::transcript_length_and_field_boundaries_affect_the_digest ... ok
+test release::digest::tests::release_digest_schemas_keep_distinct_names_for_string_values ... ok
+test release::digest::tests::string_leaf_definitions_stay_distinct_in_a_shared_schema ... ok
+test release::execution::tests::apply_rejects_success_evidence_of_another_role ... ok
+test release::github::tests::github_repository_parses_valid_owner_repo_and_renders_slug ... ok
+test release::execution::tests::release_run_envelope_wire_fails_closed ... ok
+test release::github::tests::github_repository_schema_describes_the_normalized_slug ... ok
+test release::artifact::tests::contextual_release_decoders_reject_cross_grammar_and_non_string_versions ... ok
+test release::execution::tests::receipt_is_bound_to_intent_and_requires_terminal_outcomes ... ok
+test release::github::tests::github_repository_rejects_embedded_whitespace_extra_parts_and_leading_trailing_hyphen ... ok
+test release::github::tests::github_repository_serializes_and_deserializes_as_its_slug_string ... ok
+test release::execution::tests::receipt_wire_rejects_unknown_schema ... ok
+test release::intent::tests::an_unknown_self_or_repeated_operation_is_named ... ok
+test release::execution::tests::state_and_receipt_require_exact_intent_digest_and_roster ... ok
+test release::decision::tests::durable_decisions_decode_native_versions_in_both_readable_schemas ... ok
+test release::intent::tests::durable_intent_wire_rejects_forged_digest_unknown_fields_and_invalid_dag ... ok
+test release::intent::tests::registry_binding_is_credential_free_and_part_of_operation_identity ... ok
+test release::operation::tests::operation_ids_differing_only_by_version_grammar_stay_distinct_under_ord ... ok
+test release::intent::tests::durable_prerequisites_decode_with_their_own_package_ecosystem ... ok
+test release::operation::tests::operations_that_differ_only_by_registry_slot_or_platform_read_differently ... ok
+test release::package_id::tests::release_package_id_deserialization_rejects_a_bare_identity ... ok
+test release::package_id::tests::release_package_ids_do_not_conflate_ecosystems ... ok
+test release::intent::tests::release_intent_rejects_noncanonical_duplicate_and_cyclic_dags ... ok
+test release::operation::tests::platform_publish_round_trips_under_its_owner_and_rejects_unsafe_platforms ... ok
+test release::execution::tests::native_receipts_reject_tampered_evidence_and_unsupported_schema ... ok
+test release::artifact::tests::durable_native_artifact_manifests_preserve_slots_and_exact_digest_bytes ... ok
+test release::operation::tests::an_operation_id_reads_as_what_it_does_to_which_version ... ok
+test release::operation::tests::release_operation_orders_exactly_and_rejects_invalid_prerequisites ... ok
+test release::package_id::tests::release_package_id_requires_a_qualified_canonical_identity ... ok
+test release::package_id::tests::release_package_names_accept_each_ecosystem_grammar ... ok
+test release::package_id::tests::release_package_id_schema_describes_canonical_strings ... ok
+test release::package_id::tests::release_package_names_reject_argv_and_url_hazards ... ok
+test release::intent::tests::native_decision_and_intent_validation_stays_strict ... ok
+test release::report::tests::release_plan_report_flattens_intent_and_omits_empty_diagnostics ... ok
+test release_observation::tests::typed_registry_observations_reject_different_versions_and_grammars ... ok
+test release_pr::tests::action_v2_fields_serialize_as_camel_case ... ok
+test release_pr::tests::commit_plan_base64_round_trips_crlf_and_binary_bytes ... ok
+test release_observation::tests::contextual_observation_wire_preserves_other_states_and_role_checks ... ok
+test release_pr::tests::commit_plan_rejects_empty_change_set ... ok
+test release_pr::tests::commit_plan_rejects_non_regular_modes ... ok
+test release_pr::tests::commit_plan_rejects_rename_copy_type_change_and_unmerged ... ok
+test release_pr::tests::commit_plan_rejects_workflow_and_unsafe_paths ... ok
+test release_pr::tests::config_from_wire_preserves_invalid_branch_code ... ok
+test release_pr::tests::commit_plan_serializes_camel_case_and_schema_version ... ok
+test release_observation::tests::bound_registry_observations_restore_native_versions_and_optional_evidence ... ok
+test release_pr::tests::decision_from_wire_validates_nested_snapshot ... ok
+test release_pr::tests::derive_rejects_pull_request_on_staging_branch ... ok
+test release_pr::tests::derives_create_when_no_managed_pr_exists ... ok
+test release_observation::tests::bound_observation_wire_rejects_wrong_versions_cross_grammar_and_unknown_fields ... ok
+test release_pr::tests::derives_update_with_staging_branch_and_expected_head_for_canonical_or_replacement_pr ... ok
+test release_pr::tests::deserialization_rejects_unknown_fields_and_schema_mismatch ... ok
+test release_pr::tests::from_wire_reports_unsupported_schema_version ... ok
+test release_pr::tests::no_pending_changesets_is_noop_after_snapshot_validation ... ok
+test release_pr::tests::rejects_ambiguous_foreign_and_malformed_managed_prs ... ok
+test release_pr::tests::snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions ... ok
+test release_pr::tests::snapshot_from_wire_preserves_duplicate_pull_request_number_code ... ok
+test release_pr::tests::snapshot_after_update_accepts_only_the_applied_head_transition ... ok
+test release_pr::tests::snapshot_recheck_is_order_independent_but_rejects_a_moved_head_or_race ... ok
+test release_pr::tests::snapshot_v2_rejects_v1_wire_and_unknown_fields ... ok
+test report::compose_pr_body_report_tests::compose_pr_body_report_json_uses_body_key_not_pr_body ... ok
+test report::compose_pr_body_report_tests::labels_are_listed_with_an_applied_flag_and_omitted_when_there_are_none ... ok
+test report::status_report_tests::status_package_record_carries_last_released_version_and_release_trigger ... ok
+test report::status_report_tests::status_package_record_json_always_contains_changed_since_last_tag ... ok
+test report::status_report_tests::status_package_record_json_serializes_absent_options_as_null ... ok
+test report::status_report_tests::status_report_json_always_contains_has_changesets ... ok
+test report::status_report_tests::status_report_json_always_contains_pending ... ok
+test severity::tests::displays_lowercase_regardless_of_input_case ... ok
+test severity::tests::max_of_mixed_severities_picks_highest ... ok
+test severity::tests::orders_none_patch_minor_major_ascending ... ok
+test severity::tests::parses_case_insensitively ... ok
+test severity::tests::parses_lowercase_variants ... ok
+test severity::tests::rejects_unknown_token ... ok
+test tag::tests::default_for_builds_a_name_at_prefix_template ... ok
+test tag::tests::default_for_qualifies_a_promoted_package ... ok
+test tag::tests::is_valid_git_ref_name_rejects_control_and_reserved_characters ... ok
+test tag::tests::extract_version_str_returns_none_on_prefix_or_suffix_mismatch ... ok
+test tag::tests::is_valid_git_ref_name_rejects_dotdot_and_at_brace ... ok
+test tag::tests::is_valid_git_ref_name_rejects_lock_suffixed_and_leading_dot_components ... ok
+test tag::tests::parse_rejects_glob_metacharacter_in_literal_text ... ok
+test tag::tests::parse_rejects_multiple_version_placeholders ... ok
+test tag::tests::parse_rejects_unknown_placeholder ... ok
+test strict_fs::tests::a_missing_file_is_none_and_present_text_is_returned ... ok
+test tag::tests::parses_valid_tag_template ... ok
+test strict_fs::tests::a_path_beneath_a_regular_file_is_absent ... ok
+test strict_fs::tests::invalid_utf8_and_a_directory_are_errors_not_absence ... ok
+test tag::tests::rejects_no_anchor ... ok
+test tag::tests::rejects_template_rendering_a_leading_hyphen ... ok
+test tag::tests::renders_a_scoped_package_tag ... ok
+test tag::tests::select_last_tag_equal_version_prefers_lexicographically_higher_tag_name ... ok
+test tag::tests::select_last_tag_higher_version_replaces_chosen ... ok
+test release::execution::tests::durable_native_receipts_preserve_bound_registry_evidence_and_roster ... ok
+test tag::tests::select_last_tag_non_version_placeholder_is_skipped_with_diagnostic ... ok
+test tag::tests::tag_name_parse_accepts_a_normal_tag ... ok
+test tag::tests::select_last_tag_lower_version_does_not_replace_chosen ... ok
+test tag::tests::tag_name_parse_rejects_leading_hyphen_and_control_characters ... ok
+test strict_fs::tests::an_unreadable_file_or_unsearchable_parent_is_an_error_not_absence ... ok
+test tag::tests::tag_name_serializes_and_deserializes_through_parse ... ok
+test release::intent::tests::durable_native_intents_preserve_operation_prerequisites_slots_and_digest ... ok
+test vcs::access::tests::canonical_git_root_rejects_an_empty_root ... ok
+test vcs::access::tests::commits_since_rejects_a_record_with_no_field_separator ... ok
+test vcs::access::tests::commits_since_failure_redacts_credential ... ok
+test vcs::access::tests::create_tag_failure_redacts_credential ... ok
+test vcs::access::tests::head_sha_failure_redacts_credential ... ok
+test vcs::access::tests::first_parent_commits_by_path_without_paths_runs_nothing ... ok
+test vcs::access::tests::head_sha_rejects_a_malformed_sha ... ok
+test vcs::access::tests::object_ids_rejects_an_answer_that_is_not_an_object_id ... ok
+test vcs::access::tests::git_commit_trust_names_a_modified_tracked_file ... ok
+test vcs::access::tests::object_ids_rejects_an_answer_that_is_not_one_line_per_object ... ok
+test vcs::access::tests::git_commit_trust_rejects_untracked_or_tracked_worktree_entries ... ok
+test vcs::access::tests::first_parent_commits_by_path_reads_every_path_in_one_log ... ok
+test vcs::access::tests::git_commit_trust_evidence_is_root_bound ... ok
+test vcs::access::tests::object_ids_reports_each_id_and_each_missing_object_in_order ... ok
+test vcs::access::tests::git_commit_trust_rejects_sha256_or_shallow_repositories ... ok
+test vcs::access::tests::parse_raw_diff_z_parses_modes_status_and_odd_paths ... ok
+test vcs::access::tests::parse_raw_diff_z_rejects_invalid_mode ... ok
+test vcs::access::tests::parse_raw_diff_z_rejects_truncated_or_malformed_input ... ok
+test vcs::access::tests::test_commits_since_builds_since_range_and_pathspec_args ... ok
+test vcs::access::tests::test_create_tag_force_unsigned_adds_no_sign_before_separator ... ok
+test vcs::access::tests::test_create_tag_lightweight_shells_expected_args ... ok
+test vcs::access::tests::test_commits_since_propagates_git_log_failure_instead_of_unbounded_walk ... ok
+test vcs::access::tests::test_create_tag_annotated_shells_expected_args ... ok
+test vcs::access::tests::test_commits_since_parses_record_and_field_separators_into_summary_and_body ... ok
+test vcs::access::tests::test_head_sha_returns_current_head_commit ... ok
+test vcs::access::tests::test_head_sha_propagates_git_failure ... ok
+test vcs::access::tests::staged_changes_since_rejects_a_worktree_blob_mismatch ... ok
+test vcs::access::tests::test_list_tags_errors_on_failed_git_invocation ... ok
+test vcs::access::tests::test_list_tags_errors_when_there_is_no_git_repository ... ok
+test vcs::access::tests::test_list_tags_rejects_malformed_glob ... ok
+test vcs::access::tests::test_resolve_commit_parses_sha_on_success ... ok
+test vcs::access::tests::test_resolve_commit_returns_none_on_failed_rev_parse ... ok
+test vcs::access::tests::staged_changes_since_reads_worktree_bytes_and_marks_deletions ... ok
+test vcs::access::tests::test_list_tags_fetches_unfiltered_and_filters_locally_with_globset ... ok
+test identity::tests::proptest_package_id_matches_identity ... ok
+test format::changeset::tests::proptest_changeset_roundtrip ... ok
+test release_pr::tests::commit_plan_rejects_oversized_payload ... ok
+test identity::tests::proptest_package_id_parse_never_panics ... ok
+test release::intent::tests::the_shared_order_matches_the_previous_implementation ... ok
+test vcs::access::tests::probes_fail_loudly_outside_a_git_repository_against_real_git ... ok
+test vcs::tests::commits_since_a_repository_with_no_commits_is_empty ... ok
+test vcs::tests::commits_since_normalizes_crlf_messages ... ok
+test vcs::tests::commits_since_a_missing_head_object_fails_naming_git_log ... ok
+test vcs::tests::annotated_tag_records_the_configured_tagger ... ok
+test vcs::tests::commits_since_counts_a_rename_out_of_the_path ... ok
+test vcs::tests::commits_since_detects_binary_changes ... ok
+test vcs::tests::commits_since_root_pathspec_matches_root_level_files ... ok
+test vcs::tests::commits_since_unresolvable_bound_is_ref_not_found ... ok
+test vcs::tests::commits_since_bound_is_exclusive ... ok
+test version::tests::contextual_versions_use_native_grammar_without_fallback ... ok
+test version::tests::npm_ranges_match_all_valid_disjunctions_without_changing_wire_spelling ... ok
+test version::tests::npm_space_separated_comparators_form_one_range ... ok
+test version::tests::parses_valid_pep440_and_prerelease ... ok
+test version::tests::parses_valid_semver_and_exposes_components ... ok
+test version::tests::pep440_dev_release_is_prerelease ... ok
+test version::tests::pep440_non_canonical_inputs_normalize_to_equal_versions ... ok
+test version::tests::pep440_parse_malformed_string_returns_err_not_panic ... ok
+test version::tests::pep440_post_dev_version_is_not_prerelease ... ok
+test version::tests::pep440_prerelease_marker_is_case_insensitive ... ok
+test version::tests::pep440_version_req_non_canonical_normalizes_for_eq ... ok
+test version::tests::pep440_whitespace_padded_input_is_trimmed_and_accepted ... ok
+test vcs::tests::commits_since_reads_a_detached_head ... ok
+test version::tests::semver_whitespace_padded_input_is_rejected ... ok
+test version::tests::version_compare_errors_on_grammar_mismatch ... ok
+test version::tests::serde_version_roundtrips ... ok
+test version::tests::version_deserialize_falls_back_to_pep440_for_pep440_only_strings ... ok
+test version::tests::version_deserialize_prefers_semver_when_string_is_valid_under_both_grammars ... ok
+test version::tests::version_deserialize_rejects_strings_invalid_under_both_grammars ... ok
+test version::tests::version_parse_rejects_maven_grammar_as_unimplemented ... ok
+test version::tests::version_req_deserialize_falls_back_through_npm_and_pypi_when_not_valid_cargo_semver ... ok
+test version::tests::version_req_deserialize_rejects_strings_invalid_under_every_ecosystem ... ok
+test version::tests::version_req_ecosystem_returns_the_parsing_ecosystem ... ok
+test version::tests::version_req_matches_errors_on_grammar_mismatch ... ok
+test version::tests::version_req_parse_rejects_malformed_semver_and_pep440_requirements ... ok
+test version::tests::version_req_parse_rejects_maven_grammar_as_unimplemented ... ok
+test version::tests::version_req_serializes_and_round_trips_through_deserialize ... ok
+test version::tests::version_req_schema_describes_native_requirement_strings ... ok
+test version::tests::version_schema_describes_semver_and_pep440_strings ... ok
+test vcs::tests::annotated_tag_falls_back_to_the_target_committer_without_an_identity ... ok
+test vcs::tests::commits_since_filters_by_changed_path ... ok
+test vcs::tests::commits_since_excludes_merge_commits ... ok
+test vcs::tests::create_tag_refuses_an_existing_tag ... ok
+test vcs::tests::commits_since_keeps_commits_whose_change_a_merge_discarded ... ok
+test release::intent::tests::a_cycle_names_an_operation_on_it_and_a_long_chain_does_not_overflow_the_stack ... ok
+test vcs::access::tests::probes_tell_an_absent_answer_from_a_failure_against_real_git ... ok
+test vcs::tests::list_tags_filters_with_globset ... ok
+test vcs::tests::staged_submodule_is_refused_before_its_content_is_read ... ok
+test vcs::tests::resolve_commit_peels_tags_and_misses_cleanly ... ok
+test vcs::tests::staged_changes_since_resolves_paths_from_a_subdirectory ... ok
+test vcs::tests::staged_changes_since_rejects_worktree_content_edited_after_staging ... ok
+test vcs::tests::staged_symlink_is_refused_before_its_content_is_read ... ok
+test vcs::tests::staged_content_changed_by_a_clean_filter_is_a_mismatch ... ok
+test vcs::tests::commits_since_includes_branch_forked_before_the_bound ... ok
+test vcs::access::tests::a_checkpoint_records_the_tree_leaves_the_user_state_alone_and_is_held_once ... ok
+
+test result: ok. 405 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+
+     Running `/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/release_envelope_transition_tests-a9e45736a47e1c43`
+
+running 5 tests
+test every_state_event_pair_matches_the_explicit_allowed_list ... ok
+test no_bounded_event_sequence_reaches_success_without_a_legal_edge ... ok
+test observation_rejects_evidence_that_does_not_match_the_operation_role ... ok
+test an_operation_can_never_be_marked_attempting_without_observing_absence ... ok
+test envelope_rejects_each_cross_field_mismatch ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running `/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/release_evidence_tests-85bdb20408b4f318`
+
+running 8 tests
+test artifact_manifest_rejects_attestation_source_that_is_not_the_coordinator_revision ... ok
+test receipt_rejects_a_state_bound_to_another_intent ... ok
+test receipt_records_the_evidence_in_state_and_needs_every_operation_terminal ... ok
+test red_c6_manifest_with_forged_source_commit_is_rejected ... ok
+test envelope_has_no_profile_and_other_schema_versions_name_the_found_version ... ok
+test intent_has_no_profile_and_rejects_one_on_the_wire ... ok
+test deserialized_receipt_rejects_nonexact_or_missing_observations ... ok
+test intent_of_another_schema_version_names_the_found_version ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests callisto_model
+     Running `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustdoc --edition=2024 --crate-type lib --color auto --crate-name callisto_model --test crates/callisto-model/src/lib.rs --test-run-directory /Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/crates/callisto-model '--warn=clippy::all' '--allow=clippy::unwrap_used' --deny=unused_must_use --forbid=unsafe_code '--allow=clippy::must_use_candidate' '--allow=clippy::module_name_repetitions' '--deny=clippy::map_err_ignore' '--deny=clippy::let_underscore_untyped' '--deny=clippy::let_underscore_must_use' --deny=let_underscore_drop '--allow=clippy::expect_used' --extern base64=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libbase64-e819bc9ac42d5354.rlib --extern callisto_model=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcallisto_model-c74ab85cac527765.rlib --extern camino=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libcamino-d07970a01a13ca41.rlib --extern dunce=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libdunce-0adb17af2ece5074.rlib --extern globset=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libglobset-c0c2f72a64bc6f32.rlib --extern indexmap=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libindexmap-38ea2debc3555df5.rlib --extern michi_graph=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmichi_graph-539eb3022f84d435.rlib --extern miette=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libmiette-6a5dd729d5600116.rlib --extern path_slash=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpath_slash-4001f91ace54e444.rlib --extern pep440_rs=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libpep440_rs-813a498e68f3421b.rlib --extern proptest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libproptest-5cf94c40ff6944e5.rlib --extern rstest=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/librstest-baf7ab6b9e65ef25.rlib --extern schemars=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libschemars-c514d877d48f5bdf.rlib --extern semver=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsemver-b32bbcbbf9d7968d.rlib --extern serde=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde-c8c2c9f0304859ef.rlib --extern serde_json=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libserde_json-ae9a23b4a3e2e800.rlib --extern sha2=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libsha2-8d2679aede46dadb.rlib --extern tempfile=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libtempfile-fe1cfd1459fa8144.rlib --extern thiserror=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps/libthiserror-78b06f3eb164d1d2.rlib -L dependency=/Users/gabe/Projects/callisto/.claude/worktrees/wp-e-native-name/target/debug/deps -C embed-bitcode=no --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("test-util"))' --error-format human`
+
+running 1 test
+test crates/callisto-model/src/permit.rs - permit::ApplyPermit (line 23) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.29s; merged doctests compilation took 0.19s
+
+*** result: Success

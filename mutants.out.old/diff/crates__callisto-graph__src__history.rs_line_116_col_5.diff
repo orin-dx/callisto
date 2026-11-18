@@ -1,0 +1,34 @@
+--- crates/callisto-graph/src/history.rs
++++ replace first_manifest_declares_at -> Result<bool, GraphError> with Ok(true)
+@@ -108,30 +108,17 @@
+ /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.
+ fn first_manifest_declares_at(
+     git: &GitAccess<'_>,
+     rev: &str,
+     pkg: &Package,
+     name: &str,
+     rosters: &mut Rosters,
+ ) -> Result<bool, GraphError> {
+-    let Some(manifest) = pkg.canonical_manifests().next() else {
+-        return Ok(false);
+-    };
+-    let path = Path::new(&manifest.path);
+-    let Some(text) = rosters.manifest_text(git, rev, path)? else {
+-        return Ok(false);
+-    };
+-    // A manifest that was broken at `rev` simply names nobody.
+-    let declared = read_identity(manifest.format, &text, path)
+-        .ok()
+-        .and_then(|identity| identity.name);
+-    Ok(declared.is_some_and(|declared| {
+-        NativeName::new(manifest.ecosystem(), &declared) == NativeName::new(manifest.ecosystem(), name)
+-    }))
++    Ok(true) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// The one package among `candidates` that owned the bare name `name` at `rev`, if exactly one did.
+ ///
+ /// A candidate whose current first manifest path held a manifest declaring `name` at `rev` owns it. When none does,
+ /// the package moved or changed its primary manifest, so ownership is whichever package has a manifest named `name`
+ /// today in an ecosystem where `rev` also held a manifest named `name`.
+ pub(crate) fn sole_owner_at<'p>(

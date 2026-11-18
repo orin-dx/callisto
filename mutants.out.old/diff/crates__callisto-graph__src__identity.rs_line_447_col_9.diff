@@ -1,0 +1,42 @@
+--- crates/callisto-graph/src/identity.rs
++++ replace IdentityIndex::resolve_native -> Option<&PackageId> with None
+@@ -439,38 +439,17 @@
+     /// -- falls back to scanning all ecosystems for `name`.
+     ///
+     /// Fallback finds exactly one match: returns it. Finds more than one
+     /// (two ecosystems both have `name`): returns `None` to prevent
+     /// silent misresolution -- callers holding a `&mut Vec<Diagnostic>`
+     /// should use [`Self::resolve_native_with_fallback`] instead, to get
+     /// a diagnostic.
+     pub fn resolve_native(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {
+-        if let Some(id) = self.native_in_ecosystem(eco, name) {
+-            return Some(id);
+-        }
+-
+-        // Cross-ecosystem fallback.
+-        let mut candidates: Vec<&PackageId> = self
+-            .native
+-            .iter()
+-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)
+-            .map(|(_, id)| id)
+-            .collect();
+-
+-        // Deduplicate by pointer identity (multiple entries for the same ID
+-        // across different ecosystems, e.g. a package that is both cargo and
+-        // npm, should not be treated as ambiguous).
+-        candidates.dedup_by(|a, b| a == b);
+-
+-        match candidates.len() {
+-            1 => Some(candidates[0]),
+-            // 0 = not found; >1 = true ambiguity → caller should diagnose.
+-            _ => None,
+-        }
++        None /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Resolves within the declaring ecosystem, using PEP 503 equivalence for Python.
+     /// Ambiguous Python names and cross-ecosystem candidates produce a warning and no match.
+     pub fn resolve_native_with_fallback<'a>(
+         &'a self,
+         eco: Ecosystem,
+         name: &str,

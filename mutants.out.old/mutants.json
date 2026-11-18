@@ -1,0 +1,2050 @@
+[
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace declares -> Result<bool, GraphError> with Ok(true)\n@@ -78,36 +78,17 @@\n     git: &GitAccess<'_>,\n     rev: &str,\n     name: &str,\n     ecosystem: Ecosystem,\n     format: ManifestFormat,\n     file_name: &str,\n ) -> Result<bool, GraphError> {\n     // A normalized Python name may be spelled with other separators, so search its first word.\n-    let needle = match ecosystem {\n-        Ecosystem::Pypi => name\n-            .split(['-', '_', '.'])\n-            .find(|word| !word.is_empty())\n-            .unwrap_or(name),\n-        _ => name,\n-    };\n-    for path in git.files_containing_at(rev, needle, &[&format!(\":(glob)**/{file_name}\")])? {\n-        let Some(text) = git.read_at(rev, &path)? else {\n-            continue;\n-        };\n-        // A manifest that was broken at `rev` simply names nobody.\n-        let declared = read_identity(format, &text, &path)\n-            .ok()\n-            .and_then(|identity| identity.name);\n-        if declared.is_some_and(|declared| NativeName::new(ecosystem, &declared) == NativeName::new(ecosystem, name)) {\n-            return Ok(true);\n-        }\n-    }\n-    Ok(false)\n+    Ok(true) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.\n fn first_manifest_declares_at(\n     git: &GitAccess<'_>,\n     rev: &str,\n     pkg: &Package,\n     name: &str,\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "declares",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 106
+        },
+        "start": {
+          "column": 1,
+          "line": 76
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/history.rs:86:5: replace declares -> Result<bool, GraphError> with Ok(true)",
+    "package": "callisto-graph",
+    "replacement": "Ok(true)",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 105
+      },
+      "start": {
+        "column": 5,
+        "line": 86
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace declares -> Result<bool, GraphError> with Ok(false)\n@@ -78,36 +78,17 @@\n     git: &GitAccess<'_>,\n     rev: &str,\n     name: &str,\n     ecosystem: Ecosystem,\n     format: ManifestFormat,\n     file_name: &str,\n ) -> Result<bool, GraphError> {\n     // A normalized Python name may be spelled with other separators, so search its first word.\n-    let needle = match ecosystem {\n-        Ecosystem::Pypi => name\n-            .split(['-', '_', '.'])\n-            .find(|word| !word.is_empty())\n-            .unwrap_or(name),\n-        _ => name,\n-    };\n-    for path in git.files_containing_at(rev, needle, &[&format!(\":(glob)**/{file_name}\")])? {\n-        let Some(text) = git.read_at(rev, &path)? else {\n-            continue;\n-        };\n-        // A manifest that was broken at `rev` simply names nobody.\n-        let declared = read_identity(format, &text, &path)\n-            .ok()\n-            .and_then(|identity| identity.name);\n-        if declared.is_some_and(|declared| NativeName::new(ecosystem, &declared) == NativeName::new(ecosystem, name)) {\n-            return Ok(true);\n-        }\n-    }\n-    Ok(false)\n+    Ok(false) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.\n fn first_manifest_declares_at(\n     git: &GitAccess<'_>,\n     rev: &str,\n     pkg: &Package,\n     name: &str,\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "declares",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 106
+        },
+        "start": {
+          "column": 1,
+          "line": 76
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/history.rs:86:5: replace declares -> Result<bool, GraphError> with Ok(false)",
+    "package": "callisto-graph",
+    "replacement": "Ok(false)",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 105
+      },
+      "start": {
+        "column": 5,
+        "line": 86
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace == with != in declares\n@@ -93,17 +93,17 @@\n     for path in git.files_containing_at(rev, needle, &[&format!(\":(glob)**/{file_name}\")])? {\n         let Some(text) = git.read_at(rev, &path)? else {\n             continue;\n         };\n         // A manifest that was broken at `rev` simply names nobody.\n         let declared = read_identity(format, &text, &path)\n             .ok()\n             .and_then(|identity| identity.name);\n-        if declared.is_some_and(|declared| NativeName::new(ecosystem, &declared) == NativeName::new(ecosystem, name)) {\n+        if declared.is_some_and(|declared| NativeName::new(ecosystem, &declared) != /* ~ changed by cargo-mutants ~ */ NativeName::new(ecosystem, name)) {\n             return Ok(true);\n         }\n     }\n     Ok(false)\n }\n \n /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.\n fn first_manifest_declares_at(\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "declares",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 106
+        },
+        "start": {
+          "column": 1,
+          "line": 76
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/history.rs:101:82: replace == with != in declares",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 84,
+        "line": 101
+      },
+      "start": {
+        "column": 82,
+        "line": 101
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace first_manifest_declares_at -> Result<bool, GraphError> with Ok(true)\n@@ -108,30 +108,17 @@\n /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.\n fn first_manifest_declares_at(\n     git: &GitAccess<'_>,\n     rev: &str,\n     pkg: &Package,\n     name: &str,\n     rosters: &mut Rosters,\n ) -> Result<bool, GraphError> {\n-    let Some(manifest) = pkg.canonical_manifests().next() else {\n-        return Ok(false);\n-    };\n-    let path = Path::new(&manifest.path);\n-    let Some(text) = rosters.manifest_text(git, rev, path)? else {\n-        return Ok(false);\n-    };\n-    // A manifest that was broken at `rev` simply names nobody.\n-    let declared = read_identity(manifest.format, &text, path)\n-        .ok()\n-        .and_then(|identity| identity.name);\n-    Ok(declared.is_some_and(|declared| {\n-        NativeName::new(manifest.ecosystem(), &declared) == NativeName::new(manifest.ecosystem(), name)\n-    }))\n+    Ok(true) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The one package among `candidates` that owned the bare name `name` at `rev`, if exactly one did.\n ///\n /// A candidate whose current first manifest path held a manifest declaring `name` at `rev` owns it. When none does,\n /// the package moved or changed its primary manifest, so ownership is whichever package has a manifest named `name`\n /// today in an ecosystem where `rev` also held a manifest named `name`.\n pub(crate) fn sole_owner_at<'p>(\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "first_manifest_declares_at",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 130
+        },
+        "start": {
+          "column": 1,
+          "line": 108
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/history.rs:116:5: replace first_manifest_declares_at -> Result<bool, GraphError> with Ok(true)",
+    "package": "callisto-graph",
+    "replacement": "Ok(true)",
+    "span": {
+      "end": {
+        "column": 8,
+        "line": 129
+      },
+      "start": {
+        "column": 5,
+        "line": 116
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace first_manifest_declares_at -> Result<bool, GraphError> with Ok(false)\n@@ -108,30 +108,17 @@\n /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.\n fn first_manifest_declares_at(\n     git: &GitAccess<'_>,\n     rev: &str,\n     pkg: &Package,\n     name: &str,\n     rosters: &mut Rosters,\n ) -> Result<bool, GraphError> {\n-    let Some(manifest) = pkg.canonical_manifests().next() else {\n-        return Ok(false);\n-    };\n-    let path = Path::new(&manifest.path);\n-    let Some(text) = rosters.manifest_text(git, rev, path)? else {\n-        return Ok(false);\n-    };\n-    // A manifest that was broken at `rev` simply names nobody.\n-    let declared = read_identity(manifest.format, &text, path)\n-        .ok()\n-        .and_then(|identity| identity.name);\n-    Ok(declared.is_some_and(|declared| {\n-        NativeName::new(manifest.ecosystem(), &declared) == NativeName::new(manifest.ecosystem(), name)\n-    }))\n+    Ok(false) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The one package among `candidates` that owned the bare name `name` at `rev`, if exactly one did.\n ///\n /// A candidate whose current first manifest path held a manifest declaring `name` at `rev` owns it. When none does,\n /// the package moved or changed its primary manifest, so ownership is whichever package has a manifest named `name`\n /// today in an ecosystem where `rev` also held a manifest named `name`.\n pub(crate) fn sole_owner_at<'p>(\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "first_manifest_declares_at",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 130
+        },
+        "start": {
+          "column": 1,
+          "line": 108
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/history.rs:116:5: replace first_manifest_declares_at -> Result<bool, GraphError> with Ok(false)",
+    "package": "callisto-graph",
+    "replacement": "Ok(false)",
+    "span": {
+      "end": {
+        "column": 8,
+        "line": 129
+      },
+      "start": {
+        "column": 5,
+        "line": 116
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace == with != in first_manifest_declares_at\n@@ -120,17 +120,17 @@\n     let Some(text) = rosters.manifest_text(git, rev, path)? else {\n         return Ok(false);\n     };\n     // A manifest that was broken at `rev` simply names nobody.\n     let declared = read_identity(manifest.format, &text, path)\n         .ok()\n         .and_then(|identity| identity.name);\n     Ok(declared.is_some_and(|declared| {\n-        NativeName::new(manifest.ecosystem(), &declared) == NativeName::new(manifest.ecosystem(), name)\n+        NativeName::new(manifest.ecosystem(), &declared) != /* ~ changed by cargo-mutants ~ */ NativeName::new(manifest.ecosystem(), name)\n     }))\n }\n \n /// The one package among `candidates` that owned the bare name `name` at `rev`, if exactly one did.\n ///\n /// A candidate whose current first manifest path held a manifest declaring `name` at `rev` owns it. When none does,\n /// the package moved or changed its primary manifest, so ownership is whichever package has a manifest named `name`\n /// today in an ecosystem where `rev` also held a manifest named `name`.\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "first_manifest_declares_at",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 130
+        },
+        "start": {
+          "column": 1,
+          "line": 108
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/history.rs:128:58: replace == with != in first_manifest_declares_at",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 60,
+        "line": 128
+      },
+      "start": {
+        "column": 58,
+        "line": 128
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace sole_owner_at -> Result<Option<&'p Package>, GraphError> with Ok(None)\n@@ -137,38 +137,17 @@\n pub(crate) fn sole_owner_at<'p>(\n     git: &GitAccess<'_>,\n     rev: &str,\n     name: &str,\n     candidates: &[&'p Package],\n     identity: &IdentityIndex,\n     rosters: &mut Rosters,\n ) -> Result<Option<&'p Package>, GraphError> {\n-    let mut owner = None;\n-    for pkg in candidates {\n-        if first_manifest_declares_at(git, rev, pkg, name, rosters)? {\n-            if owner.is_some() {\n-                return Ok(None);\n-            }\n-            owner = Some(*pkg);\n-        }\n-    }\n-    if owner.is_some() {\n-        return Ok(owner);\n-    }\n-    let declaring = rosters.declaring_at(git, rev, name)?;\n-    let mut holders = candidates.iter().filter(|pkg| {\n-        declaring.iter().any(|ecosystem| {\n-            identity\n-                .native_name(&pkg.id, *ecosystem)\n-                .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))\n-        })\n-    });\n-    let first = holders.next();\n-    Ok(if holders.next().is_some() { None } else { first.copied() })\n+    Ok(None) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Whether `pkg` can be the package that held the bare name `name` at `rev`.\n ///\n /// False only on evidence of another owner: `rev` held a manifest named `name`, but not in any ecosystem where `pkg`\n /// is named `name` today. A revision with no manifest named `name` is no evidence either way.\n pub(crate) fn may_have_held_name_at(\n     git: &GitAccess<'_>,\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "sole_owner_at",
+      "return_type": "-> Result<Option<&'p Package>, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 167
+        },
+        "start": {
+          "column": 1,
+          "line": 132
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/history.rs:145:5: replace sole_owner_at -> Result<Option<&'p Package>, GraphError> with Ok(None)",
+    "package": "callisto-graph",
+    "replacement": "Ok(None)",
+    "span": {
+      "end": {
+        "column": 69,
+        "line": 166
+      },
+      "start": {
+        "column": 5,
+        "line": 145
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace sole_owner_at -> Result<Option<&'p Package>, GraphError> with Ok(Some(Box::leak(Box::new(Default::default()))))\n@@ -137,38 +137,17 @@\n pub(crate) fn sole_owner_at<'p>(\n     git: &GitAccess<'_>,\n     rev: &str,\n     name: &str,\n     candidates: &[&'p Package],\n     identity: &IdentityIndex,\n     rosters: &mut Rosters,\n ) -> Result<Option<&'p Package>, GraphError> {\n-    let mut owner = None;\n-    for pkg in candidates {\n-        if first_manifest_declares_at(git, rev, pkg, name, rosters)? {\n-            if owner.is_some() {\n-                return Ok(None);\n-            }\n-            owner = Some(*pkg);\n-        }\n-    }\n-    if owner.is_some() {\n-        return Ok(owner);\n-    }\n-    let declaring = rosters.declaring_at(git, rev, name)?;\n-    let mut holders = candidates.iter().filter(|pkg| {\n-        declaring.iter().any(|ecosystem| {\n-            identity\n-                .native_name(&pkg.id, *ecosystem)\n-                .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))\n-        })\n-    });\n-    let first = holders.next();\n-    Ok(if holders.next().is_some() { None } else { first.copied() })\n+    Ok(Some(Box::leak(Box::new(Default::default())))) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Whether `pkg` can be the package that held the bare name `name` at `rev`.\n ///\n /// False only on evidence of another owner: `rev` held a manifest named `name`, but not in any ecosystem where `pkg`\n /// is named `name` today. A revision with no manifest named `name` is no evidence either way.\n pub(crate) fn may_have_held_name_at(\n     git: &GitAccess<'_>,\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "sole_owner_at",
+      "return_type": "-> Result<Option<&'p Package>, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 167
+        },
+        "start": {
+          "column": 1,
+          "line": 132
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/history.rs:145:5: replace sole_owner_at -> Result<Option<&'p Package>, GraphError> with Ok(Some(Box::leak(Box::new(Default::default()))))",
+    "package": "callisto-graph",
+    "replacement": "Ok(Some(Box::leak(Box::new(Default::default()))))",
+    "span": {
+      "end": {
+        "column": 69,
+        "line": 166
+      },
+      "start": {
+        "column": 5,
+        "line": 145
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace == with != in sole_owner_at\n@@ -154,17 +154,17 @@\n     if owner.is_some() {\n         return Ok(owner);\n     }\n     let declaring = rosters.declaring_at(git, rev, name)?;\n     let mut holders = candidates.iter().filter(|pkg| {\n         declaring.iter().any(|ecosystem| {\n             identity\n                 .native_name(&pkg.id, *ecosystem)\n-                .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))\n+                .is_some_and(|native| NativeName::new(*ecosystem, native) != /* ~ changed by cargo-mutants ~ */ NativeName::new(*ecosystem, name))\n         })\n     });\n     let first = holders.next();\n     Ok(if holders.next().is_some() { None } else { first.copied() })\n }\n \n /// Whether `pkg` can be the package that held the bare name `name` at `rev`.\n ///\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "sole_owner_at",
+      "return_type": "-> Result<Option<&'p Package>, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 167
+        },
+        "start": {
+          "column": 1,
+          "line": 132
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/history.rs:162:75: replace == with != in sole_owner_at",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 77,
+        "line": 162
+      },
+      "start": {
+        "column": 75,
+        "line": 162
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace may_have_held_name_at -> Result<bool, GraphError> with Ok(true)\n@@ -173,21 +173,10 @@\n pub(crate) fn may_have_held_name_at(\n     git: &GitAccess<'_>,\n     rev: &str,\n     name: &str,\n     pkg: &Package,\n     identity: &IdentityIndex,\n     rosters: &mut Rosters,\n ) -> Result<bool, GraphError> {\n-    if first_manifest_declares_at(git, rev, pkg, name, rosters)? {\n-        return Ok(true);\n-    }\n-    let declaring = rosters.declaring_at(git, rev, name)?;\n-    if declaring.is_empty() {\n-        return Ok(true);\n-    }\n-    Ok(declaring.iter().any(|ecosystem| {\n-        identity\n-            .native_name(&pkg.id, *ecosystem)\n-            .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))\n-    }))\n+    Ok(true) /* ~ changed by cargo-mutants ~ */\n }\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "may_have_held_name_at",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 193
+        },
+        "start": {
+          "column": 1,
+          "line": 169
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/history.rs:181:5: replace may_have_held_name_at -> Result<bool, GraphError> with Ok(true)",
+    "package": "callisto-graph",
+    "replacement": "Ok(true)",
+    "span": {
+      "end": {
+        "column": 8,
+        "line": 192
+      },
+      "start": {
+        "column": 5,
+        "line": 181
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace may_have_held_name_at -> Result<bool, GraphError> with Ok(false)\n@@ -173,21 +173,10 @@\n pub(crate) fn may_have_held_name_at(\n     git: &GitAccess<'_>,\n     rev: &str,\n     name: &str,\n     pkg: &Package,\n     identity: &IdentityIndex,\n     rosters: &mut Rosters,\n ) -> Result<bool, GraphError> {\n-    if first_manifest_declares_at(git, rev, pkg, name, rosters)? {\n-        return Ok(true);\n-    }\n-    let declaring = rosters.declaring_at(git, rev, name)?;\n-    if declaring.is_empty() {\n-        return Ok(true);\n-    }\n-    Ok(declaring.iter().any(|ecosystem| {\n-        identity\n-            .native_name(&pkg.id, *ecosystem)\n-            .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))\n-    }))\n+    Ok(false) /* ~ changed by cargo-mutants ~ */\n }\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "may_have_held_name_at",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 193
+        },
+        "start": {
+          "column": 1,
+          "line": 169
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/history.rs:181:5: replace may_have_held_name_at -> Result<bool, GraphError> with Ok(false)",
+    "package": "callisto-graph",
+    "replacement": "Ok(false)",
+    "span": {
+      "end": {
+        "column": 8,
+        "line": 192
+      },
+      "start": {
+        "column": 5,
+        "line": 181
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/history.rs\n+++ replace == with != in may_have_held_name_at\n@@ -183,11 +183,11 @@\n     }\n     let declaring = rosters.declaring_at(git, rev, name)?;\n     if declaring.is_empty() {\n         return Ok(true);\n     }\n     Ok(declaring.iter().any(|ecosystem| {\n         identity\n             .native_name(&pkg.id, *ecosystem)\n-            .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))\n+            .is_some_and(|native| NativeName::new(*ecosystem, native) != /* ~ changed by cargo-mutants ~ */ NativeName::new(*ecosystem, name))\n     }))\n }\n",
+    "file": "crates/callisto-graph/src/history.rs",
+    "function": {
+      "function_name": "may_have_held_name_at",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 193
+        },
+        "start": {
+          "column": 1,
+          "line": 169
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/history.rs:191:71: replace == with != in may_have_held_name_at",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 73,
+        "line": 191
+      },
+      "start": {
+        "column": 71,
+        "line": 191
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::by_package -> T with Default::default()\n@@ -341,39 +341,17 @@\n     sizes: (usize, usize),\n     native: HashMap<PackageId, Vec<NativeName>>,\n     platform: HashMap<PackageId, Vec<String>>,\n }\n \n impl IdentityIndex {\n     /// Runs `lookup` on the by-package view of `native` and `platform`, building it first when it is missing or stale.\n     fn by_package<T>(&self, lookup: impl FnOnce(&ByPackage) -> T) -> T {\n-        let sizes = (self.native.len(), self.platform.len());\n-        let mut cached = self\n-            .by_package\n-            .0\n-            .lock()\n-            .unwrap_or_else(std::sync::PoisonError::into_inner);\n-        if cached.as_ref().is_some_and(|known| known.sizes != sizes) {\n-            *cached = None;\n-        }\n-        let view = cached.get_or_insert_with(|| {\n-            let mut view = ByPackage {\n-                sizes,\n-                ..ByPackage::default()\n-            };\n-            for (name, id) in &self.native {\n-                view.native.entry(id.clone()).or_default().push(name.clone());\n-            }\n-            for (name, (owner, _, _)) in &self.platform {\n-                view.platform.entry(owner.clone()).or_default().push(name.clone());\n-            }\n-            view\n-        });\n-        lookup(view)\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The one selector resolver: resolves a user- or config-typed package\n     /// selector (`eco/name` or a bare name; the colon form is `E316`) against registered\n     /// native manifest names.\n     ///\n     /// A qualified selector is a `(ecosystem, native name)` lookup under that registry's name equivalence: no\n     /// match is `E102` ([`GraphError::UnknownPackage`]), regardless of what a\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::by_package",
+      "return_type": "-> T",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 372
+        },
+        "start": {
+          "column": 5,
+          "line": 347
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:349:9: replace IdentityIndex::by_package -> T with Default::default()",
+    "package": "callisto-graph",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 371
+      },
+      "start": {
+        "column": 9,
+        "line": 349
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::resolve_id -> Result<PackageId, GraphError> with Ok(Default::default())\n@@ -386,39 +386,17 @@\n     pub fn resolve(&self, selector: &str) -> Result<PackageId, GraphError> {\n         ConfigError::reject_colon_form(selector, \"package selector\")?;\n         let id = PackageId::parse(selector).unwrap_or_else(|_| PackageId::Bare(selector.to_string()));\n         self.resolve_id(&id)\n     }\n \n     /// [`Self::resolve`] for an already-parsed selector.\n     pub fn resolve_id(&self, id: &PackageId) -> Result<PackageId, GraphError> {\n-        match id {\n-            PackageId::Prefixed { ecosystem, name } => self\n-                .native\n-                .get(&NativeName::new(*ecosystem, name))\n-                .cloned()\n-                .ok_or_else(|| GraphError::unknown_package(id.clone(), self.native_ids())),\n-            PackageId::Bare(name) => {\n-                let candidates: BTreeSet<PackageId> = self\n-                    .native\n-                    .iter()\n-                    .filter(|(native, _)| native.as_str() == name)\n-                    .map(|(_, registered)| registered.clone())\n-                    .collect();\n-                match candidates.len() {\n-                    0 => Err(GraphError::unknown_package(id.clone(), self.native_ids())),\n-                    1 => Ok(candidates.into_iter().next().expect(\"len checked above\")),\n-                    _ => Err(GraphError::AmbiguousName {\n-                        name: name.clone(),\n-                        candidates: candidates.into_iter().collect(),\n-                    }),\n-                }\n-            }\n-        }\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// True when `selector` (an ecosystem-qualified or bare configured\n     /// package identity, e.g. from `[[release.artifact]]` or\n     /// `product-package`) resolves to `candidate`.\n     ///\n     /// The single replacement for the `selector.matches(&candidate) &&\n     /// selector.ecosystem() == Some(candidate_ecosystem)` guard that was\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_id",
+      "return_type": "-> Result<PackageId, GraphError>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 417
+        },
+        "start": {
+          "column": 5,
+          "line": 392
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:394:9: replace IdentityIndex::resolve_id -> Result<PackageId, GraphError> with Ok(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 416
+      },
+      "start": {
+        "column": 9,
+        "line": 394
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace == with != in IdentityIndex::resolve_id\n@@ -396,17 +396,17 @@\n                 .native\n                 .get(&NativeName::new(*ecosystem, name))\n                 .cloned()\n                 .ok_or_else(|| GraphError::unknown_package(id.clone(), self.native_ids())),\n             PackageId::Bare(name) => {\n                 let candidates: BTreeSet<PackageId> = self\n                     .native\n                     .iter()\n-                    .filter(|(native, _)| native.as_str() == name)\n+                    .filter(|(native, _)| native.as_str() != /* ~ changed by cargo-mutants ~ */ name)\n                     .map(|(_, registered)| registered.clone())\n                     .collect();\n                 match candidates.len() {\n                     0 => Err(GraphError::unknown_package(id.clone(), self.native_ids())),\n                     1 => Ok(candidates.into_iter().next().expect(\"len checked above\")),\n                     _ => Err(GraphError::AmbiguousName {\n                         name: name.clone(),\n                         candidates: candidates.into_iter().collect(),\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_id",
+      "return_type": "-> Result<PackageId, GraphError>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 417
+        },
+        "start": {
+          "column": 5,
+          "line": 392
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:404:59: replace == with != in IdentityIndex::resolve_id",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 61,
+        "line": 404
+      },
+      "start": {
+        "column": 59,
+        "line": 404
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::resolve_native -> Option<&PackageId> with None\n@@ -439,38 +439,17 @@\n     /// -- falls back to scanning all ecosystems for `name`.\n     ///\n     /// Fallback finds exactly one match: returns it. Finds more than one\n     /// (two ecosystems both have `name`): returns `None` to prevent\n     /// silent misresolution -- callers holding a `&mut Vec<Diagnostic>`\n     /// should use [`Self::resolve_native_with_fallback`] instead, to get\n     /// a diagnostic.\n     pub fn resolve_native(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n-        if let Some(id) = self.native_in_ecosystem(eco, name) {\n-            return Some(id);\n-        }\n-\n-        // Cross-ecosystem fallback.\n-        let mut candidates: Vec<&PackageId> = self\n-            .native\n-            .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n-            .map(|(_, id)| id)\n-            .collect();\n-\n-        // Deduplicate by pointer identity (multiple entries for the same ID\n-        // across different ecosystems, e.g. a package that is both cargo and\n-        // npm, should not be treated as ambiguous).\n-        candidates.dedup_by(|a, b| a == b);\n-\n-        match candidates.len() {\n-            1 => Some(candidates[0]),\n-            // 0 = not found; >1 = true ambiguity → caller should diagnose.\n-            _ => None,\n-        }\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Resolves within the declaring ecosystem, using PEP 503 equivalence for Python.\n     /// Ambiguous Python names and cross-ecosystem candidates produce a warning and no match.\n     pub fn resolve_native_with_fallback<'a>(\n         &'a self,\n         eco: Ecosystem,\n         name: &str,\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native",
+      "return_type": "-> Option<&PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 469
+        },
+        "start": {
+          "column": 5,
+          "line": 433
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:447:9: replace IdentityIndex::resolve_native -> Option<&PackageId> with None",
+    "package": "callisto-graph",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 468
+      },
+      "start": {
+        "column": 9,
+        "line": 447
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::resolve_native -> Option<&PackageId> with Some(Box::leak(Box::new(Default::default())))\n@@ -439,38 +439,17 @@\n     /// -- falls back to scanning all ecosystems for `name`.\n     ///\n     /// Fallback finds exactly one match: returns it. Finds more than one\n     /// (two ecosystems both have `name`): returns `None` to prevent\n     /// silent misresolution -- callers holding a `&mut Vec<Diagnostic>`\n     /// should use [`Self::resolve_native_with_fallback`] instead, to get\n     /// a diagnostic.\n     pub fn resolve_native(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n-        if let Some(id) = self.native_in_ecosystem(eco, name) {\n-            return Some(id);\n-        }\n-\n-        // Cross-ecosystem fallback.\n-        let mut candidates: Vec<&PackageId> = self\n-            .native\n-            .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n-            .map(|(_, id)| id)\n-            .collect();\n-\n-        // Deduplicate by pointer identity (multiple entries for the same ID\n-        // across different ecosystems, e.g. a package that is both cargo and\n-        // npm, should not be treated as ambiguous).\n-        candidates.dedup_by(|a, b| a == b);\n-\n-        match candidates.len() {\n-            1 => Some(candidates[0]),\n-            // 0 = not found; >1 = true ambiguity → caller should diagnose.\n-            _ => None,\n-        }\n+        Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Resolves within the declaring ecosystem, using PEP 503 equivalence for Python.\n     /// Ambiguous Python names and cross-ecosystem candidates produce a warning and no match.\n     pub fn resolve_native_with_fallback<'a>(\n         &'a self,\n         eco: Ecosystem,\n         name: &str,\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native",
+      "return_type": "-> Option<&PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 469
+        },
+        "start": {
+          "column": 5,
+          "line": 433
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:447:9: replace IdentityIndex::resolve_native -> Option<&PackageId> with Some(Box::leak(Box::new(Default::default())))",
+    "package": "callisto-graph",
+    "replacement": "Some(Box::leak(Box::new(Default::default())))",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 468
+      },
+      "start": {
+        "column": 9,
+        "line": 447
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace && with || in IdentityIndex::resolve_native\n@@ -447,17 +447,17 @@\n         if let Some(id) = self.native_in_ecosystem(eco, name) {\n             return Some(id);\n         }\n \n         // Cross-ecosystem fallback.\n         let mut candidates: Vec<&PackageId> = self\n             .native\n             .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n+            .filter(|(native, _)| native.ecosystem() != eco || /* ~ changed by cargo-mutants ~ */ native.as_str() == name)\n             .map(|(_, id)| id)\n             .collect();\n \n         // Deduplicate by pointer identity (multiple entries for the same ID\n         // across different ecosystems, e.g. a package that is both cargo and\n         // npm, should not be treated as ambiguous).\n         candidates.dedup_by(|a, b| a == b);\n \n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native",
+      "return_type": "-> Option<&PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 469
+        },
+        "start": {
+          "column": 5,
+          "line": 433
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:455:61: replace && with || in IdentityIndex::resolve_native",
+    "package": "callisto-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 63,
+        "line": 455
+      },
+      "start": {
+        "column": 61,
+        "line": 455
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace != with == in IdentityIndex::resolve_native\n@@ -447,17 +447,17 @@\n         if let Some(id) = self.native_in_ecosystem(eco, name) {\n             return Some(id);\n         }\n \n         // Cross-ecosystem fallback.\n         let mut candidates: Vec<&PackageId> = self\n             .native\n             .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n+            .filter(|(native, _)| native.ecosystem() == /* ~ changed by cargo-mutants ~ */ eco && native.as_str() == name)\n             .map(|(_, id)| id)\n             .collect();\n \n         // Deduplicate by pointer identity (multiple entries for the same ID\n         // across different ecosystems, e.g. a package that is both cargo and\n         // npm, should not be treated as ambiguous).\n         candidates.dedup_by(|a, b| a == b);\n \n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native",
+      "return_type": "-> Option<&PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 469
+        },
+        "start": {
+          "column": 5,
+          "line": 433
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:455:54: replace != with == in IdentityIndex::resolve_native",
+    "package": "callisto-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 56,
+        "line": 455
+      },
+      "start": {
+        "column": 54,
+        "line": 455
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace == with != in IdentityIndex::resolve_native\n@@ -447,17 +447,17 @@\n         if let Some(id) = self.native_in_ecosystem(eco, name) {\n             return Some(id);\n         }\n \n         // Cross-ecosystem fallback.\n         let mut candidates: Vec<&PackageId> = self\n             .native\n             .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n+            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() != /* ~ changed by cargo-mutants ~ */ name)\n             .map(|(_, id)| id)\n             .collect();\n \n         // Deduplicate by pointer identity (multiple entries for the same ID\n         // across different ecosystems, e.g. a package that is both cargo and\n         // npm, should not be treated as ambiguous).\n         candidates.dedup_by(|a, b| a == b);\n \n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native",
+      "return_type": "-> Option<&PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 469
+        },
+        "start": {
+          "column": 5,
+          "line": 433
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:455:80: replace == with != in IdentityIndex::resolve_native",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 82,
+        "line": 455
+      },
+      "start": {
+        "column": 80,
+        "line": 455
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::resolve_native_with_fallback -> Option<&'a PackageId> with None\n@@ -471,52 +471,17 @@\n     /// Resolves within the declaring ecosystem, using PEP 503 equivalence for Python.\n     /// Ambiguous Python names and cross-ecosystem candidates produce a warning and no match.\n     pub fn resolve_native_with_fallback<'a>(\n         &'a self,\n         eco: Ecosystem,\n         name: &str,\n         diagnostics: &mut Vec<callisto_model::Diagnostic>,\n     ) -> Option<&'a PackageId> {\n-        if let Some(id) = self.native_in_ecosystem(eco, name) {\n-            return Some(id);\n-        }\n-\n-        // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.\n-        let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self\n-            .native\n-            .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n-            .map(|(native, id)| (native.ecosystem(), native.as_str(), id))\n-            .collect();\n-        candidates.dedup_by(|a, b| a.2 == b.2);\n-\n-        match candidates.len() {\n-            0 => None,\n-            _ => {\n-                let candidate_names: Vec<String> = candidates\n-                    .iter()\n-                    .map(|(e, n, _)| format!(\"{}/{n}\", e.prefix()))\n-                    .collect();\n-                diagnostics.push(callisto_model::Diagnostic {\n-                    code: callisto_model::DiagnosticCode::UnknownPackage,\n-                    severity: callisto_model::DiagnosticSeverity::Warning,\n-                    // No prefix advice: a dependency field cannot carry `eco:name`, so only renaming resolves it.\n-                    message: format!(\n-                        \"dependency name `{name}` is ambiguous across ecosystems: {}\",\n-                        candidate_names.join(\", \"),\n-                    ),\n-                    package: None,\n-                    path: None,\n-                    escalated_by: None,\n-                    governed_by: None,\n-                });\n-                None\n-            }\n-        }\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n         self.native.get(&NativeName::new(eco, name))\n     }\n \n     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {\n         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native_with_fallback",
+      "return_type": "-> Option<&'a PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 515
+        },
+        "start": {
+          "column": 5,
+          "line": 471
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:479:9: replace IdentityIndex::resolve_native_with_fallback -> Option<&'a PackageId> with None",
+    "package": "callisto-graph",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 514
+      },
+      "start": {
+        "column": 9,
+        "line": 479
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::resolve_native_with_fallback -> Option<&'a PackageId> with Some(Box::leak(Box::new(Default::default())))\n@@ -471,52 +471,17 @@\n     /// Resolves within the declaring ecosystem, using PEP 503 equivalence for Python.\n     /// Ambiguous Python names and cross-ecosystem candidates produce a warning and no match.\n     pub fn resolve_native_with_fallback<'a>(\n         &'a self,\n         eco: Ecosystem,\n         name: &str,\n         diagnostics: &mut Vec<callisto_model::Diagnostic>,\n     ) -> Option<&'a PackageId> {\n-        if let Some(id) = self.native_in_ecosystem(eco, name) {\n-            return Some(id);\n-        }\n-\n-        // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.\n-        let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self\n-            .native\n-            .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n-            .map(|(native, id)| (native.ecosystem(), native.as_str(), id))\n-            .collect();\n-        candidates.dedup_by(|a, b| a.2 == b.2);\n-\n-        match candidates.len() {\n-            0 => None,\n-            _ => {\n-                let candidate_names: Vec<String> = candidates\n-                    .iter()\n-                    .map(|(e, n, _)| format!(\"{}/{n}\", e.prefix()))\n-                    .collect();\n-                diagnostics.push(callisto_model::Diagnostic {\n-                    code: callisto_model::DiagnosticCode::UnknownPackage,\n-                    severity: callisto_model::DiagnosticSeverity::Warning,\n-                    // No prefix advice: a dependency field cannot carry `eco:name`, so only renaming resolves it.\n-                    message: format!(\n-                        \"dependency name `{name}` is ambiguous across ecosystems: {}\",\n-                        candidate_names.join(\", \"),\n-                    ),\n-                    package: None,\n-                    path: None,\n-                    escalated_by: None,\n-                    governed_by: None,\n-                });\n-                None\n-            }\n-        }\n+        Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n         self.native.get(&NativeName::new(eco, name))\n     }\n \n     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {\n         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native_with_fallback",
+      "return_type": "-> Option<&'a PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 515
+        },
+        "start": {
+          "column": 5,
+          "line": 471
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:479:9: replace IdentityIndex::resolve_native_with_fallback -> Option<&'a PackageId> with Some(Box::leak(Box::new(Default::default())))",
+    "package": "callisto-graph",
+    "replacement": "Some(Box::leak(Box::new(Default::default())))",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 514
+      },
+      "start": {
+        "column": 9,
+        "line": 479
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace && with || in IdentityIndex::resolve_native_with_fallback\n@@ -479,17 +479,17 @@\n         if let Some(id) = self.native_in_ecosystem(eco, name) {\n             return Some(id);\n         }\n \n         // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.\n         let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self\n             .native\n             .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n+            .filter(|(native, _)| native.ecosystem() != eco || /* ~ changed by cargo-mutants ~ */ native.as_str() == name)\n             .map(|(native, id)| (native.ecosystem(), native.as_str(), id))\n             .collect();\n         candidates.dedup_by(|a, b| a.2 == b.2);\n \n         match candidates.len() {\n             0 => None,\n             _ => {\n                 let candidate_names: Vec<String> = candidates\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native_with_fallback",
+      "return_type": "-> Option<&'a PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 515
+        },
+        "start": {
+          "column": 5,
+          "line": 471
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:487:61: replace && with || in IdentityIndex::resolve_native_with_fallback",
+    "package": "callisto-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 63,
+        "line": 487
+      },
+      "start": {
+        "column": 61,
+        "line": 487
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace != with == in IdentityIndex::resolve_native_with_fallback\n@@ -479,17 +479,17 @@\n         if let Some(id) = self.native_in_ecosystem(eco, name) {\n             return Some(id);\n         }\n \n         // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.\n         let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self\n             .native\n             .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n+            .filter(|(native, _)| native.ecosystem() == /* ~ changed by cargo-mutants ~ */ eco && native.as_str() == name)\n             .map(|(native, id)| (native.ecosystem(), native.as_str(), id))\n             .collect();\n         candidates.dedup_by(|a, b| a.2 == b.2);\n \n         match candidates.len() {\n             0 => None,\n             _ => {\n                 let candidate_names: Vec<String> = candidates\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native_with_fallback",
+      "return_type": "-> Option<&'a PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 515
+        },
+        "start": {
+          "column": 5,
+          "line": 471
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:487:54: replace != with == in IdentityIndex::resolve_native_with_fallback",
+    "package": "callisto-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 56,
+        "line": 487
+      },
+      "start": {
+        "column": 54,
+        "line": 487
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace == with != in IdentityIndex::resolve_native_with_fallback\n@@ -479,17 +479,17 @@\n         if let Some(id) = self.native_in_ecosystem(eco, name) {\n             return Some(id);\n         }\n \n         // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.\n         let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self\n             .native\n             .iter()\n-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)\n+            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() != /* ~ changed by cargo-mutants ~ */ name)\n             .map(|(native, id)| (native.ecosystem(), native.as_str(), id))\n             .collect();\n         candidates.dedup_by(|a, b| a.2 == b.2);\n \n         match candidates.len() {\n             0 => None,\n             _ => {\n                 let candidate_names: Vec<String> = candidates\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::resolve_native_with_fallback",
+      "return_type": "-> Option<&'a PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 515
+        },
+        "start": {
+          "column": 5,
+          "line": 471
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:487:80: replace == with != in IdentityIndex::resolve_native_with_fallback",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 82,
+        "line": 487
+      },
+      "start": {
+        "column": 80,
+        "line": 487
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_in_ecosystem -> Option<&PackageId> with None\n@@ -510,17 +510,17 @@\n                     governed_by: None,\n                 });\n                 None\n             }\n         }\n     }\n \n     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n-        self.native.get(&NativeName::new(eco, name))\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {\n         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n         keys.iter()\n             .filter(|key| key.ecosystem() == eco)\n             .find_map(|key| self.native.get_key_value(key))\n             .map(|(name, _)| name.as_str())\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_in_ecosystem",
+      "return_type": "-> Option<&PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 519
+        },
+        "start": {
+          "column": 5,
+          "line": 517
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:518:9: replace IdentityIndex::native_in_ecosystem -> Option<&PackageId> with None",
+    "package": "callisto-graph",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 518
+      },
+      "start": {
+        "column": 9,
+        "line": 518
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_in_ecosystem -> Option<&PackageId> with Some(Box::leak(Box::new(Default::default())))\n@@ -510,17 +510,17 @@\n                     governed_by: None,\n                 });\n                 None\n             }\n         }\n     }\n \n     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n-        self.native.get(&NativeName::new(eco, name))\n+        Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {\n         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n         keys.iter()\n             .filter(|key| key.ecosystem() == eco)\n             .find_map(|key| self.native.get_key_value(key))\n             .map(|(name, _)| name.as_str())\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_in_ecosystem",
+      "return_type": "-> Option<&PackageId>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 519
+        },
+        "start": {
+          "column": 5,
+          "line": 517
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:518:9: replace IdentityIndex::native_in_ecosystem -> Option<&PackageId> with Some(Box::leak(Box::new(Default::default())))",
+    "package": "callisto-graph",
+    "replacement": "Some(Box::leak(Box::new(Default::default())))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 518
+      },
+      "start": {
+        "column": 9,
+        "line": 518
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_name -> Option<&str> with None\n@@ -514,21 +514,17 @@\n         }\n     }\n \n     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n         self.native.get(&NativeName::new(eco, name))\n     }\n \n     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {\n-        let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n-        keys.iter()\n-            .filter(|key| key.ecosystem() == eco)\n-            .find_map(|key| self.native.get_key_value(key))\n-            .map(|(name, _)| name.as_str())\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one\n     /// package that is called `name` in another ecosystem (or by its directory) and has a manifest in `eco`. A dual\n     /// package's npm side is often named differently from its Cargo side, so `npm/michi-node` is easy to write for\n     /// `npm/@orin-dx/michi`.\n     pub fn suggest_native(&self, qualified: &str) -> Option<String> {\n         let (prefix, name) = qualified.split_once('/')?;\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_name",
+      "return_type": "-> Option<&str>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 527
+        },
+        "start": {
+          "column": 5,
+          "line": 521
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:522:9: replace IdentityIndex::native_name -> Option<&str> with None",
+    "package": "callisto-graph",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 44,
+        "line": 526
+      },
+      "start": {
+        "column": 9,
+        "line": 522
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_name -> Option<&str> with Some(\"\")\n@@ -514,21 +514,17 @@\n         }\n     }\n \n     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n         self.native.get(&NativeName::new(eco, name))\n     }\n \n     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {\n-        let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n-        keys.iter()\n-            .filter(|key| key.ecosystem() == eco)\n-            .find_map(|key| self.native.get_key_value(key))\n-            .map(|(name, _)| name.as_str())\n+        Some(\"\") /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one\n     /// package that is called `name` in another ecosystem (or by its directory) and has a manifest in `eco`. A dual\n     /// package's npm side is often named differently from its Cargo side, so `npm/michi-node` is easy to write for\n     /// `npm/@orin-dx/michi`.\n     pub fn suggest_native(&self, qualified: &str) -> Option<String> {\n         let (prefix, name) = qualified.split_once('/')?;\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_name",
+      "return_type": "-> Option<&str>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 527
+        },
+        "start": {
+          "column": 5,
+          "line": 521
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:522:9: replace IdentityIndex::native_name -> Option<&str> with Some(\"\")",
+    "package": "callisto-graph",
+    "replacement": "Some(\"\")",
+    "span": {
+      "end": {
+        "column": 44,
+        "line": 526
+      },
+      "start": {
+        "column": 9,
+        "line": 522
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_name -> Option<&str> with Some(\"xyzzy\")\n@@ -514,21 +514,17 @@\n         }\n     }\n \n     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n         self.native.get(&NativeName::new(eco, name))\n     }\n \n     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {\n-        let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n-        keys.iter()\n-            .filter(|key| key.ecosystem() == eco)\n-            .find_map(|key| self.native.get_key_value(key))\n-            .map(|(name, _)| name.as_str())\n+        Some(\"xyzzy\") /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one\n     /// package that is called `name` in another ecosystem (or by its directory) and has a manifest in `eco`. A dual\n     /// package's npm side is often named differently from its Cargo side, so `npm/michi-node` is easy to write for\n     /// `npm/@orin-dx/michi`.\n     pub fn suggest_native(&self, qualified: &str) -> Option<String> {\n         let (prefix, name) = qualified.split_once('/')?;\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_name",
+      "return_type": "-> Option<&str>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 527
+        },
+        "start": {
+          "column": 5,
+          "line": 521
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:522:9: replace IdentityIndex::native_name -> Option<&str> with Some(\"xyzzy\")",
+    "package": "callisto-graph",
+    "replacement": "Some(\"xyzzy\")",
+    "span": {
+      "end": {
+        "column": 44,
+        "line": 526
+      },
+      "start": {
+        "column": 9,
+        "line": 522
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace == with != in IdentityIndex::native_name\n@@ -516,17 +516,17 @@\n \n     fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {\n         self.native.get(&NativeName::new(eco, name))\n     }\n \n     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {\n         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n         keys.iter()\n-            .filter(|key| key.ecosystem() == eco)\n+            .filter(|key| key.ecosystem() != /* ~ changed by cargo-mutants ~ */ eco)\n             .find_map(|key| self.native.get_key_value(key))\n             .map(|(name, _)| name.as_str())\n     }\n \n     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one\n     /// package that is called `name` in another ecosystem (or by its directory) and has a manifest in `eco`. A dual\n     /// package's npm side is often named differently from its Cargo side, so `npm/michi-node` is easy to write for\n     /// `npm/@orin-dx/michi`.\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_name",
+      "return_type": "-> Option<&str>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 527
+        },
+        "start": {
+          "column": 5,
+          "line": 521
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:524:43: replace == with != in IdentityIndex::native_name",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 45,
+        "line": 524
+      },
+      "start": {
+        "column": 43,
+        "line": 524
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::suggest_native -> Option<String> with None\n@@ -526,30 +526,17 @@\n             .map(|(name, _)| name.as_str())\n     }\n \n     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one\n     /// package that is called `name` in another ecosystem (or by its directory) and has a manifest in `eco`. A dual\n     /// package's npm side is often named differently from its Cargo side, so `npm/michi-node` is easy to write for\n     /// `npm/@orin-dx/michi`.\n     pub fn suggest_native(&self, qualified: &str) -> Option<String> {\n-        let (prefix, name) = qualified.split_once('/')?;\n-        let ecosystem = Ecosystem::from_prefix(prefix)?;\n-        if self.native.contains_key(&NativeName::new(ecosystem, name)) {\n-            return None;\n-        }\n-        let mut candidates = self\n-            .native\n-            .iter()\n-            .filter(|(native, owner)| {\n-                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name\n-            })\n-            .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n-        let first = candidates.next()?;\n-        candidates.next().is_none().then_some(first)\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n         self.native.keys().map(|native| PackageId::Prefixed {\n             ecosystem: native.ecosystem(),\n             name: native.as_str().to_owned(),\n         })\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::suggest_native",
+      "return_type": "-> Option<String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 548
+        },
+        "start": {
+          "column": 5,
+          "line": 529
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:534:9: replace IdentityIndex::suggest_native -> Option<String> with None",
+    "package": "callisto-graph",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 547
+      },
+      "start": {
+        "column": 9,
+        "line": 534
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::suggest_native -> Option<String> with Some(String::new())\n@@ -526,30 +526,17 @@\n             .map(|(name, _)| name.as_str())\n     }\n \n     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one\n     /// package that is called `name` in another ecosystem (or by its directory) and has a manifest in `eco`. A dual\n     /// package's npm side is often named differently from its Cargo side, so `npm/michi-node` is easy to write for\n     /// `npm/@orin-dx/michi`.\n     pub fn suggest_native(&self, qualified: &str) -> Option<String> {\n-        let (prefix, name) = qualified.split_once('/')?;\n-        let ecosystem = Ecosystem::from_prefix(prefix)?;\n-        if self.native.contains_key(&NativeName::new(ecosystem, name)) {\n-            return None;\n-        }\n-        let mut candidates = self\n-            .native\n-            .iter()\n-            .filter(|(native, owner)| {\n-                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name\n-            })\n-            .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n-        let first = candidates.next()?;\n-        candidates.next().is_none().then_some(first)\n+        Some(String::new()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n         self.native.keys().map(|native| PackageId::Prefixed {\n             ecosystem: native.ecosystem(),\n             name: native.as_str().to_owned(),\n         })\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::suggest_native",
+      "return_type": "-> Option<String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 548
+        },
+        "start": {
+          "column": 5,
+          "line": 529
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:534:9: replace IdentityIndex::suggest_native -> Option<String> with Some(String::new())",
+    "package": "callisto-graph",
+    "replacement": "Some(String::new())",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 547
+      },
+      "start": {
+        "column": 9,
+        "line": 534
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::suggest_native -> Option<String> with Some(\"xyzzy\".into())\n@@ -526,30 +526,17 @@\n             .map(|(name, _)| name.as_str())\n     }\n \n     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one\n     /// package that is called `name` in another ecosystem (or by its directory) and has a manifest in `eco`. A dual\n     /// package's npm side is often named differently from its Cargo side, so `npm/michi-node` is easy to write for\n     /// `npm/@orin-dx/michi`.\n     pub fn suggest_native(&self, qualified: &str) -> Option<String> {\n-        let (prefix, name) = qualified.split_once('/')?;\n-        let ecosystem = Ecosystem::from_prefix(prefix)?;\n-        if self.native.contains_key(&NativeName::new(ecosystem, name)) {\n-            return None;\n-        }\n-        let mut candidates = self\n-            .native\n-            .iter()\n-            .filter(|(native, owner)| {\n-                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name\n-            })\n-            .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n-        let first = candidates.next()?;\n-        candidates.next().is_none().then_some(first)\n+        Some(\"xyzzy\".into()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n         self.native.keys().map(|native| PackageId::Prefixed {\n             ecosystem: native.ecosystem(),\n             name: native.as_str().to_owned(),\n         })\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::suggest_native",
+      "return_type": "-> Option<String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 548
+        },
+        "start": {
+          "column": 5,
+          "line": 529
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:534:9: replace IdentityIndex::suggest_native -> Option<String> with Some(\"xyzzy\".into())",
+    "package": "callisto-graph",
+    "replacement": "Some(\"xyzzy\".into())",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 547
+      },
+      "start": {
+        "column": 9,
+        "line": 534
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace && with || in IdentityIndex::suggest_native\n@@ -535,17 +535,17 @@\n         let ecosystem = Ecosystem::from_prefix(prefix)?;\n         if self.native.contains_key(&NativeName::new(ecosystem, name)) {\n             return None;\n         }\n         let mut candidates = self\n             .native\n             .iter()\n             .filter(|(native, owner)| {\n-                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name\n+                native.ecosystem() == ecosystem && native.as_str() != name || /* ~ changed by cargo-mutants ~ */ owner.name() == name\n             })\n             .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n         let first = candidates.next()?;\n         candidates.next().is_none().then_some(first)\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::suggest_native",
+      "return_type": "-> Option<String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 548
+        },
+        "start": {
+          "column": 5,
+          "line": 529
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:543:76: replace && with || in IdentityIndex::suggest_native",
+    "package": "callisto-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 78,
+        "line": 543
+      },
+      "start": {
+        "column": 76,
+        "line": 543
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace && with || in IdentityIndex::suggest_native\n@@ -535,17 +535,17 @@\n         let ecosystem = Ecosystem::from_prefix(prefix)?;\n         if self.native.contains_key(&NativeName::new(ecosystem, name)) {\n             return None;\n         }\n         let mut candidates = self\n             .native\n             .iter()\n             .filter(|(native, owner)| {\n-                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name\n+                native.ecosystem() == ecosystem || /* ~ changed by cargo-mutants ~ */ native.as_str() != name && owner.name() == name\n             })\n             .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n         let first = candidates.next()?;\n         candidates.next().is_none().then_some(first)\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::suggest_native",
+      "return_type": "-> Option<String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 548
+        },
+        "start": {
+          "column": 5,
+          "line": 529
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:543:49: replace && with || in IdentityIndex::suggest_native",
+    "package": "callisto-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 51,
+        "line": 543
+      },
+      "start": {
+        "column": 49,
+        "line": 543
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace == with != in IdentityIndex::suggest_native\n@@ -535,17 +535,17 @@\n         let ecosystem = Ecosystem::from_prefix(prefix)?;\n         if self.native.contains_key(&NativeName::new(ecosystem, name)) {\n             return None;\n         }\n         let mut candidates = self\n             .native\n             .iter()\n             .filter(|(native, owner)| {\n-                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name\n+                native.ecosystem() != /* ~ changed by cargo-mutants ~ */ ecosystem && native.as_str() != name && owner.name() == name\n             })\n             .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n         let first = candidates.next()?;\n         candidates.next().is_none().then_some(first)\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::suggest_native",
+      "return_type": "-> Option<String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 548
+        },
+        "start": {
+          "column": 5,
+          "line": 529
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:543:36: replace == with != in IdentityIndex::suggest_native",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 543
+      },
+      "start": {
+        "column": 36,
+        "line": 543
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace != with == in IdentityIndex::suggest_native\n@@ -535,17 +535,17 @@\n         let ecosystem = Ecosystem::from_prefix(prefix)?;\n         if self.native.contains_key(&NativeName::new(ecosystem, name)) {\n             return None;\n         }\n         let mut candidates = self\n             .native\n             .iter()\n             .filter(|(native, owner)| {\n-                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name\n+                native.ecosystem() == ecosystem && native.as_str() == /* ~ changed by cargo-mutants ~ */ name && owner.name() == name\n             })\n             .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n         let first = candidates.next()?;\n         candidates.next().is_none().then_some(first)\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::suggest_native",
+      "return_type": "-> Option<String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 548
+        },
+        "start": {
+          "column": 5,
+          "line": 529
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:543:68: replace != with == in IdentityIndex::suggest_native",
+    "package": "callisto-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 70,
+        "line": 543
+      },
+      "start": {
+        "column": 68,
+        "line": 543
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace == with != in IdentityIndex::suggest_native\n@@ -535,17 +535,17 @@\n         let ecosystem = Ecosystem::from_prefix(prefix)?;\n         if self.native.contains_key(&NativeName::new(ecosystem, name)) {\n             return None;\n         }\n         let mut candidates = self\n             .native\n             .iter()\n             .filter(|(native, owner)| {\n-                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name\n+                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() != /* ~ changed by cargo-mutants ~ */ name\n             })\n             .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n         let first = candidates.next()?;\n         candidates.next().is_none().then_some(first)\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::suggest_native",
+      "return_type": "-> Option<String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 548
+        },
+        "start": {
+          "column": 5,
+          "line": 529
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/identity.rs:543:92: replace == with != in IdentityIndex::suggest_native",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 94,
+        "line": 543
+      },
+      "start": {
+        "column": 92,
+        "line": 543
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_ids -> impl Iterator<Item = PackageId>+'_ with ::std::iter::empty()\n@@ -544,20 +544,17 @@\n             })\n             .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n         let first = candidates.next()?;\n         candidates.next().is_none().then_some(first)\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n-        self.native.keys().map(|native| PackageId::Prefixed {\n-            ecosystem: native.ecosystem(),\n-            name: native.as_str().to_owned(),\n-        })\n+        ::std::iter::empty() /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {\n         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n         let results: Vec<(Ecosystem, &str)> = keys\n             .iter()\n             .filter_map(|key| self.native.get_key_value(key))\n             .map(|(native, _)| (native.ecosystem(), native.as_str()))\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_ids",
+      "return_type": "-> impl Iterator<Item = PackageId>+'_",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 556
+        },
+        "start": {
+          "column": 5,
+          "line": 550
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:552:9: replace IdentityIndex::native_ids -> impl Iterator<Item = PackageId>+'_ with ::std::iter::empty()",
+    "package": "callisto-graph",
+    "replacement": "::std::iter::empty()",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 555
+      },
+      "start": {
+        "column": 9,
+        "line": 552
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_ids -> impl Iterator<Item = PackageId>+'_ with ::std::iter::once(Default::default())\n@@ -544,20 +544,17 @@\n             })\n             .map(|(native, _)| format!(\"{prefix}/{}\", native.as_str()));\n         let first = candidates.next()?;\n         candidates.next().is_none().then_some(first)\n     }\n \n     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n-        self.native.keys().map(|native| PackageId::Prefixed {\n-            ecosystem: native.ecosystem(),\n-            name: native.as_str().to_owned(),\n-        })\n+        ::std::iter::once(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {\n         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n         let results: Vec<(Ecosystem, &str)> = keys\n             .iter()\n             .filter_map(|key| self.native.get_key_value(key))\n             .map(|(native, _)| (native.ecosystem(), native.as_str()))\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_ids",
+      "return_type": "-> impl Iterator<Item = PackageId>+'_",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 556
+        },
+        "start": {
+          "column": 5,
+          "line": 550
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:552:9: replace IdentityIndex::native_ids -> impl Iterator<Item = PackageId>+'_ with ::std::iter::once(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "::std::iter::once(Default::default())",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 555
+      },
+      "start": {
+        "column": 9,
+        "line": 552
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_names -> impl Iterator<Item =(Ecosystem, &str)>+use<'_> with ::std::iter::empty()\n@@ -551,23 +551,17 @@\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n         self.native.keys().map(|native| PackageId::Prefixed {\n             ecosystem: native.ecosystem(),\n             name: native.as_str().to_owned(),\n         })\n     }\n \n     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {\n-        let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n-        let results: Vec<(Ecosystem, &str)> = keys\n-            .iter()\n-            .filter_map(|key| self.native.get_key_value(key))\n-            .map(|(native, _)| (native.ecosystem(), native.as_str()))\n-            .collect();\n-        results.into_iter()\n+        ::std::iter::empty() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The platform manifests attached to `owner` from their own\n     /// directories, as (npm name, manifest path). Excludes a co-located platform\n     /// manifest that is also one of `owner`'s canonical manifests.\n     pub fn attached_platforms<'a>(\n         &'a self,\n         owner: &'a callisto_model::Package,\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_names",
+      "return_type": "-> impl Iterator<Item =(Ecosystem, &str)>+use<'_>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 566
+        },
+        "start": {
+          "column": 5,
+          "line": 558
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:559:9: replace IdentityIndex::native_names -> impl Iterator<Item =(Ecosystem, &str)>+use<'_> with ::std::iter::empty()",
+    "package": "callisto-graph",
+    "replacement": "::std::iter::empty()",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 565
+      },
+      "start": {
+        "column": 9,
+        "line": 559
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_names -> impl Iterator<Item =(Ecosystem, &str)>+use<'_> with ::std::iter::once((Default::default(), \"\"))\n@@ -551,23 +551,17 @@\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n         self.native.keys().map(|native| PackageId::Prefixed {\n             ecosystem: native.ecosystem(),\n             name: native.as_str().to_owned(),\n         })\n     }\n \n     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {\n-        let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n-        let results: Vec<(Ecosystem, &str)> = keys\n-            .iter()\n-            .filter_map(|key| self.native.get_key_value(key))\n-            .map(|(native, _)| (native.ecosystem(), native.as_str()))\n-            .collect();\n-        results.into_iter()\n+        ::std::iter::once((Default::default(), \"\")) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The platform manifests attached to `owner` from their own\n     /// directories, as (npm name, manifest path). Excludes a co-located platform\n     /// manifest that is also one of `owner`'s canonical manifests.\n     pub fn attached_platforms<'a>(\n         &'a self,\n         owner: &'a callisto_model::Package,\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_names",
+      "return_type": "-> impl Iterator<Item =(Ecosystem, &str)>+use<'_>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 566
+        },
+        "start": {
+          "column": 5,
+          "line": 558
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:559:9: replace IdentityIndex::native_names -> impl Iterator<Item =(Ecosystem, &str)>+use<'_> with ::std::iter::once((Default::default(), \"\"))",
+    "package": "callisto-graph",
+    "replacement": "::std::iter::once((Default::default(), \"\"))",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 565
+      },
+      "start": {
+        "column": 9,
+        "line": 559
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/identity.rs\n+++ replace IdentityIndex::native_names -> impl Iterator<Item =(Ecosystem, &str)>+use<'_> with ::std::iter::once((Default::default(), \"xyzzy\"))\n@@ -551,23 +551,17 @@\n     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {\n         self.native.keys().map(|native| PackageId::Prefixed {\n             ecosystem: native.ecosystem(),\n             name: native.as_str().to_owned(),\n         })\n     }\n \n     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {\n-        let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());\n-        let results: Vec<(Ecosystem, &str)> = keys\n-            .iter()\n-            .filter_map(|key| self.native.get_key_value(key))\n-            .map(|(native, _)| (native.ecosystem(), native.as_str()))\n-            .collect();\n-        results.into_iter()\n+        ::std::iter::once((Default::default(), \"xyzzy\")) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The platform manifests attached to `owner` from their own\n     /// directories, as (npm name, manifest path). Excludes a co-located platform\n     /// manifest that is also one of `owner`'s canonical manifests.\n     pub fn attached_platforms<'a>(\n         &'a self,\n         owner: &'a callisto_model::Package,\n",
+    "file": "crates/callisto-graph/src/identity.rs",
+    "function": {
+      "function_name": "IdentityIndex::native_names",
+      "return_type": "-> impl Iterator<Item =(Ecosystem, &str)>+use<'_>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 566
+        },
+        "start": {
+          "column": 5,
+          "line": 558
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/identity.rs:559:9: replace IdentityIndex::native_names -> impl Iterator<Item =(Ecosystem, &str)>+use<'_> with ::std::iter::once((Default::default(), \"xyzzy\"))",
+    "package": "callisto-graph",
+    "replacement": "::std::iter::once((Default::default(), \"xyzzy\"))",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 565
+      },
+      "start": {
+        "column": 9,
+        "line": 559
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/walk.rs\n+++ replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::new(), vec![])\n@@ -70,23 +70,17 @@\n \n /// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)\n /// for one path's own `list` of (ecosystem, declared-id) pairs. The first is filtered\n /// to entries whose declared name equals `primary_id.name()`; the second is not filtered.\n fn compute_claiming_ecosystems_and_native_keys(\n     list: &[(Ecosystem, PackageId)],\n     primary_id: &PackageId,\n ) -> (BTreeSet<Ecosystem>, Vec<NativeName>) {\n-    let claiming = list\n-        .iter()\n-        .filter(|(_, id)| id.name() == primary_id.name())\n-        .map(|(eco, _)| *eco)\n-        .collect();\n-    let native_keys = list.iter().map(|(eco, id)| NativeName::new(*eco, id.name())).collect();\n-    (claiming, native_keys)\n+    (BTreeSet::new(), vec![]) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Disjointness test for two paths' name-scoped claiming-ecosystem sets --\n /// {Cargo,Npm} and {Npm} are unequal but not disjoint. Kept for the\n /// `is_promoted_bare_name` unit tests below; actual duplicate detection is\n /// `native_owner` in `build`, keyed by every declared (ecosystem, name), not\n /// just each path's primary name.\n #[cfg(test)]\n",
+    "file": "crates/callisto-graph/src/walk.rs",
+    "function": {
+      "function_name": "compute_claiming_ecosystems_and_native_keys",
+      "return_type": "-> (BTreeSet<Ecosystem>, Vec<NativeName>)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 85
+        },
+        "start": {
+          "column": 1,
+          "line": 71
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/walk.rs:78:5: replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::new(), vec![])",
+    "package": "callisto-graph",
+    "replacement": "(BTreeSet::new(), vec![])",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 84
+      },
+      "start": {
+        "column": 5,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/walk.rs\n+++ replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::new(), vec![Default::default()])\n@@ -70,23 +70,17 @@\n \n /// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)\n /// for one path's own `list` of (ecosystem, declared-id) pairs. The first is filtered\n /// to entries whose declared name equals `primary_id.name()`; the second is not filtered.\n fn compute_claiming_ecosystems_and_native_keys(\n     list: &[(Ecosystem, PackageId)],\n     primary_id: &PackageId,\n ) -> (BTreeSet<Ecosystem>, Vec<NativeName>) {\n-    let claiming = list\n-        .iter()\n-        .filter(|(_, id)| id.name() == primary_id.name())\n-        .map(|(eco, _)| *eco)\n-        .collect();\n-    let native_keys = list.iter().map(|(eco, id)| NativeName::new(*eco, id.name())).collect();\n-    (claiming, native_keys)\n+    (BTreeSet::new(), vec![Default::default()]) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Disjointness test for two paths' name-scoped claiming-ecosystem sets --\n /// {Cargo,Npm} and {Npm} are unequal but not disjoint. Kept for the\n /// `is_promoted_bare_name` unit tests below; actual duplicate detection is\n /// `native_owner` in `build`, keyed by every declared (ecosystem, name), not\n /// just each path's primary name.\n #[cfg(test)]\n",
+    "file": "crates/callisto-graph/src/walk.rs",
+    "function": {
+      "function_name": "compute_claiming_ecosystems_and_native_keys",
+      "return_type": "-> (BTreeSet<Ecosystem>, Vec<NativeName>)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 85
+        },
+        "start": {
+          "column": 1,
+          "line": 71
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/walk.rs:78:5: replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::new(), vec![Default::default()])",
+    "package": "callisto-graph",
+    "replacement": "(BTreeSet::new(), vec![Default::default()])",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 84
+      },
+      "start": {
+        "column": 5,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/walk.rs\n+++ replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::from_iter([Default::default()]), vec![])\n@@ -70,23 +70,17 @@\n \n /// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)\n /// for one path's own `list` of (ecosystem, declared-id) pairs. The first is filtered\n /// to entries whose declared name equals `primary_id.name()`; the second is not filtered.\n fn compute_claiming_ecosystems_and_native_keys(\n     list: &[(Ecosystem, PackageId)],\n     primary_id: &PackageId,\n ) -> (BTreeSet<Ecosystem>, Vec<NativeName>) {\n-    let claiming = list\n-        .iter()\n-        .filter(|(_, id)| id.name() == primary_id.name())\n-        .map(|(eco, _)| *eco)\n-        .collect();\n-    let native_keys = list.iter().map(|(eco, id)| NativeName::new(*eco, id.name())).collect();\n-    (claiming, native_keys)\n+    (BTreeSet::from_iter([Default::default()]), vec![]) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Disjointness test for two paths' name-scoped claiming-ecosystem sets --\n /// {Cargo,Npm} and {Npm} are unequal but not disjoint. Kept for the\n /// `is_promoted_bare_name` unit tests below; actual duplicate detection is\n /// `native_owner` in `build`, keyed by every declared (ecosystem, name), not\n /// just each path's primary name.\n #[cfg(test)]\n",
+    "file": "crates/callisto-graph/src/walk.rs",
+    "function": {
+      "function_name": "compute_claiming_ecosystems_and_native_keys",
+      "return_type": "-> (BTreeSet<Ecosystem>, Vec<NativeName>)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 85
+        },
+        "start": {
+          "column": 1,
+          "line": 71
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/walk.rs:78:5: replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::from_iter([Default::default()]), vec![])",
+    "package": "callisto-graph",
+    "replacement": "(BTreeSet::from_iter([Default::default()]), vec![])",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 84
+      },
+      "start": {
+        "column": 5,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/walk.rs\n+++ replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::from_iter([Default::default()]), vec![Default::default()])\n@@ -70,23 +70,17 @@\n \n /// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)\n /// for one path's own `list` of (ecosystem, declared-id) pairs. The first is filtered\n /// to entries whose declared name equals `primary_id.name()`; the second is not filtered.\n fn compute_claiming_ecosystems_and_native_keys(\n     list: &[(Ecosystem, PackageId)],\n     primary_id: &PackageId,\n ) -> (BTreeSet<Ecosystem>, Vec<NativeName>) {\n-    let claiming = list\n-        .iter()\n-        .filter(|(_, id)| id.name() == primary_id.name())\n-        .map(|(eco, _)| *eco)\n-        .collect();\n-    let native_keys = list.iter().map(|(eco, id)| NativeName::new(*eco, id.name())).collect();\n-    (claiming, native_keys)\n+    (BTreeSet::from_iter([Default::default()]), vec![Default::default()]) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Disjointness test for two paths' name-scoped claiming-ecosystem sets --\n /// {Cargo,Npm} and {Npm} are unequal but not disjoint. Kept for the\n /// `is_promoted_bare_name` unit tests below; actual duplicate detection is\n /// `native_owner` in `build`, keyed by every declared (ecosystem, name), not\n /// just each path's primary name.\n #[cfg(test)]\n",
+    "file": "crates/callisto-graph/src/walk.rs",
+    "function": {
+      "function_name": "compute_claiming_ecosystems_and_native_keys",
+      "return_type": "-> (BTreeSet<Ecosystem>, Vec<NativeName>)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 85
+        },
+        "start": {
+          "column": 1,
+          "line": 71
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/walk.rs:78:5: replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::from_iter([Default::default()]), vec![Default::default()])",
+    "package": "callisto-graph",
+    "replacement": "(BTreeSet::from_iter([Default::default()]), vec![Default::default()])",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 84
+      },
+      "start": {
+        "column": 5,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/walk.rs\n+++ replace IdentityAssigner<'a>::assign -> Result<(), GraphError> with Ok(())\n@@ -287,140 +287,17 @@\n             primary_ecosystems: BTreeMap::new(),\n             promoted_siblings: BTreeMap::new(),\n             unresolved: Vec::new(),\n         }\n     }\n \n     fn assign(&mut self, rel_path: PathBuf, mut list: Vec<(Ecosystem, PackageId)>) -> Result<(), GraphError> {\n         // Explicit precedence Cargo > Npm > Pypi > others via `primary_priority`, not enum discriminant order.\n-        list.sort_by_key(|a| a.0.primary_priority());\n-\n-        // E100 when any (ecosystem, native name) this path declares is owned by another path; checked before promotion bookkeeping.\n-        if let Some((eco, id)) = list.iter().find(|(eco, id)| {\n-            self.native_owner\n-                .get(&NativeName::new(*eco, id.name()))\n-                .is_some_and(|p| *p != rel_path)\n-        }) {\n-            let owner_path = self.native_owner[&NativeName::new(*eco, id.name())].clone();\n-            return Err(GraphError::DuplicatePackage {\n-                id: id.clone(),\n-                paths: vec![owner_path, rel_path],\n-            });\n-        }\n-        for (eco, id) in &list {\n-            self.native_owner\n-                .insert(NativeName::new(*eco, id.name()), rel_path.clone());\n-        }\n-\n-        let mut primary_id = list[0].1.clone();\n-        let (this_claiming, this_native_keys) = compute_claiming_ecosystems_and_native_keys(&list, &primary_id);\n-        self.claiming_ecosystems.insert(rel_path.clone(), this_claiming.clone());\n-        self.path_native_keys.insert(rel_path.clone(), this_native_keys);\n-        self.primary_ecosystems.insert(rel_path.clone(), list[0].0);\n-\n-        let mut branch_ii_promoted = false;\n-        if self.promoted_siblings.contains_key(primary_id.name()) {\n-            let this_set = self.claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();\n-            let promoted_id = PackageId::Prefixed {\n-                ecosystem: self.primary_ecosystems[&rel_path],\n-                name: primary_id.name().to_string(),\n-            };\n-            self.promoted_siblings\n-                .entry(primary_id.name().to_string())\n-                .or_default()\n-                .push((promoted_id.clone(), this_set));\n-            primary_id = promoted_id;\n-            branch_ii_promoted = true;\n-        }\n-\n-        if !branch_ii_promoted {\n-            self.index\n-                .bare\n-                .insert(primary_id.name().to_string(), primary_id.clone());\n-        }\n-\n-        let mut decls = Vec::new();\n-        for (eco, id) in &list {\n-            let Some(fmt) = eco.canonical_manifest_format() else {\n-                continue;\n-            };\n-            let manifest_rel = rel_path.join(fmt.file_name());\n-            let canonical_decl = match ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt) {\n-                Ok(decl) => {\n-                    decls.push(decl.clone());\n-                    Some(decl)\n-                }\n-                Err(error) => {\n-                    self.unresolved\n-                        .push(unresolved(&manifest_rel, \"declare its manifest\", error));\n-                    None\n-                }\n-            };\n-            // Napi platform packages (os + cpu) also get a Platform-role decl, reusing the cached manifest handle via `npm_role()`.\n-            if *eco == Ecosystem::Npm {\n-                let opened = canonical_decl\n-                    .as_ref()\n-                    .map(|decl| open_cached(self.manifest_cache, decl, self.ctx));\n-                let manifest = match opened {\n-                    Some(Ok(manifest)) => Some(manifest),\n-                    Some(Err(error)) => {\n-                        self.unresolved.push(unresolved(\n-                            &manifest_rel,\n-                            \"open its manifest to read its platform role\",\n-                            error,\n-                        ));\n-                        None\n-                    }\n-                    None => None,\n-                };\n-                let role = manifest\n-                    .and_then(|m| m.npm_role())\n-                    .map(|npm_role| match npm_role {\n-                        callisto_manifests::NpmRole::Platform { platform, arch, abi } => {\n-                            ManifestRole::Platform { platform, arch, abi }\n-                        }\n-                    })\n-                    .unwrap_or(ManifestRole::Canonical);\n-                if let ManifestRole::Platform { .. } = role {\n-                    match ManifestDecl::new(manifest_rel.clone(), role.clone(), fmt) {\n-                        Ok(platform_decl) => decls.push(platform_decl),\n-                        Err(error) => {\n-                            self.unresolved\n-                                .push(unresolved(&manifest_rel, \"declare its platform manifest\", error))\n-                        }\n-                    }\n-                    // `id` is this manifest's own npm identity; config members use it as the index key, `primary_id` is the owner.\n-                    self.index\n-                        .platform\n-                        .insert(id.name().to_string(), (primary_id.clone(), manifest_rel, role));\n-                    self.path_platform_keys\n-                        .entry(rel_path.clone())\n-                        .or_default()\n-                        .push(id.name().to_string());\n-                }\n-            }\n-            self.index\n-                .native\n-                .insert(NativeName::new(*eco, id.name()), primary_id.clone());\n-            if id.name() == primary_id.name() {\n-                self.index\n-                    .prefixed\n-                    .insert((*eco, id.name().to_string()), primary_id.clone());\n-            }\n-        }\n-\n-        let current_decls = decls.clone();\n-        if let Some((existing_path, existing_decls)) = self\n-            .package_manifest_decls\n-            .insert(primary_id.clone(), (rel_path.clone(), decls))\n-        {\n-            self.promotion_rekey(primary_id, existing_path, existing_decls, rel_path, current_decls);\n-        }\n-        Ok(())\n+        Ok(()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// A second path just claimed the bare name `primary_id`, so both paths are promoted to ecosystem-prefixed ids\n     /// and every key already stored under the stale bare id is re-keyed.\n     fn promotion_rekey(\n         &mut self,\n         primary_id: PackageId,\n         existing_path: PathBuf,\n",
+    "file": "crates/callisto-graph/src/walk.rs",
+    "function": {
+      "function_name": "IdentityAssigner<'a>::assign",
+      "return_type": "-> Result<(), GraphError>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 419
+        },
+        "start": {
+          "column": 5,
+          "line": 293
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/walk.rs:295:9: replace IdentityAssigner<'a>::assign -> Result<(), GraphError> with Ok(())",
+    "package": "callisto-graph",
+    "replacement": "Ok(())",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 418
+      },
+      "start": {
+        "column": 9,
+        "line": 295
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/config/resolve.rs\n+++ replace rule_applies -> bool with true\n@@ -257,21 +257,17 @@\n \n /// A `[[package]]` rule applies to a package when it has a manifest in the rule's ecosystem whose own name is the\n /// rule's name.\n ///\n /// `native_names` is the package's name in each ecosystem it has a manifest in. A dual package's names can differ per\n /// ecosystem, so `npm/michi-node` does not apply to the package whose npm name is `@orin-dx/michi`, whatever its\n /// directory or Cargo name is, which is the same identity a `[[fixed-group]]` member must give.\n pub(crate) fn rule_applies(rule_id: &PackageId, native_names: &[(Ecosystem, &str)]) -> bool {\n-    rule_id.ecosystem().is_some_and(|eco| {\n-        native_names\n-            .iter()\n-            .any(|(ecosystem, name)| NativeName::new(*ecosystem, name) == NativeName::new(eco, rule_id.name()))\n-    })\n+    true /* ~ changed by cargo-mutants ~ */\n }\n \n /// The first `[[package]]` rule, in TOML declaration order, that applies to `id`; `None` if none does.\n ///\n /// MUST NOT sort or partition `cfg.packages`: declaration order is the specificity.\n pub(crate) fn resolve_package_config<'a>(\n     native_names: &[(Ecosystem, &str)],\n     cfg: &'a ResolvedConfig,\n",
+    "file": "crates/callisto-graph/src/config/resolve.rs",
+    "function": {
+      "function_name": "rule_applies",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 270
+        },
+        "start": {
+          "column": 1,
+          "line": 258
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/config/resolve.rs:265:5: replace rule_applies -> bool with true",
+    "package": "callisto-graph",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 269
+      },
+      "start": {
+        "column": 5,
+        "line": 265
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/config/resolve.rs\n+++ replace rule_applies -> bool with false\n@@ -257,21 +257,17 @@\n \n /// A `[[package]]` rule applies to a package when it has a manifest in the rule's ecosystem whose own name is the\n /// rule's name.\n ///\n /// `native_names` is the package's name in each ecosystem it has a manifest in. A dual package's names can differ per\n /// ecosystem, so `npm/michi-node` does not apply to the package whose npm name is `@orin-dx/michi`, whatever its\n /// directory or Cargo name is, which is the same identity a `[[fixed-group]]` member must give.\n pub(crate) fn rule_applies(rule_id: &PackageId, native_names: &[(Ecosystem, &str)]) -> bool {\n-    rule_id.ecosystem().is_some_and(|eco| {\n-        native_names\n-            .iter()\n-            .any(|(ecosystem, name)| NativeName::new(*ecosystem, name) == NativeName::new(eco, rule_id.name()))\n-    })\n+    false /* ~ changed by cargo-mutants ~ */\n }\n \n /// The first `[[package]]` rule, in TOML declaration order, that applies to `id`; `None` if none does.\n ///\n /// MUST NOT sort or partition `cfg.packages`: declaration order is the specificity.\n pub(crate) fn resolve_package_config<'a>(\n     native_names: &[(Ecosystem, &str)],\n     cfg: &'a ResolvedConfig,\n",
+    "file": "crates/callisto-graph/src/config/resolve.rs",
+    "function": {
+      "function_name": "rule_applies",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 270
+        },
+        "start": {
+          "column": 1,
+          "line": 258
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/config/resolve.rs:265:5: replace rule_applies -> bool with false",
+    "package": "callisto-graph",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 269
+      },
+      "start": {
+        "column": 5,
+        "line": 265
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/config/resolve.rs\n+++ replace == with != in rule_applies\n@@ -260,17 +260,17 @@\n ///\n /// `native_names` is the package's name in each ecosystem it has a manifest in. A dual package's names can differ per\n /// ecosystem, so `npm/michi-node` does not apply to the package whose npm name is `@orin-dx/michi`, whatever its\n /// directory or Cargo name is, which is the same identity a `[[fixed-group]]` member must give.\n pub(crate) fn rule_applies(rule_id: &PackageId, native_names: &[(Ecosystem, &str)]) -> bool {\n     rule_id.ecosystem().is_some_and(|eco| {\n         native_names\n             .iter()\n-            .any(|(ecosystem, name)| NativeName::new(*ecosystem, name) == NativeName::new(eco, rule_id.name()))\n+            .any(|(ecosystem, name)| NativeName::new(*ecosystem, name) != /* ~ changed by cargo-mutants ~ */ NativeName::new(eco, rule_id.name()))\n     })\n }\n \n /// The first `[[package]]` rule, in TOML declaration order, that applies to `id`; `None` if none does.\n ///\n /// MUST NOT sort or partition `cfg.packages`: declaration order is the specificity.\n pub(crate) fn resolve_package_config<'a>(\n     native_names: &[(Ecosystem, &str)],\n",
+    "file": "crates/callisto-graph/src/config/resolve.rs",
+    "function": {
+      "function_name": "rule_applies",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 270
+        },
+        "start": {
+          "column": 1,
+          "line": 258
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/config/resolve.rs:268:72: replace == with != in rule_applies",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 74,
+        "line": 268
+      },
+      "start": {
+        "column": 72,
+        "line": 268
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace NativeName::ecosystem -> Ecosystem with Default::default()\n@@ -240,17 +240,17 @@\n         NativeName {\n             ecosystem,\n             spelling: name.to_owned(),\n             key,\n         }\n     }\n \n     pub fn ecosystem(&self) -> Ecosystem {\n-        self.ecosystem\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The spelling the manifest declared.\n     pub fn as_str(&self) -> &str {\n         &self.spelling\n     }\n }\n \n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "NativeName::ecosystem",
+      "return_type": "-> Ecosystem",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 249
+        },
+        "start": {
+          "column": 5,
+          "line": 247
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:248:9: replace NativeName::ecosystem -> Ecosystem with Default::default()",
+    "package": "callisto-model",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 248
+      },
+      "start": {
+        "column": 9,
+        "line": 248
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace NativeName::as_str -> &str with \"\"\n@@ -245,17 +245,17 @@\n     }\n \n     pub fn ecosystem(&self) -> Ecosystem {\n         self.ecosystem\n     }\n \n     /// The spelling the manifest declared.\n     pub fn as_str(&self) -> &str {\n-        &self.spelling\n+        \"\" /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl PartialEq for NativeName {\n     fn eq(&self, other: &Self) -> bool {\n         self.ecosystem == other.ecosystem && self.key == other.key\n     }\n }\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "NativeName::as_str",
+      "return_type": "-> &str",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 254
+        },
+        "start": {
+          "column": 5,
+          "line": 251
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:253:9: replace NativeName::as_str -> &str with \"\"",
+    "package": "callisto-model",
+    "replacement": "\"\"",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 253
+      },
+      "start": {
+        "column": 9,
+        "line": 253
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace NativeName::as_str -> &str with \"xyzzy\"\n@@ -245,17 +245,17 @@\n     }\n \n     pub fn ecosystem(&self) -> Ecosystem {\n         self.ecosystem\n     }\n \n     /// The spelling the manifest declared.\n     pub fn as_str(&self) -> &str {\n-        &self.spelling\n+        \"xyzzy\" /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl PartialEq for NativeName {\n     fn eq(&self, other: &Self) -> bool {\n         self.ecosystem == other.ecosystem && self.key == other.key\n     }\n }\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "NativeName::as_str",
+      "return_type": "-> &str",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 254
+        },
+        "start": {
+          "column": 5,
+          "line": 251
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:253:9: replace NativeName::as_str -> &str with \"xyzzy\"",
+    "package": "callisto-model",
+    "replacement": "\"xyzzy\"",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 253
+      },
+      "start": {
+        "column": 9,
+        "line": 253
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace <impl PartialEq for NativeName>::eq -> bool with true\n@@ -251,17 +251,17 @@\n     /// The spelling the manifest declared.\n     pub fn as_str(&self) -> &str {\n         &self.spelling\n     }\n }\n \n impl PartialEq for NativeName {\n     fn eq(&self, other: &Self) -> bool {\n-        self.ecosystem == other.ecosystem && self.key == other.key\n+        true /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl Eq for NativeName {}\n \n impl std::hash::Hash for NativeName {\n     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n         self.ecosystem.hash(state);\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl PartialEq for NativeName>::eq",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 260
+        },
+        "start": {
+          "column": 5,
+          "line": 258
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:259:9: replace <impl PartialEq for NativeName>::eq -> bool with true",
+    "package": "callisto-model",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 67,
+        "line": 259
+      },
+      "start": {
+        "column": 9,
+        "line": 259
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace <impl PartialEq for NativeName>::eq -> bool with false\n@@ -251,17 +251,17 @@\n     /// The spelling the manifest declared.\n     pub fn as_str(&self) -> &str {\n         &self.spelling\n     }\n }\n \n impl PartialEq for NativeName {\n     fn eq(&self, other: &Self) -> bool {\n-        self.ecosystem == other.ecosystem && self.key == other.key\n+        false /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl Eq for NativeName {}\n \n impl std::hash::Hash for NativeName {\n     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n         self.ecosystem.hash(state);\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl PartialEq for NativeName>::eq",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 260
+        },
+        "start": {
+          "column": 5,
+          "line": 258
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:259:9: replace <impl PartialEq for NativeName>::eq -> bool with false",
+    "package": "callisto-model",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 67,
+        "line": 259
+      },
+      "start": {
+        "column": 9,
+        "line": 259
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace && with || in <impl PartialEq for NativeName>::eq\n@@ -251,17 +251,17 @@\n     /// The spelling the manifest declared.\n     pub fn as_str(&self) -> &str {\n         &self.spelling\n     }\n }\n \n impl PartialEq for NativeName {\n     fn eq(&self, other: &Self) -> bool {\n-        self.ecosystem == other.ecosystem && self.key == other.key\n+        self.ecosystem == other.ecosystem || /* ~ changed by cargo-mutants ~ */ self.key == other.key\n     }\n }\n \n impl Eq for NativeName {}\n \n impl std::hash::Hash for NativeName {\n     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n         self.ecosystem.hash(state);\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl PartialEq for NativeName>::eq",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 260
+        },
+        "start": {
+          "column": 5,
+          "line": 258
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-model/src/identity.rs:259:43: replace && with || in <impl PartialEq for NativeName>::eq",
+    "package": "callisto-model",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 45,
+        "line": 259
+      },
+      "start": {
+        "column": 43,
+        "line": 259
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace == with != in <impl PartialEq for NativeName>::eq\n@@ -251,17 +251,17 @@\n     /// The spelling the manifest declared.\n     pub fn as_str(&self) -> &str {\n         &self.spelling\n     }\n }\n \n impl PartialEq for NativeName {\n     fn eq(&self, other: &Self) -> bool {\n-        self.ecosystem == other.ecosystem && self.key == other.key\n+        self.ecosystem != /* ~ changed by cargo-mutants ~ */ other.ecosystem && self.key == other.key\n     }\n }\n \n impl Eq for NativeName {}\n \n impl std::hash::Hash for NativeName {\n     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n         self.ecosystem.hash(state);\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl PartialEq for NativeName>::eq",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 260
+        },
+        "start": {
+          "column": 5,
+          "line": 258
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-model/src/identity.rs:259:24: replace == with != in <impl PartialEq for NativeName>::eq",
+    "package": "callisto-model",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 259
+      },
+      "start": {
+        "column": 24,
+        "line": 259
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace == with != in <impl PartialEq for NativeName>::eq\n@@ -251,17 +251,17 @@\n     /// The spelling the manifest declared.\n     pub fn as_str(&self) -> &str {\n         &self.spelling\n     }\n }\n \n impl PartialEq for NativeName {\n     fn eq(&self, other: &Self) -> bool {\n-        self.ecosystem == other.ecosystem && self.key == other.key\n+        self.ecosystem == other.ecosystem && self.key != /* ~ changed by cargo-mutants ~ */ other.key\n     }\n }\n \n impl Eq for NativeName {}\n \n impl std::hash::Hash for NativeName {\n     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n         self.ecosystem.hash(state);\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl PartialEq for NativeName>::eq",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 260
+        },
+        "start": {
+          "column": 5,
+          "line": 258
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-model/src/identity.rs:259:55: replace == with != in <impl PartialEq for NativeName>::eq",
+    "package": "callisto-model",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 57,
+        "line": 259
+      },
+      "start": {
+        "column": 55,
+        "line": 259
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace <impl std::hash::Hash for NativeName>::hash with ()\n@@ -259,18 +259,17 @@\n         self.ecosystem == other.ecosystem && self.key == other.key\n     }\n }\n \n impl Eq for NativeName {}\n \n impl std::hash::Hash for NativeName {\n     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n-        self.ecosystem.hash(state);\n-        self.key.hash(state);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl PartialOrd for NativeName {\n     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {\n         Some(self.cmp(other))\n     }\n }\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl std::hash::Hash for NativeName>::hash",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 269
+        },
+        "start": {
+          "column": 5,
+          "line": 266
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:267:9: replace <impl std::hash::Hash for NativeName>::hash with ()",
+    "package": "callisto-model",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 30,
+        "line": 268
+      },
+      "start": {
+        "column": 9,
+        "line": 267
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace <impl PartialOrd for NativeName>::partial_cmp -> Option<Ordering> with None\n@@ -266,17 +266,17 @@\n     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n         self.ecosystem.hash(state);\n         self.key.hash(state);\n     }\n }\n \n impl PartialOrd for NativeName {\n     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {\n-        Some(self.cmp(other))\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl Ord for NativeName {\n     fn cmp(&self, other: &Self) -> Ordering {\n         (self.ecosystem, &self.key).cmp(&(other.ecosystem, &other.key))\n     }\n }\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl PartialOrd for NativeName>::partial_cmp",
+      "return_type": "-> Option<Ordering>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 275
+        },
+        "start": {
+          "column": 5,
+          "line": 273
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:274:9: replace <impl PartialOrd for NativeName>::partial_cmp -> Option<Ordering> with None",
+    "package": "callisto-model",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 30,
+        "line": 274
+      },
+      "start": {
+        "column": 9,
+        "line": 274
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace <impl PartialOrd for NativeName>::partial_cmp -> Option<Ordering> with Some(Default::default())\n@@ -266,17 +266,17 @@\n     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n         self.ecosystem.hash(state);\n         self.key.hash(state);\n     }\n }\n \n impl PartialOrd for NativeName {\n     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {\n-        Some(self.cmp(other))\n+        Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl Ord for NativeName {\n     fn cmp(&self, other: &Self) -> Ordering {\n         (self.ecosystem, &self.key).cmp(&(other.ecosystem, &other.key))\n     }\n }\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl PartialOrd for NativeName>::partial_cmp",
+      "return_type": "-> Option<Ordering>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 275
+        },
+        "start": {
+          "column": 5,
+          "line": 273
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:274:9: replace <impl PartialOrd for NativeName>::partial_cmp -> Option<Ordering> with Some(Default::default())",
+    "package": "callisto-model",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 30,
+        "line": 274
+      },
+      "start": {
+        "column": 9,
+        "line": 274
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace <impl Ord for NativeName>::cmp -> Ordering with Default::default()\n@@ -272,17 +272,17 @@\n impl PartialOrd for NativeName {\n     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {\n         Some(self.cmp(other))\n     }\n }\n \n impl Ord for NativeName {\n     fn cmp(&self, other: &Self) -> Ordering {\n-        (self.ecosystem, &self.key).cmp(&(other.ecosystem, &other.key))\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// Errors produced by [`PackageId::parse`].\n #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]\n #[non_exhaustive]\n pub enum PackageIdParseError {\n     #[error(\"package identity is empty\")]\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl Ord for NativeName>::cmp",
+      "return_type": "-> Ordering",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 281
+        },
+        "start": {
+          "column": 5,
+          "line": 279
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:280:9: replace <impl Ord for NativeName>::cmp -> Ordering with Default::default()",
+    "package": "callisto-model",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 72,
+        "line": 280
+      },
+      "start": {
+        "column": 9,
+        "line": 280
+      }
+    }
+  }
+]
