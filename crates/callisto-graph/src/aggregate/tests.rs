@@ -1925,7 +1925,7 @@ fn aggregate_pre_cycle<I: SeverityInference>(
     packages: &[&str],
     changesets: &[(&str, &str)],
     recorded: &[&str],
-    fixed_group: bool,
+    group: Option<GroupKind>,
     inference: &I,
 ) -> Aggregation {
     let ws_dir = tempfile::tempdir().unwrap();
@@ -1945,13 +1945,16 @@ fn aggregate_pre_cycle<I: SeverityInference>(
         packages: ids.iter().cloned().map(make_pkg).collect(),
     };
     let mut cfg = crate::config::load(root).unwrap();
-    if fixed_group {
+    if let Some(kind) = group {
         let group = GroupDef {
             name: GroupName("pair".to_string()),
-            kind: GroupKind::Fixed,
+            kind,
             members: ids.iter().cloned().map(GroupMember::Package).collect(),
         };
-        cfg.groups.fixed.insert(group.name.clone(), group);
+        match kind {
+            GroupKind::Fixed => cfg.groups.fixed.insert(group.name.clone(), group),
+            GroupKind::Linked => cfg.groups.linked.insert(group.name.clone(), group),
+        };
     }
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
@@ -1987,7 +1990,7 @@ fn test_pre_mode_recorded_changeset_keeps_fresh_inference() {
         &["pkg-a"],
         &[("breaking", "---\npkg-a: major\n---\n\nBreaks.\n")],
         &["breaking"],
-        false,
+        None,
         &commits,
     );
     let pkg_a = PackageId::parse("pkg-a").unwrap();
@@ -2008,7 +2011,7 @@ fn test_pre_mode_fresh_group_member_releases_retained_member_at_group_severity()
             ("small-fix", "---\npkg-b: patch\n---\n\nFixes.\n"),
         ],
         &["breaking"],
-        true,
+        Some(GroupKind::Fixed),
         &crate::infer::NoInference,
     );
     let severities = agg.severities();
@@ -2029,8 +2032,35 @@ fn test_pre_mode_group_with_only_recorded_changesets_releases_nothing() {
         &["pkg-a", "pkg-b"],
         &[("breaking", "---\npkg-a: major\n---\n\nBreaks.\n")],
         &["breaking"],
-        true,
+        Some(GroupKind::Fixed),
         &crate::infer::NoInference,
     );
     assert!(agg.seeds.is_empty(), "got: {:?}", agg.seeds);
+}
+
+/// A linked group behaves like a fixed one here: the fresh member lifts the retained member's group to its severity.
+#[test]
+fn test_pre_mode_fresh_linked_member_releases_at_the_retained_severity() {
+    let agg = aggregate_pre_cycle(
+        &["pkg-a", "pkg-b"],
+        &[
+            ("breaking", "---\npkg-a: major\n---\n\nBreaks.\n"),
+            ("small-fix", "---\npkg-b: patch\n---\n\nFixes.\n"),
+        ],
+        &["breaking"],
+        Some(GroupKind::Linked),
+        &crate::infer::NoInference,
+    );
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let severities = agg.severities();
+    assert_eq!(severities.get(&pkg_a), Some(&Severity::Major));
+    assert_eq!(
+        severities.get(&PackageId::parse("pkg-b").unwrap()),
+        Some(&Severity::Major)
+    );
+    assert!(
+        matches!(agg.reasons().get(&pkg_a), Some(BumpReason::LinkedGroupUnion { .. })),
+        "the fresh group union, not the recorded changeset, explains the release: {:?}",
+        agg.reasons().get(&pkg_a)
+    );
 }

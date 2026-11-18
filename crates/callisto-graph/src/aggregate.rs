@@ -173,14 +173,6 @@ impl Seed {
         self.sources().any(Source::is_named)
     }
 
-    /// The highest severity among sources that named the package directly.
-    fn named_severity(&self) -> Severity {
-        self.entries()
-            .filter(|(_, source)| source.is_named())
-            .map(|(severity, _)| *severity)
-            .fold(Severity::None, Severity::max)
-    }
-
     /// The reason of the first fresh source at the highest fresh severity; the first source when none is fresh.
     pub fn reason(&self) -> BumpReason {
         let mut best = &self.first;
@@ -568,7 +560,7 @@ pub(crate) fn union_linked(
             .package_members()
             .filter_map(|id| agg.seeds.get(id))
             .filter(|seed| seed.is_named())
-            .map(Seed::named_severity)
+            .map(Seed::severity)
             .fold(Severity::None, Severity::max);
         changed |= union_group(agg, g, target, base_versions);
     }
