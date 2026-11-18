@@ -1,0 +1,17 @@
+Lead (close-gap-for-alpha): #583 (Q part 2, branch worktree-wp-q-cargo-rehearsals) fails 'Test Suite (ubuntu-latest)'. just verify-real-tools exits 1 with 'pnpm is required: the install matrix uses npm, pnpm and uv' because the CI runner has no pnpm. Make the CI install step provide pnpm with a pinned version (corepack enable plus a pinned pnpm through packageManager or corepack prepare, or the existing pinned action pattern the repo uses), and uv too if it is missing. Do not make the matrix skip a missing tool: a missing tool must fail. Push a new signed commit (no amend, no trailer) to HEAD:refs/heads/worktree-wp-q-cargo-rehearsals, check ls-remote, then watch that job pass on GitHub. Then send me your full Q part 2 report: what the Cargo rehearsals cover, whether the native matrix is recorded, the AGENTS.md and release.md corrections, the gates you ran by exit code, and anything not verified.
+
+---
+
+<task-notification>
+<task-id>b25y3pgfk</task-id>
+<tool-use-id>toolu_01MkyYbdT7gUNmoxrRTAmfY5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-cargo-named-registries/60acbb82-7f62-4200-aa4c-19cf55c58385/tasks/b25y3pgfk.output</output-file>
+<status>completed</status>
+<summary>Background command "rtk gh run watch 44397333168 --exit-status &gt; /dev/null 2&gt;&amp;1; gh pr checks 583 2&gt;&amp;1 | rtk grep -i "test suite\|fail"" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: pnpm now installs in CI, so the native e2e tests that used to skip there finally run, and one fails. pnpm_workspace_shorthand_packs_current_target_versions (native_resolution_e2e_tests.rs:545) runs `pnpm install --ignore-scripts --offline`. CI=true makes pnpm default to frozen-lockfile, so it fails with ERR_PNPM_OUTDATED_LOCKFILE after the test adds the bare-* workspace dependencies. Pass --no-frozen-lockfile explicitly in that test's install, and in any sibling test that changes package.json before installing, so the result doesn't depend on whether CI is set. Check every pnpm install in that file. Note in the PR body that these tests were silently skipping in CI before this PR. Push a new signed commit, check ls-remote, and confirm the ubuntu job passes.
+</cross-session-message>
