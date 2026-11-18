@@ -193,20 +193,20 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
 ) -> Result<InitFacts, GraphError> {
     let root = canonical_root(root)?;
     ensure_uninitialized(&root)?;
-    detect_facts(root, locator, runner)
+    detect_facts(root, locator, runner, false)
 }
 
 /// [`detect`] for a workspace that already has a `callisto.toml`, which is left as it is.
 ///
 /// # Errors
 ///
-/// No Git repository, no usable `origin`, or an ambiguous tag convention.
+/// No Git repository, or no usable `origin`. The workspace loads through the existing config.
 pub fn detect_initialized<L: ProjectLocator, R: CommandRunner>(
     root: &Path,
     locator: &L,
     runner: &R,
 ) -> Result<InitFacts, GraphError> {
-    detect_facts(canonical_root(root)?, locator, runner)
+    detect_facts(canonical_root(root)?, locator, runner, true)
 }
 
 /// Whether `root` already has a `callisto.toml`.
@@ -236,6 +236,7 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
     root: PathBuf,
     locator: &L,
     runner: &R,
+    initialized: bool,
 ) -> Result<InitFacts, GraphError> {
     let git_dir = runner.run_with_timeout(programs::GIT, &["rev-parse", "--git-dir"], &root, timeouts::LOCAL_GIT)?;
     if git_dir.exit_code != Some(0) {
@@ -250,7 +251,12 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
     )?;
 
     let discovered = Workspace::load(root.clone(), locator, runner)?;
-    let tag_templates = detect_tag_templates(&discovered)?;
+    // An existing config already decides tag conventions; synthesizing one would second-guess it.
+    let tag_templates = if initialized {
+        BTreeMap::new()
+    } else {
+        detect_tag_templates(&discovered)?
+    };
     let templates_only = InitFacts {
         root: root.clone(),
         ecosystems: BTreeSet::new(),
@@ -263,17 +269,21 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
         has_napi_targets: false,
         has_maturin_targets: false,
     };
-    let config = resolve_config_text(
-        &root,
-        &render_config(
-            &templates_only,
-            &InitAnswers {
-                versioning: Versioning::Independent,
-                binaries: None,
-            },
-        ),
-    )?;
-    let workspace = Workspace::load_with_config(root.clone(), config, locator, runner)?;
+    let workspace = if initialized {
+        discovered
+    } else {
+        let config = resolve_config_text(
+            &root,
+            &render_config(
+                &templates_only,
+                &InitAnswers {
+                    versioning: Versioning::Independent,
+                    binaries: None,
+                },
+            ),
+        )?;
+        Workspace::load_with_config(root.clone(), config, locator, runner)?
+    };
     let tags = workspace.tags()?;
     let versions = workspace.base_versions()?;
     let ctx = callisto_manifests::OpenContext::for_workspace_root(&workspace.root)?;

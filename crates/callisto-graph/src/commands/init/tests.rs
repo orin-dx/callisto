@@ -1477,3 +1477,33 @@ fn init_guards_report_a_file_they_cannot_look_up_instead_of_assuming_it_is_absen
     assert!(matches!(ensure_uninitialized(&ws), Err(GraphError::InitIo { .. })));
     assert!(matches!(ensure_workflow_absent(&ws), Err(GraphError::InitIo { .. })));
 }
+
+#[test]
+fn is_initialized_follows_the_config_file() {
+    let dir = workspace();
+    assert!(!is_initialized(dir.path()).unwrap());
+    std::fs::write(dir.path().join("callisto.toml"), "# existing\n").unwrap();
+    assert!(is_initialized(dir.path()).unwrap());
+}
+
+#[test]
+fn existing_config_ships_binaries_only_with_a_declared_product() {
+    let dir = workspace();
+    std::fs::write(dir.path().join("callisto.toml"), "# existing\n").unwrap();
+    assert!(!existing_config_ships_binaries(dir.path()).unwrap());
+    std::fs::write(
+        dir.path().join("callisto.toml"),
+        "[release]\nproduct-package = \"cargo/app\"\n[[release.artifact]]\npackage = \"cargo/app\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"app.tar.gz\"\n",
+    )
+    .unwrap();
+    assert!(existing_config_ships_binaries(dir.path()).unwrap());
+}
+
+#[test]
+fn detect_initialized_reads_a_workspace_that_already_has_a_config() {
+    let dir = workspace();
+    std::fs::write(dir.path().join("callisto.toml"), "# existing\n").unwrap();
+    let facts = detect_initialized(dir.path(), &IgnoreWalkLocator::new(dir.path()), &RealGitRunner).unwrap();
+    assert!(facts.tag_templates.is_empty());
+    assert!(facts.packages.iter().any(|package| package.id == "cargo/app"));
+}

@@ -1404,3 +1404,41 @@ fn explicit_workflow_flag_errors_for_an_unsupported_workspace() {
     assert!(error.to_string().contains("napi.targets"), "{error}");
     assert!(nothing_written(dir.path()));
 }
+
+// Answers feed `callisto.toml`, which a workflow-only run leaves alone, so they are refused instead of dropped.
+#[test]
+fn workflow_retry_refuses_flags_it_would_drop() {
+    let dir = workspace(0);
+    std::fs::write(dir.path().join("callisto.toml"), "# existing\n").unwrap();
+    let args = InitArgs {
+        workflow: true,
+        versioning: Some(InitVersioning::Fixed),
+        ..Default::default()
+    };
+    let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
+    assert!(
+        matches!(error, CliError::Graph(GraphError::InitAlreadyInitialized { .. })),
+        "{error}"
+    );
+}
+
+// A real workflow-only write is reported as a write, and --dry-run writes nothing.
+#[test]
+fn workflow_retry_reports_a_write_and_honours_dry_run() {
+    let dir = workspace(0);
+    std::fs::write(dir.path().join("callisto.toml"), "# existing\n").unwrap();
+    let retry = || InitArgs {
+        workflow: true,
+        ..Default::default()
+    };
+    let version = env!("CARGO_PKG_VERSION");
+    let dry = run_init_with_runner(dir.path(), retry(), false, vec![], true, &fake_ls_remote(version));
+    assert_eq!(dry.result.unwrap(), ExitCode::SUCCESS);
+    assert!(dry.out.contains("[DRY-RUN]"), "{}", dry.out);
+    assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
+
+    let real = run_init_with_runner(dir.path(), retry(), false, vec![], false, &fake_ls_remote(version));
+    assert_eq!(real.result.unwrap(), ExitCode::SUCCESS);
+    assert!(!real.out.contains("[DRY-RUN]"), "{}", real.out);
+    assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
+}

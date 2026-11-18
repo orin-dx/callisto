@@ -121,6 +121,17 @@ pub fn run<R: CommandRunner>(
     };
     let locator = IgnoreWalkLocator::new(&root);
     if args.workflow && scaffold::is_initialized(&root)? {
+        // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.
+        if args.versioning.is_some()
+            || !args.artifact_targets.is_empty()
+            || args.forge_repository.is_some()
+            || args.product_package.is_some()
+        {
+            return Err(GraphError::InitAlreadyInitialized {
+                path: root.join("callisto.toml"),
+            }
+            .into());
+        }
         return run_workflow_only(&root, &locator, global, out, err, runner);
     }
     let facts = scaffold::detect(&root, &locator, runner)?;
@@ -351,7 +362,7 @@ fn run_workflow_only<R: CommandRunner>(
         .unwrap_or_default();
     let report = InitReport {
         schema_version: SCHEMA_VERSION,
-        initialized: false,
+        initialized: !global.dry_run,
         config_path,
         config,
         files: vec![scaffold::workflow_path(&facts.root)],
