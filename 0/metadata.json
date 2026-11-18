@@ -1,0 +1,85 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QYD8QBEMW5NM82K43RQN51",
+  "session_id": "794e07cc-9998-475b-afc4-4b8324e0a046",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:24:03.718499Z",
+  "branch": "worktree-wp-w-history-cache",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "60b0867828b6",
+  "checkpoint_transcript_start": 1532,
+  "transcript_lines_at_start": 1532,
+  "compact_transcript_start": 209,
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 5889,
+    "cache_read_tokens": 2813312,
+    "output_tokens": 3765,
+    "api_call_count": 8
+  },
+  "session_token_usage": {
+    "input_tokens": 428,
+    "cache_creation_tokens": 580424,
+    "cache_read_tokens": 43648737,
+    "output_tokens": 100664,
+    "api_call_count": 210,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 75815,
+      "cache_read_tokens": 833930,
+      "output_tokens": 10775,
+      "api_call_count": 12
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 4,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Finish work package W in the callisto repo: fix `status` spawning O(T) git processes when many foreign tags sit on one commit, then validate with mutation testing, push the branch and link trail #462.",
+    "outcome": "The fix is committed. `status` now starts 17 git processes at any tag count, down from 6T+4, and the lint, doc-check, pre-push and test recipes passed. A first mutation run exposed a coverage gap, so a regression test was added and committed and mutation testing was re-launched. The final mutation result, the push of `HEAD:refs/heads/worktree-wp-w-history-cache`, the `ls-remote` check and the trail link were still pending.",
+    "learnings": {
+      "repo": [
+        "Tag ownership across ecosystems is decided in crates/callisto-graph/src/tags.rs. `rank_tags` parses and orders candidates once, and `select_last_tag` wraps it.",
+        "After the first rejected tag, the remaining tags are probed by commit, so tags on the same commit share one set of probes. Literal-name ownership from work package E is preserved.",
+        "A cascade test expects only a `tag --list` call from `status`, so commit reads must be lazy and happen only after a rejection.",
+        "The bench has a `foreign tags` shape. Process counts for ordinary Cargo and pnpm workspaces are unchanged at 8, 16 and 11.",
+        "Repo checks are run with `just pre-push`, `just lint`, `just doc-check` and `just test`.",
+        "Test fixtures come from `callisto_fixtures::git::init_repo` and `GitRunner`. Workspaces are built with `crate::locate::IgnoreWalkLocator` and `Workspace::load`, and the tag index comes from `ws.tags()`.",
+        "The work is on worktree branch `worktree-wp-w-history-cache`. Mutation testing is run by a script at ~/.claude/jobs/3d27cecb/tmp/mut_w.sh."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/tags.rs",
+          "finding": "A new test `all_tags_made_on_one_commit_by_another_package_are_foreign` pins that every tag of a commit that held the name in another ecosystem is rejected, not only the newest. It asserts `last_tag` is None and `is_tag_of` is false for each tag. It was added after the first mutation run."
+        }
+      ],
+      "workflow": [
+        "Reading git commits lazily, only after the first rejection, avoided adding a process to every workspace. The eager first version did that and also broke an existing test.",
+        "Process-count and wall-time measurements at several sizes (T = 10, 50, 200) confirmed the 6T+4 growth and the flat 17 after the fix.",
+        "Mutation testing found a gap that the existing tests missed, and a targeted regression test closed it. The mutation run then had to be repeated.",
+        "Slow cargo runs are kept light with CARGO_BUILD_JOBS=3 and debug info disabled for the dev and test profiles.",
+        "Long mutation runs go in the background and their output is read from the task output file once they finish."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}
