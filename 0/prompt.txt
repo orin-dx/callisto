@@ -1,0 +1,23 @@
+Lead (close-gap-for-alpha): you were stopped at a worktree-entry prompt and resumed in the WP D worktree. Do these on #565 (branch worktree-wp-d-init-boundary) before J, as signed commits with no session trailer, pushed with an explicit refspec and checked with git ls-remote: (a) git rm -r --cached mutants.out.old, and change .gitignore's mutants.out/ to mutants.out*/. (b) Entire finding on change callisto/173: render_workflow substitutes placeholders one after another, so a valid branch named __BRANCH__ renders as branches: [""__BRANCH__""]. Substitute in one pass that never rescans inserted values (R3 WorkflowScalar), with a boundary test using that branch name. (c) Entire finding on callisto/173: the workflow-only init path accepts existing artifact configs whose owners the generated builder doesn't support. An npm-owned artifact passes, commands/matrix.rs:58 drops it, and the release fails with 'callisto matrix has no entry for artifact slot'. Reject unsupported owners before writing the workflow, through an existing error code if one fits; ask me before adding a new one. Re-run just pre-push, lint, doc-check and test by exit code, then resolve both findings with entire trail finding. Then continue with J and L. Create their worktrees with EnterWorktree name=<wp-name>, never path=, to avoid the relocation prompt.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: #560 has merged, and the owner merged main into your branch (origin/worktree-wp-d-init-boundary is now 3ef9350c8). Run `git pull --ff-only origin worktree-wp-d-init-boundary`, or rebase your new commits onto it, before pushing. Never force-push. The audit failure is gone. When done, report the pushed sha and confirm both callisto/173 findings are resolved.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: verified. Remote is 06fa4c738, both commits are signed valid with no trailers, there are 0 mutants.out files and 0 open findings on callisto/173. One gap first: run `cargo mutants --in-place --in-diff` on the diff of 9dda90dd4..06fa4c738 (the single-pass substitution and the E304 owner check), with zero missed or one line per equivalent mutant in the PR body. Push any test it forces. Then go on to J and L as you planned.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bh8oru11p</task-id>
+<tool-use-id>toolu_01WEn3AjuswW1XmVCnYTmcza</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-d-init-boundary/25ffa14c-7bd0-4ef5-b7b2-3d26828c91ba/tasks/bh8oru11p.output</output-file>
+<status>completed</status>
+<summary>Background command "CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 cargo mutants -d /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary --in-place --in-diff /tmp/claude-501/wpd2.diff --test-tool nextest &gt; /tmp/claude-501/mutants3.log 2&gt;&amp;1; echo mutants=$?" completed (exit code 0)</summary>
+</task-notification>

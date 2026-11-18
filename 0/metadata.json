@@ -1,0 +1,99 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PF5WKJMK45SGYMVD2X6HZT",
+  "session_id": "25ffa14c-7bd0-4ef5-b7b2-3d26828c91ba",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T04:38:42.574818Z",
+  "branch": "worktree-wp-j-twine-env2",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "5da3b3508ab2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 20268,
+    "cache_read_tokens": 4549950,
+    "output_tokens": 6083,
+    "api_call_count": 19
+  },
+  "session_token_usage": {
+    "input_tokens": 312,
+    "cache_creation_tokens": 220612,
+    "cache_read_tokens": 24652101,
+    "output_tokens": 66769,
+    "api_call_count": 153
+  },
+  "redaction": {
+    "replacements": 11,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 9,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Run Session 2 of the v1-alpha launch plan: implement WP D (init boundary: branch-name handling and workflow-only retry), then continue with WPs J and L. Lead follow-ups added fixes for review findings on PR #565.",
+    "outcome": "WP D was implemented, reviewed, mutation-tested and pushed as PR #565 on trail #357. Follow-up fixes (untrack mutants.out.old, single-pass placeholder substitution, E304 for non-Cargo artifact owners) were pushed and both Entire findings resolved. WP J (twine OIDC env vars) is implemented and its commit was just issued; WP L has not been started.",
+    "learnings": {
+      "repo": [
+        "Branch names were previously derived by taking the last '/' segment of a ref, which truncated names like release/next. A BranchName type in callisto-model identity.rs now strips the full refs/heads or refs/remotes prefix.",
+        "Workflow templates are filled via placeholder replacement (__BRANCH__, __COMMIT__, __VERSION__). Sequential replace rescans inserted values, so it was changed to a single pass. WorkflowScalar JSON-quotes values and escapes + and ! in the trigger filter.",
+        "callisto-model has its own Version type, so callisto-cli does not need a semver dependency.",
+        "CLI init tests live in crates/callisto-cli/src/commands/init/tests.rs and graph init tests in crates/callisto-graph/src/commands/init/tests.rs. Insta snapshots there needed updating for the quoted branch output.",
+        "Repo gate is `just pre-push`, `just lint`, `just doc-check` and `just test` (nextest); an architecture test forbids granting apply permits from a literal. Docs specs (docs/specs/cli.json) must be updated alongside CLI behavior changes.",
+        "The workflow-only retry path (`init --workflow`) must reuse the user's existing callisto.toml for detection, refuse answer flags it would silently drop, and report a real write rather than a dry run.",
+        "commands/matrix.rs drops artifacts whose owner the generated builder doesn't support (non-Cargo), so init must reject them up front (E304) rather than ship a workflow that fails at release.",
+        "Signed commits are required; /usr/bin/git is used directly, pushes use an explicit refspec and are verified with git ls-remote. mutants.out*/ is gitignored."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/render/mod.rs",
+          "line": 131,
+          "end_line": 136,
+          "finding": "render_init prints '[DRY-RUN] Would write ... (no files written)' whenever InitReport.initialized is false, which mislabeled real workflow-only writes."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 240,
+          "end_line": 275,
+          "finding": "detect_initialized/detect_facts re-ran tag-template detection against a freshly rendered config instead of the user's file, causing spurious E193/E194 on retry."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/matrix.rs",
+          "line": 58,
+          "finding": "Drops artifacts with unsupported owners (e.g. npm), producing the 'callisto matrix has no entry for artifact slot' release failure."
+        }
+      ],
+      "workflow": [
+        "Subagent reviewer found real defects from source alone; its hand-back is model output, so findings were verified against the code before fixing.",
+        "Mutation testing (cargo mutants --in-diff) exposed missed mutants such as `||`→`&&` in flag checks, driving additional tests. A `+`→`-` mutant in fill timed out because it loops forever.",
+        "Hold edits while a background mutation run uses the same worktree, since --in-place mutates the files.",
+        "Run gate commands by exit code, and delete a worktree's target/ after finishing to free disk.",
+        "Use EnterWorktree with name= rather than path= to avoid the relocation prompt, and limit builds with CARGO_BUILD_JOBS and debug=0 profiles."
+      ]
+    },
+    "friction": [
+      "BSD sed on macOS failed on escaped-quote substitutions, forcing fallback to Python edit scripts or the Edit tool.",
+      "Some research JSONs were untracked in the main checkout, so F09 had to be found via /tmp audit report and the main tree.",
+      "A worktree-entry prompt stopped the session, and the lead had to resume it in the D worktree.",
+      "Initial changeset wording overstated the escaping limit (said 'leading' + or !), and the first version of the retry path had a dry-run mislabel, ignored the existing config and dropped flags silently.",
+      "Several repeated duplicate Bash calls and a first mutation run were needed before the review findings could be edited, since edits were blocked while mutants ran.",
+      "The final J commit needed repeated attempts after fmt-check failed."
+    ],
+    "open_items": [
+      "WP L has not been started.",
+      "WP J commit was just issued and its signature and gate results were not confirmed in the transcript; it still needs pushing and trail linking to #459.",
+      "Trail linking for J and L to #459 is pending; no new issues are to be created.",
+      "Any new error code beyond existing ones needs asking the lead first; E304 was reused for the unsupported-owner case."
+    ]
+  }
+}
