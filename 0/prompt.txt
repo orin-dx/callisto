@@ -1,0 +1,7 @@
+Use a workflow: run Session 3 in .claude/plans/LAUNCH-v1-alpha-sessions.md.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: trails for Session 3 already exist, so link them and do not create any. A, B and C go on #357 "Callisto fails predictably before 1.0". K and N go on #458 "Changesets v2 and v3 users can switch to Callisto" (https://entire.com/gh/orin-dx/-/trails/458). Link each WP branch with `entire trail link` before its PR. The launch file is updated to match.
+</cross-session-message>
