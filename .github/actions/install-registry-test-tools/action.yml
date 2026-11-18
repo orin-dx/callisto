@@ -8,7 +8,7 @@ runs:
       if: runner.os == 'Linux'
       uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
       with:
-        tool: uv@0.9.7
+        tool: uv@0.12.19
     - name: Install the local registries
       if: runner.os == 'Linux'
       shell: bash
