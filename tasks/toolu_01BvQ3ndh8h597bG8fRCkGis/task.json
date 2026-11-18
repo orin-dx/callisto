@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01BvQ3ndh8h597bG8fRCkGis",
+  "agent_id": "aeb92eb7d25efdc46",
+  "subagent_type": "general-purpose",
+  "task_description": "Review G diff",
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 136956,
+    "cache_read_tokens": 2442602,
+    "output_tokens": 17012,
+    "api_call_count": 26
+  },
+  "started_at": "2026-11-17T20:06:33.343499-08:00",
+  "completed_at": "2026-11-17T20:09:57.805874-08:00"
+}
