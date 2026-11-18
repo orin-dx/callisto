@@ -151,6 +151,11 @@ impl CommandOutput {
         self.stdout.trim()
     }
 
+    /// Stdout without the one newline that ends it, for output that is data (a path) whose own whitespace counts.
+    pub fn stdout_line(&self) -> &str {
+        self.stdout.strip_suffix('\n').unwrap_or(&self.stdout)
+    }
+
     pub fn stdout_lines(&self) -> impl Iterator<Item = &str> {
         self.stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty())
     }

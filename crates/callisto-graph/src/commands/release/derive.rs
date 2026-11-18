@@ -509,6 +509,10 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
             // dependent waits for the dependency's crate, not for its npm package. No such distribution means the
             // edge was resolved some other way, so it waits for all of them.
             let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
+            // Likewise only the dependent's own distribution in that ecosystem waits.
+            if id.ecosystem() != ecosystem {
+                continue;
+            }
             let dependency_ids = package_ids.get(&edge.to).map(Vec::as_slice).unwrap_or_default();
             let touched: Vec<&ReleasePackageId> = dependency_ids
                 .iter()
@@ -2136,6 +2140,74 @@ mod tests {
             [(Ecosystem::Cargo, "dual".to_string())]
         );
         assert_eq!(waits_for(Ecosystem::Npm, "web"), [(Ecosystem::Npm, "dual".to_string())]);
+    }
+
+    /// A dual dependent's native dependency orders only its distribution in that ecosystem: a Cargo-only edge holds the
+    /// crate, never the npm package, and an npm-only edge the reverse.
+    #[test]
+    fn a_dual_dependents_native_edge_orders_only_its_own_distribution() {
+        use callisto_model::ReleaseOperationRole::RegistryPublish;
+
+        let dir = repo(&[
+            ("Cargo.toml", "[workspace]\nmembers = [\"lib\", \"rsdep\", \"jsdep\"]\nresolver = \"2\"\n"),
+            ("package.json", r#"{"name":"root","private":true,"workspaces":["lib","rsdep","jsdep"]}"#),
+            (
+                "lib/Cargo.toml",
+                "[package]\nname = \"lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            ("lib/package.json", r#"{"name":"lib","version":"1.0.0"}"#),
+            (
+                "rsdep/Cargo.toml",
+                "[package]\nname = \"rsdep\"\nversion = \"1.0.0\"\nedition = \"2021\"\n[dependencies]\nlib = { path = \"../lib\", version = \"1.0.0\" }\n",
+            ),
+            ("rsdep/package.json", r#"{"name":"rsdep","version":"1.0.0"}"#),
+            (
+                "jsdep/Cargo.toml",
+                "[package]\nname = \"jsdep\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "jsdep/package.json",
+                r#"{"name":"jsdep","version":"1.0.0","dependencies":{"lib":"^1.0.0"}}"#,
+            ),
+            (
+                "callisto.toml",
+                "[[package]]\nmatch = \"cargo/*\"\npublish-to = [\"crates-io\", \"npm\"]\n",
+            ),
+        ]);
+        let decision = release(&[
+            (Ecosystem::Cargo, "lib", "1.0.0"),
+            (Ecosystem::Npm, "lib", "1.0.0"),
+            (Ecosystem::Cargo, "rsdep", "1.0.0"),
+            (Ecosystem::Npm, "rsdep", "1.0.0"),
+            (Ecosystem::Cargo, "jsdep", "1.0.0"),
+            (Ecosystem::Npm, "jsdep", "1.0.0"),
+        ]);
+        let (_, operations, _, _, _) = derive(&dir, &decision).unwrap();
+        let waits_for = |ecosystem, name: &str| -> Vec<(Ecosystem, String)> {
+            operations
+                .iter()
+                .find(|operation| {
+                    matches!(operation.id().role, RegistryPublish { .. })
+                        && operation.id().package.ecosystem() == ecosystem
+                        && operation.id().package.name() == name
+                })
+                .unwrap_or_else(|| panic!("no {ecosystem:?} publish of {name}"))
+                .prerequisites()
+                .iter()
+                .map(|id| (id.package.ecosystem(), id.package.name().to_string()))
+                .collect()
+        };
+
+        assert_eq!(
+            waits_for(Ecosystem::Cargo, "rsdep"),
+            [(Ecosystem::Cargo, "lib".to_string())]
+        );
+        assert_eq!(waits_for(Ecosystem::Npm, "rsdep"), []);
+        assert_eq!(
+            waits_for(Ecosystem::Npm, "jsdep"),
+            [(Ecosystem::Npm, "lib".to_string())]
+        );
+        assert_eq!(waits_for(Ecosystem::Cargo, "jsdep"), []);
     }
 
     /// The owner's one physical tag and GitHub release must wait for every registry publish of the package, not

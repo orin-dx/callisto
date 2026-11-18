@@ -86,11 +86,11 @@ impl GitAccess<'_> {
     /// otherwise.
     pub fn create_checkpoint(&self, name: &str, facts: &CheckpointFacts, date: &str) -> Result<CommitSha, VcsError> {
         let git_dir = self.git_stdout(&["rev-parse", "--absolute-git-dir"])?;
-        let index = Path::new(git_dir.trim()).join("callisto-checkpoint.index");
+        let index = Path::new(&git_dir).join("callisto-checkpoint.index");
         let index_str = index.to_string_lossy().into_owned();
         let env = [("GIT_INDEX_FILE", index_str.as_str())];
         let real_index = self.git_stdout(&["rev-parse", "--git-path", "index"])?;
-        let real_index = self.root().join(real_index.trim());
+        let real_index = self.root().join(real_index);
         let created = (|| {
             let index_commit = self.internal_commit(&self.git_stdout(&["write-tree"])?, &[&facts.head], "index")?;
             // Seeded from the real index so Git's stat cache spares rehashing every tracked file; without one it is
@@ -203,17 +203,8 @@ impl GitAccess<'_> {
     /// The files under `dir` (relative to this root) in `rev`'s tree, relative to this root.
     pub fn files_at(&self, rev: &str, dir: &Path) -> Result<Vec<std::path::PathBuf>, VcsError> {
         let dir = dir.to_string_lossy();
-        let listed = self.git_stdout(&[
-            "-c",
-            "core.quotepath=off",
-            "ls-tree",
-            "-r",
-            "--name-only",
-            rev,
-            "--",
-            &dir,
-        ])?;
-        Ok(listed.lines().map(std::path::PathBuf::from).collect())
+        let listed = self.git_stdout(&["ls-tree", "-r", "-z", "--name-only", rev, "--", &dir])?;
+        Ok(nul_separated(&listed).map(std::path::PathBuf::from).collect())
     }
 
     /// Every file under this root with one of `names` as its file name, in `rev`'s tree or on disk (tracked or
@@ -223,29 +214,18 @@ impl GitAccess<'_> {
         rev: &str,
         names: &[&str],
     ) -> Result<std::collections::BTreeSet<std::path::PathBuf>, VcsError> {
-        let at_rev = self.git_stdout(&[
-            "-c",
-            "core.quotepath=off",
-            "ls-tree",
-            "-r",
-            "--name-only",
-            rev,
-            "--",
-            ".",
-        ])?;
+        let at_rev = self.git_stdout(&["ls-tree", "-r", "-z", "--name-only", rev, "--", "."])?;
         let on_disk = self.git_stdout(&[
-            "-c",
-            "core.quotepath=off",
             "ls-files",
+            "-z",
             "--cached",
             "--others",
             "--exclude-standard",
             "--",
             ".",
         ])?;
-        Ok(at_rev
-            .lines()
-            .chain(on_disk.lines())
+        Ok(nul_separated(&at_rev)
+            .chain(nul_separated(&on_disk))
             .map(std::path::PathBuf::from)
             .filter(|path| {
                 path.file_name()
@@ -293,8 +273,13 @@ impl GitAccess<'_> {
         if !output.success() {
             return Err(git_failed(args, self.root(), &output.stderr));
         }
-        Ok(output.stdout_trimmed().to_string())
+        Ok(output.stdout_line().to_string())
     }
+}
+
+/// The entries of `-z` output: Git quotes no name there, so each is the path's own bytes.
+fn nul_separated(listed: &str) -> impl Iterator<Item = &str> {
+    listed.split('\0').filter(|entry| !entry.is_empty())
 }
 
 fn git_failed(args: &[&str], root: &Path, stderr: &str) -> VcsError {

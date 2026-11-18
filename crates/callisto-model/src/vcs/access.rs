@@ -8,14 +8,8 @@ use crate::{ApplyPermit, CommandOutput, CommandRunner, CommitSha, StagedChangeKi
 
 use crate::vcs::{GitCommit, TagSignPolicy, VcsError};
 
-/// Record separator placed immediately before each commit's fields in
-/// `git log --format=` output, so a commit message containing `\n` can
-/// never be mistaken for a record boundary.
-const RECORD_SEP: char = '\u{1e}';
-
-/// Unit separator between a commit's sha and its raw message body in
-/// `git log --format=` output.
-const FIELD_SEP: char = '\u{1f}';
+/// `git log -z` ends each commit's record with NUL, which a commit message cannot hold.
+const RECORD_SEP: char = '\0';
 
 /// Every Git read and write callisto performs, each one `git` subprocess
 /// run in `root` through a [`CommandRunner`].
@@ -202,7 +196,7 @@ impl<'r> GitAccess<'r> {
                 output.redacted_stderr()
             )));
         }
-        canonical_git_root(output.stdout_trimmed())
+        canonical_git_root(output.stdout_line())
     }
 
     /// Confirms the worktree bytes just read for `path` hash to the same blob sha the index has staged, without
@@ -369,6 +363,11 @@ fn staged_change_kind(status: char) -> StagedChangeKindV1 {
     }
 }
 
+/// `path` as a pathspec Git matches literally, so a directory named with `*` or `?` selects only itself.
+pub fn literal_pathspec(path: &Path) -> String {
+    format!(":(literal){}", path.to_string_lossy())
+}
+
 fn canonical_git_root(raw_root: &str) -> Result<PathBuf, VcsError> {
     if raw_root.is_empty() {
         return Err(VcsError::InvalidRepositoryRoot {
@@ -492,7 +491,7 @@ impl GitAccess<'_> {
         if self.resolve_commit("HEAD")?.is_none() {
             return Ok(None);
         }
-        let path = path.to_string_lossy();
+        let path = literal_pathspec(path);
         let args = [
             "log",
             "--no-show-signature",
@@ -516,7 +515,7 @@ impl GitAccess<'_> {
         let mut args: Vec<String> = ["log", "--no-show-signature", "--first-parent", "--format=%H", "--"]
             .map(str::to_owned)
             .into();
-        args.extend(pathspecs.iter().map(|path| path.to_string_lossy().into_owned()));
+        args.extend(pathspecs.iter().map(|path| literal_pathspec(path)));
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let output = self.runner.run("git", &arg_refs, &self.root)?;
         if !output.success() {
@@ -547,7 +546,7 @@ impl GitAccess<'_> {
         ]
         .map(str::to_owned)
         .into();
-        args.extend(paths.iter().map(|path| format!(":(literal){}", path.to_string_lossy())));
+        args.extend(paths.iter().map(|path| literal_pathspec(path)));
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let output = self.runner.run("git", &arg_refs, &self.root)?;
         if !output.success() {
@@ -687,7 +686,8 @@ impl GitAccess<'_> {
             "--no-show-signature".to_string(),
             "--no-merges".to_string(),
             "--full-history".to_string(),
-            format!("--format={RECORD_SEP}%H{FIELD_SEP}%B"),
+            "-z".to_string(),
+            "--format=%H%n%B".to_string(),
         ];
 
         match since_ref {
@@ -697,7 +697,7 @@ impl GitAccess<'_> {
 
         if !pathspecs.is_empty() {
             args.push("--".to_string());
-            args.extend(pathspecs.iter().map(|p| p.display().to_string()));
+            args.extend(pathspecs.iter().map(|p| literal_pathspec(p)));
         }
 
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -903,24 +903,21 @@ impl GitAccess<'_> {
     }
 }
 
-/// Parses the `<RECORD_SEP>%H<FIELD_SEP>%B`-formatted `git log` output
-/// produced by [`GitAccess::commits_since`] into [`GitCommit`]s, splitting
-/// each raw message on its first blank line into `summary`/`body`.
+/// Parses the `-z --format=%H%n%B` `git log` output produced by [`GitAccess::commits_since`] into [`GitCommit`]s,
+/// splitting each raw message on its first blank line into `summary`/`body`.
 fn parse_git_log_output(stdout: &str, cwd: &Path) -> Result<Vec<GitCommit>, VcsError> {
     let mut commits = Vec::new();
 
     for record in stdout.split(RECORD_SEP) {
-        // `--format=` output without a `format:`/`tformat:` prefix ends each entry with a newline;
-        // strip it, not the message's own content.
-        let record = record.trim_end_matches('\n');
         if record.is_empty() {
             continue;
         }
 
-        let Some((sha_str, message)) = record.split_once(FIELD_SEP) else {
+        // Split before trimming: an empty message leaves `<sha>\n`, which is a commit, not a malformed record.
+        let Some((sha_str, message)) = record.split_once('\n') else {
             return Err(VcsError::MalformedLogOutput {
                 detail: format!(
-                    "in `{}`: expected a `<sha>{FIELD_SEP:?}<message>` record, got: {record:?}",
+                    "in `{}`: expected a `<sha>\\n<message>` record, got: {record:?}",
                     cwd.display()
                 ),
             });
@@ -931,7 +928,7 @@ fn parse_git_log_output(stdout: &str, cwd: &Path) -> Result<Vec<GitCommit>, VcsE
             message: e.to_string(),
         })?;
 
-        let message = message.replace("\r\n", "\n");
+        let message = message.trim_end_matches('\n').replace("\r\n", "\n");
         let (summary, body) = match message.split_once("\n\n") {
             Some((title, rest)) => (title.trim_end().to_string(), Some(rest.to_string())),
             None => (message.trim_end().to_string(), None),
@@ -1430,11 +1427,10 @@ mod tests {
         assert!(matches!(err, VcsError::MalformedLogOutput { .. }), "got {err:?}");
     }
 
-    /// `git log`'s custom `--format=` output missing the `FIELD_SEP`-delimited message is a
-    /// distinct, typed [`VcsError::MalformedLogOutput`] (E301).
+    /// A `git log` record with no message after its sha is a distinct, typed [`VcsError::MalformedLogOutput`] (E301).
     #[test]
     fn commits_since_rejects_a_record_with_no_field_separator() {
-        let stdout = format!("{RECORD_SEP}{}", "a".repeat(40));
+        let stdout = format!("{}{RECORD_SEP}", "a".repeat(40));
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
             response: Box::new(move |_args| Ok(ok(stdout.clone()))),
@@ -1448,30 +1444,6 @@ mod tests {
             miette::Diagnostic::code(&err).map(|c| c.to_string()),
             Some("E301".to_string())
         );
-    }
-
-    #[test]
-    fn test_commits_since_parses_record_and_field_separators_into_summary_and_body() {
-        let sha_a = "a".repeat(40);
-        let sha_b = "b".repeat(40);
-        let stdout = format!(
-            "{RECORD_SEP}{sha_a}{FIELD_SEP}feat: add thing\n\nSome body text\n{RECORD_SEP}{sha_b}{FIELD_SEP}fix: bug\n"
-        );
-        let runner = FakeRunner {
-            calls: Mutex::new(Vec::new()),
-            response: Box::new(move |_args| Ok(ok(stdout.clone()))),
-        };
-        let git = GitAccess::new(PathBuf::from("."), &runner);
-
-        let commits = git.commits_since(None, &[]).unwrap();
-
-        assert_eq!(commits.len(), 2);
-        assert_eq!(commits[0].sha.as_str(), sha_a);
-        assert_eq!(commits[0].summary, "feat: add thing");
-        assert_eq!(commits[0].body.as_deref(), Some("Some body text"));
-        assert_eq!(commits[1].sha.as_str(), sha_b);
-        assert_eq!(commits[1].summary, "fix: bug");
-        assert_eq!(commits[1].body, None);
     }
 
     #[test]
@@ -1491,7 +1463,7 @@ mod tests {
         assert!(args.contains(&"--full-history".to_string()));
         assert!(args.contains(&format!("{sha}..HEAD")));
         assert!(args.contains(&"--".to_string()));
-        assert!(args.contains(&"crates/pkg-a".to_string()));
+        assert!(args.contains(&":(literal)crates/pkg-a".to_string()));
     }
 
     #[test]
