@@ -503,7 +503,7 @@ mod tests {
         crate::apply::apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply must succeed");
 
         let target_dir = tmp.path().join("target");
-        let output = std::process::Command::new("cargo")
+        let output = std::process::Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
             .args(["metadata", "--no-deps", "--format-version", "1"])
             .env("CARGO_TARGET_DIR", &target_dir)
             .current_dir(root)

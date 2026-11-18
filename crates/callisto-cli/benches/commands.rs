@@ -116,6 +116,7 @@ fn main() {
     println!("| workspace | command | median ms | git ms | git processes | result |");
     println!("| ---: | --- | ---: | ---: | ---: | --- |");
     let kinds = [(PackageKind::Cargo, "cargo"), (PackageKind::PnpmRelative, "pnpm")];
+    let mut failed = false;
     for (packages, (kind, kind_label)) in sizes.iter().flat_map(|packages| kinds.map(|kind| (*packages, kind))) {
         let dir = tempfile::tempdir().unwrap();
         ScaledWorkspace {
@@ -135,6 +136,7 @@ fn main() {
             let result = if median.ok {
                 "ok".to_owned()
             } else {
+                failed = true;
                 format!("failed: {}", median.first_error_line)
             };
             println!(
@@ -156,5 +158,8 @@ fn main() {
             }
         }
         drop(std::fs::remove_file(&trace));
+    }
+    if failed {
+        std::process::exit(1);
     }
 }

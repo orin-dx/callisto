@@ -1,3 +1,5 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
 # Default recipe: fast local CI pipeline (no coverage) via moon & just.
 # Use `just ci` explicitly for full CI parity including coverage.
 default: ci
@@ -96,7 +98,11 @@ audit: license-boundary
 
 # callisto-model is MIT: nothing it depends on at build or run time, directly or not, may be FSL-licensed or a Callisto FSL crate.
 license-boundary:
-    ! cargo tree -p callisto-model -e normal,build --prefix none --format '{p} {l}' | grep -E 'FSL|callisto-(manifests|graph|cli|fixtures)'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tree=$(cargo tree -p callisto-model -e normal,build --prefix none --format '{p} {l}')
+    if [ -z "$tree" ]; then echo "cargo tree printed nothing" >&2; exit 1; fi
+    if grep -E 'FSL|callisto-(manifests|graph|cli|fixtures)' <<<"$tree"; then exit 1; fi
 
 # Compile the fuzz targets so they cannot rot (running them needs nightly and cargo-fuzz)
 fuzz-check:
@@ -108,7 +114,11 @@ mutants:
 
 # The shipped binary is built with the features its crates default to, and none of them is the dev-only `test-util`.
 features-boundary:
-    ! cargo tree -p callisto-cli -e normal,build -f '{p} {f}' | grep 'test-util'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tree=$(cargo tree -p callisto-cli -e normal,build -f '{p} {f}')
+    if [ -z "$tree" ]; then echo "cargo tree printed nothing" >&2; exit 1; fi
+    if grep 'test-util' <<<"$tree"; then exit 1; fi
 
 # Run unused dependency check via cargo-machete
 machete:
@@ -143,14 +153,16 @@ coverage threshold="":
 coverage-per-crate threshold="90":
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo llvm-cov report --json --summary-only > /tmp/callisto-cov-summary.json
+    summary=$(mktemp)
+    trap 'rm -f "$summary"' EXIT
+    cargo llvm-cov report --json --summary-only > "$summary"
     report=$(jq -r '
         .data[0].files[]
         | select(.filename | test("/crates/"))
         | {crate: (.filename | capture("/crates/(?<c>[^/]+)/").c), count: .summary.lines.count, covered: .summary.lines.covered}
         | [.crate, .count, .covered]
         | @tsv
-      ' /tmp/callisto-cov-summary.json \
+      ' "$summary" \
       | awk -F'\t' -v threshold="{{threshold}}" '
           {sum[$1]+=$2; cov[$1]+=$3}
           END {
@@ -161,8 +173,9 @@ coverage-per-crate threshold="90":
             }
           }
         ' | sort)
+    if [ -z "$report" ]; then echo "no per-crate coverage data: run cargo llvm-cov first" >&2; exit 1; fi
     echo "$report" | awk -F'\t' '{printf "%-25s lines=%-6s covered=%-6s cover=%6s%%  %s\n", $1, $2, $3, $4, $5}'
-    echo "$report" | grep -q FAIL && exit 1 || exit 0
+    if grep -q FAIL <<<"$report"; then exit 1; fi
 
 # Clean build targets, Moon task caches, and generated artifacts
 clean:
@@ -178,9 +191,9 @@ pre-push: fmt-check lint-affected
 
 # Install native Git pre-commit and pre-push hooks
 hooks:
-    @echo '#!/bin/sh\njust pre-commit' > .git/hooks/pre-commit
+    @printf '#!/bin/sh\njust pre-commit\n' > .git/hooks/pre-commit
     @chmod +x .git/hooks/pre-commit
-    @echo '#!/bin/sh\njust pre-push' > .git/hooks/pre-push
+    @printf '#!/bin/sh\njust pre-push\n' > .git/hooks/pre-push
     @chmod +x .git/hooks/pre-push
     @echo "Git pre-commit and pre-push hooks installed successfully."
 
