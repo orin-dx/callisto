@@ -2,6 +2,7 @@ use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use callisto_model::NativeName;
 use callisto_model::{
     CommandError, CommandOutput, CommandRunner, DepEdge, Ecosystem, GroupKind, GroupName, ManifestDecl, ManifestFormat,
     ManifestRole, Package,
@@ -168,7 +169,7 @@ fn identity_for_all<'a>(packages: impl IntoIterator<Item = &'a Package>) -> Iden
         for manifest in pkg.canonical_manifests() {
             index
                 .native
-                .insert((manifest.ecosystem(), pkg.id.name().to_string()), pkg.id.clone());
+                .insert(NativeName::new(manifest.ecosystem(), pkg.id.name()), pkg.id.clone());
         }
     }
     index
@@ -778,13 +779,7 @@ fn test_resolve_target_package_ambiguous_bare_name_three_ecosystems_errors() {
     }
 }
 
-/// Spec: bare-name matching against `PackageId::name()` is a plain
-/// string comparison, which is case-sensitive. A package registered as
-/// `cargo/Foo` must NOT be resolved by a bare lookup for `foo` -- they
-/// are treated as distinct names, so the lookup resolves to `None`
-/// (unknown-package) rather than matching or erroring as ambiguous.
-/// This test pins down that actual behavior explicitly so a future
-/// change to case handling is a deliberate, visible decision.
+/// A bare selector is a plain spelling match; only qualified selectors apply registry equivalence.
 #[test]
 fn test_resolve_target_package_bare_name_matching_is_case_sensitive() {
     let pkg_cargo = make_pkg(PackageId::parse("cargo/Foo").unwrap());
@@ -794,10 +789,7 @@ fn test_resolve_target_package_bare_name_matching_is_case_sensitive() {
 
     let result = resolve_target_package(packages.iter(), &identity, &bare).unwrap();
 
-    assert!(
-        result.is_none(),
-        "case-sensitive name comparison must not match 'foo' against 'Foo'"
-    );
+    assert!(result.is_none());
 }
 
 /// Spec: a changeset where EVERY entry references a package not in the

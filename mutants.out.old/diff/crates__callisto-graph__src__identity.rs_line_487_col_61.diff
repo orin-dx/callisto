@@ -1,0 +1,21 @@
+--- crates/callisto-graph/src/identity.rs
++++ replace && with || in IdentityIndex::resolve_native_with_fallback
+@@ -479,17 +479,17 @@
+         if let Some(id) = self.native_in_ecosystem(eco, name) {
+             return Some(id);
+         }
+ 
+         // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.
+         let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self
+             .native
+             .iter()
+-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)
++            .filter(|(native, _)| native.ecosystem() != eco || /* ~ changed by cargo-mutants ~ */ native.as_str() == name)
+             .map(|(native, id)| (native.ecosystem(), native.as_str(), id))
+             .collect();
+         candidates.dedup_by(|a, b| a.2 == b.2);
+ 
+         match candidates.len() {
+             0 => None,
+             _ => {
+                 let candidate_names: Vec<String> = candidates

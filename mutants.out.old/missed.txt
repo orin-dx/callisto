@@ -1,0 +1,17 @@
+crates/callisto-graph/src/history.rs:86:5: replace declares -> Result<bool, GraphError> with Ok(false)
+crates/callisto-graph/src/history.rs:101:82: replace == with != in declares
+crates/callisto-graph/src/history.rs:116:5: replace first_manifest_declares_at -> Result<bool, GraphError> with Ok(false)
+crates/callisto-graph/src/history.rs:128:58: replace == with != in first_manifest_declares_at
+crates/callisto-graph/src/history.rs:162:75: replace == with != in sole_owner_at
+crates/callisto-graph/src/history.rs:181:5: replace may_have_held_name_at -> Result<bool, GraphError> with Ok(true)
+crates/callisto-graph/src/history.rs:191:71: replace == with != in may_have_held_name_at
+crates/callisto-graph/src/identity.rs:455:61: replace && with || in IdentityIndex::resolve_native
+crates/callisto-model/src/identity.rs:253:9: replace NativeName::as_str -> &str with ""
+crates/callisto-model/src/identity.rs:253:9: replace NativeName::as_str -> &str with "xyzzy"
+crates/callisto-model/src/identity.rs:259:9: replace <impl PartialEq for NativeName>::eq -> bool with true
+crates/callisto-model/src/identity.rs:259:9: replace <impl PartialEq for NativeName>::eq -> bool with false
+crates/callisto-model/src/identity.rs:259:43: replace && with || in <impl PartialEq for NativeName>::eq
+crates/callisto-model/src/identity.rs:259:24: replace == with != in <impl PartialEq for NativeName>::eq
+crates/callisto-model/src/identity.rs:259:55: replace == with != in <impl PartialEq for NativeName>::eq
+crates/callisto-model/src/identity.rs:267:9: replace <impl std::hash::Hash for NativeName>::hash with ()
+crates/callisto-model/src/identity.rs:274:9: replace <impl PartialOrd for NativeName>::partial_cmp -> Option<Ordering> with None

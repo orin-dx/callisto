@@ -8,7 +8,7 @@ use callisto_manifests::{Manifest, OpenContext};
 use callisto_model::ReleaseTrigger;
 use callisto_model::{
     DepEdge, DepSpec, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl, ManifestFormat,
-    ManifestRole, Package, PackageId, PublishTarget,
+    ManifestRole, NativeName, Package, PackageId, PublishTarget,
 };
 
 use crate::config::resolve::{resolve_package_config, rule_applies};
@@ -74,13 +74,13 @@ use crate::resolver::ManifestWalkResolver;
 fn compute_claiming_ecosystems_and_native_keys(
     list: &[(Ecosystem, PackageId)],
     primary_id: &PackageId,
-) -> (BTreeSet<Ecosystem>, Vec<(Ecosystem, String)>) {
+) -> (BTreeSet<Ecosystem>, Vec<NativeName>) {
     let claiming = list
         .iter()
         .filter(|(_, id)| id.name() == primary_id.name())
         .map(|(eco, _)| *eco)
         .collect();
-    let native_keys = list.iter().map(|(eco, id)| (*eco, id.name().to_string())).collect();
+    let native_keys = list.iter().map(|(eco, id)| NativeName::new(*eco, id.name())).collect();
     (claiming, native_keys)
 }
 
@@ -265,8 +265,8 @@ struct IdentityAssigner<'a> {
     claiming_ecosystems: BTreeMap<PathBuf, BTreeSet<Ecosystem>>,
     // Every (ecosystem, native name) any path declares, anywhere in that path's
     // manifest list -- not only its primary name -- belongs to exactly one directory.
-    native_owner: BTreeMap<(Ecosystem, String), PathBuf>,
-    path_native_keys: BTreeMap<PathBuf, Vec<(Ecosystem, String)>>,
+    native_owner: BTreeMap<NativeName, PathBuf>,
+    path_native_keys: BTreeMap<PathBuf, Vec<NativeName>>,
     path_platform_keys: BTreeMap<PathBuf, Vec<String>>,
     primary_ecosystems: BTreeMap<PathBuf, Ecosystem>,
     promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
@@ -297,10 +297,10 @@ impl<'a> IdentityAssigner<'a> {
         // E100 when any (ecosystem, native name) this path declares is owned by another path; checked before promotion bookkeeping.
         if let Some((eco, id)) = list.iter().find(|(eco, id)| {
             self.native_owner
-                .get(&(*eco, id.name().to_string()))
+                .get(&NativeName::new(*eco, id.name()))
                 .is_some_and(|p| *p != rel_path)
         }) {
-            let owner_path = self.native_owner[&(*eco, id.name().to_string())].clone();
+            let owner_path = self.native_owner[&NativeName::new(*eco, id.name())].clone();
             return Err(GraphError::DuplicatePackage {
                 id: id.clone(),
                 paths: vec![owner_path, rel_path],
@@ -308,7 +308,7 @@ impl<'a> IdentityAssigner<'a> {
         }
         for (eco, id) in &list {
             self.native_owner
-                .insert((*eco, id.name().to_string()), rel_path.clone());
+                .insert(NativeName::new(*eco, id.name()), rel_path.clone());
         }
 
         let mut primary_id = list[0].1.clone();
@@ -400,7 +400,7 @@ impl<'a> IdentityAssigner<'a> {
             }
             self.index
                 .native
-                .insert((*eco, id.name().to_string()), primary_id.clone());
+                .insert(NativeName::new(*eco, id.name()), primary_id.clone());
             if id.name() == primary_id.name() {
                 self.index
                     .prefixed

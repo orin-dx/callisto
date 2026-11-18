@@ -1,0 +1,21 @@
+--- crates/callisto-model/src/identity.rs
++++ replace <impl PartialEq for NativeName>::eq -> bool with true
+@@ -251,17 +251,17 @@
+     /// The spelling the manifest declared.
+     pub fn as_str(&self) -> &str {
+         &self.spelling
+     }
+ }
+ 
+ impl PartialEq for NativeName {
+     fn eq(&self, other: &Self) -> bool {
+-        self.ecosystem == other.ecosystem && self.key == other.key
++        true /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ impl Eq for NativeName {}
+ 
+ impl std::hash::Hash for NativeName {
+     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+         self.ecosystem.hash(state);

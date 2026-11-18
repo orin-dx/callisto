@@ -337,7 +337,9 @@ mod tests {
     fn identity_for(entries: &[(Ecosystem, &str, &Package)]) -> IdentityIndex {
         let mut index = IdentityIndex::default();
         for (eco, name, pkg) in entries {
-            index.native.insert((*eco, (*name).to_string()), pkg.id.clone());
+            index
+                .native
+                .insert(callisto_model::NativeName::new(*eco, name), pkg.id.clone());
         }
         index
     }

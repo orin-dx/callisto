@@ -1,0 +1,21 @@
+--- crates/callisto-model/src/identity.rs
++++ replace <impl PartialOrd for NativeName>::partial_cmp -> Option<Ordering> with Some(Default::default())
+@@ -266,17 +266,17 @@
+     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+         self.ecosystem.hash(state);
+         self.key.hash(state);
+     }
+ }
+ 
+ impl PartialOrd for NativeName {
+     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+-        Some(self.cmp(other))
++        Some(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ impl Ord for NativeName {
+     fn cmp(&self, other: &Self) -> Ordering {
+         (self.ecosystem, &self.key).cmp(&(other.ecosystem, &other.key))
+     }
+ }

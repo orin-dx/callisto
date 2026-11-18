@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use callisto_graph::resolver::DependencyResolver;
 use callisto_graph::GraphError;
+use callisto_model::NativeName;
 use callisto_model::{
     DepEdge, DepKind, DepSpec, ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId, PublishTarget,
     ReleaseTrigger, TagTemplate,
@@ -149,7 +150,7 @@ pub fn identity_for(graph: &InMemoryGraph) -> callisto_graph::IdentityIndex {
         for manifest in pkg.canonical_manifests() {
             index
                 .native
-                .insert((manifest.ecosystem(), pkg.id.name().to_string()), pkg.id.clone());
+                .insert(NativeName::new(manifest.ecosystem(), pkg.id.name()), pkg.id.clone());
         }
     }
     index

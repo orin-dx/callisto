@@ -1,0 +1,27 @@
+--- crates/callisto-graph/src/walk.rs
++++ replace compute_claiming_ecosystems_and_native_keys -> (BTreeSet<Ecosystem>, Vec<NativeName>) with (BTreeSet::from_iter([Default::default()]), vec![])
+@@ -70,23 +70,17 @@
+ 
+ /// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)
+ /// for one path's own `list` of (ecosystem, declared-id) pairs. The first is filtered
+ /// to entries whose declared name equals `primary_id.name()`; the second is not filtered.
+ fn compute_claiming_ecosystems_and_native_keys(
+     list: &[(Ecosystem, PackageId)],
+     primary_id: &PackageId,
+ ) -> (BTreeSet<Ecosystem>, Vec<NativeName>) {
+-    let claiming = list
+-        .iter()
+-        .filter(|(_, id)| id.name() == primary_id.name())
+-        .map(|(eco, _)| *eco)
+-        .collect();
+-    let native_keys = list.iter().map(|(eco, id)| NativeName::new(*eco, id.name())).collect();
+-    (claiming, native_keys)
++    (BTreeSet::from_iter([Default::default()]), vec![]) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Disjointness test for two paths' name-scoped claiming-ecosystem sets --
+ /// {Cargo,Npm} and {Npm} are unequal but not disjoint. Kept for the
+ /// `is_promoted_bare_name` unit tests below; actual duplicate detection is
+ /// `native_owner` in `build`, keyed by every declared (ecosystem, name), not
+ /// just each path's primary name.
+ #[cfg(test)]

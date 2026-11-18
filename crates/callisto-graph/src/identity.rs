@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use callisto_model::{normalize_pypi_project_name, Ecosystem, ManifestRole, PackageId};
+use callisto_model::{Ecosystem, ManifestRole, NativeName, PackageId};
 
 use crate::error::{ConfigError, GraphError};
 
@@ -15,7 +15,7 @@ mod tests {
         let cargo_serde = PackageId::Bare("serde".to_string());
         index
             .native
-            .insert((Ecosystem::Cargo, "serde".to_string()), cargo_serde);
+            .insert(NativeName::new(Ecosystem::Cargo, "serde"), cargo_serde);
         let mut diagnostics = Vec::new();
         let result = index.resolve_native_with_fallback(Ecosystem::Npm, "serde", &mut diagnostics);
         assert!(
@@ -31,11 +31,11 @@ mod tests {
     fn resolve_native_with_fallback_returns_none_and_one_diagnostic_for_two_candidates() {
         let mut index = IdentityIndex::default();
         index.native.insert(
-            (Ecosystem::Cargo, "ambiguous-lib".to_string()),
+            NativeName::new(Ecosystem::Cargo, "ambiguous-lib"),
             PackageId::Bare("ambiguous-lib".to_string()),
         );
         index.native.insert(
-            (Ecosystem::Pypi, "ambiguous-lib".to_string()),
+            NativeName::new(Ecosystem::Pypi, "ambiguous-lib"),
             PackageId::Prefixed {
                 ecosystem: Ecosystem::Pypi,
                 name: "ambiguous-lib".to_string(),
@@ -59,7 +59,7 @@ mod tests {
                 ecosystem: Ecosystem::Cargo,
                 name: name.to_string(),
             };
-            index.native.insert((Ecosystem::Cargo, name.to_string()), id);
+            index.native.insert(NativeName::new(Ecosystem::Cargo, name), id);
         }
         let GraphError::UnknownPackage { hint, .. } = index.resolve("cargo/lib2").unwrap_err() else {
             panic!("expected E102");
@@ -77,7 +77,7 @@ mod tests {
         let npm_only = PackageId::Bare("foo".to_string());
         index
             .native
-            .insert((Ecosystem::Npm, "foo".to_string()), npm_only.clone());
+            .insert(NativeName::new(Ecosystem::Npm, "foo"), npm_only.clone());
 
         // repro/ws-qual: `cargo/foo` must not select the npm-only `foo`.
         let err = index.resolve("cargo/foo").unwrap_err();
@@ -102,10 +102,10 @@ mod tests {
         let owner = PackageId::Bare("x-core".to_string());
         index
             .native
-            .insert((Ecosystem::Cargo, "x-core".to_string()), owner.clone());
+            .insert(NativeName::new(Ecosystem::Cargo, "x-core"), owner.clone());
         index
             .native
-            .insert((Ecosystem::Npm, "@x/core".to_string()), owner.clone());
+            .insert(NativeName::new(Ecosystem::Npm, "@x/core"), owner.clone());
 
         assert_eq!(index.resolve("@x/core").unwrap(), owner);
         assert_eq!(index.resolve("x-core").unwrap(), owner);
@@ -121,10 +121,10 @@ mod tests {
         };
         index
             .native
-            .insert((Ecosystem::Cargo, "foo".to_string()), cargo_foo.clone());
+            .insert(NativeName::new(Ecosystem::Cargo, "foo"), cargo_foo.clone());
         index
             .native
-            .insert((Ecosystem::Npm, "foo".to_string()), npm_foo.clone());
+            .insert(NativeName::new(Ecosystem::Npm, "foo"), npm_foo.clone());
 
         let err = index.resolve("foo").unwrap_err();
         match err {
@@ -148,10 +148,10 @@ mod tests {
         };
         index
             .native
-            .insert((Ecosystem::Cargo, "foo".to_string()), cargo_foo.clone());
+            .insert(NativeName::new(Ecosystem::Cargo, "foo"), cargo_foo.clone());
         index
             .native
-            .insert((Ecosystem::Npm, "foo".to_string()), npm_foo.clone());
+            .insert(NativeName::new(Ecosystem::Npm, "foo"), npm_foo.clone());
 
         let selector = PackageId::Prefixed {
             ecosystem: Ecosystem::Cargo,
@@ -162,14 +162,30 @@ mod tests {
     }
 
     #[test]
+    fn a_selector_resolves_through_the_registry_equivalence_of_the_name() {
+        let mut index = IdentityIndex::default();
+        let pypi = PackageId::Bare("my-pkg".to_string());
+        let cargo = PackageId::Bare("serde-json".to_string());
+        index
+            .native
+            .insert(NativeName::new(Ecosystem::Pypi, "My_Pkg"), pypi.clone());
+        index
+            .native
+            .insert(NativeName::new(Ecosystem::Cargo, "serde-json"), cargo.clone());
+        assert_eq!(index.resolve("pypi/my.pkg").expect("pypi equivalent"), pypi);
+        assert_eq!(index.resolve("cargo/Serde_Json").expect("cargo equivalent"), cargo);
+        assert_eq!(index.native_name(&pypi, Ecosystem::Pypi), Some("My_Pkg"));
+    }
+
+    #[test]
     fn resolve_native_with_fallback_lists_the_candidates_own_native_name_not_the_primary_name() {
         // The diagnostic must say "pypi/foo-py" (the pyproject name), not the Cargo primary name "pypi/foo".
         let mut index = IdentityIndex::default();
         let owner = PackageId::Bare("foo".to_string());
         index
             .native
-            .insert((Ecosystem::Cargo, "foo".to_string()), owner.clone());
-        index.native.insert((Ecosystem::Pypi, "foo-py".to_string()), owner);
+            .insert(NativeName::new(Ecosystem::Cargo, "foo"), owner.clone());
+        index.native.insert(NativeName::new(Ecosystem::Pypi, "foo-py"), owner);
         let mut diagnostics = Vec::new();
         index.resolve_native_with_fallback(Ecosystem::Npm, "foo-py", &mut diagnostics);
         assert_eq!(diagnostics.len(), 1);
@@ -191,7 +207,7 @@ mod tests {
         let cargo_serde = PackageId::Bare("serde".to_string());
         index
             .native
-            .insert((Ecosystem::Cargo, "serde".to_string()), cargo_serde.clone());
+            .insert(NativeName::new(Ecosystem::Cargo, "serde"), cargo_serde.clone());
         let result = index.resolve_native(Ecosystem::Npm, "serde");
         assert_eq!(
             result,
@@ -206,9 +222,9 @@ mod tests {
         let owner = PackageId::Bare("My..Lib".to_string());
         index
             .native
-            .insert((Ecosystem::Pypi, "My..Lib".to_string()), owner.clone());
+            .insert(NativeName::new(Ecosystem::Pypi, "My..Lib"), owner.clone());
         index.native.insert(
-            (Ecosystem::Cargo, "my_lib".to_string()),
+            NativeName::new(Ecosystem::Cargo, "my_lib"),
             PackageId::Bare("cargo-owner".to_string()),
         );
 
@@ -222,50 +238,44 @@ mod tests {
             assert!(diagnostics.is_empty());
         }
         assert_eq!(index.native_name(&owner, Ecosystem::Pypi), Some("My..Lib"));
-        assert!(index.native.contains_key(&(Ecosystem::Pypi, "My..Lib".to_string())));
+        assert!(index.native.contains_key(&NativeName::new(Ecosystem::Pypi, "My..Lib")));
     }
 
     #[test]
-    fn native_lookup_does_not_apply_python_normalization_to_other_ecosystems() {
-        for ecosystem in [Ecosystem::Cargo, Ecosystem::Npm] {
-            let mut index = IdentityIndex::default();
-            let owner = PackageId::Bare("my-lib".to_string());
-            index.native.insert((ecosystem, "my-lib".to_string()), owner);
-
-            for name in ["my_lib", "MY-LIB", "my.lib"] {
-                assert!(index.resolve_native(ecosystem, name).is_none());
-                let mut diagnostics = Vec::new();
-                assert!(index
-                    .resolve_native_with_fallback(ecosystem, name, &mut diagnostics)
-                    .is_none());
-                assert!(diagnostics.is_empty());
-            }
-        }
-    }
-
-    #[test]
-    fn python_native_lookup_does_not_choose_between_normalized_name_collisions() {
+    fn the_cross_ecosystem_fallback_needs_exactly_one_exact_spelling() {
         let mut index = IdentityIndex::default();
-        for name in ["my-lib", "my_lib"] {
-            index
-                .native
-                .insert((Ecosystem::Pypi, name.to_string()), PackageId::Bare(name.to_string()));
-        }
+        let cargo = PackageId::Bare("cargo-owner".to_string());
+        index
+            .native
+            .insert(NativeName::new(Ecosystem::Cargo, "shared"), cargo.clone());
+        assert_eq!(index.resolve_native(Ecosystem::Npm, "shared"), Some(&cargo));
+        assert!(index.resolve_native(Ecosystem::Npm, "other").is_none());
         index.native.insert(
-            (Ecosystem::Cargo, "my.lib".to_string()),
-            PackageId::Bare("cargo-owner".to_string()),
+            NativeName::new(Ecosystem::Pypi, "shared"),
+            PackageId::Bare("pypi-owner".to_string()),
         );
+        assert!(index.resolve_native(Ecosystem::Npm, "shared").is_none());
+    }
 
-        for name in ["my-lib", "my_lib", "my.lib"] {
-            assert!(index.resolve_native(Ecosystem::Pypi, name).is_none());
+    #[test]
+    fn native_lookup_applies_only_the_registrys_own_equivalence() {
+        let owner = PackageId::Bare("my-lib".to_string());
+        let mut cargo = IdentityIndex::default();
+        cargo
+            .native
+            .insert(NativeName::new(Ecosystem::Cargo, "my-lib"), owner.clone());
+        assert!(cargo.resolve_native(Ecosystem::Cargo, "My_Lib").is_some());
+        assert!(cargo.resolve_native(Ecosystem::Cargo, "my.lib").is_none());
+
+        let mut npm = IdentityIndex::default();
+        npm.native.insert(NativeName::new(Ecosystem::Npm, "my-lib"), owner);
+        for name in ["my_lib", "MY-LIB", "my.lib"] {
+            assert!(npm.resolve_native(Ecosystem::Npm, name).is_none());
             let mut diagnostics = Vec::new();
-            assert!(index
-                .resolve_native_with_fallback(Ecosystem::Pypi, name, &mut diagnostics)
+            assert!(npm
+                .resolve_native_with_fallback(Ecosystem::Npm, name, &mut diagnostics)
                 .is_none());
-            assert_eq!(diagnostics.len(), 1);
-            assert_eq!(diagnostics[0].code, callisto_model::DiagnosticCode::UnknownPackage);
-            assert!(diagnostics[0].message.contains("my-lib"));
-            assert!(diagnostics[0].message.contains("my_lib"));
+            assert!(diagnostics.is_empty());
         }
     }
 
@@ -277,13 +287,13 @@ mod tests {
         let mut index = IdentityIndex::default();
         index
             .native
-            .insert((Ecosystem::Cargo, "dual".to_string()), owner.clone());
+            .insert(NativeName::new(Ecosystem::Cargo, "dual"), owner.clone());
         index
             .native
-            .insert((Ecosystem::Npm, "@scope/dual".to_string()), owner.clone());
+            .insert(NativeName::new(Ecosystem::Npm, "@scope/dual"), owner.clone());
         index
             .native
-            .insert((Ecosystem::Cargo, "other".to_string()), other.clone());
+            .insert(NativeName::new(Ecosystem::Cargo, "other"), other.clone());
 
         assert_eq!(index.native_name(&owner, Ecosystem::Npm), Some("@scope/dual"));
         assert_eq!(
@@ -294,7 +304,7 @@ mod tests {
 
         index
             .native
-            .insert((Ecosystem::Npm, "other-js".to_string()), other.clone());
+            .insert(NativeName::new(Ecosystem::Npm, "other-js"), other.clone());
         index.platform.insert(
             "@scope/dual-linux".to_string(),
             (
@@ -317,7 +327,7 @@ mod tests {
 pub struct IdentityIndex {
     pub bare: BTreeMap<String, PackageId>,
     pub prefixed: BTreeMap<(Ecosystem, String), PackageId>,
-    pub native: BTreeMap<(Ecosystem, String), PackageId>,
+    pub native: BTreeMap<NativeName, PackageId>,
     /// Keyed by a platform npm manifest's own package name (e.g.
     /// `"@myorg/my-crate-linux-x64-gnu"`) -- distinct from `owner`'s name
     /// when the owning package's primary identity comes from a
@@ -345,7 +355,7 @@ impl Clone for ByPackageCache {
 #[derive(Debug, Default)]
 struct ByPackage {
     sizes: (usize, usize),
-    native: HashMap<PackageId, Vec<(Ecosystem, String)>>,
+    native: HashMap<PackageId, Vec<NativeName>>,
     platform: HashMap<PackageId, Vec<String>>,
 }
 
@@ -366,11 +376,8 @@ impl IdentityIndex {
                 sizes,
                 ..ByPackage::default()
             };
-            for ((ecosystem, name), id) in &self.native {
-                view.native
-                    .entry(id.clone())
-                    .or_default()
-                    .push((*ecosystem, name.clone()));
+            for (name, id) in &self.native {
+                view.native.entry(id.clone()).or_default().push(name.clone());
             }
             for (name, (owner, _, _)) in &self.platform {
                 view.platform.entry(owner.clone()).or_default().push(name.clone());
@@ -384,7 +391,7 @@ impl IdentityIndex {
     /// selector (`eco/name` or a bare name; the colon form is `E316`) against registered
     /// native manifest names.
     ///
-    /// A qualified selector is an exact `(ecosystem, native name)` lookup: no
+    /// A qualified selector is a `(ecosystem, native name)` lookup under that registry's name equivalence: no
     /// match is `E102` ([`GraphError::UnknownPackage`]), regardless of what a
     /// different ecosystem calls itself. A bare selector searches every
     /// ecosystem's native names: no match is `E102`; more than one distinct
@@ -403,14 +410,14 @@ impl IdentityIndex {
         match id {
             PackageId::Prefixed { ecosystem, name } => self
                 .native
-                .get(&(*ecosystem, name.clone()))
+                .get(&NativeName::new(*ecosystem, name))
                 .cloned()
                 .ok_or_else(|| GraphError::unknown_package(id.clone(), self.native_ids())),
             PackageId::Bare(name) => {
                 let candidates: BTreeSet<PackageId> = self
                     .native
                     .iter()
-                    .filter(|((_, n), _)| n == name)
+                    .filter(|(native, _)| native.as_str() == name)
                     .map(|(_, registered)| registered.clone())
                     .collect();
                 match candidates.len() {
@@ -441,7 +448,7 @@ impl IdentityIndex {
 
     /// Look up a package by its native (manifest-declared) name.
     ///
-    /// Python names use PEP 503 equivalence; other ecosystems use exact names.
+    /// Names equal under the ecosystem's registry rules ([`NativeName`]) match.
     /// If no name matches within the ecosystem -- a
     /// package in one ecosystem depending on a different ecosystem's
     /// package by bare name (e.g. an npm package listing a cargo crate)
@@ -453,17 +460,15 @@ impl IdentityIndex {
     /// should use [`Self::resolve_native_with_fallback`] instead, to get
     /// a diagnostic.
     pub fn resolve_native(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {
-        match self.native_in_ecosystem(eco, name) {
-            Ok(Some(id)) => return Some(id),
-            Ok(None) => {}
-            Err(_) => return None,
+        if let Some(id) = self.native_in_ecosystem(eco, name) {
+            return Some(id);
         }
 
         // Cross-ecosystem fallback.
         let mut candidates: Vec<&PackageId> = self
             .native
             .iter()
-            .filter(|((e, n), _)| *e != eco && n == name)
+            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)
             .map(|(_, id)| id)
             .collect();
 
@@ -487,29 +492,16 @@ impl IdentityIndex {
         name: &str,
         diagnostics: &mut Vec<callisto_model::Diagnostic>,
     ) -> Option<&'a PackageId> {
-        match self.native_in_ecosystem(eco, name) {
-            Ok(Some(id)) => return Some(id),
-            Ok(None) => {}
-            Err(error) => {
-                diagnostics.push(callisto_model::Diagnostic {
-                    code: callisto_model::DiagnosticCode::UnknownPackage,
-                    severity: callisto_model::DiagnosticSeverity::Warning,
-                    message: error.to_string(),
-                    package: None,
-                    path: None,
-                    escalated_by: None,
-                    governed_by: None,
-                });
-                return None;
-            }
+        if let Some(id) = self.native_in_ecosystem(eco, name) {
+            return Some(id);
         }
 
         // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.
         let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self
             .native
             .iter()
-            .filter(|((e, n), _)| *e != eco && n == name)
-            .map(|((e, n), id)| (*e, n.as_str(), id))
+            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)
+            .map(|(native, id)| (native.ecosystem(), native.as_str(), id))
             .collect();
         candidates.dedup_by(|a, b| a.2 == b.2);
 
@@ -538,36 +530,16 @@ impl IdentityIndex {
         }
     }
 
-    fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Result<Option<&PackageId>, GraphError> {
-        if eco != Ecosystem::Pypi {
-            return Ok(self.native.get(&(eco, name.to_string())));
-        }
-
-        let normalized = normalize_pypi_project_name(name);
-        let candidates: BTreeSet<&PackageId> = self
-            .native
-            .iter()
-            .filter(|((ecosystem, native_name), _)| {
-                *ecosystem == eco && normalize_pypi_project_name(native_name) == normalized
-            })
-            .map(|(_, id)| id)
-            .collect();
-        match candidates.len() {
-            0 => Ok(None),
-            1 => Ok(candidates.into_iter().next()),
-            _ => Err(GraphError::AmbiguousName {
-                name: name.to_string(),
-                candidates: candidates.into_iter().cloned().collect(),
-            }),
-        }
+    fn native_in_ecosystem(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {
+        self.native.get(&NativeName::new(eco, name))
     }
 
     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {
         let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());
         keys.iter()
-            .filter(|(ecosystem, _)| *ecosystem == eco)
+            .filter(|key| key.ecosystem() == eco)
             .find_map(|key| self.native.get_key_value(key))
-            .map(|((_, name), _)| name.as_str())
+            .map(|(name, _)| name.as_str())
     }
 
     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one
@@ -577,23 +549,25 @@ impl IdentityIndex {
     pub fn suggest_native(&self, qualified: &str) -> Option<String> {
         let (prefix, name) = qualified.split_once('/')?;
         let ecosystem = Ecosystem::from_prefix(prefix)?;
-        if self.native.contains_key(&(ecosystem, name.to_owned())) {
+        if self.native.contains_key(&NativeName::new(ecosystem, name)) {
             return None;
         }
         let mut candidates = self
             .native
             .iter()
-            .filter(|((eco, native), owner)| *eco == ecosystem && native != name && owner.name() == name)
-            .map(|((_, native), _)| format!("{prefix}/{native}"));
+            .filter(|(native, owner)| {
+                native.ecosystem() == ecosystem && native.as_str() != name && owner.name() == name
+            })
+            .map(|(native, _)| format!("{prefix}/{}", native.as_str()));
         let first = candidates.next()?;
         candidates.next().is_none().then_some(first)
     }
 
     /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.
     fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {
-        self.native.keys().map(|(ecosystem, name)| PackageId::Prefixed {
-            ecosystem: *ecosystem,
-            name: name.clone(),
+        self.native.keys().map(|native| PackageId::Prefixed {
+            ecosystem: native.ecosystem(),
+            name: native.as_str().to_owned(),
         })
     }
 
@@ -602,7 +576,7 @@ impl IdentityIndex {
         let results: Vec<(Ecosystem, &str)> = keys
             .iter()
             .filter_map(|key| self.native.get_key_value(key))
-            .map(|((ecosystem, name), _)| (*ecosystem, name.as_str()))
+            .map(|(native, _)| (native.ecosystem(), native.as_str()))
             .collect();
         results.into_iter()
     }
