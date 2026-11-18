@@ -29,43 +29,83 @@ fn canonical_if_present(path: &Path) -> std::io::Result<Option<PathBuf>> {
     }
 }
 
-/// The npm package a relative `workspace:../path` dependency of `declaring_manifest` names, or `None` when the path
-/// leaves the workspace, does not exist, or holds no admitted npm package.
-fn relative_workspace_package<'a>(
-    root: &Path,
-    declaring_manifest: &Path,
-    relative: &str,
-    mut packages: impl Iterator<Item = &'a Package>,
-) -> std::io::Result<Option<PackageId>> {
-    let root = root.canonicalize()?;
-    let Some(source) = root
-        .join(declaring_manifest)
-        .parent()
-        .map(canonical_if_present)
-        .transpose()?
-        .flatten()
-    else {
-        return Ok(None);
-    };
-    let Some(target) = canonical_if_present(&source.join(relative))? else {
-        return Ok(None);
-    };
-    if !target.starts_with(&root) {
-        return Ok(None);
-    }
-    for package in packages.by_ref() {
-        for manifest in package.canonical_manifests() {
-            if manifest.ecosystem() != Ecosystem::Npm {
-                continue;
-            }
-            let dir = root.join(manifest.path.parent().unwrap_or(Path::new("")));
-            if canonical_if_present(&dir)?.as_ref() == Some(&target) {
-                return Ok(Some(package.id.clone()));
+/// The canonical directory of every admitted npm package, so a relative `workspace:../path` dependency is one lookup.
+struct NpmDirIndex {
+    root: PathBuf,
+    packages: BTreeMap<PathBuf, PackageId>,
+}
+
+impl NpmDirIndex {
+    fn build<'a>(root: &Path, packages: impl Iterator<Item = &'a Package>) -> std::io::Result<Self> {
+        let root = root.canonicalize()?;
+        let mut dirs = BTreeMap::new();
+        for package in packages {
+            for manifest in package.canonical_manifests() {
+                if manifest.ecosystem() != Ecosystem::Npm {
+                    continue;
+                }
+                let dir = root.join(manifest.path.parent().unwrap_or(Path::new("")));
+                if let Some(dir) = canonical_if_present(&dir)? {
+                    dirs.entry(dir).or_insert_with(|| package.id.clone());
+                }
             }
         }
+        Ok(NpmDirIndex { root, packages: dirs })
     }
-    Ok(None)
+
+    /// The npm package a relative path of `declaring_manifest` names, or `None` when the path leaves the workspace,
+    /// does not exist, or holds no admitted npm package.
+    fn lookup(&self, declaring_manifest: &Path, relative: &str) -> std::io::Result<Option<PackageId>> {
+        let Some(source) = self
+            .root
+            .join(declaring_manifest)
+            .parent()
+            .map(canonical_if_present)
+            .transpose()?
+            .flatten()
+        else {
+            return Ok(None);
+        };
+        let Some(target) = canonical_if_present(&source.join(relative))? else {
+            return Ok(None);
+        };
+        if !target.starts_with(&self.root) {
+            return Ok(None);
+        }
+        Ok(self.packages.get(&target).cloned())
+    }
 }
+
+/// An index built on first use and shared by every later lookup; a failed build stays failed, with its message.
+struct LazyNpmDirIndex<'a> {
+    root: &'a Path,
+    index: std::cell::OnceCell<Result<NpmDirIndex, (std::io::ErrorKind, String)>>,
+}
+
+impl<'a> LazyNpmDirIndex<'a> {
+    fn new(root: &'a Path) -> Self {
+        LazyNpmDirIndex {
+            root,
+            index: std::cell::OnceCell::new(),
+        }
+    }
+
+    fn lookup<'p>(
+        &self,
+        packages: impl Iterator<Item = &'p Package>,
+        declaring_manifest: &Path,
+        relative: &str,
+    ) -> std::io::Result<Option<PackageId>> {
+        let built = self
+            .index
+            .get_or_init(|| NpmDirIndex::build(self.root, packages).map_err(|error| (error.kind(), error.to_string())));
+        match built {
+            Ok(index) => index.lookup(declaring_manifest, relative),
+            Err((kind, message)) => Err(std::io::Error::new(*kind, message.clone())),
+        }
+    }
+}
+
 use crate::resolver::ManifestWalkResolver;
 
 /// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)
@@ -746,6 +786,7 @@ fn build_edges(
     let mut edges = Vec::new();
     let mut out_index: BTreeMap<PackageId, Vec<usize>> = BTreeMap::new();
     let mut in_index: BTreeMap<PackageId, Vec<usize>> = BTreeMap::new();
+    let npm_dirs = LazyNpmDirIndex::new(root);
 
     for pkg in packages.values() {
         for decl in &pkg.manifests {
@@ -773,16 +814,16 @@ fn build_edges(
 
                     let workspace_target = match &spec {
                         DepSpec::WorkspaceProtocol(workspace) => workspace.relative_path().and_then(|relative| {
-                            relative_workspace_package(root, &decl.path, relative, packages.values()).unwrap_or_else(
-                                |error| {
+                            npm_dirs
+                                .lookup(packages.values(), &decl.path, relative)
+                                .unwrap_or_else(|error| {
                                     diagnostics.push(unresolved(
                                         &decl.path,
                                         "resolve a relative `workspace:` dependency",
                                         error,
                                     ));
                                     None
-                                },
-                            )
+                                })
                         }),
                         _ => None,
                     };

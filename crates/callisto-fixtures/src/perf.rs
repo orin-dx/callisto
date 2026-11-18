@@ -1,4 +1,4 @@
-//! A large, deterministic Cargo workspace in a real Git repository, built with one `git fast-import` stream.
+//! A large, deterministic Cargo or pnpm workspace in a real Git repository, built with one `git fast-import` stream.
 //!
 //! Every package is tagged `pkg-<n>@1.0.0`, each at one of the first `extra_commits + 1` commits in turn, as if released
 //! at different times. The commits after the first each edit one package, and the last commit adds a changeset to every
@@ -10,10 +10,37 @@ use std::process::{Command, Stdio};
 
 const TIMESTAMP: u64 = 1_700_000_000;
 
+/// The packages a generated repository holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PackageKind {
+    /// Cargo crates under `crates/`.
+    Cargo,
+    /// pnpm packages under `packages/`, each naming the previous one by a relative `workspace:` path.
+    PnpmRelative,
+}
+
+impl PackageKind {
+    fn dir(self, index: usize) -> String {
+        match self {
+            PackageKind::Cargo => format!("crates/pkg-{index}"),
+            PackageKind::PnpmRelative => format!("packages/pkg-{index}"),
+        }
+    }
+
+    fn selector(self, index: usize) -> String {
+        match self {
+            PackageKind::Cargo => format!("cargo/pkg-{index}"),
+            PackageKind::PnpmRelative => format!("npm/pkg-{index}"),
+        }
+    }
+}
+
 /// Shape of the generated repository.
 #[derive(Clone, Copy, Debug)]
 pub struct ScaledWorkspace {
-    /// Cargo packages under `crates/`, each depending on the previous one except every fourth.
+    /// Which ecosystem the packages are in.
+    pub kind: PackageKind,
+    /// Packages, each depending on the previous one except every fourth.
     pub packages: usize,
     /// Commits after the tagged one, each editing one package's source.
     pub extra_commits: usize,
@@ -43,16 +70,27 @@ impl ScaledWorkspace {
         let mut out = Vec::new();
         let mut mark = 1;
 
-        let mut files = vec![
-            (
+        let mut files = vec![("callisto.toml".to_owned(), "# bench\n".to_owned())];
+        match self.kind {
+            PackageKind::Cargo => files.push((
                 "Cargo.toml".to_owned(),
                 "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n".to_owned(),
-            ),
-            ("callisto.toml".to_owned(), "# bench\n".to_owned()),
-        ];
+            )),
+            PackageKind::PnpmRelative => {
+                files.push((
+                    "pnpm-workspace.yaml".to_owned(),
+                    "packages:\n  - \"packages/*\"\n".to_owned(),
+                ));
+                files.push(("package.json".to_owned(), "{\"private\":true}\n".to_owned()));
+            }
+        }
         for index in 0..self.packages {
-            files.push((format!("crates/pkg-{index}/Cargo.toml"), manifest(index)));
-            files.push((format!("crates/pkg-{index}/src/lib.rs"), "pub fn f() {}\n".to_owned()));
+            let dir = self.kind.dir(index);
+            match self.kind {
+                PackageKind::Cargo => files.push((format!("{dir}/Cargo.toml"), manifest(index))),
+                PackageKind::PnpmRelative => files.push((format!("{dir}/package.json"), pnpm_manifest(index))),
+            }
+            files.push((format!("{dir}/src/lib.rs"), "pub fn f() {}\n".to_owned()));
         }
         commit(&mut out, mark, "chore: scaffold the workspace", &files);
 
@@ -60,7 +98,7 @@ impl ScaledWorkspace {
             mark += 1;
             let target = (step * 7919) % self.packages;
             let files = [(
-                format!("crates/pkg-{target}/src/lib.rs"),
+                format!("{}/src/lib.rs", self.kind.dir(target)),
                 format!("pub fn f() {{}}\n// edit {step}\n"),
             )];
             commit(&mut out, mark, &format!("fix: edit pkg-{target}"), &files);
@@ -86,7 +124,10 @@ impl ScaledWorkspace {
             .map(|index| {
                 (
                     format!(".changeset/bench-{index}.md"),
-                    format!("---\n\"cargo/pkg-{index}\": patch\n---\n\nFix pkg-{index}.\n"),
+                    format!(
+                        "---\n\"{}\": patch\n---\n\nFix pkg-{index}.\n",
+                        self.kind.selector(index)
+                    ),
                 )
             })
             .collect();
@@ -104,6 +145,16 @@ fn manifest(index: usize) -> String {
         ));
     }
     text
+}
+
+fn pnpm_manifest(index: usize) -> String {
+    let dependencies = if index.is_multiple_of(4) {
+        String::new()
+    } else {
+        let previous = index - 1;
+        format!(",\"dependencies\":{{\"pkg-{previous}\":\"workspace:../pkg-{previous}\"}}")
+    };
+    format!("{{\"name\":\"pkg-{index}\",\"version\":\"1.0.0\"{dependencies}}}\n")
 }
 
 fn commit(out: &mut Vec<u8>, mark: usize, message: &str, files: &[(String, String)]) {
@@ -132,6 +183,7 @@ mod tests {
     fn builds_a_tagged_repository_with_the_requested_shape() {
         let dir = tempfile::tempdir().unwrap();
         ScaledWorkspace {
+            kind: PackageKind::Cargo,
             packages: 12,
             extra_commits: 5,
         }
@@ -150,5 +202,20 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&commits.stdout).trim(), "7");
         assert!(dir.path().join("crates/pkg-11/Cargo.toml").is_file());
         assert!(dir.path().join(".changeset/bench-10.md").is_file());
+    }
+
+    #[test]
+    fn a_pnpm_workspace_names_the_previous_package_by_relative_path() {
+        let dir = tempfile::tempdir().unwrap();
+        ScaledWorkspace {
+            kind: PackageKind::PnpmRelative,
+            packages: 6,
+            extra_commits: 2,
+        }
+        .build(dir.path());
+        let manifest = std::fs::read_to_string(dir.path().join("packages/pkg-5/package.json")).unwrap();
+        assert!(manifest.contains("\"pkg-4\":\"workspace:../pkg-4\""), "{manifest}");
+        let changeset = std::fs::read_to_string(dir.path().join(".changeset/bench-0.md")).unwrap();
+        assert!(changeset.contains("\"npm/pkg-0\""), "{changeset}");
     }
 }
