@@ -280,7 +280,12 @@ pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedCh
 
 /// The changesets a Changesets v3 pre cycle archived in `.changeset/pre/`, which earlier prereleases already applied.
 pub fn load_archived_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
-    strict(load_changesets_in(root, &cfg.pre_archive_dir())?)
+    let mut archived = strict(load_changesets_in(root, &cfg.pre_archive_dir())?)?;
+    // A new note may reuse an archived note's name; the two are distinct changes.
+    for cs in &mut archived {
+        cs.id = format!("pre/{}", cs.id);
+    }
+    Ok(archived)
 }
 
 fn strict(
@@ -296,16 +301,26 @@ fn strict(
     Ok(loaded)
 }
 
-/// `from`'s file name in the archive, or `<stem>-<n>.md` when an archived note of another content already has it.
-fn free_archive_name(archive_dir: &Path, from: &Path, taken: &BTreeMap<std::ffi::OsString, Changeset>) -> PathBuf {
+/// The first of `<stem>.md`, `<stem>-2.md`, ... in the archive that is free or already holds `note`, and whether it does.
+fn archive_slot(
+    archive_dir: &Path,
+    from: &Path,
+    note: &Changeset,
+    taken: &BTreeMap<std::ffi::OsString, Changeset>,
+) -> (PathBuf, bool) {
     let stem = from.file_stem().and_then(|stem| stem.to_str()).unwrap_or("changeset");
     let mut name = format!("{stem}.md");
     let mut n = 2;
-    while taken.contains_key(std::ffi::OsStr::new(&name)) {
-        name = format!("{stem}-{n}.md");
-        n += 1;
+    loop {
+        match taken.get(std::ffi::OsStr::new(&name)) {
+            None => return (archive_dir.join(name), false),
+            Some(archived) if archived == note => return (archive_dir.join(name), true),
+            Some(_) => {
+                name = format!("{stem}-{n}.md");
+                n += 1;
+            }
+        }
     }
-    archive_dir.join(name)
 }
 
 pub fn apply_pre_major(
@@ -392,6 +407,7 @@ where
         .filter_map(|cs| Some((cs.path.file_name()?.to_os_string(), cs.changeset.clone())))
         .collect();
     let archive_dir = config.pre_archive_dir();
+    let is_v3 = pre.map(callisto_model::format::PreState::shape) == Some(callisto_model::format::PreStateShape::V3);
     loaded.extend(archived);
     let mut agg = Aggregation::default();
     // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
@@ -462,20 +478,16 @@ where
         .unwrap_or_default();
 
     for cs in loaded {
-        // The same note left in place beside its archived copy is a move an interrupted run did not finish.
-        let unfinished_move = !archived_paths.contains(&cs.path)
-            && cs
-                .path
-                .file_name()
-                .and_then(|name| archive_names.get(name))
-                .is_some_and(|archived| *archived == cs.changeset);
+        // Where this note goes in the archive; already there means a move an interrupted run did not finish.
+        let slot = (is_pre_mode && is_v3 && !archived_paths.contains(&cs.path))
+            .then(|| archive_slot(&archive_dir, &cs.path, &cs.changeset, &archive_names));
+        let unfinished_move = slot.as_ref().is_some_and(|(_, present)| *present);
         let is_already_recorded = is_pre_mode
             && (already_recorded.contains(cs.id.as_str()) || archived_paths.contains(&cs.path) || unfinished_move);
-        if is_pre_mode && unfinished_move {
-            let name = cs.path.file_name().expect("a listed changeset file has a name");
+        if let Some((to, true)) = &slot {
             agg.archived.push(crate::plan::ArchivedChangeset {
                 from: cs.path.clone(),
-                to: archive_dir.join(name),
+                to: to.clone(),
             });
         }
         // Consume a changeset only once an entry resolves; a mixed or fully unresolved one stays on disk and is ignored whole.
@@ -566,10 +578,7 @@ where
                 // Records newly-seen ids so a rerun treats them as already-applied and skips the changelog entry.
                 if !is_already_recorded {
                     agg.new_pre_changesets.push(cs.id.clone());
-                    if pre.map(callisto_model::format::PreState::shape)
-                        == Some(callisto_model::format::PreStateShape::V3)
-                    {
-                        let to = free_archive_name(&archive_dir, &cs.path, &archive_names);
+                    if let Some((to, false)) = slot {
                         if let Some(name) = to.file_name() {
                             archive_names.insert(name.to_os_string(), note.clone());
                         }

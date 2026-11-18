@@ -72,6 +72,65 @@ fn v3_cycle() -> tempfile::TempDir {
     dir
 }
 
+/// The same holds when a name clash archived the note under a suffixed name.
+#[test]
+fn a_note_left_beside_its_suffixed_archived_copy_is_not_applied_twice() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    add_changeset(root, "feature", "minor");
+    version(root);
+    add_changeset(root, "feature", "patch");
+    version(root);
+    assert_eq!(manifest_version(root), "1.1.0-beta.1");
+    fs::copy(
+        root.join(".changeset/pre/feature-2.md"),
+        root.join(".changeset/feature.md"),
+    )
+    .unwrap();
+
+    let rerun = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    assert!(rerun.status.success(), "{}", String::from_utf8_lossy(&rerun.stderr));
+    assert_eq!(manifest_version(root), "1.1.0-beta.1");
+    assert_eq!(markdown_in(&root.join(".changeset")), Vec::<String>::new());
+    assert_eq!(
+        markdown_in(&root.join(".changeset/pre")),
+        ["feature-2.md", "feature.md"]
+    );
+}
+
+/// At exit an archived note and a new note of the same name are two changes, each with its own summary.
+#[test]
+fn an_archived_note_and_a_new_note_of_the_same_name_both_reach_the_release_preview() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    add_changeset(root, "feature", "minor");
+    version(root);
+    let exit = callisto(root, &["pre", "exit"]);
+    assert!(exit.status.success(), "{}", String::from_utf8_lossy(&exit.stderr));
+    fs::write(
+        root.join(".changeset/feature.md"),
+        "---\ncargo/pkg-alpha: patch\n---\n\nsecond note\n",
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "exit with a new note"]);
+
+    let preview = root.join("preview.json");
+    let out = callisto(
+        root,
+        &[
+            "version",
+            "--no-refresh-lockfiles",
+            "--emit-preview",
+            preview.to_str().unwrap(),
+        ],
+    );
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = fs::read_to_string(&preview).unwrap();
+    assert!(text.contains("second note"), "{text}");
+    assert!(text.contains("\"summary\": \"feature\""), "{text}");
+}
+
 /// A run that archived a note but stopped before deleting it is finished on rerun, not applied again.
 #[test]
 fn a_note_left_beside_its_archived_copy_is_not_applied_twice() {
