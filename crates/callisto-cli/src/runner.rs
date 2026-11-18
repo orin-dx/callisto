@@ -45,7 +45,7 @@ pub fn last_failed_command() -> Option<String> {
 const MAX_CAPTURED_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 
 const RELEASE_CREDENTIALS: &[&str] = &[
-    // The job's OIDC request: only npm needs it, to attach provenance.
+    // The job's OIDC request: npm needs it for provenance and trusted publishing, twine for trusted publishing.
     "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
     "ACTIONS_ID_TOKEN_REQUEST_URL",
     "CARGO_REGISTRY_TOKEN",
@@ -88,6 +88,7 @@ fn credentials_needed_by(tool: &str) -> &'static [&'static str] {
             "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
             "ACTIONS_ID_TOKEN_REQUEST_URL",
         ],
+        "twine" => &["ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"],
         "cargo" => &["CARGO_REGISTRY_TOKEN"],
         // `gh` reads GH_TOKEN, and GITHUB_TOKEN when that is unset; it runs the attestation
         // check and every forge call, and refuses to run without a token.
@@ -825,8 +826,11 @@ mod tests {
             ("NPM_CONFIG_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
             ("NPM_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
             ("NODE_AUTH_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
-            ("ACTIONS_ID_TOKEN_REQUEST_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
-            ("ACTIONS_ID_TOKEN_REQUEST_URL", &["npm", "pnpm", "yarn", "bun"]),
+            (
+                "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+                &["npm", "pnpm", "yarn", "bun", "twine"],
+            ),
+            ("ACTIONS_ID_TOKEN_REQUEST_URL", &["npm", "pnpm", "yarn", "bun", "twine"]),
             ("CARGO_REGISTRY_TOKEN", &["cargo"]),
             ("GH_TOKEN", &["gh"]),
             ("GITHUB_TOKEN", &["gh"]),
