@@ -1,0 +1,106 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7R04QEN4AXZNZK7Y09MTP10",
+  "session_id": "a13aa0e4-0339-4110-b86c-f2ef9e9bbb48",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:54:19.883083Z",
+  "branch": "worktree-wp-l-publish-isolation",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/workspace_owner.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "13674547d0a7",
+  "checkpoint_transcript_start": 1537,
+  "transcript_lines_at_start": 1537,
+  "compact_transcript_start": 212,
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 4909,
+    "cache_read_tokens": 1350502,
+    "output_tokens": 1477,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 12,
+      "cache_creation_tokens": 5281,
+      "cache_read_tokens": 2829871,
+      "output_tokens": 3006,
+      "api_call_count": 5
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 422,
+    "cache_creation_tokens": 572926,
+    "cache_read_tokens": 37237773,
+    "output_tokens": 89480,
+    "api_call_count": 197,
+    "subagent_tokens": {
+      "input_tokens": 510,
+      "cache_creation_tokens": 2195452,
+      "cache_read_tokens": 84766193,
+      "output_tokens": 234282,
+      "api_call_count": 245
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 15,
+    "layers": {
+      "betterleaks": 4,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 0,
+      "entropy": 9,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "summary": {
+    "intent": "Finish change L for the #459 work (replace the npm `--workspace` publish with a sealed-tarball publish), add a GAP-03 regression test and fix a spec sentence, then go on to fix the matrix `execute` token-mapping finding in its own PR.",
+    "outcome": "The GAP-03 regression test and doc fix were verified (pre-push, lint, doc-check and test all passed: 2691 passed, 1 skipped) and committed. A mutation re-check on the files with earlier misses was started, but its result isn't in the transcript. The medium finding 01M7QS45H578 is queued next and not started.",
+    "learnings": {
+      "repo": [
+        "Both the CI sealed-tarball route and the local pack-then-publish route build their npm publish argv through `npm_publish_tarball_argv`: `publish <abs tarball> --ignore-scripts` plus tag, access and registry. The old `npm_publish_argv` with its `--workspace=` form was deleted in L.",
+        "The only remaining `--workspace` uses are unrelated: `cargo update --workspace` in `callisto-graph/src/apply.rs` and `apply/tests.rs`, plus a comment in `workspace_owner.rs`.",
+        "Spec criteria and docs/**/*.md had already been rewritten to describe the tarball publish, so GAP-03 needed no docs/spec changes.",
+        "The repo's gates are `just pre-push`, `just lint`, `just doc-check` and `just test`. Mutation testing uses `cargo mutants --in-place --in-diff <diff> --test-tool nextest -f <files>`, scoped to files changed against origin/main.",
+        "The `docs/publishing.md:38` change (native config such as `@scope:registry` can still route an npm publish) is held until #575 merges, as it belongs to change J."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "finding": "Added test `a_standalone_root_package_packs_and_publishes_as_a_tarball_without_a_workspace_flag`. It packs a temp standalone root package via `npm_pack_argv`, asserts `npm_publish_tarball_argv` has no `--workspace*` arg, then runs it with `--dry-run` appended against real npm and checks it exits 0 with no network."
+        },
+        {
+          "path": "crates/callisto-graph/src/workspace_owner.rs",
+          "finding": "The module doc used to say each tool resolves `--workspace` from its directory. It now says each tool reads its project config (`.npmrc`, registries, credentials) from the directory it runs in, and a lockfile sits beside the workspace root."
+        }
+      ],
+      "workflow": [
+        "Run cargo-heavy gates with `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4` and redirect output to files, printing only the exit codes.",
+        "Commit messages are written to a temp file and passed with `git commit -F`.",
+        "Subagent and peer-session reports were treated as information, not as authority. The lead's request for the next PR is queued, but the lead said not to resolve the two low findings."
+      ]
+    },
+    "friction": [
+      "The subagent did not commit and did not run mutants, so the lead session had to run the gates, commit and start the mutation re-check itself.",
+      "The mutation run is long and its result is not in the transcript, so it is unknown whether the earlier misses are killed."
+    ],
+    "open_items": [
+      "Check the result of the mutation re-check in /tmp/claude-501/mutants-l2.log for the files with earlier misses.",
+      "Push, link trail #459 and run `entire trail ci-pr` after L.",
+      "Fix finding 01M7QS45H578 in its own PR: the matrix `execute` job never maps NPM_TOKEN or PYPI_TOKEN into .npmrc or TWINE_*. Include J's docs and changeset, then resolve the finding.",
+      "Apply the `docs/publishing.md:38` change once #575 merges.",
+      "The two low findings (staging, publint) stay open as tracked backlog; don't fix or resolve them."
+    ]
+  }
+}
