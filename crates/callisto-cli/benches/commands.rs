@@ -115,6 +115,7 @@ fn main() {
 
     println!("| packages | command | median ms | git ms | git processes | result |");
     println!("| ---: | --- | ---: | ---: | ---: | --- |");
+    let mut failed = false;
     for packages in sizes {
         let dir = tempfile::tempdir().unwrap();
         ScaledWorkspace {
@@ -133,6 +134,7 @@ fn main() {
             let result = if median.ok {
                 "ok".to_owned()
             } else {
+                failed = true;
                 format!("failed: {}", median.first_error_line)
             };
             println!(
@@ -154,5 +156,8 @@ fn main() {
             }
         }
         drop(std::fs::remove_file(&trace));
+    }
+    if failed {
+        std::process::exit(1);
     }
 }
