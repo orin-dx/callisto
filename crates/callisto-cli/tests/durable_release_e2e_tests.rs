@@ -194,7 +194,8 @@ mod historical_version_authority {
                 .filter(|entry| entry.package.name() == "a")
                 .collect(),
         )
-        .unwrap();
+        .unwrap()
+        .consuming(decision.consumed_changesets.unwrap_or_default());
         write(root, DECISION_PATH, &serde_json::to_string_pretty(&reduced).unwrap());
         git(root, &["add", DECISION_PATH]);
         git(root, &["commit", "--amend", "--no-edit"]);
@@ -1033,7 +1034,7 @@ mod static_python_release {
         let external = tempfile::tempdir().unwrap();
         let decision_bytes = fs::read(dir.path().join(DECISION_PATH)).unwrap();
         let wire: serde_json::Value = serde_json::from_slice(&decision_bytes).unwrap();
-        assert_eq!(wire["schemaVersion"], 2);
+        assert_eq!(wire["schemaVersion"], ReleaseDecisionV1::SCHEMA_VERSION);
         assert_eq!(wire["entries"][0]["targetVersion"], "0.2.0");
         let out = external.path().join("intent.json");
         let result = plan(dir.path(), &revision, &out);
@@ -1054,15 +1055,16 @@ mod static_python_release {
     fn python_stable_committed_decision_accepts_schema_one_and_two() {
         let (dir, _) = release_fixture();
         let external = tempfile::tempdir().unwrap();
-        let mut wire: serde_json::Value =
+        let decision: ReleaseDecisionV1 =
             serde_json::from_slice(&fs::read(dir.path().join(DECISION_PATH)).unwrap()).unwrap();
-        let digest = wire["digest"].clone();
         assert_eq!(
-            wire["entries"][0]["reasons"],
+            serde_json::to_value(&decision.entries[0].reasons).unwrap(),
             serde_json::json!([{ "kind": "changeset" }])
         );
         for schema in [1, 2] {
-            wire["schemaVersion"] = schema.into();
+            let older = decision.clone().older_schema(schema);
+            let digest = serde_json::to_value(&older.digest).unwrap();
+            let wire = serde_json::to_value(&older).unwrap();
             let revision = replace_committed_decision(dir.path(), &wire);
             let out = external.path().join(format!("schema-{schema}-intent.json"));
             let result = plan(dir.path(), &revision, &out);
@@ -1120,7 +1122,8 @@ mod static_python_release {
             serde_json::from_slice(&fs::read(dir.path().join(DECISION_PATH)).unwrap()).unwrap();
         wire["entries"][0]["package"] = "npm/stable-python".into();
         let entry: callisto_model::ReleaseDecisionEntry = serde_json::from_value(wire["entries"][0].clone()).unwrap();
-        let forged = ReleaseDecisionV1::new(vec![entry]).unwrap();
+        let consumed: Vec<String> = serde_json::from_value(wire["consumedChangesets"].clone()).unwrap();
+        let forged = ReleaseDecisionV1::new(vec![entry]).unwrap().consuming(consumed);
         let wire = serde_json::to_value(forged).unwrap();
         let decoded: ReleaseDecisionV1 = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded.entries[0].target_version.grammar(), VersionGrammar::SemVer);

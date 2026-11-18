@@ -576,8 +576,8 @@ pub enum GraphError {
         help(
             "The committed release decision, changelog, or manifest diff does not match what \
              this commit claims to release. Reconcile the commit's contents with its release \
-             decision instead of regenerating the intent. If a stale release PR merged and \
-             consumed no changesets, revert its release payload; see 'A stale release PR' in \
+             decision instead of regenerating the intent. If a stale release PR merged without \
+             deleting the changesets it recorded, revert its release payload; see 'A stale release PR' in \
              docs/releasing.md."
         )
     )]
@@ -930,8 +930,8 @@ pub enum CommitVerificationFailure {
     HeadMismatch,
     #[error("the release-decision file was not written by this commit")]
     DecisionNotWrittenByCommit,
-    #[error("no changeset was consumed by this commit")]
-    NoChangesetConsumed,
+    #[error("the changesets this commit deletes are not the ones its release decision records")]
+    ConsumedChangesetsDiffer,
     #[error("the changelog was not touched by this commit")]
     ChangelogNotTouched,
     #[error("the manifest is not part of this commit's diff")]

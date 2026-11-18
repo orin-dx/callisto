@@ -146,7 +146,7 @@
     },
     {
       "id": "REL-AUTH-02",
-      "criterion": "`release plan --from-release-commit` fails with E165 and writes no output file in any of these cases: HEAD is not the given commit; the commit neither adds nor modifies the decision file; it deletes no direct-child changeset `.md` file (nested Markdown files and `README.md` do not count); a claimed package's manifest does not change to its claimed version; a claimed package's changelog is unchanged; an unclaimed manifest version changes; a claimed package is not found; or the commit changes any path other than a manifest (`Cargo.toml`, `package.json`, `pyproject.toml`) or lockfile (`Cargo.lock`, `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `uv.lock`, `poetry.lock`, `pdm.lock`) anywhere, a package's changelog, the decision file, a direct-child changeset, or the changesets directory's `pre.json`.",
+      "criterion": "`release plan --from-release-commit` fails with E165 and writes no output file in any of these cases: HEAD is not the given commit; the commit neither adds nor modifies the decision file; the direct-child changeset `.md` files it deletes (nested Markdown files and `README.md` do not count) are not exactly the decision's `consumedChangesets`, or, for a decision older than that field, it deletes none; a claimed package's manifest does not change to its claimed version; a claimed package's changelog is unchanged; an unclaimed manifest version changes; a claimed package is not found; or the commit changes any path other than a manifest (`Cargo.toml`, `package.json`, `pyproject.toml`) or lockfile (`Cargo.lock`, `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `uv.lock`, `poetry.lock`, `pdm.lock`) anywhere, a package's changelog, the decision file, a direct-child changeset, or the changesets directory's `pre.json`.",
       "is_error_case": true
     },
     {
@@ -365,7 +365,7 @@
     },
     {
       "id": "REL-PR-01",
-      "criterion": "`release-pr decide` returns `noop` when there are no pending changesets. It returns `update` when one open PR from the same repository has head `<release-branch>` or `<release-branch>--<40 lowercase hex>`, and `create` otherwise."
+      "criterion": "`release-pr decide` plans what `version` would apply and returns `noop` when that plan versions no package: no pending changeset names a package and no package with `release-trigger = \"auto\"` has a bump inferred from commits. A changeset that cannot be parsed fails it with the error `version` reports, so a malformed note never reads as nothing to release. It returns `update` when one open PR from the same repository has head `<release-branch>` or `<release-branch>--<40 lowercase hex>`, and `create` otherwise."
     },
     {
       "id": "REL-PR-02",

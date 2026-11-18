@@ -77,7 +77,7 @@ decision_field() {
 case "$decision_kind" in
   noop)
     echo 'hasChangesets=false' >> "$GITHUB_OUTPUT"
-    echo '::notice::No changesets. This action does not publish, tag, download artifacts, or create releases; use the durable repository workflow.'
+    echo '::notice::Nothing to release. This action does not publish, tag, download artifacts, or create releases; use the durable repository workflow.'
     exit 0
     ;;
   create)
