@@ -56,16 +56,16 @@ where
     T::deserialize(deserializer).map(Some)
 }
 
-fn read_decision_arg(input: JsonInput) -> Result<ReleasePrDecisionWireV2, CliError> {
-    let input: ReleasePrDecisionInput = input.read("decision")?;
+fn read_decision_arg(origin: JsonInput) -> Result<ReleasePrDecisionWireV2, CliError> {
+    let input: ReleasePrDecisionInput = origin.read("decision")?;
     match (&input.command, input.dry_run) {
         (None, None) => {}
         (Some(command), Some(_)) if command == <ReleasePrDecideReport as callisto_model::Report>::COMMAND => {}
         _ => {
-            return Err(CliError::ReleasePrArgJsonInvalid {
-                flag: "decision",
-                detail: "report metadata must include command=\"release-pr decide\" and a boolean dryRun".into(),
-            });
+            return Err(origin.invalid(
+                "decision",
+                "report metadata must include command=\"release-pr decide\" and a boolean dryRun".into(),
+            ));
         }
     }
     Ok(ReleasePrDecisionWireV2 {

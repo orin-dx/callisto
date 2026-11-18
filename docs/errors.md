@@ -288,7 +288,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E235 | Cannot issue the terminal release receipt | re-run `callisto release execute`; it adopts effects that already landed |
 | E236 | Release intent file is invalid | re-run `callisto release plan` to derive a fresh intent |
 | E237 | Artifact manifest file is invalid | re-run `callisto release artifact-manifest` to regenerate it |
-| E238 | A release JSON file (intent, decision, snapshot, manifest) is not well-formed | check the file is complete, well-formed JSON |
+| E238 | A release JSON file (intent, decision, snapshot, manifest, preview) is not well-formed | check the file is complete, well-formed JSON |
 | E239 | This workspace cannot release locally | release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally |
 | E240 | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
 | E241 | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |

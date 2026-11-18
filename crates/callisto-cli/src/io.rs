@@ -37,15 +37,26 @@ impl JsonInput {
     }
 
     /// Stdin and inline failures are `E281` naming `flag`; a file's are `E238` naming the file.
-    pub fn read<T: DeserializeOwned>(self, flag: &'static str) -> Result<T, CliError> {
+    pub fn read<T: DeserializeOwned>(&self, flag: &'static str) -> Result<T, CliError> {
         match self {
             Self::Stdin => {
                 let mut text = String::new();
                 std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
                 parse_arg(&text, flag)
             }
-            Self::Inline(text) => parse_arg(&text, flag),
-            Self::File(path) => read_json_file(&path),
+            Self::Inline(text) => parse_arg(text, flag),
+            Self::File(path) => read_json_file(path),
+        }
+    }
+
+    /// The invalid-content error for this origin: `E281` naming `flag` for stdin and inline, `E238` naming the file.
+    pub fn invalid(&self, flag: &'static str, detail: String) -> CliError {
+        match self {
+            Self::Stdin | Self::Inline(_) => CliError::ReleasePrArgJsonInvalid { flag, detail },
+            Self::File(path) => CliError::ReleaseJsonInvalid {
+                path: path.display().to_string(),
+                detail,
+            },
         }
     }
 }

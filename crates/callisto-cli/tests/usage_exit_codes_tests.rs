@@ -60,7 +60,6 @@ fn bad_or_missing_flag_values_checked_after_parsing_exit_2() {
             vec!["release", "pending", "--decision", "d.json", "--from", &"a".repeat(40)],
             "E328",
         ),
-        (vec!["compose-pr-body", "--preview", "bad.json"], "E281"),
         (vec!["add"], "E214"),
         (vec!["init"], "E240"),
         (vec!["init", "--workflow", "--no-workflow"], "E242"),
@@ -82,6 +81,30 @@ fn release_pr_json_input_errors_follow_their_origin() {
         &["release-pr", "verify", "--decision", "bad.json", "--snapshot", "{}"],
         1,
         "E238",
+    );
+    assert_exit(root, &["compose-pr-body", "--preview", "bad.json"], 1, "E238");
+    // Wrong report metadata in a file is also a runtime failure naming the file; inline it is a usage error.
+    let decision = serde_json::json!({"schemaVersion": 2, "command": "other", "dryRun": false,
+        "config": {}, "snapshot": {}, "action": {}});
+    fs::write(root.join("meta.json"), decision.to_string()).unwrap();
+    assert_exit(
+        root,
+        &["release-pr", "verify", "--decision", "meta.json", "--snapshot", "{}"],
+        1,
+        "E238",
+    );
+    assert_exit(
+        root,
+        &[
+            "release-pr",
+            "verify",
+            "--decision",
+            &decision.to_string(),
+            "--snapshot",
+            "{}",
+        ],
+        2,
+        "E281",
     );
     // A missing file is an I/O failure, not a usage error.
     assert_exit(
