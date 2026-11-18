@@ -50,41 +50,50 @@ fn now_unix_seconds() -> u64 {
         .map_or(0, |elapsed| elapsed.as_secs())
 }
 
-/// Parses a raw `gh api --include` response. The last header block wins, so an
-/// interim `100 Continue` or a proxy preamble cannot be mistaken for the real
-/// status.
+/// Splits at the first blank line, whichever line ending comes first.
+fn split_head(raw: &str) -> Option<(&str, &str)> {
+    let crlf = raw.find("\r\n\r\n").map(|at| (at, 4));
+    let lf = raw.find("\n\n").map(|at| (at, 2));
+    let (at, width) = match (crlf, lf) {
+        (Some(crlf), Some(lf)) => crlf.min(lf),
+        (crlf, lf) => crlf.or(lf)?,
+    };
+    Some((&raw[..at], &raw[at + width..]))
+}
+
+/// Parses a raw `gh api --include` response, header block first: the first blank line ends the headers and
+/// everything after it is the body, blank lines included. An interim `1xx` or a header-less proxy preamble
+/// followed by another status line is skipped, so it cannot be mistaken for the real status.
 pub(crate) fn parse_http_response(raw: &str) -> Result<HttpResponse, String> {
-    let (headers, body) = raw
-        .rsplit_once("\r\n\r\n")
-        .or_else(|| raw.rsplit_once("\n\n"))
-        .ok_or_else(|| "response has no blank line separating headers from body".to_owned())?;
-    let status_line_index = headers
-        .lines()
-        .enumerate()
-        .filter(|(_, line)| line.trim_end_matches('\r').starts_with("HTTP/"))
-        .last()
-        .map(|(index, _)| index)
-        .ok_or_else(|| "response headers contain no HTTP status line".to_owned())?;
-    let status = headers
-        .lines()
-        .nth(status_line_index)
-        .expect("index came from the same iterator")
-        .split_whitespace()
-        .nth(1)
-        .ok_or_else(|| "HTTP status line has no status code".to_owned())?
-        .parse::<u16>()
-        .map_err(|error| format!("HTTP status code is not a valid number: {error}"))?;
-    let headers = headers
-        .lines()
-        .skip(status_line_index + 1)
-        .filter_map(|line| line.trim_end_matches('\r').split_once(':'))
-        .map(|(name, value)| (name.trim().to_owned(), value.trim().to_owned()))
-        .collect();
-    Ok(HttpResponse {
-        status,
-        headers,
-        body: body.to_owned(),
-    })
+    let mut rest = raw;
+    loop {
+        let (head, body) =
+            split_head(rest).ok_or_else(|| "response has no blank line separating headers from body".to_owned())?;
+        let mut lines = head.lines().map(|line| line.trim_end_matches('\r'));
+        let status_line = lines
+            .next()
+            .filter(|line| line.starts_with("HTTP/"))
+            .ok_or_else(|| "response headers contain no HTTP status line".to_owned())?;
+        let status = status_line
+            .split_whitespace()
+            .nth(1)
+            .ok_or_else(|| "HTTP status line has no status code".to_owned())?
+            .parse::<u16>()
+            .map_err(|error| format!("HTTP status code is not a valid number: {error}"))?;
+        let headers: Vec<(String, String)> = lines
+            .filter_map(|line| line.split_once(':'))
+            .map(|(name, value)| (name.trim().to_owned(), value.trim().to_owned()))
+            .collect();
+        if (status < 200 || headers.is_empty()) && body.starts_with("HTTP/") {
+            rest = body;
+            continue;
+        }
+        return Ok(HttpResponse {
+            status,
+            headers,
+            body: body.to_owned(),
+        });
+    }
 }
 
 /// `Retry-After` is either delta-seconds or an HTTP-date; a date already past
@@ -156,6 +165,25 @@ mod tests {
         assert_eq!(parsed.body, "slow down");
         assert_eq!(parsed.retry_after(), Some(Duration::from_secs(7)));
         assert!(parsed.is_rate_limited());
+    }
+
+    #[test]
+    fn a_body_containing_blank_lines_is_kept_whole() {
+        let body = "{\n  \"a\": 1,\n\n  \"b\": 2\n}\n\n";
+        let crlf = parse_http_response(&format!("HTTP/2 200\r\ncontent-type: application/json\r\n\r\n{body}")).unwrap();
+        assert_eq!(crlf.body, body);
+        let lf = parse_http_response(&format!("HTTP/2 200\ncontent-type: application/json\n\n{body}")).unwrap();
+        assert_eq!(lf.body, body);
+        assert_eq!(lf.header("content-type"), Some("application/json"));
+    }
+
+    #[test]
+    fn an_interim_continue_block_is_skipped() {
+        let parsed =
+            parse_http_response("HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 201 Created\r\nX-A: b\r\n\r\nok\r\n\r\nmore")
+                .unwrap();
+        assert_eq!(parsed.status, 201);
+        assert_eq!(parsed.body, "ok\r\n\r\nmore");
     }
 
     #[test]
