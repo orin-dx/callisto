@@ -1,0 +1,100 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7P9AY7B0WGV66WHSA5EH7YF",
+  "session_id": "c41160ca-8cdd-42c0-b6d2-1559a9591483",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T02:56:21.834118Z",
+  "branch": "fix/http-parser-blank-lines",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".changeset/radiant-bears-chase.md",
+    "crates/callisto-graph/src/commands/release/provider/http.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "17e6d37426df",
+  "checkpoint_transcript_start": 168,
+  "transcript_lines_at_start": 168,
+  "compact_transcript_start": 16,
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0,
+    "subagent_tokens": {
+      "input_tokens": 16,
+      "cache_creation_tokens": 107298,
+      "cache_read_tokens": 330712,
+      "output_tokens": 4108,
+      "api_call_count": 8
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 65016,
+    "cache_read_tokens": 673295,
+    "output_tokens": 6217,
+    "api_call_count": 9,
+    "subagent_tokens": {
+      "input_tokens": 173,
+      "cache_creation_tokens": 599679,
+      "cache_read_tokens": 4900058,
+      "output_tokens": 44704,
+      "api_call_count": 90
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01SvrZxCtEgCSLfs1aZ7vFfe",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "17e6d37426df",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 41,
+        "end": 42,
+        "entry_ids": [
+          "dbc89fb4-71da-4179-bc3e-567d58ea713b"
+        ],
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 2
+  }
+}
