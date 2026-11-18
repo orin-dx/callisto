@@ -34,7 +34,7 @@ If a local release tags a version but fails before pushing the tag or completing
 
 ## Generated workflows
 
-`callisto init --workflow` (or answering yes to its prompt) writes `.github/workflows/callisto-release.yml`. Keep that filename for generated artifact releases.
+`callisto init --workflow` (or answering yes to its prompt) writes `.github/workflows/callisto-release.yml`; in a workspace that already has `callisto.toml` it writes only the workflow. Keep that filename for generated artifact releases.
 
 Init never overwrites an existing file. This repo's [release workflow](../.github/workflows/callisto-release.yml) is a worked example.
 
@@ -116,7 +116,7 @@ Recover each one with the dispatch below, oldest first.
 
 Callisto's workflow rebuilds the release PR on every push to `main`. While that rebuild is pending the PR is stale: if changesets changed on `main` since it was built, merging it releases the wrong set. So a second workflow, `Hold release PR`, turns the open release PR into a draft the moment `main` moves, and the release workflow marks it ready only after a rebuild from the new tip. If the rebuild fails, the PR stays a draft and cannot be merged. Re-run that `Release` workflow run, and the PR becomes ready when it succeeds. A transient GitHub error during the rebuild is attempted up to four times in all before it fails.
 
-If a stale release PR was merged anyway, the release fails with [E165](errors.md) because the merge consumed no changesets, and every later push to `main` retries it. Nothing was published. Revert the merge's release payload (the version bumps, changelog entries and `.callisto/release-decision.json`, not the changeset files) in a pull request to `main`. The next push rebuilds the release PR from the changesets that are really pending.
+If a stale release PR whose changesets were already consumed on `main` was merged anyway, the release fails with [E165](errors.md) because the changesets the merge deleted are not the ones its decision recorded, and every later push to `main` retries it. A stale PR that releases only bumps inferred from commits deletes no changesets, so E165 does not catch it: keep `Hold release PR` enabled, which keeps a stale PR in draft. Nothing was published. Revert the merge's release payload (the version bumps, changelog entries and `.callisto/release-decision.json`, not the changeset files) in a pull request to `main`. The next push rebuilds the release PR from the changesets that are really pending.
 
 ## Recovering an older release
 

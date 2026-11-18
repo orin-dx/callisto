@@ -471,6 +471,9 @@ mod tests {
         for schema in ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS {
             let mut tampered = decision.clone();
             tampered["schemaVersion"] = serde_json::json!(schema);
+            if schema < 3 {
+                tampered.as_object_mut().unwrap().remove("consumedChangesets");
+            }
             tampered["entries"][0]["targetVersion"] = serde_json::json!("1.2.4");
             let error = serde_json::from_value::<ReleaseDecisionV1>(tampered).unwrap_err();
             assert!(error.to_string().contains("digest does not match"));

@@ -174,7 +174,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E058 | `<path>` is not inside a Git repository | Callisto needs a Git repository: run `git init` in the workspace root. |
 | E209 | Failed to parse manifest `<path>`: <message> | Fix the manifest's syntax; a workspace member's manifest is never skipped. |
 | E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | Fix the changeset file's frontmatter, or delete it and write a new one. |
-| E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
+| E100 | Package ID is defined at more than one manifest path, or two paths declare names one registry treats as the same project (PyPI names equal under PEP 503, Cargo names equal under case and `-`/`_`) | Rename one package so its name is unique across the workspace. |
 | E101 | A package's explicit `tag-template` equals another package's default tags | Change that `tag-template`, or remove it so the package uses its default. |
 | E102 | Named package was not found in the workspace. When up to three workspace packages have a similar name, a second line reads ``did you mean `cargo/lib`?`` (comparison ignores case and the ecosystem prefix). | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers.<hint> |
 | E103 | A bare name matches more than one package; the message lists their qualified ids | Write the qualified id instead of `<name>`, e.g. in a changeset `cargo/<name>: minor`. |
@@ -211,7 +211,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E162 | Release package identifier is invalid | Correct the malformed release package identifier reported here; it must be an exact ecosystem/name pair. |
 | E163 | Registry operation for a package failed | The registry itself rejected or could not complete the operation (authentication, rate limiting, or a network failure). Resolve the underlying registry condition and retry; this is not a stale or unauthorized release intent. |
 | E164 | A release subprocess command failed | Inspect the reported program, arguments, and stderr to diagnose why the release subprocess failed or produced output that could not be parsed. |
-| E165 | Release commit verification failed | The committed release decision, changelog, or manifest diff does not match what this commit claims to release. Reconcile the commit's contents with its release decision instead of regenerating the intent. If a stale release PR merged and consumed no changesets, revert its release payload; see 'A stale release PR' in docs/releasing.md. |
+| E165 | Release commit verification failed | The committed release decision, changelog, or manifest diff does not match what this commit claims to release. Reconcile the commit's contents with its release decision instead of regenerating the intent. If a stale release PR merged without deleting the changesets it recorded, revert its release payload; see 'A stale release PR' in docs/releasing.md. |
 | E166 | Cannot decode the committed release decision file | Restore the committed release-decision file from a known-good commit; it was not treated as authorizing a release. |
 | E167 | Remote release state (tag, forge release, registry, or artifact) conflicts with this release intent | Either remote state differs from this release intent, or an effect this run made was not visible within a minute. Re-run to adopt a completed effect; if the conflict remains, reconcile the remote state by hand -- this intent's authorization is not in question. |
 | E168 | Release feature/combination is not implemented | This combination is not implemented for release; adjust the release configuration to use a supported combination. |
@@ -232,9 +232,9 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E187 | Configured forge repository doesn't match the origin remote | The release plan requires [release].forge-repository to be origin's GitHub repository. Use that `owner/repo`, or point origin at the repository binaries release to. |
 | E188 | No package produces a binary artifact; nothing to ship | Remove --artifact-target, or add a binary target ([[bin]], an npm `bin`, or [project.scripts]). |
 | E189 | `--product-package` value is invalid | Name one of the binary-producing packages: <candidates>. |
-| E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. |
+| E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. `callisto init --workflow` adds the release workflow to an initialized workspace. |
 | E191 | Workspace root is not a Git repository | Run `git init` in the workspace root, then re-run `callisto init`. |
-| E278 | `callisto init` failed to write a file it needed to write | Check file permissions and that the path still exists, then re-run `callisto init`. |
+| E278 | `callisto init` failed to write a file it needed to write | Check file permissions and that the path still exists, then re-run `callisto init` (or `callisto init --workflow` if `callisto.toml` was already written). |
 | E193 | Package matches more than one tag naming convention | Write a [[package]] entry for it with `tag-template` set to the current convention and `previous-tag-templates` listing the older ones. |
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
 | E195 | `--forge-repository` value is invalid | Use the GitHub `owner/repo` the product releases to. |
@@ -288,7 +288,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E235 | Cannot issue the terminal release receipt | re-run `callisto release execute`; it adopts effects that already landed |
 | E236 | Release intent file is invalid | re-run `callisto release plan` to derive a fresh intent |
 | E237 | Artifact manifest file is invalid | re-run `callisto release artifact-manifest` to regenerate it |
-| E238 | A release JSON file (intent, decision, manifest) is not well-formed | check the file is complete, well-formed JSON |
+| E238 | A release JSON file (intent, decision, snapshot, manifest, preview) is not well-formed | check the file is complete, well-formed JSON |
 | E239 | This workspace cannot release locally | release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally |
 | E240 | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
 | E241 | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |
@@ -306,7 +306,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E277 | `--strict` escalated one or more workspace graph diagnostics to errors | resolve each listed diagnostic, or drop --strict if it is expected |
 | E279 | `pre enter` was given an empty or whitespace-only tag | pass a non-empty tag, for example `callisto pre enter beta` |
 | E280 | `pre exit` was run after prerelease mode was already exited | run `callisto version` to finalize the release |
-| E281 | A `release-pr` `--decision`/`--snapshot` argument is not valid JSON | check the JSON is well-formed and matches the expected schema |
+| E281 | A `release-pr` `--decision`/`--snapshot` argument given inline or on stdin is not valid JSON | check the JSON is well-formed and matches the expected schema |
 | E282 | `release-pr commit-plan` was run with both `--out` and `--dry-run` | re-run without --dry-run, or drop --out |
 | E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
 | E298 | `init --forge-repository`/`--product-package` given without `--artifact-target` | drop --<flag>, or pass --artifact-target to ship the product's binaries |

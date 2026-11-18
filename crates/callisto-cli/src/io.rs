@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use callisto_model::ApplyPermit;
 use serde::de::DeserializeOwned;
 
+use crate::cli::GlobalArgs;
 use crate::error::CliError;
 
 fn io_error(source: std::io::Error, path: &Path) -> CliError {
@@ -14,19 +15,54 @@ fn io_error(source: std::io::Error, path: &Path) -> CliError {
     }
 }
 
-/// Reads `arg` as JSON: `-` is stdin, a value starting with `{` is inline JSON, anything else is a file path.
-/// A parse failure is `E281` naming `flag`.
-pub fn read_json_input<T: DeserializeOwned>(flag: &'static str, arg: &str) -> Result<T, CliError> {
-    let text = if arg == "-" {
-        let mut buf = String::new();
-        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
-        buf
-    } else if arg.trim_start().starts_with('{') {
-        arg.to_owned()
-    } else {
-        std::fs::read_to_string(arg).map_err(|source| io_error(source, Path::new(arg)))?
-    };
-    serde_json::from_str(&text).map_err(|error| CliError::ReleasePrArgJsonInvalid {
+/// Where a JSON argument's text comes from, so a failure reports the origin.
+#[derive(Debug, PartialEq, Eq)]
+pub enum JsonInput {
+    Stdin,
+    Inline(String),
+    /// A path already resolved against `--cwd`.
+    File(PathBuf),
+}
+
+impl JsonInput {
+    /// `-` is stdin, a value starting with `{` is inline JSON, anything else is a file path relative to `--cwd`.
+    pub fn from_arg(arg: &str, global: &GlobalArgs) -> Self {
+        if arg == "-" {
+            Self::Stdin
+        } else if arg.trim_start().starts_with('{') {
+            Self::Inline(arg.to_owned())
+        } else {
+            Self::File(global.resolve_file_arg(Path::new(arg)))
+        }
+    }
+
+    /// Stdin and inline failures are `E281` naming `flag`; a file's are `E238` naming the file.
+    pub fn read<T: DeserializeOwned>(&self, flag: &'static str) -> Result<T, CliError> {
+        match self {
+            Self::Stdin => {
+                let mut text = String::new();
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
+                parse_arg(&text, flag)
+            }
+            Self::Inline(text) => parse_arg(text, flag),
+            Self::File(path) => read_json_file(path),
+        }
+    }
+
+    /// The invalid-content error for this origin: `E281` naming `flag` for stdin and inline, `E238` naming the file.
+    pub fn invalid(&self, flag: &'static str, detail: String) -> CliError {
+        match self {
+            Self::Stdin | Self::Inline(_) => CliError::ReleasePrArgJsonInvalid { flag, detail },
+            Self::File(path) => CliError::ReleaseJsonInvalid {
+                path: path.display().to_string(),
+                detail,
+            },
+        }
+    }
+}
+
+fn parse_arg<T: DeserializeOwned>(text: &str, flag: &'static str) -> Result<T, CliError> {
+    serde_json::from_str(text).map_err(|error| CliError::ReleasePrArgJsonInvalid {
         flag,
         detail: error.to_string(),
     })

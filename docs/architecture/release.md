@@ -35,7 +35,7 @@ both:   intent -> ReleaseRunEnvelopeV1::new -> execute_release -> ReleaseReceipt
 
 ## Managed release PR and workflow
 
-Callisto's own [release workflow](../../.github/workflows/callisto-release.yml) reconstructs one `callisto/version-packages` PR from `main` when changesets land. It versions manifests and changelogs; merging the PR consumes the changesets on `main` and authorizes publication.
+Callisto's own [release workflow](../../.github/workflows/callisto-release.yml) reconstructs one `callisto/version-packages` PR from `main` whenever the version plan versions a package: a pending changeset, or commits a package with `release-trigger = "auto"` infers a bump from. It versions manifests and changelogs; merging the PR consumes the changesets on `main` and authorizes publication.
 
 - The action commits non-workflow changes through `createCommitOnBranch`, then moves the release ref through REST. It does not run a local `git push`. Workflow files remain unchanged, so the built-in `GITHUB_TOKEN` needs no workflow-write permission.
 - Commits are GitHub-signed as `github-actions[bot]`. An App or fine-grained token can use another identity.

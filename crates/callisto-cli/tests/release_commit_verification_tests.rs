@@ -114,6 +114,46 @@ fn an_untampered_release_commit_still_plans() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
 }
 
+/// A release inferred from commits alone consumes no changeset; its decision records none, and the commit plans.
+#[test]
+fn a_release_commit_inferred_from_commits_alone_plans() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/core-crate.git"],
+    );
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"core-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"cargo/core-crate\"\nrelease-trigger = \"auto\"\npublish-to = [\"crates-io\"]\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src/lib.rs"), "pub fn core() {}\n").unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "feat: core"]);
+
+    let version = callisto(root, &["version", "--emit-decision", DECISION_PATH]);
+    assert!(version.status.success(), "{}", String::from_utf8_lossy(&version.stderr));
+    let decision: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(root.join(DECISION_PATH)).unwrap()).unwrap();
+    assert_eq!(decision["consumedChangesets"], serde_json::json!([]));
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "release core-crate"]);
+    let release_commit = git(root, &["rev-parse", "HEAD"]);
+    git(root, &["checkout", "--detach", &release_commit]);
+
+    let external = tempfile::tempdir().unwrap();
+    let out = plan(root, external.path(), &release_commit);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
 #[test]
 fn a_release_commit_in_a_workspace_below_the_repository_root_plans_and_still_refuses_edits_outside_it() {
     let (dir, release_commit) = release_commit_fixture_in(false, "ws");
@@ -164,7 +204,7 @@ fn a_commit_that_does_not_write_the_decision_is_rejected() {
 }
 
 #[test]
-fn a_commit_that_consumes_no_changeset_is_rejected() {
+fn a_commit_that_leaves_a_recorded_changeset_is_rejected() {
     let (dir, release_commit) = release_commit_fixture();
     let root = dir.path();
     let changesets: Vec<String> = git(
@@ -191,7 +231,7 @@ fn a_commit_that_consumes_no_changeset_is_rejected() {
         external.path(),
         &commit,
         "a release commit that leaves the changeset in place",
-        "no changeset was consumed",
+        "changesets this commit deletes are not the ones",
     );
 }
 

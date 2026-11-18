@@ -576,8 +576,8 @@ pub enum GraphError {
         help(
             "The committed release decision, changelog, or manifest diff does not match what \
              this commit claims to release. Reconcile the commit's contents with its release \
-             decision instead of regenerating the intent. If a stale release PR merged and \
-             consumed no changesets, revert its release payload; see 'A stale release PR' in \
+             decision instead of regenerating the intent. If a stale release PR merged without \
+             deleting the changesets it recorded, revert its release payload; see 'A stale release PR' in \
              docs/releasing.md."
         )
     )]
@@ -797,14 +797,14 @@ pub enum GraphError {
     #[error("`{}` already exists; this workspace is already initialized", .path.display())]
     #[diagnostic(
         code(E190),
-        help("Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one.")
+        help("Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. `callisto init --workflow` adds the release workflow to an initialized workspace.")
     )]
     InitAlreadyInitialized { path: PathBuf },
 
     #[error("failed to write `{}`: {message}", .path.display())]
     #[diagnostic(
         code(E278),
-        help("Check file permissions and that the path still exists, then re-run `callisto init`.")
+        help("Check file permissions and that the path still exists, then re-run `callisto init` (or `callisto init --workflow` if `callisto.toml` was already written).")
     )]
     InitIo { path: PathBuf, message: String },
 
@@ -930,8 +930,8 @@ pub enum CommitVerificationFailure {
     HeadMismatch,
     #[error("the release-decision file was not written by this commit")]
     DecisionNotWrittenByCommit,
-    #[error("no changeset was consumed by this commit")]
-    NoChangesetConsumed,
+    #[error("the changesets this commit deletes are not the ones its release decision records")]
+    ConsumedChangesetsDiffer,
     #[error("the changelog was not touched by this commit")]
     ChangelogNotTouched,
     #[error("the manifest is not part of this commit's diff")]

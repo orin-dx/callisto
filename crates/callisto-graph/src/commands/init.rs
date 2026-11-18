@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ApplyPermit, CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, GitHubRepository,
-    InitReport, PublishTarget, TagName, TagTemplate, Version, SCHEMA_VERSION,
+    ApplyPermit, BranchName, CommandRunner, CommitSha, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem,
+    GitHubRepository, InitReport, PublishTarget, TagName, TagTemplate, Version, SCHEMA_VERSION,
 };
 
 use crate::commands::release::{
@@ -193,6 +193,68 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
 ) -> Result<InitFacts, GraphError> {
     let root = canonical_root(root)?;
     ensure_uninitialized(&root)?;
+    detect_facts(root, locator, runner, false)
+}
+
+/// [`detect`] for a workspace that already has a `callisto.toml`, which is left as it is.
+///
+/// # Errors
+///
+/// No Git repository, or no usable `origin`. The workspace loads through the existing config.
+pub fn detect_initialized<L: ProjectLocator, R: CommandRunner>(
+    root: &Path,
+    locator: &L,
+    runner: &R,
+) -> Result<InitFacts, GraphError> {
+    detect_facts(canonical_root(root)?, locator, runner, true)
+}
+
+/// Whether `root` already has a `callisto.toml`.
+///
+/// # Errors
+///
+/// The path cannot be inspected.
+pub fn is_initialized(root: &Path) -> Result<bool, GraphError> {
+    let path = root.join("callisto.toml");
+    callisto_model::strict_fs::exists(&path).map_err(io_err(&path))
+}
+
+/// Whether the existing `callisto.toml` declares a product whose binaries ship as release assets.
+///
+/// # Errors
+///
+/// The file cannot be read or does not resolve, or an artifact's owner is not a Cargo package.
+pub fn existing_config_ships_binaries(root: &Path) -> Result<bool, GraphError> {
+    let path = root.join("callisto.toml");
+    let text = callisto_model::strict_fs::read_optional(&path)
+        .map_err(io_err(&path))?
+        .unwrap_or_default();
+    let Some(release) = resolve_config_text(root, &text)?.product_release else {
+        return Ok(false);
+    };
+    // The generated builder builds Cargo artifacts only; the matrix drops any other owner.
+    if let Some(artifact) = release
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.package.ecosystem() != Some(Ecosystem::Cargo))
+    {
+        return Err(GraphError::InitUnsupportedArtifactBuilder {
+            package: artifact.package.display_name(),
+            ecosystem: artifact
+                .package
+                .ecosystem()
+                .map_or_else(|| "unknown".to_owned(), |ecosystem| ecosystem.prefix().to_owned()),
+        });
+    }
+    Ok(true)
+}
+
+fn detect_facts<L: ProjectLocator, R: CommandRunner>(
+    root: PathBuf,
+    locator: &L,
+    runner: &R,
+    initialized: bool,
+) -> Result<InitFacts, GraphError> {
     let git_dir = runner.run_with_timeout(programs::GIT, &["rev-parse", "--git-dir"], &root, timeouts::LOCAL_GIT)?;
     if git_dir.exit_code != Some(0) {
         return Err(GraphError::InitNotGitRepository { root });
@@ -206,7 +268,12 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
     )?;
 
     let discovered = Workspace::load(root.clone(), locator, runner)?;
-    let tag_templates = detect_tag_templates(&discovered)?;
+    // An existing config already decides tag conventions; synthesizing one would second-guess it.
+    let tag_templates = if initialized {
+        BTreeMap::new()
+    } else {
+        detect_tag_templates(&discovered)?
+    };
     let templates_only = InitFacts {
         root: root.clone(),
         ecosystems: BTreeSet::new(),
@@ -219,17 +286,21 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
         has_napi_targets: false,
         has_maturin_targets: false,
     };
-    let config = resolve_config_text(
-        &root,
-        &render_config(
-            &templates_only,
-            &InitAnswers {
-                versioning: Versioning::Independent,
-                binaries: None,
-            },
-        ),
-    )?;
-    let workspace = Workspace::load_with_config(root.clone(), config, locator, runner)?;
+    let workspace = if initialized {
+        discovered
+    } else {
+        let config = resolve_config_text(
+            &root,
+            &render_config(
+                &templates_only,
+                &InitAnswers {
+                    versioning: Versioning::Independent,
+                    binaries: None,
+                },
+            ),
+        )?;
+        Workspace::load_with_config(root.clone(), config, locator, runner)?
+    };
     let tags = workspace.tags()?;
     let versions = workspace.base_versions()?;
     let ctx = callisto_manifests::OpenContext::for_workspace_root(&workspace.root)?;
@@ -660,12 +731,12 @@ impl std::fmt::Display for WorkflowUnsupported {
 /// # Errors
 ///
 /// The workspace has a shape no generated workflow covers.
-pub fn workflow_shape(facts: &InitFacts, answers: &InitAnswers) -> Result<WorkflowShape, WorkflowUnsupported> {
+pub fn workflow_shape(facts: &InitFacts, ships_binaries: bool) -> Result<WorkflowShape, WorkflowUnsupported> {
     if facts.has_maturin_targets {
         Err(WorkflowUnsupported::Maturin)
     } else if facts.has_platform_packages && !facts.has_napi_targets {
         Err(WorkflowUnsupported::PlatformPackagesWithoutNapiTargets)
-    } else if answers.binaries.is_some() || facts.has_platform_packages {
+    } else if ships_binaries || facts.has_platform_packages {
         Ok(WorkflowShape::BuildMatrix)
     } else {
         Ok(WorkflowShape::Simple)
@@ -699,7 +770,7 @@ impl std::fmt::Display for DefaultBranchSource {
 /// The repository's default branch and where that name came from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DefaultBranch {
-    pub name: String,
+    pub name: BranchName,
     pub source: DefaultBranchSource,
 }
 
@@ -725,20 +796,14 @@ pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path) -> DefaultBranc
         };
     }
     DefaultBranch {
-        name: "main".to_owned(),
+        name: BranchName::fallback(),
         source: DefaultBranchSource::Fallback,
     }
 }
 
-/// The last path segment of a `refs/...` line, e.g. `refs/heads/trunk` -> `trunk`.
-fn last_ref_segment(reference: &str) -> Option<String> {
-    let branch = reference.trim().rsplit('/').next()?;
-    (!branch.is_empty()).then(|| branch.to_owned())
-}
-
 // A repository with no `origin/HEAD` (a fresh clone, or one built by hand, as in tests)
 // fails this on the common path, not just exceptionally.
-fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<String> {
+fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
     let output = runner
         .run_quiet(
             programs::GIT,
@@ -750,12 +815,12 @@ fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<String
     if output.exit_code != Some(0) {
         return None;
     }
-    last_ref_segment(&output.stdout)
+    BranchName::from_remote_ref(&output.stdout, "origin")
 }
 
 // A shallow or hand-built clone (or one `remote set-head` never ran on) has no local
 // `origin/HEAD`; asking the remote directly still resolves it without a fetch.
-fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<String> {
+fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
     let output = runner
         .run_quiet(
             programs::GIT,
@@ -770,26 +835,20 @@ fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<Strin
     // Output line shape: "ref: refs/heads/<branch>\tHEAD".
     output.stdout.lines().find_map(|line| {
         let (target, name) = line.strip_prefix("ref: ")?.split_once('\t')?;
-        (name.trim() == "HEAD").then(|| last_ref_segment(target))?
+        (name.trim() == "HEAD").then(|| BranchName::from_full_ref(target))?
     })
 }
 
 // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch
 // actually checked out is a better guess than a hardcoded `main`.
-fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<String> {
+fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
     let output = runner
-        .run_quiet(
-            programs::GIT,
-            &["symbolic-ref", "--short", "HEAD"],
-            root,
-            timeouts::LOCAL_GIT,
-        )
+        .run_quiet(programs::GIT, &["symbolic-ref", "HEAD"], root, timeouts::LOCAL_GIT)
         .ok()?;
     if output.exit_code != Some(0) {
         return None;
     }
-    let branch = output.stdout.trim();
-    (!branch.is_empty()).then(|| branch.to_owned())
+    BranchName::from_full_ref(&output.stdout)
 }
 
 // Rendered with `replace`, not `format!`, so `${{ ... }}` needs no escaping; `.tmpl` so it never reads as a workflow.
@@ -823,7 +882,11 @@ const SIMPLE_PYTHON_TOOLS_STEP: &str = "      - name: Install the Python publish
 /// # Errors
 ///
 /// The remote is unreachable, or `callisto@<version>` is not a published tag.
-pub fn resolve_release_commit<R: CommandRunner>(runner: &R, root: &Path, version: &str) -> Result<String, GraphError> {
+pub fn resolve_release_commit<R: CommandRunner>(
+    runner: &R,
+    root: &Path,
+    version: &semver::Version,
+) -> Result<CommitSha, GraphError> {
     const ENDPOINT: &str = "https://github.com/orin-dx/callisto.git";
     let reference = format!("refs/tags/callisto@{version}");
     // The peeled ref resolves an annotated tag to its commit; a lightweight
@@ -839,7 +902,7 @@ pub fn resolve_release_commit<R: CommandRunner>(runner: &R, root: &Path, version
         timeouts::GIT_LS_REMOTE,
     )?;
     let unresolved = || GraphError::InitWorkflowVersionUnresolved {
-        version: version.to_owned(),
+        version: version.to_string(),
     };
     if output.exit_code != Some(0) {
         return Err(unresolved());
@@ -856,7 +919,10 @@ pub fn resolve_release_commit<R: CommandRunner>(runner: &R, root: &Path, version
             _ => {}
         }
     }
-    commit.or(tag_object).ok_or_else(unresolved)
+    commit
+        .or(tag_object)
+        .and_then(|sha| CommitSha::parse(&sha).ok())
+        .ok_or_else(unresolved)
 }
 
 /// The repository secrets the generated workflow reads, one per registry ecosystem the workspace has.
@@ -872,12 +938,70 @@ pub fn registry_secret_names(facts: &InitFacts) -> Vec<&'static str> {
     .collect()
 }
 
+/// A value encoded for one YAML position of a generated workflow; the only thing [`fill`] accepts.
+struct WorkflowScalar(String);
+
+impl WorkflowScalar {
+    fn quoted(raw: &str) -> Self {
+        Self(
+            serde_json::to_string(raw)
+                .expect("a string always serializes to JSON, which is a YAML double-quoted scalar"),
+        )
+    }
+
+    /// The branch as an `on.push.branches` filter, where `+` and `!` are pattern syntax Git allows in a name.
+    fn branch_filter(branch: &BranchName) -> Self {
+        Self::quoted(&branch.as_str().replace('+', "\\+").replace('!', "\\!"))
+    }
+
+    /// The branch as the literal name the action's `branch` input takes.
+    fn branch(branch: &BranchName) -> Self {
+        Self::quoted(branch.as_str())
+    }
+
+    fn commit(commit: &CommitSha) -> Self {
+        Self(commit.as_str().to_owned())
+    }
+
+    fn version(version: &semver::Version) -> Self {
+        Self(version.to_string())
+    }
+
+    /// Text this program wrote itself: a fixed step or a block built from constants.
+    fn trusted(text: impl Into<String>) -> Self {
+        Self(text.into())
+    }
+}
+
+/// Substitutes every placeholder in one pass, so an inserted value is never scanned for placeholders.
+fn fill(template: &str, values: &[(&str, WorkflowScalar)]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some((at, placeholder, scalar)) = values
+        .iter()
+        .filter_map(|(placeholder, scalar)| rest.find(placeholder).map(|at| (at, *placeholder, scalar)))
+        .min_by_key(|(at, placeholder, _)| (*at, std::cmp::Reverse(placeholder.len())))
+    {
+        out.push_str(&rest[..at]);
+        out.push_str(&scalar.0);
+        rest = &rest[at + placeholder.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Renders the release workflow for `shape`.
 ///
 /// `commit` pins the generated `orin-dx/callisto` action references to the
 /// resolved commit of `callisto@<version>` (see [`resolve_release_commit`]);
 /// `version` names the CLI `setup-callisto` installs and a trailing comment.
-pub fn render_workflow(facts: &InitFacts, shape: WorkflowShape, branch: &str, commit: &str, version: &str) -> String {
+pub fn render_workflow(
+    facts: &InitFacts,
+    shape: WorkflowShape,
+    branch: &BranchName,
+    commit: &CommitSha,
+    version: &semver::Version,
+) -> String {
     let mut secrets = Vec::new();
     for name in registry_secret_names(facts) {
         secrets.push(format!("{name}: ${{{{ secrets.{name} }}}}"));
@@ -896,17 +1020,27 @@ pub fn render_workflow(facts: &InitFacts, shape: WorkflowShape, branch: &str, co
     };
     let python_tools = if facts.ecosystems.contains(&Ecosystem::Pypi) {
         SIMPLE_PYTHON_TOOLS_STEP
+            .replace("__BUILD__", BUILD_REQUIREMENT)
+            .replace("__TWINE__", TWINE_REQUIREMENT)
     } else {
-        ""
+        String::new()
     };
-    template
-        .replace("      __PYTHON_TOOLS__\n", python_tools)
-        .replace("__BUILD__", BUILD_REQUIREMENT)
-        .replace("__TWINE__", TWINE_REQUIREMENT)
-        .replace("__BRANCH__", branch)
-        .replace("__COMMIT__", commit)
-        .replace("__VERSION__", version)
-        .replace("        __RELEASE_ENV__", &format!("        {release_env}"))
+    fill(
+        template,
+        &[
+            ("      __PYTHON_TOOLS__\n", WorkflowScalar::trusted(python_tools)),
+            ("__BUILD__", WorkflowScalar::trusted(BUILD_REQUIREMENT)),
+            ("__TWINE__", WorkflowScalar::trusted(TWINE_REQUIREMENT)),
+            (
+                "        __RELEASE_ENV__",
+                WorkflowScalar::trusted(format!("        {release_env}")),
+            ),
+            ("__BRANCH_FILTER__", WorkflowScalar::branch_filter(branch)),
+            ("__BRANCH__", WorkflowScalar::branch(branch)),
+            ("__COMMIT__", WorkflowScalar::commit(commit)),
+            ("__VERSION__", WorkflowScalar::version(version)),
+        ],
+    )
 }
 
 /// Errors if a workflow file already exists at [`workflow_path`], without writing.

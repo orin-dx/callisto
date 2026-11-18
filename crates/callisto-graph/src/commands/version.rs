@@ -176,7 +176,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
         (None, None)
     };
 
-    let mut agg = aggregate(
+    let agg = aggregate(
         &ws.graph,
         &ws.identity,
         &ws.config,
@@ -187,14 +187,16 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
         inference,
     )?;
 
+    let mut seed = agg.severities();
+    let mut reasons = agg.reasons();
     // PreMode::Exit: seed a Patch for every pre-release package so `bump_target` finalizes it though the changesets were consumed.
     if let Some(ref pre) = pre_state
         && pre.mode == callisto_model::format::PreMode::Exit
     {
         for (id, ver) in &base_versions {
             if ver.is_prerelease() {
-                agg.severities.entry(id.clone()).or_insert(Severity::Patch);
-                agg.reasons
+                seed.entry(id.clone()).or_insert(Severity::Patch);
+                reasons
                     .entry(id.clone())
                     .or_insert(BumpReason::PreRelease { tag: pre.tag.clone() });
             }
@@ -205,9 +207,8 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
         graph: &ws.graph,
         groups: &ws.config.groups,
         cfg: &ws.config.cascade,
-        seed: &agg.severities,
-        reasons: &agg.reasons,
-        named_by: &agg.named_by,
+        seed: &seed,
+        reasons: &reasons,
         base: &base_versions,
         pre: pre_state.as_ref(),
         tags,
@@ -351,12 +352,9 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     let mut diagnostics = agg.diagnostics.clone();
     diagnostics.extend(outcome.diagnostics);
     diagnostics.extend(group_check.diagnostics);
-    // A bump inferred from commits that survived aggregation is a plan, so "no changesets" would contradict it.
+    // A bump inferred from commits is a plan, so "no changesets" would contradict it.
     if nothing_pending
-        && !agg
-            .named_by
-            .values()
-            .any(|named_by| *named_by == crate::aggregate::NamedBy::Inference)
+        && !agg.seeds.values().any(|seed| seed.is_fresh())
         && !opts.allow_empty_changesets
         && !ws.config.validation.allow_empty_changesets
     {

@@ -1,0 +1,22 @@
+--- crates/callisto-model/src/identity.rs
++++ replace <impl std::hash::Hash for NativeName>::hash with ()
+@@ -259,18 +259,17 @@
+         self.ecosystem == other.ecosystem && self.key == other.key
+     }
+ }
+ 
+ impl Eq for NativeName {}
+ 
+ impl std::hash::Hash for NativeName {
+     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+-        self.ecosystem.hash(state);
+-        self.key.hash(state);
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ impl PartialOrd for NativeName {
+     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+         Some(self.cmp(other))
+     }
+ }

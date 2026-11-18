@@ -42,7 +42,8 @@ pub mod walk;
 mod workspace_owner;
 
 pub use aggregate::{
-    aggregate, load_changesets, load_changesets_permissive, Aggregation, ChangesetLoadFailure, LoadedChangeset, NamedBy,
+    aggregate, load_changesets, load_changesets_permissive, Aggregation, ChangesetLoadFailure, LoadedChangeset, Seed,
+    Source,
 };
 pub use apply::{apply_version_plan, ApplyOptions, ApplyOutcome};
 pub use cascade::{

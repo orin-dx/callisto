@@ -18,7 +18,7 @@ lcov.info
 # per-session parallel-agent worktree checkouts — full repo copies, never committed
 .claude/worktrees/
 .playwright-mcp/
-mutants.out/
+mutants.out*/
 
 # Entire agent adapters are local generated integration files. Shared Entire
 # settings and Codex hooks are tracked for every checkout.

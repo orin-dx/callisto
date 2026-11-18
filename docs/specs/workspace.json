@@ -120,7 +120,7 @@
     },
     {
       "id": "WS-ID-04",
-      "criterion": "When two directories declare the same name in the same ecosystem (including a dual-manifest Cargo+npm `foo` and an npm-only `foo`), loading fails with E100 naming both paths.",
+      "criterion": "When two directories declare the same or an equivalent name in the same ecosystem (PyPI names equal under PEP 503, Cargo names equal under case and `-`/`_`; including a dual-manifest Cargo+npm `foo` and an npm-only `foo`), loading fails with E100 naming both paths.",
       "is_error_case": true
     },
     {

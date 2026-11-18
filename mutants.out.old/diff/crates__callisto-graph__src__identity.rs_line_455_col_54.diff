@@ -1,0 +1,21 @@
+--- crates/callisto-graph/src/identity.rs
++++ replace != with == in IdentityIndex::resolve_native
+@@ -447,17 +447,17 @@
+         if let Some(id) = self.native_in_ecosystem(eco, name) {
+             return Some(id);
+         }
+ 
+         // Cross-ecosystem fallback.
+         let mut candidates: Vec<&PackageId> = self
+             .native
+             .iter()
+-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)
++            .filter(|(native, _)| native.ecosystem() == /* ~ changed by cargo-mutants ~ */ eco && native.as_str() == name)
+             .map(|(_, id)| id)
+             .collect();
+ 
+         // Deduplicate by pointer identity (multiple entries for the same ID
+         // across different ecosystems, e.g. a package that is both cargo and
+         // npm, should not be treated as ambiguous).
+         candidates.dedup_by(|a, b| a == b);
+ 

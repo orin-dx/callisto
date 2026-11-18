@@ -33,7 +33,7 @@ Example: `dir = ".changeset"`.
 | --- | --- | --- | --- |
 | `mode` | string (`"out-of-range"` \| `"always"`) | `"out-of-range"` | When a dependency bump forces a cascading bump on dependents |
 | `bump-severity` | string (`"patch"` \| `"minor"`) | `"patch"` | Severity applied to a cascaded bump |
-| `peer-escalation` | bool | `true` | Escalate peer-dependency bumps into the cascade |
+| `peer-escalation` | bool | `false` | Escalate an out-of-range peer-dependency bump to a major bump for the dependent; off, the dependent gets `bump-severity` |
 | `preserve-npm-ranges` | bool | `true` | Keep existing npm semver range operators (`^`, `~`) when rewriting dependency versions |
 
 Example (this repo's own `callisto.toml`):

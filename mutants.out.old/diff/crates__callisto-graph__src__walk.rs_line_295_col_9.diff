@@ -1,0 +1,144 @@
+--- crates/callisto-graph/src/walk.rs
++++ replace IdentityAssigner<'a>::assign -> Result<(), GraphError> with Ok(())
+@@ -287,140 +287,17 @@
+             primary_ecosystems: BTreeMap::new(),
+             promoted_siblings: BTreeMap::new(),
+             unresolved: Vec::new(),
+         }
+     }
+ 
+     fn assign(&mut self, rel_path: PathBuf, mut list: Vec<(Ecosystem, PackageId)>) -> Result<(), GraphError> {
+         // Explicit precedence Cargo > Npm > Pypi > others via `primary_priority`, not enum discriminant order.
+-        list.sort_by_key(|a| a.0.primary_priority());
+-
+-        // E100 when any (ecosystem, native name) this path declares is owned by another path; checked before promotion bookkeeping.
+-        if let Some((eco, id)) = list.iter().find(|(eco, id)| {
+-            self.native_owner
+-                .get(&NativeName::new(*eco, id.name()))
+-                .is_some_and(|p| *p != rel_path)
+-        }) {
+-            let owner_path = self.native_owner[&NativeName::new(*eco, id.name())].clone();
+-            return Err(GraphError::DuplicatePackage {
+-                id: id.clone(),
+-                paths: vec![owner_path, rel_path],
+-            });
+-        }
+-        for (eco, id) in &list {
+-            self.native_owner
+-                .insert(NativeName::new(*eco, id.name()), rel_path.clone());
+-        }
+-
+-        let mut primary_id = list[0].1.clone();
+-        let (this_claiming, this_native_keys) = compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
+-        self.claiming_ecosystems.insert(rel_path.clone(), this_claiming.clone());
+-        self.path_native_keys.insert(rel_path.clone(), this_native_keys);
+-        self.primary_ecosystems.insert(rel_path.clone(), list[0].0);
+-
+-        let mut branch_ii_promoted = false;
+-        if self.promoted_siblings.contains_key(primary_id.name()) {
+-            let this_set = self.claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
+-            let promoted_id = PackageId::Prefixed {
+-                ecosystem: self.primary_ecosystems[&rel_path],
+-                name: primary_id.name().to_string(),
+-            };
+-            self.promoted_siblings
+-                .entry(primary_id.name().to_string())
+-                .or_default()
+-                .push((promoted_id.clone(), this_set));
+-            primary_id = promoted_id;
+-            branch_ii_promoted = true;
+-        }
+-
+-        if !branch_ii_promoted {
+-            self.index
+-                .bare
+-                .insert(primary_id.name().to_string(), primary_id.clone());
+-        }
+-
+-        let mut decls = Vec::new();
+-        for (eco, id) in &list {
+-            let Some(fmt) = eco.canonical_manifest_format() else {
+-                continue;
+-            };
+-            let manifest_rel = rel_path.join(fmt.file_name());
+-            let canonical_decl = match ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt) {
+-                Ok(decl) => {
+-                    decls.push(decl.clone());
+-                    Some(decl)
+-                }
+-                Err(error) => {
+-                    self.unresolved
+-                        .push(unresolved(&manifest_rel, "declare its manifest", error));
+-                    None
+-                }
+-            };
+-            // Napi platform packages (os + cpu) also get a Platform-role decl, reusing the cached manifest handle via `npm_role()`.
+-            if *eco == Ecosystem::Npm {
+-                let opened = canonical_decl
+-                    .as_ref()
+-                    .map(|decl| open_cached(self.manifest_cache, decl, self.ctx));
+-                let manifest = match opened {
+-                    Some(Ok(manifest)) => Some(manifest),
+-                    Some(Err(error)) => {
+-                        self.unresolved.push(unresolved(
+-                            &manifest_rel,
+-                            "open its manifest to read its platform role",
+-                            error,
+-                        ));
+-                        None
+-                    }
+-                    None => None,
+-                };
+-                let role = manifest
+-                    .and_then(|m| m.npm_role())
+-                    .map(|npm_role| match npm_role {
+-                        callisto_manifests::NpmRole::Platform { platform, arch, abi } => {
+-                            ManifestRole::Platform { platform, arch, abi }
+-                        }
+-                    })
+-                    .unwrap_or(ManifestRole::Canonical);
+-                if let ManifestRole::Platform { .. } = role {
+-                    match ManifestDecl::new(manifest_rel.clone(), role.clone(), fmt) {
+-                        Ok(platform_decl) => decls.push(platform_decl),
+-                        Err(error) => {
+-                            self.unresolved
+-                                .push(unresolved(&manifest_rel, "declare its platform manifest", error))
+-                        }
+-                    }
+-                    // `id` is this manifest's own npm identity; config members use it as the index key, `primary_id` is the owner.
+-                    self.index
+-                        .platform
+-                        .insert(id.name().to_string(), (primary_id.clone(), manifest_rel, role));
+-                    self.path_platform_keys
+-                        .entry(rel_path.clone())
+-                        .or_default()
+-                        .push(id.name().to_string());
+-                }
+-            }
+-            self.index
+-                .native
+-                .insert(NativeName::new(*eco, id.name()), primary_id.clone());
+-            if id.name() == primary_id.name() {
+-                self.index
+-                    .prefixed
+-                    .insert((*eco, id.name().to_string()), primary_id.clone());
+-            }
+-        }
+-
+-        let current_decls = decls.clone();
+-        if let Some((existing_path, existing_decls)) = self
+-            .package_manifest_decls
+-            .insert(primary_id.clone(), (rel_path.clone(), decls))
+-        {
+-            self.promotion_rekey(primary_id, existing_path, existing_decls, rel_path, current_decls);
+-        }
+-        Ok(())
++        Ok(()) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// A second path just claimed the bare name `primary_id`, so both paths are promoted to ecosystem-prefixed ids
+     /// and every key already stored under the stale bare id is re-keyed.
+     fn promotion_rekey(
+         &mut self,
+         primary_id: PackageId,
+         existing_path: PathBuf,

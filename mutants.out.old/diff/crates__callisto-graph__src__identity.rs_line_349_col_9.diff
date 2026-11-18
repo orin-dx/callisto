@@ -1,0 +1,43 @@
+--- crates/callisto-graph/src/identity.rs
++++ replace IdentityIndex::by_package -> T with Default::default()
+@@ -341,39 +341,17 @@
+     sizes: (usize, usize),
+     native: HashMap<PackageId, Vec<NativeName>>,
+     platform: HashMap<PackageId, Vec<String>>,
+ }
+ 
+ impl IdentityIndex {
+     /// Runs `lookup` on the by-package view of `native` and `platform`, building it first when it is missing or stale.
+     fn by_package<T>(&self, lookup: impl FnOnce(&ByPackage) -> T) -> T {
+-        let sizes = (self.native.len(), self.platform.len());
+-        let mut cached = self
+-            .by_package
+-            .0
+-            .lock()
+-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+-        if cached.as_ref().is_some_and(|known| known.sizes != sizes) {
+-            *cached = None;
+-        }
+-        let view = cached.get_or_insert_with(|| {
+-            let mut view = ByPackage {
+-                sizes,
+-                ..ByPackage::default()
+-            };
+-            for (name, id) in &self.native {
+-                view.native.entry(id.clone()).or_default().push(name.clone());
+-            }
+-            for (name, (owner, _, _)) in &self.platform {
+-                view.platform.entry(owner.clone()).or_default().push(name.clone());
+-            }
+-            view
+-        });
+-        lookup(view)
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// The one selector resolver: resolves a user- or config-typed package
+     /// selector (`eco/name` or a bare name; the colon form is `E316`) against registered
+     /// native manifest names.
+     ///
+     /// A qualified selector is a `(ecosystem, native name)` lookup under that registry's name equivalence: no
+     /// match is `E102` ([`GraphError::UnknownPackage`]), regardless of what a
