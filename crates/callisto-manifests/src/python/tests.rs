@@ -1155,6 +1155,21 @@ fn round_trip_bounds_a_range_inside_the_targets_epoch() {
 }
 
 #[test]
+fn round_trip_does_not_narrow_a_range_whose_bounds_sit_in_different_epochs() {
+    let original = ">=0.1.0,<1!0.2";
+    let target = make_pep440_version("0.1.1");
+    let rewritten = round_trip(&make_pypi_spec(original), &target).expect(original);
+    let DepSpec::Range(req, _) = rewritten else {
+        panic!("{original} must stay a range")
+    };
+    assert!(req.matches(&target).unwrap(), "the target stays admitted");
+    assert!(
+        req.matches(&make_pep440_version("0.5.0")).unwrap(),
+        "a version the original admitted must stay admitted"
+    );
+}
+
+#[test]
 fn round_trip_adds_no_epoch_to_an_epoch_zero_target() {
     assert_epoch_rewrite(">=0.4.8,<1", "0.4.9", ">=0.4.9,<1", &["99.0.0", "0.4.8"]);
 }

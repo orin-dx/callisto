@@ -796,7 +796,7 @@ fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec>
     // components it was written with.
     if op == "~="
         && !target.is_prerelease()
-        && parse_release_core(rest.trim()).is_some_and(|(_, minor, patch)| minor.is_some() && patch.is_none())
+        && parse_release_core(rest.trim()).is_some_and(|(_, (_, minor, patch))| minor.is_some() && patch.is_none())
     {
         rendered_target = format!("{}{}.{}", epoch_prefix(target), target.major()?, target.minor()?);
     }
@@ -848,9 +848,13 @@ fn epoch_prefix(target: &Version) -> String {
     }
 }
 
-/// A clause's release core with any `N!` epoch removed, to read the precision it was written at.
-fn parse_release_core(s: &str) -> Option<(u64, Option<u64>, Option<u64>)> {
-    parse_version_core(s.split_once('!').map_or(s, |(_, release)| release))
+/// A clause's epoch and release core, to read the precision it was written at.
+fn parse_release_core(s: &str) -> Option<(u64, (u64, Option<u64>, Option<u64>))> {
+    let (epoch, release) = match s.split_once('!') {
+        Some((epoch, release)) => (epoch.trim().parse().ok()?, release),
+        None => (0, s),
+    };
+    Some((epoch, parse_version_core(release)?))
 }
 
 /// Rewrites a two-clause `>=X.Y.Z,<A.B` range to `>=NEW,<NEXT_MAJOR`.
@@ -879,7 +883,8 @@ fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
         return None;
     }
 
-    // A window of one minor (`>=0.1.0,<0.2`) stays one minor wide; any other upper bound becomes the next major.
+    // A window of one minor (`>=0.1.0,<0.2`) stays one minor wide; any other upper bound, including one in another
+    // epoch, becomes the next major.
     let lower_core = lower
         .strip_prefix(">=")
         .and_then(|version| parse_release_core(version.trim()));
@@ -888,8 +893,13 @@ fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
         .and_then(|version| parse_release_core(version.trim()));
     let one_minor_window = matches!(
         (lower_core, upper_core),
-        (Some((lower_major, Some(lower_minor), _)), Some((upper_major, Some(upper_minor), upper_patch)))
-            if upper_major == lower_major && upper_minor == lower_minor + 1 && upper_patch.unwrap_or(0) == 0
+        (
+            Some((lower_epoch, (lower_major, Some(lower_minor), _))),
+            Some((upper_epoch, (upper_major, Some(upper_minor), upper_patch)))
+        ) if upper_epoch == lower_epoch
+            && upper_major == lower_major
+            && upper_minor == lower_minor + 1
+            && upper_patch.unwrap_or(0) == 0
     );
     let epoch = epoch_prefix(target);
     let upper_bound = if one_minor_window {
