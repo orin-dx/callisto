@@ -1,0 +1,33 @@
+--- crates/callisto-model/src/release_pr.rs
++++ replace ReleasePrDecisionV2::derive -> Result<Self, ReleasePrDecisionError> with Ok(Default::default())
+@@ -237,29 +237,17 @@
+     pub const SCHEMA_VERSION: u8 = 2;
+ 
+     /// Derives the only permitted action from fresh workspace and forge facts; with nothing pending it is a no-op.
+     pub fn derive(
+         pending: Option<&PendingRelease>,
+         config: &ReleasePrConfigV1,
+         snapshot: &ReleasePrSnapshotV2,
+     ) -> Result<Self, ReleasePrDecisionError> {
+-        let release = Self::release_action(config, snapshot)?;
+-        let action = match pending {
+-            Some(_) => release,
+-            None => ReleasePrActionV2::Noop {
+-                reason: ReleasePrNoopReasonV1::NoPendingChangesets,
+-            },
+-        };
+-        Ok(Self {
+-            schema_version: Self::SCHEMA_VERSION,
+-            config: config.clone(),
+-            snapshot: snapshot.clone(),
+-            action,
+-        })
++        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// The create or update a pending release takes against this snapshot.
+     fn release_action(
+         config: &ReleasePrConfigV1,
+         snapshot: &ReleasePrSnapshotV2,
+     ) -> Result<ReleasePrActionV2, ReleasePrDecisionError> {
+         if snapshot.repository != config.repository || snapshot.base_branch != config.base_branch {

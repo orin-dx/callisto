@@ -1,0 +1,418 @@
+[
+  {
+    "diff": "--- crates/callisto-model/src/release_pr.rs\n+++ replace PendingRelease::packages -> impl Iterator<Item =(&crate::PackageId, &crate::Version)> with ::std::iter::empty()\n@@ -206,17 +206,17 @@\n impl PendingRelease {\n     /// `None` when nothing would be versioned.\n     pub fn new(packages: impl IntoIterator<Item = (crate::PackageId, crate::Version)>) -> Option<Self> {\n         let packages: std::collections::BTreeMap<_, _> = packages.into_iter().collect();\n         (!packages.is_empty()).then_some(Self { packages })\n     }\n \n     pub fn packages(&self) -> impl Iterator<Item = (&crate::PackageId, &crate::Version)> {\n-        self.packages.iter()\n+        ::std::iter::empty() /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// Why a release-PR run is intentionally mutation-free.\n #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]\n #[serde(rename_all = \"camelCase\", tag = \"kind\", deny_unknown_fields)]\n #[non_exhaustive]\n pub enum ReleasePrNoopReasonV1 {\n",
+    "file": "crates/callisto-model/src/release_pr.rs",
+    "function": {
+      "function_name": "PendingRelease::packages",
+      "return_type": "-> impl Iterator<Item =(&crate::PackageId, &crate::Version)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 215
+        },
+        "start": {
+          "column": 5,
+          "line": 213
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release_pr.rs:214:9: replace PendingRelease::packages -> impl Iterator<Item =(&crate::PackageId, &crate::Version)> with ::std::iter::empty()",
+    "package": "callisto-model",
+    "replacement": "::std::iter::empty()",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 214
+      },
+      "start": {
+        "column": 9,
+        "line": 214
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release_pr.rs\n+++ replace PendingRelease::packages -> impl Iterator<Item =(&crate::PackageId, &crate::Version)> with ::std::iter::once((Box::leak(Box::new(Default::default())), Box::leak(Box::new(Default::default()))))\n@@ -206,17 +206,17 @@\n impl PendingRelease {\n     /// `None` when nothing would be versioned.\n     pub fn new(packages: impl IntoIterator<Item = (crate::PackageId, crate::Version)>) -> Option<Self> {\n         let packages: std::collections::BTreeMap<_, _> = packages.into_iter().collect();\n         (!packages.is_empty()).then_some(Self { packages })\n     }\n \n     pub fn packages(&self) -> impl Iterator<Item = (&crate::PackageId, &crate::Version)> {\n-        self.packages.iter()\n+        ::std::iter::once((Box::leak(Box::new(Default::default())), Box::leak(Box::new(Default::default())))) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// Why a release-PR run is intentionally mutation-free.\n #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]\n #[serde(rename_all = \"camelCase\", tag = \"kind\", deny_unknown_fields)]\n #[non_exhaustive]\n pub enum ReleasePrNoopReasonV1 {\n",
+    "file": "crates/callisto-model/src/release_pr.rs",
+    "function": {
+      "function_name": "PendingRelease::packages",
+      "return_type": "-> impl Iterator<Item =(&crate::PackageId, &crate::Version)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 215
+        },
+        "start": {
+          "column": 5,
+          "line": 213
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release_pr.rs:214:9: replace PendingRelease::packages -> impl Iterator<Item =(&crate::PackageId, &crate::Version)> with ::std::iter::once((Box::leak(Box::new(Default::default())), Box::leak(Box::new(Default::default()))))",
+    "package": "callisto-model",
+    "replacement": "::std::iter::once((Box::leak(Box::new(Default::default())), Box::leak(Box::new(Default::default()))))",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 214
+      },
+      "start": {
+        "column": 9,
+        "line": 214
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release_pr.rs\n+++ replace ReleasePrDecisionV2::derive -> Result<Self, ReleasePrDecisionError> with Ok(Default::default())\n@@ -237,29 +237,17 @@\n     pub const SCHEMA_VERSION: u8 = 2;\n \n     /// Derives the only permitted action from fresh workspace and forge facts; with nothing pending it is a no-op.\n     pub fn derive(\n         pending: Option<&PendingRelease>,\n         config: &ReleasePrConfigV1,\n         snapshot: &ReleasePrSnapshotV2,\n     ) -> Result<Self, ReleasePrDecisionError> {\n-        let release = Self::release_action(config, snapshot)?;\n-        let action = match pending {\n-            Some(_) => release,\n-            None => ReleasePrActionV2::Noop {\n-                reason: ReleasePrNoopReasonV1::NoPendingChangesets,\n-            },\n-        };\n-        Ok(Self {\n-            schema_version: Self::SCHEMA_VERSION,\n-            config: config.clone(),\n-            snapshot: snapshot.clone(),\n-            action,\n-        })\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The create or update a pending release takes against this snapshot.\n     fn release_action(\n         config: &ReleasePrConfigV1,\n         snapshot: &ReleasePrSnapshotV2,\n     ) -> Result<ReleasePrActionV2, ReleasePrDecisionError> {\n         if snapshot.repository != config.repository || snapshot.base_branch != config.base_branch {\n",
+    "file": "crates/callisto-model/src/release_pr.rs",
+    "function": {
+      "function_name": "ReleasePrDecisionV2::derive",
+      "return_type": "-> Result<Self, ReleasePrDecisionError>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 258
+        },
+        "start": {
+          "column": 5,
+          "line": 239
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release_pr.rs:245:9: replace ReleasePrDecisionV2::derive -> Result<Self, ReleasePrDecisionError> with Ok(Default::default())",
+    "package": "callisto-model",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 257
+      },
+      "start": {
+        "column": 9,
+        "line": 245
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release_pr.rs\n+++ replace ReleasePrDecisionV2::release_action -> Result<ReleasePrActionV2, ReleasePrDecisionError> with Ok(Default::default())\n@@ -257,53 +257,17 @@\n         })\n     }\n \n     /// The create or update a pending release takes against this snapshot.\n     fn release_action(\n         config: &ReleasePrConfigV1,\n         snapshot: &ReleasePrSnapshotV2,\n     ) -> Result<ReleasePrActionV2, ReleasePrDecisionError> {\n-        if snapshot.repository != config.repository || snapshot.base_branch != config.base_branch {\n-            return Err(ReleasePrDecisionError::SnapshotIdentityMismatch);\n-        }\n-\n-        let staging_branch = config.staging_branch();\n-        let mut eligible = Vec::new();\n-        for pr in &snapshot.open_pull_requests {\n-            if pr.head_branch == staging_branch {\n-                return Err(ReleasePrDecisionError::StagingBranchPullRequest { number: pr.number });\n-            }\n-            let shape = managed_branch_shape(&config.release_branch, &pr.head_branch)?;\n-            if shape.is_some() {\n-                if pr.head_repository != config.repository {\n-                    return Err(ReleasePrDecisionError::ForeignManagedPullRequest {\n-                        number: pr.number,\n-                        repository: pr.head_repository.clone(),\n-                    });\n-                }\n-                eligible.push(pr);\n-            }\n-        }\n-        if eligible.len() > 1 {\n-            return Err(ReleasePrDecisionError::AmbiguousManagedPullRequests { count: eligible.len() });\n-        }\n-\n-        Ok(match eligible.first() {\n-            Some(pr) => ReleasePrActionV2::Update {\n-                pull_request_number: pr.number,\n-                branch: pr.head_branch.clone(),\n-                expected_head_commit: pr.head_commit.clone(),\n-                staging_branch,\n-            },\n-            None => ReleasePrActionV2::Create {\n-                branch: config.release_branch.clone(),\n-                staging_branch,\n-            },\n-        })\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Rejects any post-decision forge state change before the executor mutates.\n     pub fn verify_snapshot(&self, observed: &ReleasePrSnapshotV2) -> Result<(), ReleasePrDecisionError> {\n         if observed != &self.snapshot {\n             return Err(ReleasePrDecisionError::SnapshotChanged);\n         }\n         Ok(())\n",
+    "file": "crates/callisto-model/src/release_pr.rs",
+    "function": {
+      "function_name": "ReleasePrDecisionV2::release_action",
+      "return_type": "-> Result<ReleasePrActionV2, ReleasePrDecisionError>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 302
+        },
+        "start": {
+          "column": 5,
+          "line": 260
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release_pr.rs:265:9: replace ReleasePrDecisionV2::release_action -> Result<ReleasePrActionV2, ReleasePrDecisionError> with Ok(Default::default())",
+    "package": "callisto-model",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 301
+      },
+      "start": {
+        "column": 9,
+        "line": 265
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release_pr.rs\n+++ replace ReleasePrDecisionV2::verify_snapshot_after_update -> Result<(), ReleasePrDecisionError> with Ok(())\n@@ -310,37 +310,17 @@\n     }\n \n     /// Allows only the selected PR head change performed by this executor.\n     pub fn verify_snapshot_after_update(\n         &self,\n         observed: &ReleasePrSnapshotV2,\n         applied_head: &CommitSha,\n     ) -> Result<(), ReleasePrDecisionError> {\n-        let ReleasePrActionV2::Update {\n-            pull_request_number, ..\n-        } = &self.action\n-        else {\n-            return Err(ReleasePrDecisionError::SnapshotChanged);\n-        };\n-        if Self::release_action(&self.config, &self.snapshot)? != self.action {\n-            return Err(ReleasePrDecisionError::SnapshotChanged);\n-        }\n-        let mut expected = self.clone();\n-        let pr = expected\n-            .snapshot\n-            .open_pull_requests\n-            .iter_mut()\n-            .find(|pr| pr.number == *pull_request_number)\n-            .ok_or(ReleasePrDecisionError::SnapshotChanged)?;\n-        if &pr.head_commit == applied_head {\n-            return Err(ReleasePrDecisionError::SnapshotChanged);\n-        }\n-        pr.head_commit = applied_head.clone();\n-        expected.verify_snapshot(observed)\n+        Ok(()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// The on-the-wire shape of [`ReleasePrDecisionV2`], with its nested config and\n /// snapshot still unvalidated. See [`ReleasePrConfigWireV1`] for why the CLI\n /// deserializes this instead of `ReleasePrDecisionV2` directly.\n #[derive(Clone, Debug, Deserialize, JsonSchema)]\n #[serde(rename_all = \"camelCase\", deny_unknown_fields)]\n",
+    "file": "crates/callisto-model/src/release_pr.rs",
+    "function": {
+      "function_name": "ReleasePrDecisionV2::verify_snapshot_after_update",
+      "return_type": "-> Result<(), ReleasePrDecisionError>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 339
+        },
+        "start": {
+          "column": 5,
+          "line": 312
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release_pr.rs:318:9: replace ReleasePrDecisionV2::verify_snapshot_after_update -> Result<(), ReleasePrDecisionError> with Ok(())",
+    "package": "callisto-model",
+    "replacement": "Ok(())",
+    "span": {
+      "end": {
+        "column": 43,
+        "line": 338
+      },
+      "start": {
+        "column": 9,
+        "line": 318
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release_pr.rs\n+++ replace != with == in ReleasePrDecisionV2::verify_snapshot_after_update\n@@ -316,17 +316,17 @@\n         applied_head: &CommitSha,\n     ) -> Result<(), ReleasePrDecisionError> {\n         let ReleasePrActionV2::Update {\n             pull_request_number, ..\n         } = &self.action\n         else {\n             return Err(ReleasePrDecisionError::SnapshotChanged);\n         };\n-        if Self::release_action(&self.config, &self.snapshot)? != self.action {\n+        if Self::release_action(&self.config, &self.snapshot)? == /* ~ changed by cargo-mutants ~ */ self.action {\n             return Err(ReleasePrDecisionError::SnapshotChanged);\n         }\n         let mut expected = self.clone();\n         let pr = expected\n             .snapshot\n             .open_pull_requests\n             .iter_mut()\n             .find(|pr| pr.number == *pull_request_number)\n",
+    "file": "crates/callisto-model/src/release_pr.rs",
+    "function": {
+      "function_name": "ReleasePrDecisionV2::verify_snapshot_after_update",
+      "return_type": "-> Result<(), ReleasePrDecisionError>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 339
+        },
+        "start": {
+          "column": 5,
+          "line": 312
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-model/src/release_pr.rs:324:64: replace != with == in ReleasePrDecisionV2::verify_snapshot_after_update",
+    "package": "callisto-model",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 66,
+        "line": 324
+      },
+      "start": {
+        "column": 64,
+        "line": 324
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release/decision.rs\n+++ replace <impl Deserialize<'de> for ReleaseDecisionV1>::deserialize -> Result<Self, D::Error> with Ok(Default::default())\n@@ -102,43 +102,17 @@\n     digest: DecisionDigest,\n }\n \n impl<'de> Deserialize<'de> for ReleaseDecisionV1 {\n     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>\n     where\n         D: Deserializer<'de>,\n     {\n-        let wire = ReleaseDecisionV1Wire::deserialize(deserializer)?;\n-        check_decision_schema_version::<D::Error>(wire.schema_version, \"release decision\")?;\n-        let mut decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;\n-        match (wire.schema_version >= 3, wire.consumed_changesets) {\n-            (true, Some(consumed)) => {\n-                decision = decision.consuming(consumed.iter().cloned());\n-                if decision.consumed_changesets.as_ref() != Some(&consumed) {\n-                    return Err(serde::de::Error::custom(\n-                        \"release decision `consumedChangesets` must be sorted and free of duplicates\",\n-                    ));\n-                }\n-            }\n-            (false, None) => decision = decision.into_schema(wire.schema_version),\n-            (true, None) => return Err(serde::de::Error::missing_field(\"consumedChangesets\")),\n-            (false, Some(_)) => {\n-                return Err(serde::de::Error::custom(format!(\n-                    \"release decision schema version {} has no `consumedChangesets`\",\n-                    wire.schema_version\n-                )))\n-            }\n-        }\n-        if decision.digest != wire.digest {\n-            return Err(serde::de::Error::custom(\n-                \"release decision digest does not match canonical content\",\n-            ));\n-        }\n-        Ok(decision)\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl ReleaseDecisionV1 {\n     pub const SCHEMA_VERSION: u8 = 3;\n     /// Version 1 lacks `unreleasedVersion` and versions 1 and 2 lack `consumedChangesets`; both still read.\n     pub const READABLE_SCHEMA_VERSIONS: [u8; 3] = [1, 2, 3];\n \n",
+    "file": "crates/callisto-model/src/release/decision.rs",
+    "function": {
+      "function_name": "<impl Deserialize<'de> for ReleaseDecisionV1>::deserialize",
+      "return_type": "-> Result<Self, D::Error>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 137
+        },
+        "start": {
+          "column": 5,
+          "line": 106
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release/decision.rs:110:9: replace <impl Deserialize<'de> for ReleaseDecisionV1>::deserialize -> Result<Self, D::Error> with Ok(Default::default())",
+    "package": "callisto-model",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 136
+      },
+      "start": {
+        "column": 9,
+        "line": 110
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release/decision.rs\n+++ replace >= with < in <impl Deserialize<'de> for ReleaseDecisionV1>::deserialize\n@@ -105,17 +105,17 @@\n impl<'de> Deserialize<'de> for ReleaseDecisionV1 {\n     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>\n     where\n         D: Deserializer<'de>,\n     {\n         let wire = ReleaseDecisionV1Wire::deserialize(deserializer)?;\n         check_decision_schema_version::<D::Error>(wire.schema_version, \"release decision\")?;\n         let mut decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;\n-        match (wire.schema_version >= 3, wire.consumed_changesets) {\n+        match (wire.schema_version < /* ~ changed by cargo-mutants ~ */ 3, wire.consumed_changesets) {\n             (true, Some(consumed)) => {\n                 decision = decision.consuming(consumed.iter().cloned());\n                 if decision.consumed_changesets.as_ref() != Some(&consumed) {\n                     return Err(serde::de::Error::custom(\n                         \"release decision `consumedChangesets` must be sorted and free of duplicates\",\n                     ));\n                 }\n             }\n",
+    "file": "crates/callisto-model/src/release/decision.rs",
+    "function": {
+      "function_name": "<impl Deserialize<'de> for ReleaseDecisionV1>::deserialize",
+      "return_type": "-> Result<Self, D::Error>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 137
+        },
+        "start": {
+          "column": 5,
+          "line": 106
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-model/src/release/decision.rs:113:36: replace >= with < in <impl Deserialize<'de> for ReleaseDecisionV1>::deserialize",
+    "package": "callisto-model",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 113
+      },
+      "start": {
+        "column": 36,
+        "line": 113
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release/decision.rs\n+++ replace != with == in <impl Deserialize<'de> for ReleaseDecisionV1>::deserialize\n@@ -108,17 +108,17 @@\n         D: Deserializer<'de>,\n     {\n         let wire = ReleaseDecisionV1Wire::deserialize(deserializer)?;\n         check_decision_schema_version::<D::Error>(wire.schema_version, \"release decision\")?;\n         let mut decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;\n         match (wire.schema_version >= 3, wire.consumed_changesets) {\n             (true, Some(consumed)) => {\n                 decision = decision.consuming(consumed.iter().cloned());\n-                if decision.consumed_changesets.as_ref() != Some(&consumed) {\n+                if decision.consumed_changesets.as_ref() == /* ~ changed by cargo-mutants ~ */ Some(&consumed) {\n                     return Err(serde::de::Error::custom(\n                         \"release decision `consumedChangesets` must be sorted and free of duplicates\",\n                     ));\n                 }\n             }\n             (false, None) => decision = decision.into_schema(wire.schema_version),\n             (true, None) => return Err(serde::de::Error::missing_field(\"consumedChangesets\")),\n             (false, Some(_)) => {\n",
+    "file": "crates/callisto-model/src/release/decision.rs",
+    "function": {
+      "function_name": "<impl Deserialize<'de> for ReleaseDecisionV1>::deserialize",
+      "return_type": "-> Result<Self, D::Error>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 137
+        },
+        "start": {
+          "column": 5,
+          "line": 106
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-model/src/release/decision.rs:116:58: replace != with == in <impl Deserialize<'de> for ReleaseDecisionV1>::deserialize",
+    "package": "callisto-model",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 60,
+        "line": 116
+      },
+      "start": {
+        "column": 58,
+        "line": 116
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release/decision.rs\n+++ replace ReleaseDecisionV1::consuming -> Self with Default::default()\n@@ -139,22 +139,17 @@\n \n impl ReleaseDecisionV1 {\n     pub const SCHEMA_VERSION: u8 = 3;\n     /// Version 1 lacks `unreleasedVersion` and versions 1 and 2 lack `consumedChangesets`; both still read.\n     pub const READABLE_SCHEMA_VERSIONS: [u8; 3] = [1, 2, 3];\n \n     /// Records the changesets the version commit deletes, which release verification compares against the commit.\n     pub fn consuming(mut self, changesets: impl IntoIterator<Item = String>) -> Self {\n-        let mut changesets: Vec<String> = changesets.into_iter().collect();\n-        changesets.sort();\n-        changesets.dedup();\n-        self.digest = decision_digest(&self.entries, Some(&changesets));\n-        self.consumed_changesets = Some(changesets);\n-        self\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The decision as schema 1 or 2 recorded it: no consumed changesets, and their digest.\n     fn into_schema(mut self, schema_version: u8) -> Self {\n         self.schema_version = schema_version;\n         self.consumed_changesets = None;\n         self.digest = decision_digest(&self.entries, None);\n         self\n",
+    "file": "crates/callisto-model/src/release/decision.rs",
+    "function": {
+      "function_name": "ReleaseDecisionV1::consuming",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 153
+        },
+        "start": {
+          "column": 5,
+          "line": 145
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release/decision.rs:147:9: replace ReleaseDecisionV1::consuming -> Self with Default::default()",
+    "package": "callisto-model",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 152
+      },
+      "start": {
+        "column": 9,
+        "line": 147
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release/decision.rs\n+++ replace ReleaseDecisionV1::into_schema -> Self with Default::default()\n@@ -149,20 +149,17 @@\n         changesets.dedup();\n         self.digest = decision_digest(&self.entries, Some(&changesets));\n         self.consumed_changesets = Some(changesets);\n         self\n     }\n \n     /// The decision as schema 1 or 2 recorded it: no consumed changesets, and their digest.\n     fn into_schema(mut self, schema_version: u8) -> Self {\n-        self.schema_version = schema_version;\n-        self.consumed_changesets = None;\n-        self.digest = decision_digest(&self.entries, None);\n-        self\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// A schema 1 or 2 decision with these entries, as an older Callisto committed it.\n     #[cfg(any(test, feature = \"test-util\"))]\n     pub fn older_schema(self, schema_version: u8) -> Self {\n         assert!(\n             schema_version < 3,\n             \"schema {schema_version} records consumed changesets\"\n",
+    "file": "crates/callisto-model/src/release/decision.rs",
+    "function": {
+      "function_name": "ReleaseDecisionV1::into_schema",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 161
+        },
+        "start": {
+          "column": 5,
+          "line": 155
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release/decision.rs:157:9: replace ReleaseDecisionV1::into_schema -> Self with Default::default()",
+    "package": "callisto-model",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 160
+      },
+      "start": {
+        "column": 9,
+        "line": 157
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release/decision.rs\n+++ replace ReleaseDecisionV1::older_schema -> Self with Default::default()\n@@ -158,21 +158,17 @@\n         self.consumed_changesets = None;\n         self.digest = decision_digest(&self.entries, None);\n         self\n     }\n \n     /// A schema 1 or 2 decision with these entries, as an older Callisto committed it.\n     #[cfg(any(test, feature = \"test-util\"))]\n     pub fn older_schema(self, schema_version: u8) -> Self {\n-        assert!(\n-            schema_version < 3,\n-            \"schema {schema_version} records consumed changesets\"\n-        );\n-        self.into_schema(schema_version)\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Creates a canonical decision or rejects an ambiguous release roster.\n     #[allow(clippy::result_large_err)]\n     pub fn new(mut entries: Vec<ReleaseDecisionEntry>) -> Result<Self, ReleaseDecisionError> {\n         if entries.is_empty() {\n             return Err(ReleaseDecisionError::EmptyRoster);\n         }\n",
+    "file": "crates/callisto-model/src/release/decision.rs",
+    "function": {
+      "function_name": "ReleaseDecisionV1::older_schema",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 171
+        },
+        "start": {
+          "column": 5,
+          "line": 163
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release/decision.rs:166:9: replace ReleaseDecisionV1::older_schema -> Self with Default::default()",
+    "package": "callisto-model",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 170
+      },
+      "start": {
+        "column": 9,
+        "line": 166
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/release/decision.rs\n+++ replace decision_digest -> DecisionDigest with Default::default()\n@@ -222,35 +222,17 @@\n             entries,\n             consumed_changesets: Some(Vec::new()),\n             digest,\n         })\n     }\n }\n \n pub(super) fn decision_digest(entries: &[ReleaseDecisionEntry], consumed: Option<&[String]>) -> DecisionDigest {\n-    let mut transcript = CanonicalTranscript::decision_v1();\n-    // The count marks a schema 3 decision, so rewriting it as an older schema cannot keep its digest.\n-    if let Some(consumed) = consumed {\n-        transcript.push_str(\"consumed-changesets\", &consumed.len().to_string());\n-        for path in consumed {\n-            transcript.push_str(\"consumed-changeset\", path);\n-        }\n-    }\n-    for entry in entries {\n-        transcript.push_str(\"package\", &entry.package.to_string());\n-        transcript.push_str(\"target-version\", entry.target_version.render());\n-        for reason in &entry.reasons {\n-            transcript.push_str(\n-                \"reason\",\n-                &serde_json::to_string(reason).expect(\"closed reason serializes\"),\n-            );\n-        }\n-    }\n-    DecisionDigest::from_transcript(&transcript)\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n /// Decision construction or validation errors.\n #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]\n #[non_exhaustive]\n pub enum ReleaseDecisionError {\n     #[error(\"a durable release decision must contain at least one package\")]\n     EmptyRoster,\n",
+    "file": "crates/callisto-model/src/release/decision.rs",
+    "function": {
+      "function_name": "decision_digest",
+      "return_type": "-> DecisionDigest",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 249
+        },
+        "start": {
+          "column": 1,
+          "line": 229
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/release/decision.rs:230:5: replace decision_digest -> DecisionDigest with Default::default()",
+    "package": "callisto-model",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 248
+      },
+      "start": {
+        "column": 5,
+        "line": 230
+      }
+    }
+  }
+]

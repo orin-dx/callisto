@@ -1,0 +1,45 @@
+
+*** crates/callisto-model/src/release_pr.rs:214:9: replace PendingRelease::packages -> impl Iterator<Item =(&crate::PackageId, &crate::Version)> with ::std::iter::once((Box::leak(Box::new(Default::default())), Box::leak(Box::new(Default::default()))))
+
+*** mutation diff:
+--- crates/callisto-model/src/release_pr.rs
++++ replace PendingRelease::packages -> impl Iterator<Item =(&crate::PackageId, &crate::Version)> with ::std::iter::once((Box::leak(Box::new(Default::default())), Box::leak(Box::new(Default::default()))))
+@@ -206,17 +206,17 @@
+ impl PendingRelease {
+     /// `None` when nothing would be versioned.
+     pub fn new(packages: impl IntoIterator<Item = (crate::PackageId, crate::Version)>) -> Option<Self> {
+         let packages: std::collections::BTreeMap<_, _> = packages.into_iter().collect();
+         (!packages.is_empty()).then_some(Self { packages })
+     }
+ 
+     pub fn packages(&self) -> impl Iterator<Item = (&crate::PackageId, &crate::Version)> {
+-        self.packages.iter()
++        ::std::iter::once((Box::leak(Box::new(Default::default())), Box::leak(Box::new(Default::default())))) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// Why a release-PR run is intentionally mutation-free.
+ #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+ #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+ #[non_exhaustive]
+ pub enum ReleasePrNoopReasonV1 {
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --no-run --verbose --package=callisto-model@0.21.1
+   Compiling callisto-model v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/crates/callisto-model)
+error[E0271]: expected `Once<(&mut _, &mut _)>` to be an iterator that yields `(&PackageId, &Version)`, but it yields `(&mut _, &mut _)`
+   --> crates/callisto-model/src/release_pr.rs:213:31
+    |
+213 |     pub fn packages(&self) -> impl Iterator<Item = (&crate::PackageId, &crate::Version)> {
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ types differ in mutability
+    |
+    = note: expected tuple `(&identity::PackageId, &version::Version)`
+               found tuple `(&mut _, &mut _)`
+
+For more information about this error, try `rustc --explain E0271`.
+error: could not compile `callisto-model` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `callisto-model` (lib test) due to 1 previous error
+error: command `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --no-run --message-format json-render-diagnostics --package callisto-model@0.21.1` exited with code 101
+
+*** result: Failure(101)

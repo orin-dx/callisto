@@ -1,0 +1,5 @@
+crates/callisto-model/src/release_pr.rs:214:9: replace PendingRelease::packages -> impl Iterator<Item =(&crate::PackageId, &crate::Version)> with ::std::iter::empty()
+crates/callisto-model/src/release_pr.rs:318:9: replace ReleasePrDecisionV2::verify_snapshot_after_update -> Result<(), ReleasePrDecisionError> with Ok(())
+crates/callisto-model/src/release_pr.rs:324:64: replace != with == in ReleasePrDecisionV2::verify_snapshot_after_update
+crates/callisto-model/src/release/decision.rs:113:36: replace >= with < in <impl Deserialize<'de> for ReleaseDecisionV1>::deserialize
+crates/callisto-model/src/release/decision.rs:116:58: replace != with == in <impl Deserialize<'de> for ReleaseDecisionV1>::deserialize

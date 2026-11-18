@@ -1,0 +1,41 @@
+--- crates/callisto-model/src/release_pr.rs
++++ replace ReleasePrDecisionV2::verify_snapshot_after_update -> Result<(), ReleasePrDecisionError> with Ok(())
+@@ -310,37 +310,17 @@
+     }
+ 
+     /// Allows only the selected PR head change performed by this executor.
+     pub fn verify_snapshot_after_update(
+         &self,
+         observed: &ReleasePrSnapshotV2,
+         applied_head: &CommitSha,
+     ) -> Result<(), ReleasePrDecisionError> {
+-        let ReleasePrActionV2::Update {
+-            pull_request_number, ..
+-        } = &self.action
+-        else {
+-            return Err(ReleasePrDecisionError::SnapshotChanged);
+-        };
+-        if Self::release_action(&self.config, &self.snapshot)? != self.action {
+-            return Err(ReleasePrDecisionError::SnapshotChanged);
+-        }
+-        let mut expected = self.clone();
+-        let pr = expected
+-            .snapshot
+-            .open_pull_requests
+-            .iter_mut()
+-            .find(|pr| pr.number == *pull_request_number)
+-            .ok_or(ReleasePrDecisionError::SnapshotChanged)?;
+-        if &pr.head_commit == applied_head {
+-            return Err(ReleasePrDecisionError::SnapshotChanged);
+-        }
+-        pr.head_commit = applied_head.clone();
+-        expected.verify_snapshot(observed)
++        Ok(()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// The on-the-wire shape of [`ReleasePrDecisionV2`], with its nested config and
+ /// snapshot still unvalidated. See [`ReleasePrConfigWireV1`] for why the CLI
+ /// deserializes this instead of `ReleasePrDecisionV2` directly.
+ #[derive(Clone, Debug, Deserialize, JsonSchema)]
+ #[serde(rename_all = "camelCase", deny_unknown_fields)]

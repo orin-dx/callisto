@@ -1,0 +1,1011 @@
+
+*** crates/callisto-model/src/release_pr.rs:318:9: replace ReleasePrDecisionV2::verify_snapshot_after_update -> Result<(), ReleasePrDecisionError> with Ok(())
+
+*** mutation diff:
+--- crates/callisto-model/src/release_pr.rs
++++ replace ReleasePrDecisionV2::verify_snapshot_after_update -> Result<(), ReleasePrDecisionError> with Ok(())
+@@ -310,37 +310,17 @@
+     }
+ 
+     /// Allows only the selected PR head change performed by this executor.
+     pub fn verify_snapshot_after_update(
+         &self,
+         observed: &ReleasePrSnapshotV2,
+         applied_head: &CommitSha,
+     ) -> Result<(), ReleasePrDecisionError> {
+-        let ReleasePrActionV2::Update {
+-            pull_request_number, ..
+-        } = &self.action
+-        else {
+-            return Err(ReleasePrDecisionError::SnapshotChanged);
+-        };
+-        if Self::release_action(&self.config, &self.snapshot)? != self.action {
+-            return Err(ReleasePrDecisionError::SnapshotChanged);
+-        }
+-        let mut expected = self.clone();
+-        let pr = expected
+-            .snapshot
+-            .open_pull_requests
+-            .iter_mut()
+-            .find(|pr| pr.number == *pull_request_number)
+-            .ok_or(ReleasePrDecisionError::SnapshotChanged)?;
+-        if &pr.head_commit == applied_head {
+-            return Err(ReleasePrDecisionError::SnapshotChanged);
+-        }
+-        pr.head_commit = applied_head.clone();
+-        expected.verify_snapshot(observed)
++        Ok(()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// The on-the-wire shape of [`ReleasePrDecisionV2`], with its nested config and
+ /// snapshot still unvalidated. See [`ReleasePrConfigWireV1`] for why the CLI
+ /// deserializes this instead of `ReleasePrDecisionV2` directly.
+ #[derive(Clone, Debug, Deserialize, JsonSchema)]
+ #[serde(rename_all = "camelCase", deny_unknown_fields)]
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --no-run --verbose --package=callisto-model@0.21.1
+   Compiling callisto-model v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/crates/callisto-model)
+warning: unused variable: `observed`
+   --> crates/callisto-model/src/release_pr.rs:315:9
+    |
+315 |         observed: &ReleasePrSnapshotV2,
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_observed`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `applied_head`
+   --> crates/callisto-model/src/release_pr.rs:316:9
+    |
+316 |         applied_head: &CommitSha,
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_applied_head`
+
+warning: `callisto-model` (lib) generated 2 warnings (run `cargo fix --lib -p callisto-model` to apply 2 suggestions)
+warning: `callisto-model` (lib test) generated 2 warnings (2 duplicates)
+    Finished `test` profile [unoptimized] target(s) in 3.84s
+
+*** result: Success
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --verbose --package=callisto-model@0.21.1
+warning: unused variable: `observed`
+   --> crates/callisto-model/src/release_pr.rs:315:9
+    |
+315 |         observed: &ReleasePrSnapshotV2,
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_observed`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `applied_head`
+   --> crates/callisto-model/src/release_pr.rs:316:9
+    |
+316 |         applied_head: &CommitSha,
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_applied_head`
+
+warning: `callisto-model` (lib) generated 2 warnings (run `cargo fix --lib -p callisto-model` to apply 2 suggestions)
+warning: `callisto-model` (lib test) generated 2 warnings (2 duplicates)
+    Finished `test` profile [unoptimized] target(s) in 0.09s
+────────────
+ Nextest run ID f594d704-dec0-427f-afdc-51600d1390f7 with nextest profile: default
+    Starting 420 tests across 3 binaries
+       START [         ] (  1/420) callisto-model atomic::tests::atomic_write_creates_file_with_correct_content
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::atomic_write_creates_file_with_correct_content --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::a_rewritten_file_keeps_its_mode_and_a_new_file_follows_the_umask
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::a_rewritten_file_keeps_its_mode_and_a_new_file_follows_the_umask --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::a_directory_that_cannot_be_opened_or_synced_is_skipped_but_an_io_failure_is_reported
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::a_directory_that_cannot_be_opened_or_synced_is_skipped_but_an_io_failure_is_reported --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::a_write_only_directory_is_skipped_not_reported
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::a_write_only_directory_is_skipped_not_reported --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::atomic_write_leaves_no_temp_files_behind
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::atomic_write_leaves_no_temp_files_behind --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::atomic_write_creates_missing_parent_directories
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::atomic_write_creates_missing_parent_directories --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::atomic_write_over_existing_file_replaces_content
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::atomic_write_over_existing_file_replaces_content --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::atomic_write_new_never_replaces_what_is_there
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::atomic_write_new_never_replaces_what_is_there --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::concurrent_atomic_write_to_same_path_does_not_corrupt_file
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::concurrent_atomic_write_to_same_path_does_not_corrupt_file --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::concurrent_exclusive_writes_to_one_name_have_one_winner
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::concurrent_exclusive_writes_to_one_name_have_one_winner --nocapture
+       START [         ] (  1/420) callisto-model commit::tests::test_command_error_converts_transparently
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact commit::tests::test_command_error_converts_transparently --nocapture
+       START [         ] (  1/420) callisto-model atomic::tests::probe_leaves_no_file_or_directory_and_accepts_existing_target
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact atomic::tests::probe_leaves_no_file_or_directory_and_accepts_existing_target --nocapture
+       START [         ] (  1/420) callisto-model dependency::tests::dep_spec_render_covers_every_variant
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact dependency::tests::dep_spec_render_covers_every_variant --nocapture
+       START [         ] (  1/420) callisto-model commit::tests::test_commit_walker_is_object_safe
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact commit::tests::test_commit_walker_is_object_safe --nocapture
+       START [         ] (  1/420) callisto-model dependency::tests::workspace_protocol_keeps_suffix_and_identity_source
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact dependency::tests::workspace_protocol_keeps_suffix_and_identity_source --nocapture
+       START [         ] (  1/420) callisto-model dependency::tests::workspace_explicit_ranges_use_npm_bounds_and_exact_pins
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact dependency::tests::workspace_explicit_ranges_use_npm_bounds_and_exact_pins --nocapture
+       START [         ] (  1/420) callisto-model diagnostic::tests::package_rule_matched_nothing_serializes_to_kebab_case
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact diagnostic::tests::package_rule_matched_nothing_serializes_to_kebab_case --nocapture
+       START [         ] (  1/420) callisto-model dependency::tests::workspace_shorthand_covers_current_versions_including_prereleases
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact dependency::tests::workspace_shorthand_covers_current_versions_including_prereleases --nocapture
+        PASS [   0.013s] (  1/420) callisto-model commit::tests::test_command_error_converts_transparently
+       START [         ] (  2/420) callisto-model diagnostic::tests::unrecognised_platform_triple_serializes_to_kebab_case
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact diagnostic::tests::unrecognised_platform_triple_serializes_to_kebab_case --nocapture
+        PASS [   0.013s] (  2/420) callisto-model dependency::tests::dep_spec_render_covers_every_variant
+       START [         ] (  3/420) callisto-model ecosystem::tests::a_distribution_belongs_to_its_package_name_in_any_spelling_and_its_exact_version
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::a_distribution_belongs_to_its_package_name_in_any_spelling_and_its_exact_version --nocapture
+        PASS [   0.014s] (  3/420) callisto-model commit::tests::test_commit_walker_is_object_safe
+       START [         ] (  4/420) callisto-model ecosystem::tests::a_distribution_filename_splits_into_its_name_and_version
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::a_distribution_filename_splits_into_its_name_and_version --nocapture
+        PASS [   0.014s] (  4/420) callisto-model diagnostic::tests::package_rule_matched_nothing_serializes_to_kebab_case
+       START [         ] (  5/420) callisto-model ecosystem::tests::canonical_ecosystems_each_have_a_canonical_manifest_format
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::canonical_ecosystems_each_have_a_canonical_manifest_format --nocapture
+        PASS [   0.014s] (  5/420) callisto-model dependency::tests::workspace_protocol_keeps_suffix_and_identity_source
+       START [         ] (  6/420) callisto-model ecosystem::tests::identifies_implemented_ecosystems
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::identifies_implemented_ecosystems --nocapture
+        PASS [   0.014s] (  6/420) callisto-model dependency::tests::workspace_shorthand_covers_current_versions_including_prereleases
+       START [         ] (  7/420) callisto-model ecosystem::tests::maps_ecosystem_prefixes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::maps_ecosystem_prefixes --nocapture
+        PASS [   0.014s] (  7/420) callisto-model dependency::tests::workspace_explicit_ranges_use_npm_bounds_and_exact_pins
+       START [         ] (  8/420) callisto-model ecosystem::tests::non_canonical_ecosystems_have_no_canonical_manifest_format
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::non_canonical_ecosystems_have_no_canonical_manifest_format --nocapture
+        PASS [   0.010s] (  8/420) callisto-model diagnostic::tests::unrecognised_platform_triple_serializes_to_kebab_case
+       START [         ] (  9/420) callisto-model ecosystem::tests::normalize_pypi_package_name_collapses_mixed_runs
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::normalize_pypi_package_name_collapses_mixed_runs --nocapture
+        PASS [   0.010s] (  9/420) callisto-model ecosystem::tests::a_distribution_filename_splits_into_its_name_and_version
+       START [         ] ( 10/420) callisto-model ecosystem::tests::normalize_pypi_package_name_treats_hyphen_underscore_dot_as_equivalent
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::normalize_pypi_package_name_treats_hyphen_underscore_dot_as_equivalent --nocapture
+        PASS [   0.010s] ( 10/420) callisto-model ecosystem::tests::a_distribution_belongs_to_its_package_name_in_any_spelling_and_its_exact_version
+       START [         ] ( 11/420) callisto-model ecosystem::tests::publish_target_is_implemented_matches_dispatchable_variants
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::publish_target_is_implemented_matches_dispatchable_variants --nocapture
+        PASS [   0.036s] ( 11/420) callisto-model atomic::tests::a_directory_that_cannot_be_opened_or_synced_is_skipped_but_an_io_failure_is_reported
+       START [         ] ( 12/420) callisto-model ecosystem::tests::publish_target_registry_override_extracts_payload_field
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact ecosystem::tests::publish_target_registry_override_extracts_payload_field --nocapture
+        PASS [   0.010s] ( 12/420) callisto-model ecosystem::tests::canonical_ecosystems_each_have_a_canonical_manifest_format
+       START [         ] ( 13/420) callisto-model exec::tests::a_failed_command_error_message_hides_credentials_in_its_stderr
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact exec::tests::a_failed_command_error_message_hides_credentials_in_its_stderr --nocapture
+        PASS [   0.054s] ( 13/420) callisto-model atomic::tests::a_write_only_directory_is_skipped_not_reported
+       START [         ] ( 14/420) callisto-model exec::tests::accepts_hyphenated_prerelease_suffix_above_the_floor
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact exec::tests::accepts_hyphenated_prerelease_suffix_above_the_floor --nocapture
+        PASS [   0.008s] ( 14/420) callisto-model ecosystem::tests::identifies_implemented_ecosystems
+       START [         ] ( 15/420) callisto-model exec::tests::ignores_trailing_windows_suffix
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact exec::tests::ignores_trailing_windows_suffix --nocapture
+        PASS [   0.062s] ( 15/420) callisto-model atomic::tests::atomic_write_leaves_no_temp_files_behind
+       START [         ] ( 16/420) callisto-model exec::tests::parses_git_version
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact exec::tests::parses_git_version --nocapture
+        PASS [   0.009s] ( 16/420) callisto-model ecosystem::tests::maps_ecosystem_prefixes
+       START [         ] ( 17/420) callisto-model exec::tests::redacted_stderr_strips_authenticated_remote_url_userinfo
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact exec::tests::redacted_stderr_strips_authenticated_remote_url_userinfo --nocapture
+        PASS [   0.082s] ( 17/420) callisto-model atomic::tests::atomic_write_creates_file_with_correct_content
+       START [         ] ( 18/420) callisto-model exec::tests::rejects_unparseable_version_string
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact exec::tests::rejects_unparseable_version_string --nocapture
+        PASS [   0.011s] ( 18/420) callisto-model ecosystem::tests::non_canonical_ecosystems_have_no_canonical_manifest_format
+       START [         ] ( 19/420) callisto-model exec::tests::rejects_versions_just_below_the_required_floor
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact exec::tests::rejects_versions_just_below_the_required_floor --nocapture
+        PASS [   0.009s] ( 19/420) callisto-model ecosystem::tests::normalize_pypi_package_name_collapses_mixed_runs
+       START [         ] ( 20/420) callisto-model exec::tests::treats_missing_patch_as_zero
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact exec::tests::treats_missing_patch_as_zero --nocapture
+        PASS [   0.116s] ( 20/420) callisto-model atomic::tests::probe_leaves_no_file_or_directory_and_accepts_existing_target
+       START [         ] ( 21/420) callisto-model format::bump::tests::bump_prerelease_from_undotted_tag_produces_higher_version
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::bump_prerelease_from_undotted_tag_produces_higher_version --nocapture
+        PASS [   0.007s] ( 21/420) callisto-model ecosystem::tests::normalize_pypi_package_name_treats_hyphen_underscore_dot_as_equivalent
+       START [         ] ( 22/420) callisto-model format::bump::tests::bump_prerelease_monotonic_counter
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::bump_prerelease_monotonic_counter --nocapture
+        PASS [   0.007s] ( 22/420) callisto-model ecosystem::tests::publish_target_registry_override_extracts_payload_field
+        PASS [   0.007s] ( 23/420) callisto-model ecosystem::tests::publish_target_is_implemented_matches_dispatchable_variants
+       START [         ] ( 24/420) callisto-model format::bump::tests::pep440_bump_prerelease_uses_recognized_letter_and_is_monotonic
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_bump_prerelease_uses_recognized_letter_and_is_monotonic --nocapture
+       START [         ] ( 24/420) callisto-model format::bump::tests::pep440_bump_prerelease_falls_back_to_dev_for_unrecognized_tag
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_bump_prerelease_falls_back_to_dev_for_unrecognized_tag --nocapture
+        PASS [   0.007s] ( 24/420) callisto-model exec::tests::a_failed_command_error_message_hides_credentials_in_its_stderr
+       START [         ] ( 25/420) callisto-model format::bump::tests::pep440_bump_rejects_non_pep440_grammar
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_bump_rejects_non_pep440_grammar --nocapture
+        PASS [   0.007s] ( 25/420) callisto-model exec::tests::accepts_hyphenated_prerelease_suffix_above_the_floor
+       START [         ] ( 26/420) callisto-model format::bump::tests::pep440_parse_malformed_string_returns_err_not_panic
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_parse_malformed_string_returns_err_not_panic --nocapture
+        PASS [   0.166s] ( 26/420) callisto-model atomic::tests::atomic_write_creates_missing_parent_directories
+       START [         ] ( 27/420) callisto-model format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_1
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_1 --nocapture
+        PASS [   0.009s] ( 27/420) callisto-model exec::tests::ignores_trailing_windows_suffix
+       START [         ] ( 28/420) callisto-model format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_2
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_2 --nocapture
+        PASS [   0.009s] ( 28/420) callisto-model exec::tests::treats_missing_patch_as_zero
+        PASS [   0.009s] ( 29/420) callisto-model exec::tests::parses_git_version
+       START [         ] ( 30/420) callisto-model format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_3
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_3 --nocapture
+       START [         ] ( 30/420) callisto-model format::bump::tests::pep440_zero_base_plain_bump
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_zero_base_plain_bump --nocapture
+        PASS [   0.009s] ( 30/420) callisto-model format::bump::tests::bump_prerelease_from_undotted_tag_produces_higher_version
+       START [         ] ( 31/420) callisto-model format::bump::tests::pep440_zero_base_prerelease_bump_hits_zero_guards
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::pep440_zero_base_prerelease_bump_hits_zero_guards --nocapture
+        PASS [   0.009s] ( 31/420) callisto-model exec::tests::rejects_versions_just_below_the_required_floor
+       START [         ] ( 32/420) callisto-model format::bump::tests::semver_zero_base_plain_bump
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::semver_zero_base_plain_bump --nocapture
+        PASS [   0.009s] ( 32/420) callisto-model exec::tests::redacted_stderr_strips_authenticated_remote_url_userinfo
+       START [         ] ( 33/420) callisto-model format::bump::tests::semver_zero_base_prerelease_bump_hits_zero_guards
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::semver_zero_base_prerelease_bump_hits_zero_guards --nocapture
+        PASS [   0.009s] ( 33/420) callisto-model exec::tests::rejects_unparseable_version_string
+       START [         ] ( 34/420) callisto-model format::bump::tests::test_pep440_bump_at_max_returns_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_at_max_returns_error --nocapture
+        PASS [   0.010s] ( 34/420) callisto-model format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_1
+       START [         ] ( 35/420) callisto-model format::bump::tests::test_pep440_bump_drops_local_version_label::case_1
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_drops_local_version_label::case_1 --nocapture
+        PASS [   0.010s] ( 35/420) callisto-model format::bump::tests::pep440_bump_prerelease_falls_back_to_dev_for_unrecognized_tag
+       START [         ] ( 36/420) callisto-model format::bump::tests::test_pep440_bump_drops_local_version_label::case_2
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_drops_local_version_label::case_2 --nocapture
+        PASS [   0.009s] ( 36/420) callisto-model format::bump::tests::pep440_zero_base_prerelease_bump_hits_zero_guards
+       START [         ] ( 37/420) callisto-model format::bump::tests::test_pep440_bump_drops_local_version_label::case_3
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_drops_local_version_label::case_3 --nocapture
+        PASS [   0.010s] ( 37/420) callisto-model format::bump::tests::bump_prerelease_monotonic_counter
+       START [         ] ( 38/420) callisto-model format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_1
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_1 --nocapture
+        PASS [   0.010s] ( 38/420) callisto-model format::bump::tests::pep440_zero_base_plain_bump
+       START [         ] ( 39/420) callisto-model format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_2
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_2 --nocapture
+        PASS [   0.010s] ( 39/420) callisto-model format::bump::tests::pep440_bump_prerelease_uses_recognized_letter_and_is_monotonic
+       START [         ] ( 40/420) callisto-model format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_3
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_3 --nocapture
+        PASS [   0.011s] ( 40/420) callisto-model format::bump::tests::pep440_bump_rejects_non_pep440_grammar
+       START [         ] ( 41/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_01
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_01 --nocapture
+        PASS [   0.011s] ( 41/420) callisto-model format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_2
+       START [         ] ( 42/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_02
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_02 --nocapture
+        PASS [   0.010s] ( 42/420) callisto-model format::bump::tests::pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged::case_3
+        PASS [   0.011s] ( 43/420) callisto-model format::bump::tests::pep440_parse_malformed_string_returns_err_not_panic
+       START [         ] ( 44/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_04
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_04 --nocapture
+       START [         ] ( 44/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_03
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_03 --nocapture
+        PASS [   0.007s] ( 44/420) callisto-model format::bump::tests::semver_zero_base_plain_bump
+       START [         ] ( 45/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_05
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_05 --nocapture
+        PASS [   0.192s] ( 45/420) callisto-model atomic::tests::atomic_write_over_existing_file_replaces_content
+       START [         ] ( 46/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_06
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_06 --nocapture
+        PASS [   0.007s] ( 46/420) callisto-model format::bump::tests::test_pep440_bump_drops_local_version_label::case_1
+       START [         ] ( 47/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_07
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_07 --nocapture
+        PASS [   0.008s] ( 47/420) callisto-model format::bump::tests::semver_zero_base_prerelease_bump_hits_zero_guards
+       START [         ] ( 48/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_08
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_08 --nocapture
+        PASS [   0.008s] ( 48/420) callisto-model format::bump::tests::test_pep440_bump_at_max_returns_error
+       START [         ] ( 49/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_09
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_09 --nocapture
+        PASS [   0.196s] ( 49/420) callisto-model atomic::tests::concurrent_exclusive_writes_to_one_name_have_one_winner
+       START [         ] ( 50/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_10
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_10 --nocapture
+        PASS [   0.007s] ( 50/420) callisto-model format::bump::tests::test_pep440_bump_drops_local_version_label::case_2
+       START [         ] ( 51/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_11
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_11 --nocapture
+        PASS [   0.009s] ( 51/420) callisto-model format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_1
+       START [         ] ( 52/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_12
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_12 --nocapture
+        PASS [   0.008s] ( 52/420) callisto-model format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_3
+       START [         ] ( 53/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_13
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_13 --nocapture
+        PASS [   0.009s] ( 53/420) callisto-model format::bump::tests::test_pep440_bump_epoch_post_dev_combined::case_2
+       START [         ] ( 54/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_14
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_14 --nocapture
+        PASS [   0.010s] ( 54/420) callisto-model format::bump::tests::test_pep440_bump_drops_local_version_label::case_3
+       START [         ] ( 55/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_15
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_15 --nocapture
+        PASS [   0.008s] ( 55/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_03
+       START [         ] ( 56/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_16
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_16 --nocapture
+        PASS [   0.009s] ( 56/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_01
+       START [         ] ( 57/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_17
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_pep440_bump_matrix::case_17 --nocapture
+        PASS [   0.009s] ( 57/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_05
+       START [         ] ( 58/420) callisto-model format::bump::tests::test_semver_bump_major_at_max_returns_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_major_at_max_returns_error --nocapture
+        PASS [   0.009s] ( 58/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_04
+        PASS [   0.009s] ( 59/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_02
+       START [         ] ( 60/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_01
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_01 --nocapture
+       START [         ] ( 60/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_02
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_02 --nocapture
+        PASS [   0.009s] ( 60/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_08
+        PASS [   0.009s] ( 61/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_09
+       START [         ] ( 62/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_04
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_04 --nocapture
+       START [         ] ( 62/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_03
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_03 --nocapture
+        PASS [   0.009s] ( 62/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_06
+       START [         ] ( 63/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_05
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_05 --nocapture
+        PASS [   0.009s] ( 63/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_07
+       START [         ] ( 64/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_06
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_06 --nocapture
+        PASS [   0.008s] ( 64/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_10
+       START [         ] ( 65/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_07
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_07 --nocapture
+        PASS [   0.008s] ( 65/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_11
+       START [         ] ( 66/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_08
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_08 --nocapture
+        PASS [   0.009s] ( 66/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_13
+       START [         ] ( 67/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_09
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_09 --nocapture
+        PASS [   0.009s] ( 67/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_15
+       START [         ] ( 68/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_10
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_10 --nocapture
+        PASS [   0.009s] ( 68/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_02
+       START [         ] ( 69/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_11
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_matrix::case_11 --nocapture
+        PASS [   0.009s] ( 69/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_14
+       START [         ] ( 70/420) callisto-model format::bump::tests::test_semver_bump_patch_at_max_returns_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::test_semver_bump_patch_at_max_returns_error --nocapture
+        PASS [   0.010s] ( 70/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_12
+       START [         ] ( 71/420) callisto-model format::bump::tests::versioning_for_pep440_returns_an_impl
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::bump::tests::versioning_for_pep440_returns_an_impl --nocapture
+        PASS [   0.009s] ( 71/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_04
+        PASS [   0.009s] ( 72/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_01
+       START [         ] ( 73/420) callisto-model format::changeset::frontmatter::tests::bare_name_uses_rsplit_once_on_colon
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::bare_name_uses_rsplit_once_on_colon --nocapture
+       START [         ] ( 73/420) callisto-model format::changeset::frontmatter::tests::bare_line_with_no_colon_is_missing_separator
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::bare_line_with_no_colon_is_missing_separator --nocapture
+        PASS [   0.009s] ( 73/420) callisto-model format::bump::tests::test_semver_bump_major_at_max_returns_error
+       START [         ] ( 74/420) callisto-model format::changeset::frontmatter::tests::content_between_closing_quote_and_colon_is_ambiguous
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::content_between_closing_quote_and_colon_is_ambiguous --nocapture
+        PASS [   0.010s] ( 74/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_17
+       START [         ] ( 75/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_allows_bare_cargo_style_names
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::needs_quoting_allows_bare_cargo_style_names --nocapture
+        PASS [   0.010s] ( 75/420) callisto-model format::bump::tests::test_pep440_bump_matrix::case_16
+       START [         ] ( 76/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_flags_empty_name
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::needs_quoting_flags_empty_name --nocapture
+        PASS [   0.008s] ( 76/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_03
+        PASS [   0.008s] ( 77/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_05
+       START [         ] ( 78/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_flags_npm_scoped_names
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::needs_quoting_flags_npm_scoped_names --nocapture
+       START [         ] ( 78/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_flags_names_containing_colon
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::needs_quoting_flags_names_containing_colon --nocapture
+        PASS [   0.234s] ( 78/420) callisto-model atomic::tests::concurrent_atomic_write_to_same_path_does_not_corrupt_file
+       START [         ] ( 79/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_flags_trailing_space
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::needs_quoting_flags_trailing_space --nocapture
+        PASS [   0.010s] ( 79/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_07
+       START [         ] ( 80/420) callisto-model format::changeset::frontmatter::tests::parse_entry_line_rejects_empty_name
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::parse_entry_line_rejects_empty_name --nocapture
+        PASS [   0.011s] ( 80/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_09
+       START [         ] ( 81/420) callisto-model format::changeset::frontmatter::tests::parse_entry_line_rejects_invalid_severity
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::parse_entry_line_rejects_invalid_severity --nocapture
+        PASS [   0.011s] ( 81/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_11
+        PASS [   0.011s] ( 82/420) callisto-model format::bump::tests::test_semver_bump_patch_at_max_returns_error
+        PASS [   0.010s] ( 83/420) callisto-model format::changeset::frontmatter::tests::bare_line_with_no_colon_is_missing_separator
+       START [         ] ( 84/420) callisto-model format::changeset::frontmatter::tests::quoted_name_containing_colon_is_not_mis_split
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::quoted_name_containing_colon_is_not_mis_split --nocapture
+       START [         ] ( 84/420) callisto-model format::changeset::frontmatter::tests::parses_full_entry_line
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::parses_full_entry_line --nocapture
+       START [         ] ( 84/420) callisto-model format::changeset::frontmatter::tests::parse_entry_line_severity_is_case_insensitive
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::parse_entry_line_severity_is_case_insensitive --nocapture
+        PASS [   0.011s] ( 84/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_flags_empty_name
+       START [         ] ( 85/420) callisto-model format::changeset::frontmatter::tests::splits_bare_name_from_severity
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::splits_bare_name_from_severity --nocapture
+        PASS [   0.012s] ( 85/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_06
+       START [         ] ( 86/420) callisto-model format::changeset::frontmatter::tests::splits_quoted_name_from_severity
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::splits_quoted_name_from_severity --nocapture
+        PASS [   0.011s] ( 86/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_flags_names_containing_colon
+       START [         ] ( 87/420) callisto-model format::changeset::frontmatter::tests::unclosed_quote_is_an_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::frontmatter::tests::unclosed_quote_is_an_error --nocapture
+        PASS [   0.012s] ( 87/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_08
+       START [         ] ( 88/420) callisto-model format::changeset::tests::a_byte_order_mark_and_every_line_ending_style_parse_the_same
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::a_byte_order_mark_and_every_line_ending_style_parse_the_same --nocapture
+        PASS [   0.011s] ( 88/420) callisto-model format::bump::tests::versioning_for_pep440_returns_an_impl
+       START [         ] ( 89/420) callisto-model format::changeset::tests::crlf_input_parses_the_same_as_its_lf_twin
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::crlf_input_parses_the_same_as_its_lf_twin --nocapture
+        PASS [   0.012s] ( 89/420) callisto-model format::bump::tests::test_semver_bump_matrix::case_10
+       START [         ] ( 90/420) callisto-model format::changeset::tests::duplicate_raw_name_is_an_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::duplicate_raw_name_is_an_error --nocapture
+        PASS [   0.011s] ( 90/420) callisto-model format::changeset::frontmatter::tests::content_between_closing_quote_and_colon_is_ambiguous
+       START [         ] ( 91/420) callisto-model format::changeset::tests::empty_frontmatter_and_empty_summary_is_valid
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::empty_frontmatter_and_empty_summary_is_valid --nocapture
+        PASS [   0.011s] ( 91/420) callisto-model format::changeset::frontmatter::tests::bare_name_uses_rsplit_once_on_colon
+       START [         ] ( 92/420) callisto-model format::changeset::tests::empty_frontmatter_with_nonempty_summary_is_valid
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::empty_frontmatter_with_nonempty_summary_is_valid --nocapture
+        PASS [   0.012s] ( 92/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_allows_bare_cargo_style_names
+       START [         ] ( 93/420) callisto-model format::changeset::tests::line_numbers_in_errors_are_absolute_not_frontmatter_relative
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::line_numbers_in_errors_are_absolute_not_frontmatter_relative --nocapture
+        PASS [   0.012s] ( 93/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_flags_npm_scoped_names
+       START [         ] ( 94/420) callisto-model format::changeset::tests::missing_opening_delimiter_is_an_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::missing_opening_delimiter_is_an_error --nocapture
+        PASS [   0.009s] ( 94/420) callisto-model format::changeset::frontmatter::tests::needs_quoting_flags_trailing_space
+       START [         ] ( 95/420) callisto-model format::changeset::tests::parse_rejects_empty_summary_with_entries
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::parse_rejects_empty_summary_with_entries --nocapture
+        PASS [   0.007s] ( 95/420) callisto-model format::changeset::frontmatter::tests::parse_entry_line_rejects_invalid_severity
+       START [         ] ( 96/420) callisto-model format::changeset::tests::parse_rejects_whitespace_only_summary_with_entries
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::parse_rejects_whitespace_only_summary_with_entries --nocapture
+        PASS [   0.008s] ( 96/420) callisto-model format::changeset::frontmatter::tests::parse_entry_line_rejects_empty_name
+       START [         ] ( 97/420) callisto-model format::changeset::tests::parses_a_single_entry_changeset
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::parses_a_single_entry_changeset --nocapture
+        PASS [   0.256s] ( 97/420) callisto-model atomic::tests::a_rewritten_file_keeps_its_mode_and_a_new_file_follows_the_umask
+       START [         ] ( 98/420) callisto-model format::changeset::tests::parses_multiple_entries_mixed_quoted_and_bare
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::parses_multiple_entries_mixed_quoted_and_bare --nocapture
+        PASS [   0.256s] ( 98/420) callisto-model atomic::tests::atomic_write_new_never_replaces_what_is_there
+       START [         ] ( 99/420) callisto-model format::changeset::tests::proptest_changeset_roundtrip
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::proptest_changeset_roundtrip --nocapture
+        PASS [   0.010s] ( 99/420) callisto-model format::changeset::frontmatter::tests::splits_quoted_name_from_severity
+       START [         ] (100/420) callisto-model format::changeset::tests::round_trip_write_then_parse_reproduces_the_changeset
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::round_trip_write_then_parse_reproduces_the_changeset --nocapture
+        PASS [   0.010s] (100/420) callisto-model format::changeset::frontmatter::tests::unclosed_quote_is_an_error
+       START [         ] (101/420) callisto-model format::changeset::tests::skips_comment_and_blank_lines_in_frontmatter
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::skips_comment_and_blank_lines_in_frontmatter --nocapture
+        PASS [   0.011s] (101/420) callisto-model format::changeset::frontmatter::tests::parse_entry_line_severity_is_case_insensitive
+       START [         ] (102/420) callisto-model format::changeset::tests::unclosed_frontmatter_is_an_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::unclosed_frontmatter_is_an_error --nocapture
+        PASS [   0.011s] (102/420) callisto-model format::changeset::frontmatter::tests::quoted_name_containing_colon_is_not_mis_split
+       START [         ] (103/420) callisto-model format::changeset::tests::write_accepts_empty_changeset
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::write_accepts_empty_changeset --nocapture
+        PASS [   0.011s] (103/420) callisto-model format::changeset::frontmatter::tests::parses_full_entry_line
+       START [         ] (104/420) callisto-model format::changeset::tests::write_always_uses_lf_and_ends_with_trailing_newline
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::write_always_uses_lf_and_ends_with_trailing_newline --nocapture
+        PASS [   0.010s] (104/420) callisto-model format::changeset::tests::empty_frontmatter_and_empty_summary_is_valid
+       START [         ] (105/420) callisto-model format::changeset::tests::write_quotes_names_only_when_necessary
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::write_quotes_names_only_when_necessary --nocapture
+        PASS [   0.012s] (105/420) callisto-model format::changeset::frontmatter::tests::splits_bare_name_from_severity
+       START [         ] (106/420) callisto-model format::changeset::tests::write_rejects_empty_summary_with_entries
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::write_rejects_empty_summary_with_entries --nocapture
+        PASS [   0.011s] (106/420) callisto-model format::changeset::tests::missing_opening_delimiter_is_an_error
+       START [         ] (107/420) callisto-model format::changeset::tests::write_rejects_name_containing_a_literal_quote
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::write_rejects_name_containing_a_literal_quote --nocapture
+        PASS [   0.011s] (107/420) callisto-model format::changeset::tests::line_numbers_in_errors_are_absolute_not_frontmatter_relative
+        PASS [   0.011s] (108/420) callisto-model format::changeset::tests::empty_frontmatter_with_nonempty_summary_is_valid
+        PASS [   0.012s] (109/420) callisto-model format::changeset::tests::crlf_input_parses_the_same_as_its_lf_twin
+       START [         ] (110/420) callisto-model format::pre::tests::baseline_rejects_a_version_valid_only_in_a_different_ecosystem
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::baseline_rejects_a_version_valid_only_in_a_different_ecosystem --nocapture
+       START [         ] (110/420) callisto-model format::changeset::tests::write_rejects_whitespace_only_summary_with_entries
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::changeset::tests::write_rejects_whitespace_only_summary_with_entries --nocapture
+       START [         ] (110/420) callisto-model format::pre::tests::baseline_grammars_follow_their_owners_without_changing_the_wire_shape
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::baseline_grammars_follow_their_owners_without_changing_the_wire_shape --nocapture
+        PASS [   0.012s] (110/420) callisto-model format::changeset::tests::parse_rejects_empty_summary_with_entries
+       START [         ] (111/420) callisto-model format::pre::tests::baseline_validation_uses_original_wire_spelling_after_pep440_fallback
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::baseline_validation_uses_original_wire_spelling_after_pep440_fallback --nocapture
+        PASS [   0.012s] (111/420) callisto-model format::changeset::tests::a_byte_order_mark_and_every_line_ending_style_parse_the_same
+       START [         ] (112/420) callisto-model format::pre::tests::parse_pre_json_rejects_initial_version_that_is_neither_semver_nor_pep440
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::parse_pre_json_rejects_initial_version_that_is_neither_semver_nor_pep440 --nocapture
+        PASS [   0.012s] (112/420) callisto-model format::changeset::tests::duplicate_raw_name_is_an_error
+       START [         ] (113/420) callisto-model format::pre::tests::parse_pre_json_rejects_non_object_json
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::parse_pre_json_rejects_non_object_json --nocapture
+        PASS [   0.011s] (113/420) callisto-model format::changeset::tests::parses_a_single_entry_changeset
+       START [         ] (114/420) callisto-model format::pre::tests::parse_pre_json_rejects_unrecognized_mode_string
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::parse_pre_json_rejects_unrecognized_mode_string --nocapture
+        PASS [   0.016s] (114/420) callisto-model format::changeset::tests::parse_rejects_whitespace_only_summary_with_entries
+       START [         ] (115/420) callisto-model format::pre::tests::pre_json_accepts_pep440_initial_versions
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::pre_json_accepts_pep440_initial_versions --nocapture
+        PASS [   0.011s] (115/420) callisto-model format::changeset::tests::write_rejects_empty_summary_with_entries
+       START [         ] (116/420) callisto-model format::pre::tests::pre_json_round_trips
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::pre_json_round_trips --nocapture
+        PASS [   0.015s] (116/420) callisto-model format::changeset::tests::parses_multiple_entries_mixed_quoted_and_bare
+       START [         ] (117/420) callisto-model format::pre::tests::pre_json_round_trips_pep440_version
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::pre_json_round_trips_pep440_version --nocapture
+        PASS [   0.012s] (117/420) callisto-model format::changeset::tests::write_quotes_names_only_when_necessary
+       START [         ] (118/420) callisto-model format::pre::tests::pre_state_exiting_flips_mode_and_round_trips_as_exit
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::pre_state_exiting_flips_mode_and_round_trips_as_exit --nocapture
+        PASS [   0.011s] (118/420) callisto-model format::changeset::tests::write_accepts_empty_changeset
+       START [         ] (119/420) callisto-model format::pre::tests::write_pre_json_preserving_keeps_bom
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::write_pre_json_preserving_keeps_bom --nocapture
+        PASS [   0.013s] (119/420) callisto-model format::changeset::tests::unclosed_frontmatter_is_an_error
+       START [         ] (120/420) callisto-model format::pre::tests::write_pre_json_preserving_keeps_crlf
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::write_pre_json_preserving_keeps_crlf --nocapture
+        PASS [   0.014s] (120/420) callisto-model format::changeset::tests::round_trip_write_then_parse_reproduces_the_changeset
+       START [         ] (121/420) callisto-model format::pre::tests::write_pre_json_preserving_keeps_tab_indent
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact format::pre::tests::write_pre_json_preserving_keeps_tab_indent --nocapture
+        PASS [   0.012s] (121/420) callisto-model format::changeset::tests::write_rejects_name_containing_a_literal_quote
+       START [         ] (122/420) callisto-model identity::tests::commit_sha_schema_describes_the_normalized_string
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::commit_sha_schema_describes_the_normalized_string --nocapture
+        PASS [   0.014s] (122/420) callisto-model format::changeset::tests::skips_comment_and_blank_lines_in_frontmatter
+       START [         ] (123/420) callisto-model identity::tests::package_id_rejects_leading_hyphen_with_accurate_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::package_id_rejects_leading_hyphen_with_accurate_error --nocapture
+        PASS [   0.013s] (123/420) callisto-model format::changeset::tests::write_always_uses_lf_and_ends_with_trailing_newline
+       START [         ] (124/420) callisto-model identity::tests::package_id_rejects_path_traversal
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::package_id_rejects_path_traversal --nocapture
+        PASS [   0.012s] (124/420) callisto-model format::pre::tests::baseline_rejects_a_version_valid_only_in_a_different_ecosystem
+       START [         ] (125/420) callisto-model identity::tests::package_id_schema_describes_bare_and_qualified_strings
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::package_id_schema_describes_bare_and_qualified_strings --nocapture
+        PASS [   0.012s] (125/420) callisto-model format::pre::tests::parse_pre_json_rejects_initial_version_that_is_neither_semver_nor_pep440
+       START [         ] (126/420) callisto-model identity::tests::parses_package_ids
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::parses_package_ids --nocapture
+        PASS [   0.012s] (126/420) callisto-model format::pre::tests::baseline_validation_uses_original_wire_spelling_after_pep440_fallback
+       START [         ] (127/420) callisto-model identity::tests::parses_valid_commit_sha
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::parses_valid_commit_sha --nocapture
+        PASS [   0.013s] (127/420) callisto-model format::pre::tests::baseline_grammars_follow_their_owners_without_changing_the_wire_shape
+       START [         ] (128/420) callisto-model identity::tests::proptest_package_id_matches_identity
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::proptest_package_id_matches_identity --nocapture
+        PASS [   0.012s] (128/420) callisto-model format::pre::tests::parse_pre_json_rejects_non_object_json
+       START [         ] (129/420) callisto-model identity::tests::proptest_package_id_parse_never_panics
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::proptest_package_id_parse_never_panics --nocapture
+        PASS [   0.016s] (129/420) callisto-model format::changeset::tests::write_rejects_whitespace_only_summary_with_entries
+       START [         ] (130/420) callisto-model identity::tests::test_package_id_matches
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact identity::tests::test_package_id_matches --nocapture
+        PASS [   0.012s] (130/420) callisto-model format::pre::tests::parse_pre_json_rejects_unrecognized_mode_string
+       START [         ] (131/420) callisto-model matrix::tests::empty_matrix_report_serializes_with_no_diagnostics_key
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact matrix::tests::empty_matrix_report_serializes_with_no_diagnostics_key --nocapture
+        PASS [   0.008s] (131/420) callisto-model format::pre::tests::pre_json_accepts_pep440_initial_versions
+       START [         ] (132/420) callisto-model matrix::tests::platform_target_kind_rejects_unknown_dotnet_aot_variant
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact matrix::tests::platform_target_kind_rejects_unknown_dotnet_aot_variant --nocapture
+        PASS [   0.008s] (132/420) callisto-model format::pre::tests::pre_json_round_trips
+       START [         ] (133/420) callisto-model matrix::tests::runtime_ecosystem_rejects_unknown_dotnet_variant
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact matrix::tests::runtime_ecosystem_rejects_unknown_dotnet_variant --nocapture
+        PASS [   0.008s] (133/420) callisto-model format::pre::tests::write_pre_json_preserving_keeps_bom
+       START [         ] (134/420) callisto-model package::tests::is_dual_published_false_with_a_single_canonical_ecosystem
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::is_dual_published_false_with_a_single_canonical_ecosystem --nocapture
+        PASS [   0.009s] (134/420) callisto-model format::pre::tests::pre_json_round_trips_pep440_version
+       START [         ] (135/420) callisto-model package::tests::is_dual_published_true_with_two_distinct_canonical_ecosystems
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::is_dual_published_true_with_two_distinct_canonical_ecosystems --nocapture
+        PASS [   0.010s] (135/420) callisto-model format::pre::tests::pre_state_exiting_flips_mode_and_round_trips_as_exit
+       START [         ] (136/420) callisto-model package::tests::is_release_point_false_when_all_publish_targets_are_none
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::is_release_point_false_when_all_publish_targets_are_none --nocapture
+        PASS [   0.009s] (136/420) callisto-model format::pre::tests::write_pre_json_preserving_keeps_crlf
+        PASS [   0.009s] (137/420) callisto-model identity::tests::package_id_rejects_path_traversal
+       START [         ] (138/420) callisto-model package::tests::lockfiles_filters_to_lockfile_role_only
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::lockfiles_filters_to_lockfile_role_only --nocapture
+       START [         ] (138/420) callisto-model package::tests::is_release_point_true_when_any_publish_target_is_not_none
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::is_release_point_true_when_any_publish_target_is_not_none --nocapture
+        PASS [   0.009s] (138/420) callisto-model identity::tests::package_id_schema_describes_bare_and_qualified_strings
+       START [         ] (139/420) callisto-model package::tests::manifest_decl_new_rejects_lockfile_format_with_non_lockfile_role
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::manifest_decl_new_rejects_lockfile_format_with_non_lockfile_role --nocapture
+        PASS [   0.009s] (139/420) callisto-model identity::tests::package_id_rejects_leading_hyphen_with_accurate_error
+        PASS [   0.009s] (140/420) callisto-model identity::tests::parses_valid_commit_sha
+        PASS [   0.009s] (141/420) callisto-model format::pre::tests::write_pre_json_preserving_keeps_tab_indent
+       START [         ] (142/420) callisto-model package::tests::manifest_format_from_path_reads_recognized_names_and_rejects_unknown
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::manifest_format_from_path_reads_recognized_names_and_rejects_unknown --nocapture
+       START [         ] (142/420) callisto-model package::tests::manifest_decl_new_rejects_platform_role_with_cargo_toml_format
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::manifest_decl_new_rejects_platform_role_with_cargo_toml_format --nocapture
+       START [         ] (142/420) callisto-model package::tests::manifest_format_file_name_and_is_writable_cover_every_variant
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::manifest_format_file_name_and_is_writable_cover_every_variant --nocapture
+        PASS [   0.009s] (142/420) callisto-model identity::tests::commit_sha_schema_describes_the_normalized_string
+       START [         ] (143/420) callisto-model package::tests::mixed_grammars_are_listed_in_a_stable_order
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::mixed_grammars_are_listed_in_a_stable_order --nocapture
+        PASS [   0.010s] (143/420) callisto-model identity::tests::parses_package_ids
+       START [         ] (144/420) callisto-model package::tests::platform_manifests_filters_to_platform_role_only
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::platform_manifests_filters_to_platform_role_only --nocapture
+        PASS [   0.010s] (144/420) callisto-model identity::tests::test_package_id_matches
+       START [         ] (145/420) callisto-model package::tests::validates_manifest_role_and_format
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::validates_manifest_role_and_format --nocapture
+        PASS [   0.011s] (145/420) callisto-model matrix::tests::empty_matrix_report_serializes_with_no_diagnostics_key
+       START [         ] (146/420) callisto-model package::tests::version_grammar_errors_on_mixed_grammars_across_canonical_manifests
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::version_grammar_errors_on_mixed_grammars_across_canonical_manifests --nocapture
+        PASS [   0.010s] (146/420) callisto-model matrix::tests::runtime_ecosystem_rejects_unknown_dotnet_variant
+       START [         ] (147/420) callisto-model package::tests::version_grammar_errors_with_no_canonical_manifest
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::version_grammar_errors_with_no_canonical_manifest --nocapture
+        PASS [   0.007s] (147/420) callisto-model package::tests::lockfiles_filters_to_lockfile_role_only
+       START [         ] (148/420) callisto-model package::tests::version_grammar_returns_the_single_canonical_ecosystems_grammar
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact package::tests::version_grammar_returns_the_single_canonical_ecosystems_grammar --nocapture
+        PASS [   0.011s] (148/420) callisto-model matrix::tests::platform_target_kind_rejects_unknown_dotnet_aot_variant
+       START [         ] (149/420) callisto-model path::tests::normalizes_relative_paths_lexically
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact path::tests::normalizes_relative_paths_lexically --nocapture
+        PASS [   0.010s] (149/420) callisto-model package::tests::is_dual_published_false_with_a_single_canonical_ecosystem
+       START [         ] (150/420) callisto-model path::tests::preserves_literal_backslash_in_posix_filename
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact path::tests::preserves_literal_backslash_in_posix_filename --nocapture
+        PASS [   0.010s] (150/420) callisto-model package::tests::is_dual_published_true_with_two_distinct_canonical_ecosystems
+       START [         ] (151/420) callisto-model path::tests::rejects_absolute_path
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact path::tests::rejects_absolute_path --nocapture
+        PASS [   0.008s] (151/420) callisto-model package::tests::is_release_point_false_when_all_publish_targets_are_none
+       START [         ] (152/420) callisto-model path::tests::rejects_path_traversal_outside_workspace
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact path::tests::rejects_path_traversal_outside_workspace --nocapture
+        PASS [   0.008s] (152/420) callisto-model package::tests::is_release_point_true_when_any_publish_target_is_not_none
+       START [         ] (153/420) callisto-model permit::tests::dry_run_yields_no_permit
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact permit::tests::dry_run_yields_no_permit --nocapture
+        PASS [   0.010s] (153/420) callisto-model package::tests::mixed_grammars_are_listed_in_a_stable_order
+       START [         ] (154/420) callisto-model permit::tests::real_run_yields_a_permit
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact permit::tests::real_run_yields_a_permit --nocapture
+        PASS [   0.010s] (154/420) callisto-model package::tests::manifest_decl_new_rejects_lockfile_format_with_non_lockfile_role
+       START [         ] (155/420) callisto-model registry::tests::a_secret_that_contains_another_is_redacted_whole_in_either_order
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::a_secret_that_contains_another_is_redacted_whole_in_either_order --nocapture
+        PASS [   0.010s] (155/420) callisto-model package::tests::manifest_decl_new_rejects_platform_role_with_cargo_toml_format
+       START [         ] (156/420) callisto-model registry::tests::a_variable_named_like_a_secret_has_its_value_redacted
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::a_variable_named_like_a_secret_has_its_value_redacted --nocapture
+        PASS [   0.010s] (156/420) callisto-model package::tests::manifest_format_from_path_reads_recognized_names_and_rejects_unknown
+       START [         ] (157/420) callisto-model registry::tests::conservatively_redacts_a_bare_at_sign_after_a_path_segment_too
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::conservatively_redacts_a_bare_at_sign_after_a_path_segment_too --nocapture
+        PASS [   0.010s] (157/420) callisto-model package::tests::manifest_format_file_name_and_is_writable_cover_every_variant
+       START [         ] (158/420) callisto-model registry::tests::does_not_touch_a_url_with_no_userinfo
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::does_not_touch_a_url_with_no_userinfo --nocapture
+        PASS [   0.009s] (158/420) callisto-model package::tests::platform_manifests_filters_to_platform_role_only
+       START [         ] (159/420) callisto-model registry::tests::empty_string_secret_in_the_list_does_not_corrupt_output
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::empty_string_secret_in_the_list_does_not_corrupt_output --nocapture
+        PASS [   0.020s] (159/420) callisto-model identity::tests::proptest_package_id_matches_identity
+       START [         ] (160/420) callisto-model registry::tests::known_credential_env_values_ignores_non_secret_credential_variables
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::known_credential_env_values_ignores_non_secret_credential_variables --nocapture
+        PASS [   0.008s] (160/420) callisto-model package::tests::version_grammar_errors_on_mixed_grammars_across_canonical_manifests
+       START [         ] (161/420) callisto-model registry::tests::known_credential_env_values_matches_every_secret_the_publish_flow_reads
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::known_credential_env_values_matches_every_secret_the_publish_flow_reads --nocapture
+        PASS [   0.010s] (161/420) callisto-model package::tests::validates_manifest_role_and_format
+       START [         ] (162/420) callisto-model registry::tests::known_credential_env_values_matches_fixed_and_dynamic_names
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::known_credential_env_values_matches_fixed_and_dynamic_names --nocapture
+        PASS [   0.008s] (162/420) callisto-model package::tests::version_grammar_errors_with_no_canonical_manifest
+       START [         ] (163/420) callisto-model registry::tests::known_credential_env_values_matches_github_token_names
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::known_credential_env_values_matches_github_token_names --nocapture
+        PASS [   0.008s] (163/420) callisto-model package::tests::version_grammar_returns_the_single_canonical_ecosystems_grammar
+        PASS [   0.041s] (164/420) callisto-model format::changeset::tests::proptest_changeset_roundtrip
+       START [         ] (165/420) callisto-model registry::tests::known_credential_env_values_skips_empty_values
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::known_credential_env_values_skips_empty_values --nocapture
+       START [         ] (165/420) callisto-model registry::tests::known_credential_env_values_matches_node_auth_token
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::known_credential_env_values_matches_node_auth_token --nocapture
+        PASS [   0.008s] (165/420) callisto-model path::tests::preserves_literal_backslash_in_posix_filename
+       START [         ] (166/420) callisto-model registry::tests::leaves_text_unchanged_when_no_secrets_match
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::leaves_text_unchanged_when_no_secrets_match --nocapture
+        PASS [   0.009s] (166/420) callisto-model path::tests::normalizes_relative_paths_lexically
+       START [         ] (167/420) callisto-model registry::tests::leaves_words_that_only_resemble_a_token_prefix
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::leaves_words_that_only_resemble_a_token_prefix --nocapture
+        PASS [   0.008s] (167/420) callisto-model path::tests::rejects_path_traversal_outside_workspace
+       START [         ] (168/420) callisto-model registry::tests::redacts_a_bearer_credential_but_not_prose_after_the_word
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::redacts_a_bearer_credential_but_not_prose_after_the_word --nocapture
+        PASS [   0.009s] (168/420) callisto-model path::tests::rejects_absolute_path
+       START [         ] (169/420) callisto-model registry::tests::redacts_a_known_secret_value_from_text
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::redacts_a_known_secret_value_from_text --nocapture
+        PASS [   0.010s] (169/420) callisto-model permit::tests::dry_run_yields_no_permit
+       START [         ] (170/420) callisto-model registry::tests::redacts_a_prefixed_token_that_is_in_no_known_variable
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::redacts_a_prefixed_token_that_is_in_no_known_variable --nocapture
+        PASS [   0.009s] (170/420) callisto-model permit::tests::real_run_yields_a_permit
+       START [         ] (171/420) callisto-model registry::tests::redacts_an_npmrc_credential_value_but_keeps_an_interpolation_placeholder
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::redacts_an_npmrc_credential_value_but_keeps_an_interpolation_placeholder --nocapture
+        PASS [   0.027s] (171/420) callisto-model identity::tests::proptest_package_id_parse_never_panics
+       START [         ] (172/420) callisto-model registry::tests::redacts_multiple_occurrences_of_the_same_secret
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::redacts_multiple_occurrences_of_the_same_secret --nocapture
+        PASS [   0.008s] (172/420) callisto-model registry::tests::empty_string_secret_in_the_list_does_not_corrupt_output
+       START [         ] (173/420) callisto-model registry::tests::redacts_url_userinfo_even_when_it_matches_no_known_secret
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::redacts_url_userinfo_even_when_it_matches_no_known_secret --nocapture
+        PASS [   0.009s] (173/420) callisto-model registry::tests::does_not_touch_a_url_with_no_userinfo
+       START [         ] (174/420) callisto-model registry::tests::redacts_userinfo_when_the_password_itself_contains_a_slash
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::redacts_userinfo_when_the_password_itself_contains_a_slash --nocapture
+        PASS [   0.010s] (174/420) callisto-model registry::tests::conservatively_redacts_a_bare_at_sign_after_a_path_segment_too
+       START [         ] (175/420) callisto-model registry::tests::redacts_userinfo_when_the_password_itself_contains_an_at_sign
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact registry::tests::redacts_userinfo_when_the_password_itself_contains_an_at_sign --nocapture
+        PASS [   0.010s] (175/420) callisto-model registry::tests::a_variable_named_like_a_secret_has_its_value_redacted
+       START [         ] (176/420) callisto-model release::artifact::tests::a_manifest_without_python_sets_serializes_without_the_field
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::a_manifest_without_python_sets_serializes_without_the_field --nocapture
+        PASS [   0.010s] (176/420) callisto-model registry::tests::known_credential_env_values_ignores_non_secret_credential_variables
+       START [         ] (177/420) callisto-model release::artifact::tests::a_python_only_intent_accepts_a_manifest_digest_in_its_envelope
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::a_python_only_intent_accepts_a_manifest_digest_in_its_envelope --nocapture
+        PASS [   0.011s] (177/420) callisto-model registry::tests::a_secret_that_contains_another_is_redacted_whole_in_either_order
+       START [         ] (178/420) callisto-model release::artifact::tests::a_sealed_python_set_is_rejected_when_malformed
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::a_sealed_python_set_is_rejected_when_malformed --nocapture
+        PASS [   0.009s] (178/420) callisto-model registry::tests::known_credential_env_values_matches_every_secret_the_publish_flow_reads
+       START [         ] (179/420) callisto-model release::artifact::tests::artifact_manifest_rejects_attestation_source_commit_swapped_for_release_source
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::artifact_manifest_rejects_attestation_source_commit_swapped_for_release_source --nocapture
+        PASS [   0.009s] (179/420) callisto-model registry::tests::known_credential_env_values_matches_fixed_and_dynamic_names
+       START [         ] (180/420) callisto-model release::artifact::tests::artifact_manifest_requires_exact_slot_digest_and_source_binding
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::artifact_manifest_requires_exact_slot_digest_and_source_binding --nocapture
+        PASS [   0.008s] (180/420) callisto-model registry::tests::known_credential_env_values_matches_github_token_names
+       START [         ] (181/420) callisto-model release::artifact::tests::artifact_manifest_source_commit_is_release_source_not_orchestration_revision
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::artifact_manifest_source_commit_is_release_source_not_orchestration_revision --nocapture
+        PASS [   0.009s] (181/420) callisto-model registry::tests::leaves_text_unchanged_when_no_secrets_match
+       START [         ] (182/420) callisto-model release::artifact::tests::artifact_slot_components_reject_dot_and_dot_dot
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::artifact_slot_components_reject_dot_and_dot_dot --nocapture
+        PASS [   0.009s] (182/420) callisto-model registry::tests::known_credential_env_values_skips_empty_values
+       START [         ] (183/420) callisto-model release::artifact::tests::artifact_slot_ids_differing_only_by_version_grammar_stay_distinct_under_ord
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::artifact_slot_ids_differing_only_by_version_grammar_stay_distinct_under_ord --nocapture
+        PASS [   0.009s] (183/420) callisto-model registry::tests::known_credential_env_values_matches_node_auth_token
+       START [         ] (184/420) callisto-model release::artifact::tests::artifact_upload_ids_differing_only_by_attestation_policy_stay_distinct_under_ord
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::artifact_upload_ids_differing_only_by_attestation_policy_stay_distinct_under_ord --nocapture
+        PASS [   0.009s] (184/420) callisto-model registry::tests::redacts_a_bearer_credential_but_not_prose_after_the_word
+       START [         ] (185/420) callisto-model release::artifact::tests::contextual_release_decoders_reject_an_unimplemented_version_grammar
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::contextual_release_decoders_reject_an_unimplemented_version_grammar --nocapture
+        PASS [   0.009s] (185/420) callisto-model registry::tests::leaves_words_that_only_resemble_a_token_prefix
+       START [         ] (186/420) callisto-model release::artifact::tests::contextual_release_decoders_reject_cross_grammar_and_non_string_versions
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::contextual_release_decoders_reject_cross_grammar_and_non_string_versions --nocapture
+        PASS [   0.009s] (186/420) callisto-model registry::tests::redacts_a_known_secret_value_from_text
+       START [         ] (187/420) callisto-model release::artifact::tests::contextual_release_wire_keeps_unknown_and_duplicate_field_rejection
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::contextual_release_wire_keeps_unknown_and_duplicate_field_rejection --nocapture
+        PASS [   0.009s] (187/420) callisto-model registry::tests::redacts_a_prefixed_token_that_is_in_no_known_variable
+       START [         ] (188/420) callisto-model release::artifact::tests::durable_native_artifact_manifests_preserve_slots_and_exact_digest_bytes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::durable_native_artifact_manifests_preserve_slots_and_exact_digest_bytes --nocapture
+        PASS [   0.009s] (188/420) callisto-model registry::tests::redacts_an_npmrc_credential_value_but_keeps_an_interpolation_placeholder
+       START [         ] (189/420) callisto-model release::artifact::tests::sealed_python_sets_must_cover_exactly_the_intent_python_publishes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::sealed_python_sets_must_cover_exactly_the_intent_python_publishes --nocapture
+        PASS [   0.009s] (189/420) callisto-model registry::tests::redacts_multiple_occurrences_of_the_same_secret
+       START [         ] (190/420) callisto-model release::artifact::tests::sealed_python_sets_round_trip_sorted_and_bind_to_the_intent
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::artifact::tests::sealed_python_sets_round_trip_sorted_and_bind_to_the_intent --nocapture
+        PASS [   0.008s] (190/420) callisto-model registry::tests::redacts_userinfo_when_the_password_itself_contains_an_at_sign
+       START [         ] (191/420) callisto-model release::decision::tests::committed_v1_decision_file_still_reads_and_writes_as_v1
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::committed_v1_decision_file_still_reads_and_writes_as_v1 --nocapture
+        PASS [   0.009s] (191/420) callisto-model registry::tests::redacts_userinfo_when_the_password_itself_contains_a_slash
+       START [         ] (192/420) callisto-model release::decision::tests::consumed_changesets_are_sorted_and_part_of_the_digest
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::consumed_changesets_are_sorted_and_part_of_the_digest --nocapture
+        PASS [   0.011s] (192/420) callisto-model registry::tests::redacts_url_userinfo_even_when_it_matches_no_known_secret
+       START [         ] (193/420) callisto-model release::decision::tests::decision_accepts_agreeing_target_versions_within_a_fixed_group
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::decision_accepts_agreeing_target_versions_within_a_fixed_group --nocapture
+        PASS [   0.011s] (193/420) callisto-model release::artifact::tests::a_manifest_without_python_sets_serializes_without_the_field
+       START [         ] (194/420) callisto-model release::decision::tests::decision_deserialization_rejects_divergent_group_targets_even_with_a_self_consistent_digest
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::decision_deserialization_rejects_divergent_group_targets_even_with_a_self_consistent_digest --nocapture
+        PASS [   0.010s] (194/420) callisto-model release::artifact::tests::a_sealed_python_set_is_rejected_when_malformed
+       START [         ] (195/420) callisto-model release::decision::tests::decision_rejects_divergent_target_versions_within_a_fixed_group
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::decision_rejects_divergent_target_versions_within_a_fixed_group --nocapture
+        PASS [   0.012s] (195/420) callisto-model release::artifact::tests::a_python_only_intent_accepts_a_manifest_digest_in_its_envelope
+       START [         ] (196/420) callisto-model release::decision::tests::decision_rejects_divergent_target_versions_within_a_linked_group
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::decision_rejects_divergent_target_versions_within_a_linked_group --nocapture
+        PASS [   0.008s] (196/420) callisto-model release::artifact::tests::artifact_slot_ids_differing_only_by_version_grammar_stay_distinct_under_ord
+       START [         ] (197/420) callisto-model release::decision::tests::decision_schema_four_is_unsupported
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::decision_schema_four_is_unsupported --nocapture
+        PASS [   0.009s] (197/420) callisto-model release::artifact::tests::artifact_manifest_requires_exact_slot_digest_and_source_binding
+       START [         ] (198/420) callisto-model release::decision::tests::durable_decisions_decode_native_versions_in_both_readable_schemas
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::durable_decisions_decode_native_versions_in_both_readable_schemas --nocapture
+        PASS [   0.010s] (198/420) callisto-model release::artifact::tests::artifact_manifest_rejects_attestation_source_commit_swapped_for_release_source
+       START [         ] (199/420) callisto-model release::decision::tests::inclusion_reason_variant_fields_serialize_as_camel_case
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::decision::tests::inclusion_reason_variant_fields_serialize_as_camel_case --nocapture
+        PASS [   0.010s] (199/420) callisto-model release::artifact::tests::artifact_manifest_source_commit_is_release_source_not_orchestration_revision
+       START [         ] (200/420) callisto-model release::digest::tests::artifact_digest_hashes_exact_bytes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::digest::tests::artifact_digest_hashes_exact_bytes --nocapture
+        PASS [   0.009s] (200/420) callisto-model release::artifact::tests::artifact_upload_ids_differing_only_by_attestation_policy_stay_distinct_under_ord
+       START [         ] (201/420) callisto-model release::digest::tests::digests_are_distinct_validated_lowercase_hex_newtypes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::digest::tests::digests_are_distinct_validated_lowercase_hex_newtypes --nocapture
+        PASS [   0.009s] (201/420) callisto-model release::artifact::tests::contextual_release_decoders_reject_an_unimplemented_version_grammar
+       START [         ] (202/420) callisto-model release::digest::tests::release_digest_schemas_keep_distinct_names_for_string_values
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::digest::tests::release_digest_schemas_keep_distinct_names_for_string_values --nocapture
+        PASS [   0.012s] (202/420) callisto-model release::artifact::tests::artifact_slot_components_reject_dot_and_dot_dot
+       START [         ] (203/420) callisto-model release::digest::tests::string_leaf_definitions_stay_distinct_in_a_shared_schema
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::digest::tests::string_leaf_definitions_stay_distinct_in_a_shared_schema --nocapture
+        PASS [   0.010s] (203/420) callisto-model release::artifact::tests::durable_native_artifact_manifests_preserve_slots_and_exact_digest_bytes
+       START [         ] (204/420) callisto-model release::digest::tests::transcript_domain_separation_prevents_decision_intent_and_snapshot_collisions
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::digest::tests::transcript_domain_separation_prevents_decision_intent_and_snapshot_collisions --nocapture
+        PASS [   0.010s] (204/420) callisto-model release::artifact::tests::contextual_release_wire_keeps_unknown_and_duplicate_field_rejection
+       START [         ] (205/420) callisto-model release::digest::tests::transcript_has_a_fixed_sha256_vector
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::digest::tests::transcript_has_a_fixed_sha256_vector --nocapture
+        PASS [   0.011s] (205/420) callisto-model release::artifact::tests::contextual_release_decoders_reject_cross_grammar_and_non_string_versions
+        PASS [   0.009s] (206/420) callisto-model release::artifact::tests::sealed_python_sets_round_trip_sorted_and_bind_to_the_intent
+       START [         ] (207/420) callisto-model release::execution::tests::apply_rejects_success_evidence_of_another_role
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::execution::tests::apply_rejects_success_evidence_of_another_role --nocapture
+       START [         ] (207/420) callisto-model release::digest::tests::transcript_length_and_field_boundaries_affect_the_digest
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::digest::tests::transcript_length_and_field_boundaries_affect_the_digest --nocapture
+        PASS [   0.010s] (207/420) callisto-model release::artifact::tests::sealed_python_sets_must_cover_exactly_the_intent_python_publishes
+       START [         ] (208/420) callisto-model release::execution::tests::durable_native_receipts_preserve_bound_registry_evidence_and_roster
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::execution::tests::durable_native_receipts_preserve_bound_registry_evidence_and_roster --nocapture
+        PASS [   0.009s] (208/420) callisto-model release::decision::tests::committed_v1_decision_file_still_reads_and_writes_as_v1
+       START [         ] (209/420) callisto-model release::execution::tests::native_receipts_reject_tampered_evidence_and_unsupported_schema
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::execution::tests::native_receipts_reject_tampered_evidence_and_unsupported_schema --nocapture
+        PASS [   0.009s] (209/420) callisto-model release::decision::tests::consumed_changesets_are_sorted_and_part_of_the_digest
+       START [         ] (210/420) callisto-model release::execution::tests::receipt_is_bound_to_intent_and_requires_terminal_outcomes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::execution::tests::receipt_is_bound_to_intent_and_requires_terminal_outcomes --nocapture
+        PASS [   0.010s] (210/420) callisto-model release::decision::tests::decision_accepts_agreeing_target_versions_within_a_fixed_group
+       START [         ] (211/420) callisto-model release::execution::tests::receipt_wire_rejects_unknown_schema
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::execution::tests::receipt_wire_rejects_unknown_schema --nocapture
+        PASS [   0.010s] (211/420) callisto-model release::decision::tests::decision_rejects_divergent_target_versions_within_a_fixed_group
+       START [         ] (212/420) callisto-model release::execution::tests::release_run_envelope_wire_fails_closed
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::execution::tests::release_run_envelope_wire_fails_closed --nocapture
+        PASS [   0.008s] (212/420) callisto-model release::decision::tests::inclusion_reason_variant_fields_serialize_as_camel_case
+       START [         ] (213/420) callisto-model release::execution::tests::state_and_receipt_require_exact_intent_digest_and_roster
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::execution::tests::state_and_receipt_require_exact_intent_digest_and_roster --nocapture
+        PASS [   0.011s] (213/420) callisto-model release::decision::tests::decision_deserialization_rejects_divergent_group_targets_even_with_a_self_consistent_digest
+       START [         ] (214/420) callisto-model release::github::tests::github_repository_parses_valid_owner_repo_and_renders_slug
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::github::tests::github_repository_parses_valid_owner_repo_and_renders_slug --nocapture
+        PASS [   0.008s] (214/420) callisto-model release::decision::tests::decision_schema_four_is_unsupported
+       START [         ] (215/420) callisto-model release::github::tests::github_repository_rejects_embedded_whitespace_extra_parts_and_leading_trailing_hyphen
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::github::tests::github_repository_rejects_embedded_whitespace_extra_parts_and_leading_trailing_hyphen --nocapture
+        PASS [   0.009s] (215/420) callisto-model release::decision::tests::decision_rejects_divergent_target_versions_within_a_linked_group
+       START [         ] (216/420) callisto-model release::github::tests::github_repository_schema_describes_the_normalized_slug
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::github::tests::github_repository_schema_describes_the_normalized_slug --nocapture
+        PASS [   0.009s] (216/420) callisto-model release::digest::tests::artifact_digest_hashes_exact_bytes
+       START [         ] (217/420) callisto-model release::github::tests::github_repository_serializes_and_deserializes_as_its_slug_string
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::github::tests::github_repository_serializes_and_deserializes_as_its_slug_string --nocapture
+        PASS [   0.009s] (217/420) callisto-model release::digest::tests::digests_are_distinct_validated_lowercase_hex_newtypes
+       START [         ] (218/420) callisto-model release::intent::tests::a_cycle_names_an_operation_on_it_and_a_long_chain_does_not_overflow_the_stack
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::a_cycle_names_an_operation_on_it_and_a_long_chain_does_not_overflow_the_stack --nocapture
+        PASS [   0.007s] (218/420) callisto-model release::digest::tests::string_leaf_definitions_stay_distinct_in_a_shared_schema
+       START [         ] (219/420) callisto-model release::intent::tests::an_unknown_self_or_repeated_operation_is_named
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::an_unknown_self_or_repeated_operation_is_named --nocapture
+        PASS [   0.007s] (219/420) callisto-model release::digest::tests::transcript_has_a_fixed_sha256_vector
+       START [         ] (220/420) callisto-model release::intent::tests::durable_intent_wire_rejects_forged_digest_unknown_fields_and_invalid_dag
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::durable_intent_wire_rejects_forged_digest_unknown_fields_and_invalid_dag --nocapture
+        PASS [   0.009s] (220/420) callisto-model release::digest::tests::release_digest_schemas_keep_distinct_names_for_string_values
+       START [         ] (221/420) callisto-model release::intent::tests::durable_native_intents_preserve_operation_prerequisites_slots_and_digest
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::durable_native_intents_preserve_operation_prerequisites_slots_and_digest --nocapture
+        PASS [   0.008s] (221/420) callisto-model release::digest::tests::transcript_domain_separation_prevents_decision_intent_and_snapshot_collisions
+       START [         ] (222/420) callisto-model release::intent::tests::durable_prerequisites_decode_with_their_own_package_ecosystem
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::durable_prerequisites_decode_with_their_own_package_ecosystem --nocapture
+        PASS [   0.008s] (222/420) callisto-model release::digest::tests::transcript_length_and_field_boundaries_affect_the_digest
+       START [         ] (223/420) callisto-model release::intent::tests::native_decision_and_intent_validation_stays_strict
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::native_decision_and_intent_validation_stays_strict --nocapture
+        PASS [   0.012s] (223/420) callisto-model release::decision::tests::durable_decisions_decode_native_versions_in_both_readable_schemas
+       START [         ] (224/420) callisto-model release::intent::tests::registry_binding_is_credential_free_and_part_of_operation_identity
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::registry_binding_is_credential_free_and_part_of_operation_identity --nocapture
+        PASS [   0.009s] (224/420) callisto-model release::execution::tests::apply_rejects_success_evidence_of_another_role
+       START [         ] (225/420) callisto-model release::intent::tests::release_intent_rejects_noncanonical_duplicate_and_cyclic_dags
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::release_intent_rejects_noncanonical_duplicate_and_cyclic_dags --nocapture
+        PASS [   0.009s] (225/420) callisto-model release::execution::tests::receipt_is_bound_to_intent_and_requires_terminal_outcomes
+       START [         ] (226/420) callisto-model release::intent::tests::the_shared_order_matches_the_previous_implementation
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::intent::tests::the_shared_order_matches_the_previous_implementation --nocapture
+        PASS [   0.011s] (226/420) callisto-model release::execution::tests::native_receipts_reject_tampered_evidence_and_unsupported_schema
+       START [         ] (227/420) callisto-model release::operation::tests::an_operation_id_reads_as_what_it_does_to_which_version
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::operation::tests::an_operation_id_reads_as_what_it_does_to_which_version --nocapture
+        PASS [   0.012s] (227/420) callisto-model release::execution::tests::durable_native_receipts_preserve_bound_registry_evidence_and_roster
+       START [         ] (228/420) callisto-model release::operation::tests::operation_ids_differing_only_by_version_grammar_stay_distinct_under_ord
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::operation::tests::operation_ids_differing_only_by_version_grammar_stay_distinct_under_ord --nocapture
+        PASS [   0.009s] (228/420) callisto-model release::execution::tests::receipt_wire_rejects_unknown_schema
+       START [         ] (229/420) callisto-model release::operation::tests::operations_that_differ_only_by_registry_slot_or_platform_read_differently
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::operation::tests::operations_that_differ_only_by_registry_slot_or_platform_read_differently --nocapture
+        PASS [   0.010s] (229/420) callisto-model release::execution::tests::release_run_envelope_wire_fails_closed
+       START [         ] (230/420) callisto-model release::operation::tests::platform_publish_round_trips_under_its_owner_and_rejects_unsafe_platforms
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::operation::tests::platform_publish_round_trips_under_its_owner_and_rejects_unsafe_platforms --nocapture
+        PASS [   0.008s] (230/420) callisto-model release::github::tests::github_repository_serializes_and_deserializes_as_its_slug_string
+       START [         ] (231/420) callisto-model release::operation::tests::release_operation_orders_exactly_and_rejects_invalid_prerequisites
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::operation::tests::release_operation_orders_exactly_and_rejects_invalid_prerequisites --nocapture
+        PASS [   0.009s] (231/420) callisto-model release::github::tests::github_repository_schema_describes_the_normalized_slug
+       START [         ] (232/420) callisto-model release::package_id::tests::release_package_id_deserialization_rejects_a_bare_identity
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::package_id::tests::release_package_id_deserialization_rejects_a_bare_identity --nocapture
+        PASS [   0.010s] (232/420) callisto-model release::execution::tests::state_and_receipt_require_exact_intent_digest_and_roster
+       START [         ] (233/420) callisto-model release::package_id::tests::release_package_id_requires_a_qualified_canonical_identity
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::package_id::tests::release_package_id_requires_a_qualified_canonical_identity --nocapture
+        PASS [   0.011s] (233/420) callisto-model release::github::tests::github_repository_rejects_embedded_whitespace_extra_parts_and_leading_trailing_hyphen
+       START [         ] (234/420) callisto-model release::package_id::tests::release_package_id_schema_describes_canonical_strings
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::package_id::tests::release_package_id_schema_describes_canonical_strings --nocapture
+        PASS [   0.012s] (234/420) callisto-model release::github::tests::github_repository_parses_valid_owner_repo_and_renders_slug
+       START [         ] (235/420) callisto-model release::package_id::tests::release_package_ids_do_not_conflate_ecosystems
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::package_id::tests::release_package_ids_do_not_conflate_ecosystems --nocapture
+        PASS [   0.011s] (235/420) callisto-model release::intent::tests::durable_intent_wire_rejects_forged_digest_unknown_fields_and_invalid_dag
+       START [         ] (236/420) callisto-model release::package_id::tests::release_package_names_accept_each_ecosystem_grammar
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::package_id::tests::release_package_names_accept_each_ecosystem_grammar --nocapture
+        PASS [   0.009s] (236/420) callisto-model release::intent::tests::registry_binding_is_credential_free_and_part_of_operation_identity
+       START [         ] (237/420) callisto-model release::package_id::tests::release_package_names_reject_argv_and_url_hazards
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::package_id::tests::release_package_names_reject_argv_and_url_hazards --nocapture
+        PASS [   0.011s] (237/420) callisto-model release::intent::tests::an_unknown_self_or_repeated_operation_is_named
+       START [         ] (238/420) callisto-model release::report::tests::release_plan_report_flattens_intent_and_omits_empty_diagnostics
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release::report::tests::release_plan_report_flattens_intent_and_omits_empty_diagnostics --nocapture
+        PASS [   0.011s] (238/420) callisto-model release::intent::tests::durable_prerequisites_decode_with_their_own_package_ecosystem
+       START [         ] (239/420) callisto-model release_observation::tests::bound_observation_wire_rejects_wrong_versions_cross_grammar_and_unknown_fields
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_observation::tests::bound_observation_wire_rejects_wrong_versions_cross_grammar_and_unknown_fields --nocapture
+        PASS [   0.010s] (239/420) callisto-model release::intent::tests::release_intent_rejects_noncanonical_duplicate_and_cyclic_dags
+       START [         ] (240/420) callisto-model release_observation::tests::bound_registry_observations_restore_native_versions_and_optional_evidence
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_observation::tests::bound_registry_observations_restore_native_versions_and_optional_evidence --nocapture
+        PASS [   0.013s] (240/420) callisto-model release::intent::tests::native_decision_and_intent_validation_stays_strict
+       START [         ] (241/420) callisto-model release_observation::tests::contextual_observation_wire_preserves_other_states_and_role_checks
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_observation::tests::contextual_observation_wire_preserves_other_states_and_role_checks --nocapture
+        PASS [   0.009s] (241/420) callisto-model release::operation::tests::an_operation_id_reads_as_what_it_does_to_which_version
+       START [         ] (242/420) callisto-model release_observation::tests::typed_registry_observations_reject_different_versions_and_grammars
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_observation::tests::typed_registry_observations_reject_different_versions_and_grammars --nocapture
+        PASS [   0.014s] (242/420) callisto-model release::intent::tests::durable_native_intents_preserve_operation_prerequisites_slots_and_digest
+       START [         ] (243/420) callisto-model release_pr::tests::action_v2_fields_serialize_as_camel_case
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::action_v2_fields_serialize_as_camel_case --nocapture
+        PASS [   0.009s] (243/420) callisto-model release::operation::tests::operation_ids_differing_only_by_version_grammar_stay_distinct_under_ord
+       START [         ] (244/420) callisto-model release_pr::tests::commit_plan_base64_round_trips_crlf_and_binary_bytes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::commit_plan_base64_round_trips_crlf_and_binary_bytes --nocapture
+        PASS [   0.010s] (244/420) callisto-model release::operation::tests::platform_publish_round_trips_under_its_owner_and_rejects_unsafe_platforms
+       START [         ] (245/420) callisto-model release_pr::tests::commit_plan_rejects_empty_change_set
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::commit_plan_rejects_empty_change_set --nocapture
+        PASS [   0.012s] (245/420) callisto-model release::operation::tests::operations_that_differ_only_by_registry_slot_or_platform_read_differently
+       START [         ] (246/420) callisto-model release_pr::tests::commit_plan_rejects_non_regular_modes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::commit_plan_rejects_non_regular_modes --nocapture
+        PASS [   0.011s] (246/420) callisto-model release::operation::tests::release_operation_orders_exactly_and_rejects_invalid_prerequisites
+       START [         ] (247/420) callisto-model release_pr::tests::commit_plan_rejects_oversized_payload
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::commit_plan_rejects_oversized_payload --nocapture
+        PASS [   0.010s] (247/420) callisto-model release::package_id::tests::release_package_id_requires_a_qualified_canonical_identity
+       START [         ] (248/420) callisto-model release_pr::tests::commit_plan_rejects_rename_copy_type_change_and_unmerged
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::commit_plan_rejects_rename_copy_type_change_and_unmerged --nocapture
+        PASS [   0.011s] (248/420) callisto-model release::package_id::tests::release_package_id_deserialization_rejects_a_bare_identity
+       START [         ] (249/420) callisto-model release_pr::tests::commit_plan_rejects_workflow_and_unsafe_paths
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::commit_plan_rejects_workflow_and_unsafe_paths --nocapture
+        PASS [   0.012s] (249/420) callisto-model release::package_id::tests::release_package_ids_do_not_conflate_ecosystems
+       START [         ] (250/420) callisto-model release_pr::tests::commit_plan_serializes_camel_case_and_schema_version
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::commit_plan_serializes_camel_case_and_schema_version --nocapture
+        PASS [   0.012s] (250/420) callisto-model release::package_id::tests::release_package_names_accept_each_ecosystem_grammar
+       START [         ] (251/420) callisto-model release_pr::tests::config_from_wire_preserves_invalid_branch_code
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::config_from_wire_preserves_invalid_branch_code --nocapture
+        PASS [   0.012s] (251/420) callisto-model release::package_id::tests::release_package_names_reject_argv_and_url_hazards
+       START [         ] (252/420) callisto-model release_pr::tests::decision_from_wire_validates_nested_snapshot
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::decision_from_wire_validates_nested_snapshot --nocapture
+        PASS [   0.014s] (252/420) callisto-model release::package_id::tests::release_package_id_schema_describes_canonical_strings
+       START [         ] (253/420) callisto-model release_pr::tests::derive_rejects_pull_request_on_staging_branch
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::derive_rejects_pull_request_on_staging_branch --nocapture
+        PASS [   0.009s] (253/420) callisto-model release_observation::tests::typed_registry_observations_reject_different_versions_and_grammars
+       START [         ] (254/420) callisto-model release_pr::tests::derives_create_when_no_managed_pr_exists
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::derives_create_when_no_managed_pr_exists --nocapture
+        PASS [   0.012s] (254/420) callisto-model release::report::tests::release_plan_report_flattens_intent_and_omits_empty_diagnostics
+       START [         ] (255/420) callisto-model release_pr::tests::derives_update_with_staging_branch_and_expected_head_for_canonical_or_replacement_pr
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::derives_update_with_staging_branch_and_expected_head_for_canonical_or_replacement_pr --nocapture
+        PASS [   0.012s] (255/420) callisto-model release_observation::tests::bound_observation_wire_rejects_wrong_versions_cross_grammar_and_unknown_fields
+       START [         ] (256/420) callisto-model release_pr::tests::deserialization_rejects_unknown_fields_and_schema_mismatch
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::deserialization_rejects_unknown_fields_and_schema_mismatch --nocapture
+        PASS [   0.011s] (256/420) callisto-model release_observation::tests::bound_registry_observations_restore_native_versions_and_optional_evidence
+       START [         ] (257/420) callisto-model release_pr::tests::from_wire_reports_unsupported_schema_version
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::from_wire_reports_unsupported_schema_version --nocapture
+        PASS [   0.013s] (257/420) callisto-model release_observation::tests::contextual_observation_wire_preserves_other_states_and_role_checks
+       START [         ] (258/420) callisto-model release_pr::tests::no_pending_changesets_is_noop_after_snapshot_validation
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::no_pending_changesets_is_noop_after_snapshot_validation --nocapture
+        PASS [   0.014s] (258/420) callisto-model release_pr::tests::action_v2_fields_serialize_as_camel_case
+       START [         ] (259/420) callisto-model release_pr::tests::pending_release_is_never_empty_and_keeps_its_packages
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::pending_release_is_never_empty_and_keeps_its_packages --nocapture
+        PASS [   0.010s] (259/420) callisto-model release_pr::tests::commit_plan_rejects_empty_change_set
+       START [         ] (260/420) callisto-model release_pr::tests::rejects_ambiguous_foreign_and_malformed_managed_prs
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::rejects_ambiguous_foreign_and_malformed_managed_prs --nocapture
+        PASS [   0.013s] (260/420) callisto-model release_pr::tests::commit_plan_base64_round_trips_crlf_and_binary_bytes
+       START [         ] (261/420) callisto-model release_pr::tests::snapshot_after_update_accepts_only_the_applied_head_transition
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::snapshot_after_update_accepts_only_the_applied_head_transition --nocapture
+        PASS [   0.010s] (261/420) callisto-model release_pr::tests::commit_plan_rejects_non_regular_modes
+        PASS [   0.009s] (262/420) callisto-model release_pr::tests::commit_plan_rejects_workflow_and_unsafe_paths
+       START [         ] (263/420) callisto-model release_pr::tests::snapshot_from_wire_preserves_duplicate_pull_request_number_code
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::snapshot_from_wire_preserves_duplicate_pull_request_number_code --nocapture
+       START [         ] (263/420) callisto-model release_pr::tests::snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions --nocapture
+        PASS [   0.010s] (263/420) callisto-model release_pr::tests::commit_plan_rejects_rename_copy_type_change_and_unmerged
+       START [         ] (264/420) callisto-model release_pr::tests::snapshot_recheck_is_order_independent_but_rejects_a_moved_head_or_race
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::snapshot_recheck_is_order_independent_but_rejects_a_moved_head_or_race --nocapture
+        PASS [   0.010s] (264/420) callisto-model release_pr::tests::config_from_wire_preserves_invalid_branch_code
+       START [         ] (265/420) callisto-model release_pr::tests::snapshot_v2_rejects_v1_wire_and_unknown_fields
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact release_pr::tests::snapshot_v2_rejects_v1_wire_and_unknown_fields --nocapture
+        PASS [   0.011s] (265/420) callisto-model release_pr::tests::commit_plan_serializes_camel_case_and_schema_version
+        PASS [   0.010s] (266/420) callisto-model release_pr::tests::from_wire_reports_unsupported_schema_version
+       START [         ] (267/420) callisto-model report::compose_pr_body_report_tests::labels_are_listed_with_an_applied_flag_and_omitted_when_there_are_none
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact report::compose_pr_body_report_tests::labels_are_listed_with_an_applied_flag_and_omitted_when_there_are_none --nocapture
+       START [         ] (267/420) callisto-model report::compose_pr_body_report_tests::compose_pr_body_report_json_uses_body_key_not_pr_body
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact report::compose_pr_body_report_tests::compose_pr_body_report_json_uses_body_key_not_pr_body --nocapture
+        PASS [   0.011s] (267/420) callisto-model release_pr::tests::decision_from_wire_validates_nested_snapshot
+       START [         ] (268/420) callisto-model report::status_report_tests::status_package_record_carries_last_released_version_and_release_trigger
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact report::status_report_tests::status_package_record_carries_last_released_version_and_release_trigger --nocapture
+        PASS [   0.011s] (268/420) callisto-model release_pr::tests::derives_create_when_no_managed_pr_exists
+       START [         ] (269/420) callisto-model report::status_report_tests::status_package_record_json_always_contains_changed_since_last_tag
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact report::status_report_tests::status_package_record_json_always_contains_changed_since_last_tag --nocapture
+        PASS [   0.011s] (269/420) callisto-model release_pr::tests::deserialization_rejects_unknown_fields_and_schema_mismatch
+       START [         ] (270/420) callisto-model report::status_report_tests::status_package_record_json_serializes_absent_options_as_null
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact report::status_report_tests::status_package_record_json_serializes_absent_options_as_null --nocapture
+        PASS [   0.012s] (270/420) callisto-model release_pr::tests::derives_update_with_staging_branch_and_expected_head_for_canonical_or_replacement_pr
+       START [         ] (271/420) callisto-model report::status_report_tests::status_report_json_always_contains_has_changesets
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact report::status_report_tests::status_report_json_always_contains_has_changesets --nocapture
+        PASS [   0.012s] (271/420) callisto-model release_pr::tests::derive_rejects_pull_request_on_staging_branch
+       START [         ] (272/420) callisto-model report::status_report_tests::status_report_json_always_contains_pending
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact report::status_report_tests::status_report_json_always_contains_pending --nocapture
+        PASS [   0.010s] (272/420) callisto-model release_pr::tests::no_pending_changesets_is_noop_after_snapshot_validation
+       START [         ] (273/420) callisto-model severity::tests::displays_lowercase_regardless_of_input_case
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact severity::tests::displays_lowercase_regardless_of_input_case --nocapture
+        PASS [   0.010s] (273/420) callisto-model release_pr::tests::rejects_ambiguous_foreign_and_malformed_managed_prs
+       START [         ] (274/420) callisto-model severity::tests::max_of_mixed_severities_picks_highest
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact severity::tests::max_of_mixed_severities_picks_highest --nocapture
+        PASS [   0.010s] (274/420) callisto-model release_pr::tests::snapshot_from_wire_preserves_duplicate_pull_request_number_code
+       START [         ] (275/420) callisto-model severity::tests::orders_none_patch_minor_major_ascending
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/target/debug/deps/callisto_model-089e4c091f8e5aae --exact severity::tests::orders_none_patch_minor_major_ascending --nocapture
+        FAIL [   0.010s] (275/420) callisto-model release_pr::tests::snapshot_after_update_accepts_only_the_applied_head_transition
+  stdout ───
+
+    running 1 test
+    test release_pr::tests::snapshot_after_update_accepts_only_the_applied_head_transition ... FAILED
+
+    failures:
+
+    failures:
+        release_pr::tests::snapshot_after_update_accepts_only_the_applied_head_transition
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 406 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'release_pr::tests::snapshot_after_update_accepts_only_the_applied_head_transition' (45044207) panicked at crates/callisto-model/src/release_pr.rs:1049:9:
+    assertion failed: decision.verify_snapshot_after_update(&original, &sha()).is_err()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 17 tests still running
+        PASS [   0.011s] (276/420) callisto-model release_pr::tests::pending_release_is_never_empty_and_keeps_its_packages
+        FAIL [   0.010s] (277/420) callisto-model release_pr::tests::snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions
+  stdout ───
+
+    running 1 test
+    test release_pr::tests::snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions ... FAILED
+
+    failures:
+
+    failures:
+        release_pr::tests::snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 406 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'release_pr::tests::snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions' (45044212) panicked at crates/callisto-model/src/release_pr.rs:1086:13:
+    assertion failed: decision.verify_snapshot_after_update(&original, &sha()).is_err()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.011s] (278/420) callisto-model release_pr::tests::snapshot_recheck_is_order_independent_but_rejects_a_moved_head_or_race
+        PASS [   0.009s] (279/420) callisto-model release_pr::tests::snapshot_v2_rejects_v1_wire_and_unknown_fields
+        PASS [   0.009s] (280/420) callisto-model report::compose_pr_body_report_tests::labels_are_listed_with_an_applied_flag_and_omitted_when_there_are_none
+        PASS [   0.009s] (281/420) callisto-model report::compose_pr_body_report_tests::compose_pr_body_report_json_uses_body_key_not_pr_body
+        PASS [   0.009s] (282/420) callisto-model report::status_report_tests::status_package_record_carries_last_released_version_and_release_trigger
+        PASS [   0.009s] (283/420) callisto-model report::status_report_tests::status_package_record_json_always_contains_changed_since_last_tag
+        PASS [   0.025s] (284/420) callisto-model release_pr::tests::commit_plan_rejects_oversized_payload
+        PASS [   0.009s] (285/420) callisto-model report::status_report_tests::status_report_json_always_contains_pending
+        PASS [   0.009s] (286/420) callisto-model report::status_report_tests::status_report_json_always_contains_has_changesets
+        PASS [   0.010s] (287/420) callisto-model report::status_report_tests::status_package_record_json_serializes_absent_options_as_null
+        PASS [   0.041s] (288/420) callisto-model release::intent::tests::the_shared_order_matches_the_previous_implementation
+        PASS [   0.008s] (289/420) callisto-model severity::tests::displays_lowercase_regardless_of_input_case
+        PASS [   0.008s] (290/420) callisto-model severity::tests::orders_none_patch_minor_major_ascending
+        PASS [   0.008s] (291/420) callisto-model severity::tests::max_of_mixed_severities_picks_highest
+        PASS [   0.261s] (292/420) callisto-model release::intent::tests::a_cycle_names_an_operation_on_it_and_a_long_chain_does_not_overflow_the_stack
+────────────
+     Summary [   0.590s] 292/420 tests run: 290 passed, 2 failed, 0 skipped
+        FAIL [   0.010s] (275/420) callisto-model release_pr::tests::snapshot_after_update_accepts_only_the_applied_head_transition
+        FAIL [   0.010s] (277/420) callisto-model release_pr::tests::snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions
+warning: 128/420 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
+error: test run failed
+
+*** result: Failure(100)

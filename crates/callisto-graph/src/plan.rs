@@ -150,4 +150,27 @@ mod platform_write_from_field_tests {
         assert_eq!(pw.from.render(), "1.0.0");
         assert_eq!(pw.version.render(), "1.1.0");
     }
+
+    #[test]
+    fn a_plan_releases_exactly_its_bumps() {
+        assert_eq!(VersionPlan::default().pending_release(), None);
+        let package = PackageId::parse("cargo/pkg").unwrap();
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: package.clone(),
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 1, 0),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let pending = plan.pending_release().unwrap();
+        assert_eq!(
+            pending.packages().collect::<Vec<_>>(),
+            vec![(&package, &Version::semver(1, 1, 0))]
+        );
+    }
 }

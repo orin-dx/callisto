@@ -1,0 +1,24 @@
+--- crates/callisto-model/src/release/decision.rs
++++ replace ReleaseDecisionV1::into_schema -> Self with Default::default()
+@@ -149,20 +149,17 @@
+         changesets.dedup();
+         self.digest = decision_digest(&self.entries, Some(&changesets));
+         self.consumed_changesets = Some(changesets);
+         self
+     }
+ 
+     /// The decision as schema 1 or 2 recorded it: no consumed changesets, and their digest.
+     fn into_schema(mut self, schema_version: u8) -> Self {
+-        self.schema_version = schema_version;
+-        self.consumed_changesets = None;
+-        self.digest = decision_digest(&self.entries, None);
+-        self
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// A schema 1 or 2 decision with these entries, as an older Callisto committed it.
+     #[cfg(any(test, feature = "test-util"))]
+     pub fn older_schema(self, schema_version: u8) -> Self {
+         assert!(
+             schema_version < 3,
+             "schema {schema_version} records consumed changesets"

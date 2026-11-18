@@ -1434,6 +1434,15 @@ mod tests {
 
     /// The same version commit with one more changed path, `extra`: verification stops at that path.
     fn verify_with_extra_path(extra: &str) -> Result<ReleaseDecisionV1, GraphError> {
+        verify_version_commit(Some(&[".changeset/a-minor.md"]), &[".changeset/a-minor.md"], extra)
+    }
+
+    /// A version commit of pkg-a that deletes `deleted` and records `recorded` (`None`: a schema 2 decision).
+    fn verify_version_commit(
+        recorded: Option<&[&str]>,
+        deleted: &[&str],
+        extra: &str,
+    ) -> Result<ReleaseDecisionV1, GraphError> {
         let release_commit_sha = "a".repeat(40);
         let parent_sha = "b".repeat(40);
         let mut blobs = std::collections::BTreeMap::new();
@@ -1450,17 +1459,20 @@ mod tests {
             target_version: Version::parse("1.1.0", Ecosystem::Cargo.version_grammar()).unwrap(),
             reasons: vec![ReleaseInclusionReason::Changeset],
         }])
-        .unwrap()
-        .consuming([".changeset/a-minor.md".to_string()]);
-        let name_status = [
-            "A\t.callisto/release-decision.json",
-            "D\t.changeset/a-minor.md",
-            "M\tpkg-a/Cargo.toml",
-            "M\tpkg-a/CHANGELOG.md",
-            "M\tCargo.lock",
-            extra,
-        ]
-        .join("\n");
+        .unwrap();
+        let decision = match recorded {
+            Some(recorded) => decision.consuming(recorded.iter().map(|path| path.to_string())),
+            None => decision.older_schema(2),
+        };
+        let mut name_status = vec![
+            "A\t.callisto/release-decision.json".to_string(),
+            "M\tpkg-a/Cargo.toml".to_string(),
+            "M\tpkg-a/CHANGELOG.md".to_string(),
+            "M\tCargo.lock".to_string(),
+        ];
+        name_status.extend(deleted.iter().map(|path| format!("D\t{path}")));
+        name_status.extend((!extra.is_empty()).then(|| extra.to_string()));
+        let name_status = name_status.join("\n");
         let runner = CountingBatchRunner {
             release_commit: release_commit_sha.clone(),
             parent: parent_sha,
@@ -1476,6 +1488,32 @@ mod tests {
             &CommitSha::parse(&release_commit_sha).unwrap(),
             std::path::Path::new(".callisto/release-decision.json"),
         )
+    }
+
+    /// The commit deletes exactly the changesets its decision records; a schema 2 decision needs at least one.
+    #[test]
+    fn a_version_commit_deletes_exactly_the_changesets_its_decision_records() {
+        let a = ".changeset/a-minor.md";
+        let b = ".changeset/b-patch.md";
+        let cases: [(Option<&[&str]>, &[&str], bool); 7] = [
+            (Some(&[a]), &[a], true),
+            (Some(&[]), &[], true),
+            (Some(&[a, b]), &[a, b], true),
+            (Some(&[a]), &[], false),
+            (Some(&[]), &[a], false),
+            (None, &[a], true),
+            (None, &[], false),
+        ];
+        for (recorded, deleted, verifies) in cases {
+            match verify_version_commit(recorded, deleted, "") {
+                Ok(_) => assert!(verifies, "{recorded:?} vs {deleted:?} must be refused"),
+                Err(GraphError::ReleaseCommitVerificationFailed {
+                    reason: CommitVerificationFailure::ConsumedChangesetsDiffer,
+                    ..
+                }) => assert!(!verifies, "{recorded:?} vs {deleted:?} must verify"),
+                Err(other) => panic!("{recorded:?} vs {deleted:?}: {other:?}"),
+            }
+        }
     }
 
     /// A version commit may change manifests, lockfiles, changelogs, changesets and the decision file, anywhere.

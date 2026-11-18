@@ -1,0 +1,51 @@
+
+*** crates/callisto-model/src/release/decision.rs:166:9: replace ReleaseDecisionV1::older_schema -> Self with Default::default()
+
+*** mutation diff:
+--- crates/callisto-model/src/release/decision.rs
++++ replace ReleaseDecisionV1::older_schema -> Self with Default::default()
+@@ -158,21 +158,17 @@
+         self.consumed_changesets = None;
+         self.digest = decision_digest(&self.entries, None);
+         self
+     }
+ 
+     /// A schema 1 or 2 decision with these entries, as an older Callisto committed it.
+     #[cfg(any(test, feature = "test-util"))]
+     pub fn older_schema(self, schema_version: u8) -> Self {
+-        assert!(
+-            schema_version < 3,
+-            "schema {schema_version} records consumed changesets"
+-        );
+-        self.into_schema(schema_version)
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Creates a canonical decision or rejects an ambiguous release roster.
+     #[allow(clippy::result_large_err)]
+     pub fn new(mut entries: Vec<ReleaseDecisionEntry>) -> Result<Self, ReleaseDecisionError> {
+         if entries.is_empty() {
+             return Err(ReleaseDecisionError::EmptyRoster);
+         }
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --no-run --verbose --package=callisto-model@0.21.1
+   Compiling callisto-model v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/crates/callisto-model)
+error[E0277]: the trait bound `decision::ReleaseDecisionV1: Default` is not satisfied
+   --> crates/callisto-model/src/release/decision.rs:166:9
+    |
+166 |         Default::default() /* ~ changed by cargo-mutants ~ */
+    |         ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Default` is not implemented for `decision::ReleaseDecisionV1`
+   --> crates/callisto-model/src/release/decision.rs:86:1
+    |
+ 86 | pub struct ReleaseDecisionV1 {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `callisto-model` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: command `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --no-run --message-format json-render-diagnostics --package callisto-model@0.21.1` exited with code 101
+
+*** result: Failure(101)

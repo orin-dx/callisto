@@ -1,0 +1,77 @@
+
+*** crates/callisto-model/src/release/decision.rs:230:5: replace decision_digest -> DecisionDigest with Default::default()
+
+*** mutation diff:
+--- crates/callisto-model/src/release/decision.rs
++++ replace decision_digest -> DecisionDigest with Default::default()
+@@ -222,35 +222,17 @@
+             entries,
+             consumed_changesets: Some(Vec::new()),
+             digest,
+         })
+     }
+ }
+ 
+ pub(super) fn decision_digest(entries: &[ReleaseDecisionEntry], consumed: Option<&[String]>) -> DecisionDigest {
+-    let mut transcript = CanonicalTranscript::decision_v1();
+-    // The count marks a schema 3 decision, so rewriting it as an older schema cannot keep its digest.
+-    if let Some(consumed) = consumed {
+-        transcript.push_str("consumed-changesets", &consumed.len().to_string());
+-        for path in consumed {
+-            transcript.push_str("consumed-changeset", path);
+-        }
+-    }
+-    for entry in entries {
+-        transcript.push_str("package", &entry.package.to_string());
+-        transcript.push_str("target-version", entry.target_version.render());
+-        for reason in &entry.reasons {
+-            transcript.push_str(
+-                "reason",
+-                &serde_json::to_string(reason).expect("closed reason serializes"),
+-            );
+-        }
+-    }
+-    DecisionDigest::from_transcript(&transcript)
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Decision construction or validation errors.
+ #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+ #[non_exhaustive]
+ pub enum ReleaseDecisionError {
+     #[error("a durable release decision must contain at least one package")]
+     EmptyRoster,
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --no-run --verbose --package=callisto-model@0.21.1
+   Compiling callisto-model v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-f2-pending-release/crates/callisto-model)
+warning: unused import: `CanonicalTranscript`
+ --> crates/callisto-model/src/release/decision.rs:6:13
+  |
+6 | use super::{CanonicalTranscript, DecisionDigest, ReleasePackageId};
+  |             ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0277]: the trait bound `release::digest::DecisionDigest: Default` is not satisfied
+   --> crates/callisto-model/src/release/decision.rs:230:5
+    |
+230 |     Default::default() /* ~ changed by cargo-mutants ~ */
+    |     ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `release::digest::DecisionDigest`
+    |
+help: consider annotating `release::digest::DecisionDigest` with `#[derive(Default)]`
+   --> crates/callisto-model/src/release/digest.rs:23:1
+    |
+ 23 +         #[derive(Default)]
+ 24 |         pub struct $name(String);
+    |
+
+For more information about this error, try `rustc --explain E0277`.
+warning: `callisto-model` (lib) generated 1 warning
+error: could not compile `callisto-model` (lib) due to 1 previous error; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `callisto-model` (lib test) generated 1 warning (1 duplicate)
+error: could not compile `callisto-model` (lib test) due to 1 previous error; 1 warning emitted
+error: command `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --no-run --message-format json-render-diagnostics --package callisto-model@0.21.1` exited with code 101
+
+*** result: Failure(101)
