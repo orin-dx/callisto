@@ -182,13 +182,15 @@ fn workspace_alias_and_relative_targets_retain_declaration_keys() {
     };
     let manifest = PackageJson::open(&decl, &ctx).unwrap();
     let entries: Vec<_> = manifest.iter_dependencies().collect();
-    for name in ["alias", "relative", "opt", "@scope/lib"] {
+    for name in ["alias", "opt", "@scope/lib"] {
         let entry = entries.iter().find(|entry| entry.name == name).unwrap();
         assert_eq!(entry.package_name, "@scope/lib");
         assert!(matches!(entry.spec, DepSpec::WorkspaceProtocol(_)));
     }
-    let missing = entries.iter().find(|entry| entry.name == "missing").unwrap();
-    assert_eq!(missing.package_name, "workspace:../absent");
+    for (name, target) in [("relative", "workspace:../lib"), ("missing", "workspace:../absent")] {
+        let entry = entries.iter().find(|entry| entry.name == name).unwrap();
+        assert_eq!(entry.package_name, target);
+    }
     assert_eq!(
         entries.iter().find(|entry| entry.name == "opt").unwrap().kind,
         DepKind::Optional

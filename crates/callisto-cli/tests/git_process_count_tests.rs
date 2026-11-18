@@ -2,12 +2,13 @@
 
 use std::process::Command;
 
-use callisto_fixtures::perf::ScaledWorkspace;
+use callisto_fixtures::perf::{PackageKind, ScaledWorkspace};
 
 /// Runs `callisto` over a workspace of `packages` and returns how many git processes it started.
 fn git_processes(packages: usize, args: &[&str]) -> usize {
     let repository = tempfile::tempdir().unwrap();
     ScaledWorkspace {
+        kind: PackageKind::Cargo,
         packages,
         extra_commits: packages,
     }

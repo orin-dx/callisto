@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use callisto_fixtures::perf::ScaledWorkspace;
+use callisto_fixtures::perf::{PackageKind, ScaledWorkspace};
 
 const RUNS: usize = 3;
 
@@ -113,12 +113,14 @@ fn main() {
         .map(|raw| raw.split(',').filter_map(|part| part.trim().parse().ok()).collect())
         .unwrap_or_else(|| vec![50, 200, 500]);
 
-    println!("| packages | command | median ms | git ms | git processes | result |");
+    println!("| workspace | command | median ms | git ms | git processes | result |");
     println!("| ---: | --- | ---: | ---: | ---: | --- |");
+    let kinds = [(PackageKind::Cargo, "cargo"), (PackageKind::PnpmRelative, "pnpm")];
     let mut failed = false;
-    for packages in sizes {
+    for (packages, (kind, kind_label)) in sizes.iter().flat_map(|packages| kinds.map(|kind| (*packages, kind))) {
         let dir = tempfile::tempdir().unwrap();
         ScaledWorkspace {
+            kind,
             packages,
             extra_commits: packages * 2,
         }
@@ -126,7 +128,7 @@ fn main() {
         let trace = dir
             .path()
             .join("..")
-            .join(format!("callisto-bench-trace-{packages}.json"));
+            .join(format!("callisto-bench-trace-{kind_label}-{packages}.json"));
         for (label, args) in COMMANDS {
             let mut runs: Vec<Measured> = (0..RUNS).map(|_| measure(dir.path(), args, &trace)).collect();
             runs.sort_by_key(|run| run.wall);
@@ -138,7 +140,7 @@ fn main() {
                 format!("failed: {}", median.first_error_line)
             };
             println!(
-                "| {packages} | {label} | {} | {} | {} | {result} |",
+                "| {packages} {kind_label} | {label} | {} | {} | {} | {result} |",
                 median.wall.as_millis(),
                 median.git_time.as_millis(),
                 median.git_processes

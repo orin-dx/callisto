@@ -21,7 +21,6 @@ pub struct PackageJson {
     source_doc: Map<String, Value>,
     fingerprint: FormatFingerprint,
     npm_workspace_kind: Option<WorkspaceKind>,
-    workspace_root: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,7 +66,6 @@ impl PackageJson {
             doc,
             fingerprint,
             npm_workspace_kind: ctx.npm_workspace_kind,
-            workspace_root: ctx.workspace_root.to_path_buf(),
         })
     }
 
@@ -96,20 +94,11 @@ impl PackageJson {
         if let Some(alias) = workspace.alias() {
             return alias.to_string();
         }
-        let Some(relative) = workspace.relative_path() else {
+        if workspace.relative_path().is_none() {
             return name.to_string();
-        };
-        let target_name = self.absolute.parent().and_then(|parent| {
-            let target = parent.join(relative).canonicalize().ok()?;
-            let root = self.workspace_root.canonicalize().ok()?;
-            if !target.starts_with(root) {
-                return None;
-            }
-            let manifest = target.join("package.json");
-            let source = fs::read_to_string(&manifest).ok()?;
-            identity_from_source(&source, &manifest).ok()?.name
-        });
-        target_name.unwrap_or_else(|| format!("workspace:{}", workspace.suffix))
+        }
+        // A relative path names a directory, not a package: the graph resolves it against its own index.
+        format!("workspace:{}", workspace.suffix)
     }
 }
 
