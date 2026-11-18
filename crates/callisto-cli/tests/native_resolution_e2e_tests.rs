@@ -349,7 +349,7 @@ fn setup_pnpm_and_uv_workspace(root: &Path, include_python: bool) {
 
     if find_on_path("pnpm").is_some() {
         assert!(Command::new("pnpm")
-            .args(["install", "--lockfile-only"])
+            .args(["install", "--lockfile-only", "--no-frozen-lockfile"])
             .current_dir(root)
             .status()
             .unwrap()
@@ -595,7 +595,16 @@ fn setup_pnpm_protocol_workspace(root: &Path) {
         serde_json::to_vec_pretty(&app).unwrap(),
     )
     .unwrap();
-    run_pnpm(root, &["install", "--lockfile-only", "--ignore-scripts", "--offline"]);
+    run_pnpm(
+        root,
+        &[
+            "install",
+            "--lockfile-only",
+            "--no-frozen-lockfile",
+            "--ignore-scripts",
+            "--offline",
+        ],
+    );
     for args in [
         vec!["add", "-A"],
         vec!["-c", "commit.gpgSign=false", "commit", "-q", "-m", "Initial commit"],
@@ -788,7 +797,13 @@ fn pnpm_workspace_protocol_requires_a_local_member() {
     app["dependencies"]["missing"] = serde_json::json!("workspace:@protocol/missing@*");
     fs::write(&app_path, serde_json::to_vec_pretty(&app).unwrap()).unwrap();
     let output = Command::new("pnpm")
-        .args(["install", "--lockfile-only", "--ignore-scripts", "--offline"])
+        .args([
+            "install",
+            "--lockfile-only",
+            "--no-frozen-lockfile",
+            "--ignore-scripts",
+            "--offline",
+        ])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -906,7 +921,10 @@ fn pnpm_workspace_shorthand_packs_current_target_versions() {
         app["dependencies"][name] = serde_json::json!(format!("workspace:{suffix}"));
     }
     fs::write(&app_path, serde_json::to_vec_pretty(&app).unwrap()).unwrap();
-    run_pnpm(root, &["install", "--ignore-scripts", "--offline"]);
+    run_pnpm(
+        root,
+        &["install", "--no-frozen-lockfile", "--ignore-scripts", "--offline"],
+    );
     let source_before = fs::read(&app_path).unwrap();
     let packed = packed_pnpm_manifest(root);
     assert_eq!(fs::read(&app_path).unwrap(), source_before);
