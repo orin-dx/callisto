@@ -1,0 +1,107 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QXH2PWEZX40Z4D74DZPVKM",
+  "session_id": "25b5d2e3-801a-4c94-9d8b-527c66878712",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:08:42.117769Z",
+  "branch": "fix/vcs-boundary-native-bytes",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/version_resume_tests.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/checkpoint.rs",
+    "crates/callisto-model/src/vcs/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "8edc6e17e8f2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 212,
+    "cache_creation_tokens": 199290,
+    "cache_read_tokens": 16516959,
+    "output_tokens": 56210,
+    "api_call_count": 106,
+    "subagent_tokens": {
+      "input_tokens": 38,
+      "cache_creation_tokens": 95761,
+      "cache_read_tokens": 1392906,
+      "output_tokens": 13613,
+      "api_call_count": 19
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 212,
+    "cache_creation_tokens": 199290,
+    "cache_read_tokens": 16516959,
+    "output_tokens": 56210,
+    "api_call_count": 106,
+    "subagent_tokens": {
+      "input_tokens": 38,
+      "cache_creation_tokens": 95761,
+      "cache_read_tokens": 1392906,
+      "output_tokens": 13613,
+      "api_call_count": 19
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Execute Session 6 of the LAUNCH-v1-alpha plan: work package S (Git boundary hardening) and begin T (recovery plan binding), pushing with an explicit refspec, verifying via git ls-remote, with no session trailers and never committing mutants.out*.",
+    "outcome": "WP S fixes were implemented and committed in a worktree (exact path bytes, literal pathspecs, NUL framing across vcs, apply, changeset_prs and release_decision), with an e2e QA-01 test and review fixes in a second commit. The final full gate was launched but its result was not recorded, and the push/ls-remote verification and WP T/V work had not happened yet.",
+    "learnings": {
+      "repo": [
+        "Git boundary code lives in callisto-model/src/vcs (access.rs, checkpoint.rs, tests.rs) and callisto-graph (apply.rs, changeset_prs.rs, commands/release_decision.rs, conventional/window.rs).",
+        "Raw `git add -- <path>` in apply.rs treated paths as globs, so `p/odd*/a` also staged `p/odd-other/a` into the version commit; literal pathspecs are needed.",
+        "Path output should strip only Git's line terminator, not whitespace (avoid stdout_trimmed for paths), and use -z/NUL framing for log, diff-tree and name-only output.",
+        "Fake-runner tests that emit newline-separated git output (window.rs, release_decision.rs fixtures) must be updated when switching to -z framing.",
+        "The installed `callisto` binary is 0.5.0, too old for this repo's config; use the workspace-built binary to write changesets.",
+        "A test environment script (env.sh) and a gate script (gate.sh) are used to run vcs tests and the full gate."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "finding": "The checkpoint trim was the root of the QA-01 bug; temporarily reverting it made the e2e resume test fail, confirming the test covers the fix."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "The workspace prefix was trimmed in a way that broke odd paths, and commit_delta needed to move to diff-tree -z; fixtures had to be rewritten for NUL framing."
+        }
+      ],
+      "workflow": [
+        "Write tests first and confirm they are red before implementing, then verify the e2e test fails with the fix reverted.",
+        "Per a worktree-guard memory, run multi-line git probes via script files rather than inline shell.",
+        "Run a fresh reviewer agent in parallel with the full gate; the reviewer surfaced additional -z siblings to fix.",
+        "Run cargo fmt before committing, since the first commit needed a reformat and re-commit."
+      ]
+    },
+    "friction": [
+      "The first full gate failed with exit 101 due to a clippy lint in vcs/tests.rs and had to be rerun.",
+      "The worktree branch needed renaming several times (a repeated 'Rename worktree branch' step), suggesting the branch name reset or did not stick.",
+      "The installed callisto CLI version mismatch forced a fallback to the workspace binary.",
+      "The gate and reviewer ran in the background, requiring repeated notification polling and a TaskStop."
+    ],
+    "open_items": [
+      "Result of the final full gate for WP S is unknown and must be checked.",
+      "Push WP S with HEAD:refs/heads/<branch> and verify with git ls-remote; this had not been done.",
+      "WP T (recovery plan binding) was only researched, with a binding test being drafted; not implemented.",
+      "WP V had not been started.",
+      "Ensure no mutants.out* files get committed and no session trailers are added."
+    ]
+  }
+}
