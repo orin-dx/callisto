@@ -67,6 +67,7 @@ fn check_args() -> StatusArgs {
     StatusArgs {
         strict: false,
         check: true,
+        since: None,
     }
 }
 
@@ -201,6 +202,7 @@ fn test_status_check_strict_fails_on_a_napi_target_warning_that_check_alone_pass
     let strict = StatusArgs {
         strict: true,
         check: true,
+        since: None,
     };
     assert_eq!(commands::status::handle(strict, &global).unwrap(), ExitCode::FAILURE);
 
@@ -210,7 +212,7 @@ fn test_status_check_strict_fails_on_a_napi_target_warning_that_check_alone_pass
     let report = callisto_graph::commands::status(
         &ws,
         &callisto_graph::infer::NoInference,
-        &callisto_graph::commands::StatusOptions { strict: false },
+        &callisto_graph::commands::StatusOptions::default(),
     )
     .unwrap();
     let napi: Vec<_> = report

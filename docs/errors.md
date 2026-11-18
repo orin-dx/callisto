@@ -153,7 +153,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E252 | Duplicate group name | Rename one of the two groups sharing this name. |
 | E255 | `cascade.bump-severity` is invalid | Set `cascade.bump-severity` to `patch` or `minor` in callisto.toml. |
 | E256 | `pre-major-inference` is invalid | Set `pre-major-inference` to `off`, `conservative`, or `conservative-feat` in callisto.toml. |
-| E330 | A `publish-to` entry in a `[[package]]` or `[[package-set]]` block is not a publish target | Set `<location>` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release` or `none` in callisto.toml. |
+| E330 | A `publish-to` entry in a `[[package]]` or `[[package-set]]` block is not a publish target | Set `<location>` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release`, `none` or the name of a `kind = "cargo"` registry in `[registries]`, in callisto.toml. |
 | E331 | A `release-trigger` in a `[[package]]` or `[[package-set]]` block is not `changeset` or `auto` | Set `<location>` to `changeset` or `auto` in callisto.toml. |
 | E332 | `cascade.mode` is not `always` or `out-of-range` | Set `cascade.mode` to `always` or `out-of-range` in callisto.toml. |
 | E333 | `changelog.layout` is not `grouped` or `flat` | Set `changelog.layout` to `grouped` or `flat` in callisto.toml. |

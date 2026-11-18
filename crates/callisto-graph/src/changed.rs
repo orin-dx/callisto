@@ -23,6 +23,64 @@ pub fn package_paths(pkg: &Package) -> Vec<PathBuf> {
     set.into_iter().collect()
 }
 
+/// What changed between where a ref and `HEAD` diverged and the working tree.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChangedSince {
+    /// Packages with a changed file outside the changesets directory; a file belongs to the package whose directory
+    /// holds it most closely.
+    pub packages: BTreeSet<PackageId>,
+    /// Ids of the changesets changed in that span, the only ones that can account for those packages.
+    pub changesets: BTreeSet<String>,
+}
+
+/// [`ChangedSince`] for `since`, untracked files included. Three git processes, however many packages there are.
+pub fn changed_since_ref(
+    packages: &[&Package],
+    git: &GitAccess<'_>,
+    since: &str,
+    changesets_dir: &Path,
+) -> Result<ChangedSince, GraphError> {
+    let target = format!("{since}^{{commit}}");
+    let output = git
+        .runner()
+        .run("git", &["merge-base", &target, "HEAD"], git.root())
+        .map_err(VcsError::from)?;
+    if !output.success() {
+        return Err(GraphError::Vcs(VcsError::RefNotFound {
+            ref_name: since.to_string(),
+        }));
+    }
+    let mut paths = git.paths_differing_from(output.stdout.trim())?;
+    paths.extend(git.untracked_paths()?);
+
+    let dirs: Vec<(PathBuf, &PackageId)> = packages
+        .iter()
+        .flat_map(|pkg| package_paths(pkg).into_iter().map(move |dir| (dir, &pkg.id)))
+        .map(|(dir, id)| (if dir == Path::new(".") { PathBuf::new() } else { dir }, id))
+        .collect();
+    let mut changed = ChangedSince::default();
+    for path in &paths {
+        if let Ok(inside) = path.strip_prefix(changesets_dir) {
+            // Only a direct child is a changeset the loader reads.
+            if inside.components().count() == 1
+                && inside.extension().is_some_and(|ext| ext == "md")
+                && let Some(id) = inside.file_stem().and_then(|stem| stem.to_str())
+            {
+                changed.changesets.insert(id.to_owned());
+            }
+            continue;
+        }
+        let owner = dirs
+            .iter()
+            .filter(|(dir, _)| path.starts_with(dir))
+            .max_by_key(|(dir, _)| dir.components().count());
+        if let Some((_, id)) = owner {
+            changed.packages.insert((*id).clone());
+        }
+    }
+    Ok(changed)
+}
+
 /// Whether each of `packages` changed since its last tag: a directory of the package holds different files than it did
 /// at the tag, or its tracked files have uncommitted changes. An untagged package counts as changed. A change that was
 /// made and then reverted leaves the package as it was released, so it is not a change.

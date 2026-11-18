@@ -380,6 +380,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
         optional_dep_updates,
         changelog_writes,
         consumed_changesets: agg.consumed,
+        inferred: agg.inference_commits.keys().cloned().collect(),
         pre_state_update,
         pre_json_path: ws.config.pre_json_path(),
         pre_json_original_text,
