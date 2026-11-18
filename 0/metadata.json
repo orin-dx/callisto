@@ -1,0 +1,107 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QXE47HK2V0DYW8VJZWR83A",
+  "session_id": "bbcfd2d3-839e-43dc-808d-db9f0fe31bb0",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:07:11.612946Z",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/tests/pre_v3_tests.rs",
+    "crates/callisto-graph/src/aggregate.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "7815777dd815",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 892,
+    "cache_creation_tokens": 1396868,
+    "cache_read_tokens": 180188144,
+    "output_tokens": 225070,
+    "api_call_count": 429
+  },
+  "session_token_usage": {
+    "input_tokens": 892,
+    "cache_creation_tokens": 1396868,
+    "cache_read_tokens": 180188144,
+    "output_tokens": 225070,
+    "api_call_count": 429
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Run Session 1 of the v1-alpha launch plan for the callisto repo: fix pre-cycle aggregation (F1), drive release-pr decide from the version plan (F2), add Changesets v3 pre.json support (G), managed prerelease cycles via release PRs (H), and `status --since` (M). Later: ship G and M as independent PRs off main and fix the lead's review findings on them.",
+    "outcome": "F1 and F2 were merged (#566, #567). G (#571) and M (#570) were rebased, passed the full gate including `just ci`, pushed with explicit refspecs, and opened as ready PRs linked to trails #457 and #458. H is held until G merges. The session ended mid-way through the review findings: G's two fixes are committed locally and its gate was started, while M's two fixes have not been started.",
+    "learnings": {
+      "repo": [
+        "Aggregation now uses `Seed`/`Source` types (FreshChangeset, RetainedChangeset, Inference, Group) instead of `NamedBy`; in pre mode a package releases only if it has at least one fresh source, but its severity is the max over all sources, retained ones included.",
+        "`release-pr decide` is now driven by the version plan, not by the presence of changesets. The release decision is schema 3 and records `consumedChangesets`, and E165 compares the deleted changesets to that recorded set.",
+        "In exit mode `plan_version` seeds a patch for every package still at a prerelease version, so `decide` always opens the stable PR after `pre exit`, even for inference-only packages.",
+        "Changesets v3 `pre.json` holds only `mode` and `tag`. Applied notes move to `.changeset/pre/`, and archived notes now load with id `pre/<stem>` so they stay distinct from a fresh root note of the same name.",
+        "Archive name clashes are handled by walking `<stem>.md`, `<stem>-2.md`, ... and treating an identical note anywhere in that sequence as an unfinished move.",
+        "Repo gate is `just pre-push`, `just lint`, `just doc-check`, `just test`, and `just ci`. Commits must be signed and carry no session links or trailers. Specs live in docs/specs/*.json, and public diagnostic codes are permanent after 1.0.",
+        "Worktree branch names differ from PR branch names, so a plain `git push` silently does nothing; push `HEAD:refs/heads/<branch>` and verify with `git ls-remote`.",
+        "Doing `entire trail link` right after a push can race with it ('branch does not exist'); retrying with the idempotency key it returns works."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 567,
+          "end_line": 571,
+          "finding": "Reviewer flagged that the linked-group target uses `named_severity`, which excludes Group sources. This differs from the old code in a corner case (fixed {A,C} + linked {A,B}); the cascade probably restores it."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 177,
+          "end_line": 184,
+          "finding": "`Seed::reason` keeps only the winning source, so inference coverage can't be read from the final reason. This caused M's finding that an inferred patch is flagged when a higher unchanged changeset wins."
+        },
+        {
+          "path": "crates/callisto-graph/src/changed.rs",
+          "line": 64,
+          "finding": "The README.md exclusion was redundant because pending changeset names never include README. The mutation survivor led to removing it."
+        }
+      ],
+      "workflow": [
+        "Mutation testing with cargo-mutants must be scoped to the branch's own diff base and include the test binaries that exist on that branch; otherwise runs fail or report false survivors.",
+        "Two runs writing to the same log file interleave output, so use separate logs. A background run started before a code change gives stale results and has to be restarted.",
+        "Fresh-context reviewers per WP surfaced real doc and spec gaps, but some findings (e.g. the H 'medium') did not hold up when checked against the code.",
+        "Messages from subagents and peer sessions are treated as reports, not user authority.",
+        "Regression tests are written first and shown to fail before fixing, and the tests' assertions were checked against the actual JSON output shape."
+      ]
+    },
+    "friction": [
+      "The full test suite is slow (about 1900 tests), so gate runs blocked progress and parallel worktrees were needed.",
+      "A G subagent kept re-sending the same report and had to be stopped.",
+      "A sandbox blocked a `sed` edit of the mutants script, so the unchanged script ran again and had to be stopped and rewritten.",
+      "Mutants runs failed several times because of wrong filters and package flags, so the scripts were rewritten.",
+      "CI audit failure (RUSTSEC-2026-0542) blocked `just ci` on F1 until the lead's #560 merged.",
+      "macOS CI jobs on #571 were cancelled for runner capacity and the lead re-ran them.",
+      "Several test literals broke when `StatusArgs` gained the `since` field and had to be patched one by one."
+    ],
+    "open_items": [
+      "Finish G's gate run on the new fix commit, push it with an explicit refspec, and resolve findings 01M7QVWPD9KK and 01M7QVWPCSYZ with `entire trail finding resolve`.",
+      "M (#570) still has two findings to fix test-first: coverage must be restricted to direct-child changeset paths (01M7QVVQW583), and inference coverage must be tracked independently of the final reason (01M7QVVQVHPH).",
+      "After G merges, rebase H onto main, re-run the gates, and ship it to trail #457 with the known-limits section.",
+      "Known limits to document: a stale release PR that deletes no changesets is not caught by E165's changeset check, and a local `version` rerun before the prerelease is tagged re-infers the same commits for auto packages.",
+      "The reviewer's low finding on the linked-group `named_severity` change outside pre mode was not confirmed or fixed.",
+      "Report the PR numbers and shas to the lead after each push."
+    ]
+  }
+}
