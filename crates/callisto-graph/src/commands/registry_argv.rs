@@ -895,6 +895,47 @@ mod tests {
         assert_eq!(tarball.len(), 1, "a tarball path, never a directory: {:?}", argv.args);
     }
 
+    /// A standalone package with no workspace is packed and published as a tarball by path: the publish names no
+    /// workspace, which native npm refuses for a root package ("No workspaces found"). Real npm, no network.
+    #[test]
+    fn a_standalone_root_package_packs_and_publishes_as_a_tarball_without_a_workspace_flag() {
+        let package = tempfile::tempdir().unwrap();
+        std::fs::write(
+            package.path().join("package.json"),
+            r#"{"name":"standalone-root","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let pack = npm_pack_argv(package.path(), NpmPackageManager::Npm, out.path());
+        let packed = std::process::Command::new(&pack.program)
+            .args(&pack.args)
+            .current_dir(&pack.cwd)
+            .output()
+            .expect("npm must be installed to run this test");
+        assert!(packed.status.success(), "{}", String::from_utf8_lossy(&packed.stderr));
+        let tarball = out.path().join("standalone-root-1.0.0.tgz");
+        assert!(tarball.is_file());
+
+        let mut publish = npm_publish_tarball_argv(package.path(), &tarball, "standalone-root", None, None, None);
+        assert!(
+            !publish.args.iter().any(|arg| arg.starts_with("--workspace")),
+            "{:?}",
+            publish.args
+        );
+        // `--dry-run` appears in the test only: it stops npm before it contacts a registry.
+        publish.args.push("--dry-run".to_owned());
+        let published = std::process::Command::new(&publish.program)
+            .args(&publish.args)
+            .current_dir(&publish.cwd)
+            .output()
+            .expect("npm must be installed to run this test");
+        assert!(
+            published.status.success(),
+            "{}",
+            String::from_utf8_lossy(&published.stderr)
+        );
+    }
+
     #[test]
     fn scoped_npm_package_without_explicit_access_publishes_public() {
         assert_eq!(npm_default_access("@s/cli", None), Some(NpmAccess::Public));
