@@ -735,6 +735,8 @@ impl Manifest for PyprojectToml {
 /// - `>=X.Y.Z,<A.B` — two-clause range — is rewritten to `>=NEW,<NEXT_MAJOR`
 ///   where `NEXT_MAJOR` equals `target.major() + 1`.
 ///
+/// A target in a non-zero PEP 440 epoch carries `N!` on every bound written.
+///
 /// A pre-release or dev/local target (e.g. a `snapshot` version) is rendered
 /// in full rather than truncated to `major.minor.patch`, the same precision
 /// rule `cargo::round_trip` applies for SemVer.
@@ -807,8 +809,7 @@ fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec>
 /// equivalent PEP 440 range, which Poetry reads too. A pre-release target has no caret or tilde form, so it is left alone.
 fn rewrite_poetry_operator(op: &str, core: &str, target: &Version) -> Option<DepSpec> {
     parse_version_core(core)?;
-    // Poetry's caret and tilde have no epoch form.
-    if target.is_prerelease() || target.epoch() != 0 {
+    if target.is_prerelease() {
         return None;
     }
     let rendered = format!("{op}{}", render_target(op, target)?);
@@ -817,7 +818,7 @@ fn rewrite_poetry_operator(op: &str, core: &str, target: &Version) -> Option<Dep
 }
 
 /// Renders `target` at the precision a rewritten spec should carry, for use after `op`:
-/// `major.minor.patch` for a stable release; the version in full for a pre-release or
+/// `[N!]major.minor.patch` for a stable release; the version in full for a pre-release or
 /// dev target paired with `==`/`!=` (the only operators PEP 440 allows on a local version);
 /// the version with its local segment stripped for every other operator, since PEP 440
 /// forbids `>=`, `<=`, `>`, `<` and `~=` from carrying one.
@@ -847,7 +848,7 @@ fn epoch_prefix(target: &Version) -> String {
     }
 }
 
-/// The release core of a clause's version with any `N!` epoch removed, for reading the precision the clause was written at.
+/// A clause's release core with any `N!` epoch removed, to read the precision it was written at.
 fn parse_release_core(s: &str) -> Option<(u64, Option<u64>, Option<u64>)> {
     parse_version_core(s.split_once('!').map_or(s, |(_, release)| release))
 }
