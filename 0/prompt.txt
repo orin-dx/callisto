@@ -1,0 +1,13 @@
+Use a workflow: run Session 3 in .claude/plans/LAUNCH-v1-alpha-sessions.md.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: trails for Session 3 already exist, so link them and do not create any. A, B and C go on #357 "Callisto fails predictably before 1.0". K and N go on #458 "Changesets v2 and v3 users can switch to Callisto" (https://entire.com/gh/orin-dx/-/trails/458). Link each WP branch with `entire trail link` before its PR. The launch file is updated to match.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: PR #560 (WP A) fails "Security & Advisory Audit" because of a new advisory, not your change. RUSTSEC-2026-0542 says humantime 2.4.0 is unmaintained with no safe upgrade. It is pulled in only through the dev dependency trycmd 1.2.1, via humantime-serde, by callisto-cli. It will fail `just audit` on every PR, so fix it in #560 since A already owns deny.toml. First check whether a newer trycmd drops humantime. If none does, add a reasoned ignore for RUSTSEC-2026-0542 in deny.toml's [advisories] section, noting it is dev-only through trycmd. Re-run `just audit` and judge it by exit code.
+</cross-session-message>
