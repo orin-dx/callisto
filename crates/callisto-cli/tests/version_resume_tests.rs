@@ -821,6 +821,49 @@ fn a_run_that_failed_to_write_its_preview_writes_it_when_run_again() {
     assert!(!has_checkpoint(&repo.root));
 }
 
+/// A preview path that climbs out of the workspace is not an input, so a resume writes nothing for it outside the
+/// scratch checkout: from the checkout below the system temp directory, `../../../<name>` would land in it.
+#[test]
+fn a_preview_outside_the_workspace_is_not_written_beside_the_scratch_checkout() {
+    let repo = repo(cargo_cascade, "ws", None);
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let temp = tempfile::tempdir().unwrap();
+    let name = format!(
+        "callisto-preview-{}.json",
+        repo.root.parent().unwrap().file_name().unwrap().to_string_lossy()
+    );
+    let bystander = temp.path().join(&name);
+    fs::write(&bystander, "not callisto's\n").unwrap();
+    let preview = format!("../../../{name}");
+    // Canonical, as on Linux: a `--cwd` through a symlinked temp directory would not share the workspace's prefix.
+    let cwd = fs::canonicalize(&repo.workspace).unwrap();
+    let run = |fail: Option<&Path>| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
+        command
+            .args(["--cwd", cwd.to_str().unwrap(), "version", "--emit-preview", &preview])
+            .env("TMPDIR", temp.path())
+            .env(
+                "PATH",
+                format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()),
+            );
+        if let Some(flag) = fail {
+            command.env("FAIL_PROG", "cargo").env("FAIL_FLAG", flag);
+        }
+        command.output().unwrap()
+    };
+
+    let first = run(Some(&repo.root.parent().unwrap().join("failed-once")));
+    assert!(String::from_utf8_lossy(&first.stderr).contains("E208"));
+    let second = run(None);
+
+    let written = repo.workspace.join(&preview);
+    let written_exists = written.exists();
+    fs::remove_file(&written).ok();
+    assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
+    assert!(written_exists, "the real preview is written where it was asked for");
+    assert_eq!(fs::read_to_string(&bystander).unwrap(), "not callisto's\n");
+}
+
 /// The decision the interrupted run emitted into the changesets directory is its own output, not a changed input; an edit
 /// to it is still a change.
 #[test]

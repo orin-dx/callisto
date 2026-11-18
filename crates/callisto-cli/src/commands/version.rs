@@ -148,8 +148,9 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         (&checkpoint_ws, &checkpoint, &facts, permit.as_ref(), has_errors)
     {
         // A finished run leaves its emitted files too, so one inside the workspace is its own output, not an edited input.
+        // One outside it, `..` and symlinks resolved, is no input at all and is not simulated.
         for (full_path, content) in &emitted {
-            if let Ok(relative) = full_path.strip_prefix(&ws.root) {
+            if let Ok(relative) = workspace_decision_path(full_path, &ws.root) {
                 write_emitted(&scratch.root.join(relative), content, permit)?;
             }
         }
