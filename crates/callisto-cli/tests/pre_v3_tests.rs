@@ -452,3 +452,56 @@ fn exit_keeps_warning_about_a_new_note_that_names_an_unknown_package() {
     assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
     assert!(root.join(".changeset/ghost.md").exists());
 }
+
+/// An archived note whose bare name becomes ambiguous mid-cycle fails `status --check`, as `version` would fail.
+#[test]
+fn status_check_reports_an_archived_note_whose_name_became_ambiguous() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    fs::write(root.join("callisto.toml"), "").unwrap();
+    fs::create_dir_all(root.join("core/src")).unwrap();
+    fs::write(
+        root.join("core/Cargo.toml"),
+        "[package]\nname = \"foo\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("core/src/lib.rs"), "pub fn f() {}\n").unwrap();
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/pre.json"),
+        "{\"mode\":\"pre\",\"tag\":\"beta\"}\n",
+    )
+    .unwrap();
+    fs::write(root.join(".changeset/bare.md"), "---\nfoo: minor\n---\n\nA feature.\n").unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "enter pre"]);
+    version(root);
+    assert_eq!(markdown_in(&root.join(".changeset/pre")), ["bare.md"]);
+
+    fs::create_dir_all(root.join("web")).unwrap();
+    fs::write(
+        root.join("web/package.json"),
+        "{\"name\":\"foo\",\"version\":\"1.0.0\"}\n",
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "an npm foo arrives"]);
+
+    let status = callisto(root, &["--format", "json", "status", "--check"]);
+    assert_eq!(
+        status.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    let ambiguous: Vec<&str> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["code"] == "ambiguous-package-name")
+        .map(|d| d["path"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(ambiguous, [".changeset/pre/bare.md"], "{report}");
+}
