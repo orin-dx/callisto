@@ -96,7 +96,7 @@ Keyed by registry name. Three registries are built in, keyed `cratesIo` (kind `c
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `registries.<name>.kind` | string (`"cargo"` \| `"npm"` \| `"pypi"`) | required, except for `cratesIo`, `npm` and `pypi`, which default to their own kind | Registry ecosystem. A custom registry without it fails with E321 |
-| `registries.<name>.url` | string | none | Registry endpoint override. For `npm` it is the registry the publish and the confirmation use (not supported with yarn, which fails with E168: set `npmPublishRegistry` in `.yarnrc.yml`). For `pypi` it is the simple index Callisto reads, and the upload endpoint unless `publish-url` is set. A `cargo` registry rejects it with E336: cargo takes its destination from `.cargo/config.toml` |
+| `registries.<name>.url` | string | none | Registry endpoint override. For `npm` it is the registry the publish and the confirmation use (not supported with yarn, which fails with E168: set `npmPublishRegistry` in `.yarnrc.yml`). For `pypi` it is the simple index Callisto reads, and the upload endpoint unless `publish-url` is set. A `cargo` registry rejects it with E336: cargo takes its URL from `.cargo/config.toml`, and a package publishes to the registry by naming it in `publish-to` |
 | `registries.<name>.publish-url` | string | `url` | `pypi` only: the endpoint Twine uploads to when it differs from the index. Same HTTPS rules as `url` |
 | `registries.<name>.publish-timeout` | string | `15m` | The longest one publish command (`cargo publish`, `npm publish`, `twine upload`) may run before Callisto stops it with E025. Same format and range as `confirm-timeout` |
 | `registries.<name>.confirm-timeout` | string | `6m` for `npm` and `pypi`, `2m` for `cargo` | How long Callisto waits for a version it just published to appear on the registry before failing with E157. A whole number with `s`, `m` or `h`, from `1s` to `1h`. npm serves package documents from a cache that can answer stale for up to 5 minutes; raise it for a slower registry, and keep the release job's `timeout-minutes` above it |
@@ -110,6 +110,16 @@ kind = "npm"
 url = "https://npm.internal.example.com"
 ```
 
+A private Cargo registry is named in `publish-to`, and its URL is defined in `.cargo/config.toml` under `[registries.internal-crates]`:
+```toml
+[registries.internal-crates]
+kind = "cargo"
+
+[[package]]
+match = "cargo/my-crate"
+publish-to = ["internal-crates"]
+```
+
 ## `[[package]]` and `[[package-set]]`
 
 Both blocks share five override fields, parsed identically; `[[package]]` also accepts `previous-tag-templates`. `[[package]]`'s `match` is an exact ecosystem-qualified id: the package's own name in that ecosystem, which for a dual package can differ per ecosystem (first matching rule wins). `[[package-set]]`'s `match` is an ecosystem-qualified glob, compared with each package's name in that ecosystem, and can match many packages at once; a rule for several ecosystems is one rule per ecosystem; `[[package]]` always takes priority over `[[package-set]]` for a given package.
@@ -118,7 +128,7 @@ Both blocks share five override fields, parsed identically; `[[package]]` also a
 | --- | --- | --- | --- |
 | `match` | string | required | `[[package]]`: exact `ecosystem/name`. `[[package-set]]`: `ecosystem/glob`. The ecosystem is `cargo`, `npm` or `pypi`; a name without one is E317. |
 | `release-trigger` | string (`"changeset"` \| `"auto"`) | none — every field here is an `Option`; omitted means "use this package's own default", not a config-level default | What causes this package to be considered for release |
-| `publish-to` | array of strings (`"crates-io"` \| `"npm"` \| `"pypi"` \| `"nuget"` \| `"github-release"` \| `"none"`) | none | Where this package publishes |
+| `publish-to` | array of strings (`"crates-io"` \| `"npm"` \| `"pypi"` \| `"nuget"` \| `"github-release"` \| `"none"`, or the name of a `kind = "cargo"` `[registries]` entry) | none | Where this package publishes. A name that is not a `kind = "cargo"` registry, or is not letters, digits, `-` and `_`, fails with E330. The names of the built-in targets (`crates-io`, `npm`, `pypi`, `nuget`, `github-release`, `none`) always mean the built-in target |
 | `tag-template` | string | none | Git tag template, e.g. `"callisto@{version}"` |
 | `previous-tag-templates` | array of strings | `[]` | `[[package]]` only (`[[package-set]]` rejects it). Earlier tag templates checked (in order) for this package's last release tag, only if `tag-template` finds none. They are matched by name only, so this is how a renamed package claims the tags it made under its old name |
 | `changelog` | string | none | Changelog path, relative to the package's own root. Forward-slash-separated only; rejected if absolute or containing `..` (E113). |
