@@ -6,7 +6,7 @@ use thiserror::Error;
 pub mod access;
 pub mod checkpoint;
 
-pub use access::{FirstParentTouches, GitAccess};
+pub use access::{literal_pathspec, FirstParentTouches, GitAccess};
 pub use checkpoint::{Checkpoint, CheckpointFacts, VERSION_CHECKPOINT};
 
 #[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]

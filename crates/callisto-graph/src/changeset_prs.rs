@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use callisto_model::vcs::{GitAccess, VcsError};
+use callisto_model::vcs::{literal_pathspec, GitAccess, VcsError};
 
 use crate::error::GraphError;
 
@@ -15,7 +15,7 @@ pub fn changeset_pull_requests(
     git: &GitAccess<'_>,
     changesets_dir: &Path,
 ) -> Result<BTreeMap<String, u64>, GraphError> {
-    let dir = changesets_dir.to_string_lossy();
+    let dir = literal_pathspec(changesets_dir);
     let args = [
         "log",
         "--first-parent",
@@ -24,7 +24,7 @@ pub fn changeset_pull_requests(
         "--name-only",
         "--format=%x01%s",
         "--",
-        dir.as_ref(),
+        dir.as_str(),
     ];
     let output = git.runner().run("git", &args, git.root()).map_err(VcsError::from)?;
     // A repository with no commit has no history to read; every other failure stays an error.

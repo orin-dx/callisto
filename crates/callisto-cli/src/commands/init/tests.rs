@@ -437,9 +437,9 @@ fn declining_to_ship_binaries_writes_no_release() {
     assert!(!config(dir.path()).contains("[release]"));
 }
 
-// Product, pre-filled forge, and targets (empty re-asks).
+// Product and targets (empty re-asks); the forge repository is origin's and is not asked.
 #[test]
-fn shipping_binaries_asks_product_forge_and_targets() {
+fn shipping_binaries_asks_product_and_targets() {
     let dir = workspace(2);
     let run = run_init(
         dir.path(),
@@ -449,7 +449,6 @@ fn shipping_binaries_asks_product_forge_and_targets() {
             Answer::Select(0),
             Answer::Confirm(true),
             Answer::Select(1),
-            Answer::Input("example/tools"),
             Answer::Input(" , "),
             Answer::Input("x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc"),
             Answer::Confirm(false),
@@ -464,16 +463,15 @@ fn shipping_binaries_asks_product_forge_and_targets() {
             VERSIONING_PROMPT,
             SHIP_PROMPT,
             PRODUCT_PROMPT,
-            FORGE_PROMPT,
             TARGETS_PROMPT,
             TARGETS_PROMPT,
             WORKFLOW_PROMPT,
             WRITE_PROMPT
         ]
     );
-    assert_eq!(run.prompter.asked[3].1.as_deref(), Some("example/tools"));
     let written = config(dir.path());
-    assert!(written.contains("[release]\nproduct-package = \"cargo/tool\"\nforge-repository = \"example/tools\""));
+    assert!(written.contains("[release]\nproduct-package = \"cargo/tool\"\ntargets = [\"x86_64-unknown-linux-gnu\"]\nasset-name = \"tool-{target}.tar.gz\""));
+    assert!(!written.contains("forge-repository"));
     assert!(written.contains("asset-name = \"tool-x86_64-pc-windows-msvc.zip\""));
     assert!(
         run.out.contains("upload tool-x86_64-unknown-linux-gnu.tar.gz"),
@@ -494,54 +492,12 @@ fn interactive_target_with_empty_entry_errors_without_writing() {
         vec![
             Answer::Select(0),
             Answer::Confirm(true),
-            Answer::Input("example/tools"),
             Answer::Input("x86_64-unknown-linux-gnu,,x86_64-pc-windows-msvc"),
         ],
         false,
     );
     let error = run.result.unwrap_err();
     assert!(error.to_string().contains("target `` is invalid"), "{error}");
-    assert!(nothing_written(dir.path()));
-}
-
-// A forge repository other than origin's, or an invalid one, errors up front without writing.
-#[test]
-fn forge_repository_mismatch_and_invalid_error() {
-    let dir = workspace(1);
-    let run = run_init(
-        dir.path(),
-        InitArgs {
-            yes: true,
-            versioning: Some(InitVersioning::Independent),
-            artifact_targets: vec!["x86_64-unknown-linux-gnu".to_owned()],
-            forge_repository: Some("other/tools".to_owned()),
-            ..Default::default()
-        },
-        false,
-        vec![],
-        false,
-    );
-    let error = run.result.unwrap_err();
-    assert!(
-        matches!(&error, CliError::Graph(GraphError::InitForgeRepositoryMismatch { .. })),
-        "{error}"
-    );
-    assert_eq!(
-        error.to_string(),
-        "forge repository `other/tools` does not match the origin remote `https://github.com/example/tools.git`"
-    );
-    assert!(!run.out.contains("First release preview"), "{}", run.out);
-    assert!(nothing_written(dir.path()));
-
-    let run = run_init(
-        dir.path(),
-        InitArgs::default(),
-        true,
-        vec![Answer::Select(0), Answer::Confirm(true), Answer::Input("no slash")],
-        false,
-    );
-    let error = run.result.unwrap_err();
-    assert!(error.to_string().contains("`no slash`"), "{error}");
     assert!(nothing_written(dir.path()));
 }
 
@@ -556,7 +512,6 @@ fn repeated_interactive_target_errors() {
         vec![
             Answer::Select(0),
             Answer::Confirm(true),
-            Answer::Input("example/tools"),
             Answer::Input("x86_64-unknown-linux-gnu, x86_64-unknown-linux-gnu"),
         ],
         false,
@@ -603,8 +558,62 @@ fn non_tty_without_yes_names_yes() {
     assert!(nothing_written(dir.path()));
 }
 
+// Shipping binaries needs a GitHub origin: the release goes to origin's repository, so a config written against
+// another host would fail later with E198.
 #[test]
-fn yes_with_targets_requires_forge_and_product() {
+fn shipping_binaries_with_a_non_github_origin_errors_without_writing() {
+    let dir = workspace(1);
+    git(
+        dir.path(),
+        &["remote", "set-url", "origin", "https://example.com/o/tools.git"],
+    );
+    let args = InitArgs {
+        artifact_targets: vec!["x86_64-unknown-linux-gnu".to_owned()],
+        ..yes(InitVersioning::Independent)
+    };
+    let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
+    assert!(
+        matches!(&error, CliError::Graph(GraphError::ReleaseForgeRepositoryMissing)),
+        "{error}"
+    );
+    assert!(nothing_written(dir.path()));
+
+    let run = run_init(
+        dir.path(),
+        InitArgs::default(),
+        true,
+        vec![Answer::Select(0), Answer::Confirm(true)],
+        false,
+    );
+    assert!(
+        matches!(
+            &run.result,
+            Err(CliError::Graph(GraphError::ReleaseForgeRepositoryMissing))
+        ),
+        "{:?}",
+        run.result
+    );
+    assert!(nothing_written(dir.path()));
+}
+
+// Several binary packages need --product-package; with targets given and no --yes it is named beside --yes.
+#[test]
+fn non_tty_without_yes_names_the_product_package_flag_too() {
+    let dir = workspace(2);
+    let args = InitArgs {
+        artifact_targets: vec!["x86_64-unknown-linux-gnu".to_owned()],
+        ..InitArgs::default()
+    };
+    let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
+    assert!(
+        matches!(&error, CliError::InitRequiresYes { missing } if missing == &["--yes", "--product-package"]),
+        "{error}"
+    );
+    assert!(nothing_written(dir.path()));
+}
+
+#[test]
+fn yes_with_targets_requires_product() {
     let dir = workspace(2);
     let missing = |args| match run_init(dir.path(), args, false, vec![], false).result.unwrap_err() {
         CliError::InitMissingFlags { missing } => missing,
@@ -615,7 +624,7 @@ fn yes_with_targets_requires_forge_and_product() {
             artifact_targets: vec!["x86_64-unknown-linux-gnu".to_owned()],
             ..yes(InitVersioning::Fixed)
         }),
-        ["--forge-repository", "--product-package"]
+        ["--product-package"]
     );
     assert!(nothing_written(dir.path()));
 }
@@ -636,7 +645,6 @@ fn yes_without_targets_ships_nothing() {
 fn with_targets(targets: &[&str]) -> InitArgs {
     InitArgs {
         artifact_targets: targets.iter().map(|target| (*target).to_owned()).collect(),
-        forge_repository: Some("example/tools".to_owned()),
         ..yes(InitVersioning::Independent)
     }
 }
@@ -725,32 +733,25 @@ fn registry_executable_can_be_initialized_without_artifact_generation() {
     assert!(!config(dir.path()).contains("[release]"));
 }
 
-// --forge-repository/--product-package are validated up front, before facts are even
+// --product-package is validated up front, before facts are even
 // detected: dropped silently without --artifact-target is the bug this rejects.
 #[test]
-fn forge_or_product_without_artifact_target_errors_up_front() {
+fn product_without_artifact_target_errors_up_front() {
     let dir = workspace(2);
-    for args in [
-        InitArgs {
-            forge_repository: Some("example/tools".to_owned()),
-            ..yes(InitVersioning::Independent)
-        },
-        InitArgs {
-            product_package: Some("app".to_owned()),
-            ..yes(InitVersioning::Independent)
-        },
-    ] {
-        let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
-        assert!(
-            matches!(&error, CliError::InitFlagRequiresArtifactTarget { .. }),
-            "{error}"
-        );
-        assert!(
-            error.to_string().contains("only applies with --artifact-target"),
-            "{error}"
-        );
-        assert!(nothing_written(dir.path()));
-    }
+    let args = InitArgs {
+        product_package: Some("app".to_owned()),
+        ..yes(InitVersioning::Independent)
+    };
+    let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
+    assert!(
+        matches!(&error, CliError::InitFlagRequiresArtifactTarget { .. }),
+        "{error}"
+    );
+    assert!(
+        error.to_string().contains("only applies with --artifact-target"),
+        "{error}"
+    );
+    assert!(nothing_written(dir.path()));
 }
 
 // No `origin`: init still writes the config, with a warning diagnostic, and skips the
@@ -831,7 +832,6 @@ fn non_interactive_matches_interactive() {
         vec![
             Answer::Select(1),
             Answer::Confirm(true),
-            Answer::Input("example/tools"),
             Answer::Input("x86_64-unknown-linux-gnu"),
             Answer::Confirm(false),
             Answer::Confirm(true),

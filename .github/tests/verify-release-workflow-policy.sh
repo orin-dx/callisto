@@ -127,18 +127,25 @@ def matrix_pairs(path, job):
 
 
 def table_agreement(paths):
-    """Every hand-copied target/asset table must equal callisto.toml's [[release.artifact]]."""
+    """Every hand-copied target/asset table must equal callisto.toml's [release] artifacts."""
     errs = []
     try:
         import tomllib
         with open(paths["config"], "rb") as f:
-            declared = tomllib.load(f).get("release", {}).get("artifact", [])
-        rust = {(a["target"], a["asset-name"]) for a in declared}
-    except ImportError:  # python < 3.11: read the artifact tables by text
+            release = tomllib.load(f).get("release", {})
+        rust = {(a["target"], a["asset-name"]) for a in release.get("artifact", [])}
+        template = release.get("asset-name")
+        if template:
+            rust |= {(t, template.replace("{target}", t)) for t in release.get("targets", [])}
+    except ImportError:  # python < 3.11: read the tables by text
         text = open(paths["config"]).read()
         rust = set(re.findall(r'target\s*=\s*"([^"]+)"\s*\nasset-name\s*=\s*"([^"]+)"', text))
+        template = re.search(r'^asset-name\s*=\s*"([^"]+)"', text, re.M)
+        targets = re.search(r'^targets\s*=\s*\[([^\]]*)\]', text, re.M)
+        if template and targets:
+            rust |= {(t, template.group(1).replace("{target}", t)) for t in re.findall(r'"([^"]+)"', targets.group(1))}
     if not rust:
-        return [f"{paths['config']}: no [[release.artifact]] target/asset-name pairs found"]
+        return [f"{paths['config']}: no [release] target/asset-name pairs found"]
     rust_assets = {a for _, a in rust}
 
     def compare(label, found):

@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use callisto_model::vcs::GitAccess;
 use callisto_model::{
-    select_last_tag, CommitSha, Diagnostic, DiagnosticCode, DiagnosticSeverity, LastTag, LastTagSelection, PackageId,
-    TagTemplate, VersionGrammar,
+    rank_tags, select_last_tag, CommitSha, Diagnostic, DiagnosticCode, DiagnosticSeverity, LastTag, LastTagSelection,
+    PackageId, RankedTags, TagTemplate, VersionGrammar,
 };
 
 use crate::config::ResolvedConfig;
@@ -123,14 +123,52 @@ fn candidates_cached<'a>(
     Ok(matched)
 }
 
-/// Keeps the chosen tag and records each skipped-tag warning once, however many packages scan the same tags.
-fn take_chosen(selection: LastTagSelection, diagnostics: &mut Vec<Diagnostic>) -> Option<LastTag> {
-    for diagnostic in selection.skipped {
+/// Records each skipped-tag warning once, however many packages scan the same tags.
+fn record_skipped(skipped: Vec<Diagnostic>, diagnostics: &mut Vec<Diagnostic>) {
+    for diagnostic in skipped {
         if !diagnostics.iter().any(|seen| seen.message == diagnostic.message) {
             diagnostics.push(diagnostic);
         }
     }
+}
+
+/// Keeps the chosen tag and records each skipped-tag warning once, however many packages scan the same tags.
+fn take_chosen(selection: LastTagSelection, diagnostics: &mut Vec<Diagnostic>) -> Option<LastTag> {
+    record_skipped(selection.skipped, diagnostics);
     selection.chosen
+}
+
+/// The commit each tag ends at, from one `git for-each-ref`; a tag that ends at something else is absent.
+fn read_tag_commits(git: &GitAccess<'_>) -> Result<BTreeMap<String, CommitSha>, GraphError> {
+    Ok(git
+        .tags_with_commits()?
+        .into_iter()
+        .filter_map(|(name, commit)| Some((name.as_str().to_owned(), commit?)))
+        .collect())
+}
+
+/// The commit each tag ends at, read the first time history asks for a tag by commit. History queries keyed by commit
+/// let the tags of one commit share their probes.
+#[derive(Default)]
+struct TagCommits(std::cell::OnceCell<Option<BTreeMap<String, CommitSha>>>);
+
+impl TagCommits {
+    /// The revision to query `tag` by: its commit, or the tag name when its commit is unknown.
+    fn rev_of(&self, git: &GitAccess<'_>, tag: &str) -> String {
+        let commits = self.0.get_or_init(|| read_tag_commits(git).ok());
+        commits
+            .as_ref()
+            .and_then(|commits| commits.get(tag))
+            .map_or_else(|| tag.to_owned(), |commit| commit.as_str().to_owned())
+    }
+
+    fn into_known(self) -> std::cell::OnceCell<BTreeMap<String, CommitSha>> {
+        let known = std::cell::OnceCell::new();
+        if let Some(Some(commits)) = self.0.into_inner() {
+            drop(known.set(commits));
+        }
+        known
+    }
 }
 
 /// The higher-versioned of two tags found for one package; `first` wins a tie.
@@ -223,6 +261,9 @@ impl TagIndex {
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
 
         let mut rosters = crate::history::Rosters::default();
+        let tag_commits = TagCommits::default();
+        // A bare-named package's candidates are parsed and ordered once, here, and checked below.
+        let mut ranked: std::collections::HashMap<PackageId, RankedTags> = std::collections::HashMap::new();
         // The first candidate of every bare-named package is checked below; read their manifests together.
         let mut wanted = Vec::new();
         for pkg in graph.packages() {
@@ -236,12 +277,13 @@ impl TagIndex {
             let Ok(candidates) = candidates_cached(&all_tags, &tmpl, &mut glob_cache) else {
                 continue;
             };
-            let Ok(selection) = select_last_tag(&tmpl, grammar, candidates.iter().copied()) else {
+            let Ok(tags) = rank_tags(&tmpl, grammar, candidates.iter().copied()) else {
                 continue;
             };
-            if let Some(tag) = take_chosen(selection, &mut Vec::new()) {
+            if let Some(tag) = tags.ordered.first() {
                 wanted.push((tag.name.as_str().to_owned(), manifest.path.clone()));
             }
+            ranked.insert(pkg.id.clone(), tags);
         }
         rosters.prefetch(git, &wanted);
 
@@ -255,32 +297,42 @@ impl TagIndex {
             let mut chosen = if pkg.tag_template.is_none() && pkg.id.ecosystem().is_none() {
                 // A bare name is the only evidence the default template has, so a tag is the package's only if its
                 // commit did not hold the name in another ecosystem.
-                let mut candidates = candidates_cached(&all_tags, &tmpl, &mut glob_cache)?;
-                loop {
-                    let selection = select_last_tag(&tmpl, grammar, candidates.iter().copied())?;
-                    let Some(tag) = take_chosen(selection, &mut diagnostics) else {
-                        break None;
+                let tags = match ranked.remove(&pkg.id) {
+                    Some(tags) => tags,
+                    None => rank_tags(
+                        &tmpl,
+                        grammar,
+                        candidates_cached(&all_tags, &tmpl, &mut glob_cache)?.iter().copied(),
+                    )
+                    .map_err(GraphError::from)?,
+                };
+                record_skipped(tags.skipped, &mut diagnostics);
+                let mut chosen = None;
+                // The newest tag is nearly always the package's own, so it is read by name with no lookup of commits; a
+                // rejection is the sign of tags to share, so the rest are read by commit.
+                let mut rejected = false;
+                for tag in tags.ordered {
+                    let rev = if rejected {
+                        tag_commits.rev_of(git, tag.name.as_str())
+                    } else {
+                        tag.name.as_str().to_owned()
                     };
                     // History that cannot be read is no evidence of another owner.
-                    let held = crate::history::may_have_held_name_at(
-                        git,
-                        tag.name.as_str(),
-                        pkg.id.name(),
-                        pkg,
-                        identity,
-                        &mut rosters,
-                    )
-                    .unwrap_or(true);
+                    let held =
+                        crate::history::may_have_held_name_at(git, &rev, pkg.id.name(), pkg, identity, &mut rosters)
+                            .unwrap_or(true);
                     if held {
-                        break Some(tag);
+                        chosen = Some(tag);
+                        break;
                     }
+                    rejected = true;
                     diagnostics.push(foreign_tag_diagnostic(&pkg.id, tag.name.as_str()));
                     foreign
                         .entry(pkg.id.clone())
                         .or_default()
                         .insert(tag.name.as_str().to_string());
-                    candidates.retain(|candidate| *candidate != tag.name.as_str());
                 }
+                chosen
             } else {
                 take_chosen(
                     select_from_tags_cached(&all_tags, &tmpl, grammar, &mut glob_cache)?,
@@ -312,7 +364,8 @@ impl TagIndex {
                     .collect();
                 let mut owned = Vec::new();
                 for tag in matching_tags(&all_tags, &unqualified)? {
-                    if crate::history::sole_owner_at(git, tag, pkg.id.name(), &same, identity, &mut rosters)?
+                    let rev = tag_commits.rev_of(git, tag);
+                    if crate::history::sole_owner_at(git, &rev, pkg.id.name(), &same, identity, &mut rosters)?
                         .is_some_and(|owner| owner.id == pkg.id)
                     {
                         owned.push(tag);
@@ -346,7 +399,7 @@ impl TagIndex {
             templates,
             foreign,
             all_tags: all_tags_set,
-            commits: std::cell::OnceCell::new(),
+            commits: tag_commits.into_known(),
             diagnostics,
         })
     }
@@ -375,12 +428,7 @@ impl TagIndex {
             return Ok(git.resolve_commit(&format!("refs/tags/{tag_name}"))?);
         }
         if self.commits.get().is_none() {
-            let commits = git
-                .tags_with_commits()?
-                .into_iter()
-                .filter_map(|(name, commit)| Some((name.as_str().to_owned(), commit?)))
-                .collect();
-            drop(self.commits.set(commits));
+            drop(self.commits.set(read_tag_commits(git)?));
         }
         match self.commits.get().and_then(|commits| commits.get(tag_name)) {
             Some(commit) => Ok(Some(commit.clone())),
@@ -809,5 +857,59 @@ mod tests {
             is_command_err,
             "TagIndex::build must propagate the CommandRunner error as GraphError::Command"
         );
+    }
+
+    /// Every tag of a commit that held the name in another ecosystem is rejected, not only the newest.
+    #[test]
+    fn all_tags_made_on_one_commit_by_another_package_are_foreign() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        callisto_fixtures::git::init_repo(root);
+        let run = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}");
+        };
+        std::fs::create_dir_all(root.join("crates/foo")).unwrap();
+        std::fs::write(
+            root.join("crates/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        run(&["add", "-A"]);
+        run(&["commit", "-q", "-m", "cargo foo"]);
+        for version in ["1.0.0", "1.0.1", "1.0.2"] {
+            run(&[
+                "-c",
+                "tag.gpgSign=false",
+                "tag",
+                "-a",
+                "-m",
+                "release",
+                &format!("foo@{version}"),
+            ]);
+        }
+        run(&["rm", "-rq", "crates"]);
+        std::fs::create_dir_all(root.join("packages/foo")).unwrap();
+        std::fs::write(
+            root.join("packages/foo/package.json"),
+            r#"{"name":"foo","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        run(&["add", "-A"]);
+        run(&["commit", "-q", "-m", "npm foo"]);
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &callisto_fixtures::git::GitRunner).expect("load");
+        let pkg = ws.graph.packages().next().expect("one package").id.clone();
+        let index = ws.tags().expect("tags");
+        assert!(index.last_tag(&pkg).is_none(), "{:?}", index.last_tag(&pkg));
+        for version in ["1.0.0", "1.0.1", "1.0.2"] {
+            assert!(!index.is_tag_of(&pkg, &format!("foo@{version}")), "foo@{version}");
+        }
     }
 }
