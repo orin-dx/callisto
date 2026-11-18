@@ -1,0 +1,37 @@
+--- crates/callisto-graph/src/commands/release_decision.rs
++++ replace require_recorded_changesets_consumed -> Result<(), GraphError> with Ok(())
+@@ -509,33 +509,17 @@
+ /// The commit deletes exactly the changesets the decision recorded. A decision from before that record must delete at
+ /// least one, since every release then started from a changeset.
+ fn require_recorded_changesets_consumed<R: CommandRunner, D: DependencyResolver>(
+     workspace: &Workspace<'_, R, D>,
+     release_commit: &CommitSha,
+     changed: &[(String, String)],
+     decision: &ReleaseDecisionV1,
+ ) -> Result<(), GraphError> {
+-    let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
+-    let deleted: std::collections::BTreeSet<&str> = changed
+-        .iter()
+-        .filter(|(status, path)| status == "D" && is_changeset_path(path, &changeset_dir))
+-        .map(|(_, path)| path.as_str())
+-        .collect();
+-    let consumed_as_recorded = match &decision.consumed_changesets {
+-        Some(recorded) => recorded.iter().map(String::as_str).eq(deleted.iter().copied()),
+-        None => !deleted.is_empty(),
+-    };
+-    if !consumed_as_recorded {
+-        return Err(GraphError::ReleaseCommitVerificationFailed {
+-            commit: release_commit.clone(),
+-            reason: CommitVerificationFailure::ConsumedChangesetsDiffer,
+-        });
+-    }
+-    Ok(())
++    Ok(()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// The decision file as the release commit holds it. Its own deserializer rejects entries that do not match its digest.
+ fn read_committed_decision<R: CommandRunner, D: DependencyResolver>(
+     workspace: &Workspace<'_, R, D>,
+     release_commit: &CommitSha,
+     decision_path: &std::path::Path,
+     decision_path_str: &str,

@@ -1,0 +1,27 @@
+--- crates/callisto-graph/src/commands/release_decision.rs
++++ replace derive_release_commit_decision -> Result<ReleaseDecisionV1, GraphError> with Ok(Default::default())
+@@ -404,23 +404,17 @@
+ /// before creating an intent. GitHub-specific PR/approval provenance belongs
+ /// in the workflow boundary; this graph function verifies the local,
+ /// provider-neutral commit delta only.
+ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
+     workspace: &Workspace<'_, R, D>,
+     release_commit: &CommitSha,
+     decision_path: &std::path::Path,
+ ) -> Result<ReleaseDecisionV1, GraphError> {
+-    let (parent, changed) = commit_delta(workspace, release_commit)?;
+-    let decision_path_str = normalized_git_path(decision_path)?;
+-    require_version_commit_shape(workspace, release_commit, &changed, &decision_path_str)?;
+-    let decision = read_committed_decision(workspace, release_commit, decision_path, &decision_path_str)?;
+-    require_recorded_changesets_consumed(workspace, release_commit, &changed, &decision)?;
+-    require_manifests_match_decision(workspace, release_commit, &parent, &changed, &decision)?;
+-    Ok(decision)
++    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// The commit's parent and what the commit changed against it, as `(status, path)` pairs. Fails unless `HEAD` is the
+ /// release commit.
+ fn commit_delta<R: CommandRunner, D: DependencyResolver>(
+     workspace: &Workspace<'_, R, D>,
+     release_commit: &CommitSha,
+ ) -> Result<(String, Vec<(String, String)>), GraphError> {

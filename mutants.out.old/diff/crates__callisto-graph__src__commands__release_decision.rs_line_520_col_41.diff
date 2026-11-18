@@ -1,0 +1,21 @@
+--- crates/callisto-graph/src/commands/release_decision.rs
++++ replace == with != in require_recorded_changesets_consumed
+@@ -512,17 +512,17 @@
+     workspace: &Workspace<'_, R, D>,
+     release_commit: &CommitSha,
+     changed: &[(String, String)],
+     decision: &ReleaseDecisionV1,
+ ) -> Result<(), GraphError> {
+     let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
+     let deleted: std::collections::BTreeSet<&str> = changed
+         .iter()
+-        .filter(|(status, path)| status == "D" && is_changeset_path(path, &changeset_dir))
++        .filter(|(status, path)| status != /* ~ changed by cargo-mutants ~ */ "D" && is_changeset_path(path, &changeset_dir))
+         .map(|(_, path)| path.as_str())
+         .collect();
+     let consumed_as_recorded = match &decision.consumed_changesets {
+         Some(recorded) => recorded.iter().map(String::as_str).eq(deleted.iter().copied()),
+         None => !deleted.is_empty(),
+     };
+     if !consumed_as_recorded {
+         return Err(GraphError::ReleaseCommitVerificationFailed {

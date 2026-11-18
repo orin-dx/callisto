@@ -1,0 +1,57 @@
+--- crates/callisto-graph/src/commands/release_decision.rs
++++ replace derive_release_decision -> Result<ReleaseDecisionV1, GraphError> with Ok(Default::default())
+@@ -46,53 +46,17 @@
+ /// Derives the durable roster from a freshly computed version plan.
+ ///
+ /// The caller supplies the plan from the same workspace observation; this
+ /// function never inspects a caller-provided release roster.
+ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyResolver>(
+     workspace: &Workspace<'_, R, D>,
+     plan: &VersionPlan,
+ ) -> Result<ReleaseDecisionV1, GraphError> {
+-    let mut package_ids = std::collections::BTreeMap::new();
+-    for package in workspace.graph.packages() {
+-        let ids = release_package_ids(&workspace.identity, package)?;
+-        package_ids.insert(package.id.clone(), ids);
+-    }
+-
+-    let mut entries = Vec::new();
+-    for bump in &plan.bumps {
+-        // `plan` derives from this observation, so a missing package id means an inconsistent pairing, not an operator error.
+-        let ids = package_ids
+-            .get(&bump.package)
+-            .ok_or_else(|| GraphError::ReleaseInvariant {
+-                detail: format!(
+-                    "version plan references package `{}`, which is absent from this workspace observation",
+-                    bump.package.display_name()
+-                ),
+-            })?;
+-        for id in ids {
+-            entries.push(ReleaseDecisionEntry {
+-                package: id.clone(),
+-                target_version: bump.to.clone(),
+-                reasons: vec![reason_from_bump(
+-                    &workspace.graph,
+-                    &bump.package,
+-                    id,
+-                    bump.reason.as_ref(),
+-                    &package_ids,
+-                )?],
+-            });
+-        }
+-    }
+-    let consumed = plan
+-        .consumed_changesets
+-        .iter()
+-        .map(|path| normalized_git_path(path))
+-        .collect::<Result<Vec<_>, _>>()?;
+-    Ok(ReleaseDecisionV1::new(entries)?.consuming(consumed))
++    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Derives a durable decision for explicit, exact release identities.
+ ///
+ /// A linked group is one release unit: selecting any member includes every
+ /// member of that linked group which the version plan selected. All other
+ /// packages remain outside the authority boundary. The caller must pass
+ /// ecosystem-qualified [`ReleasePackageId`] values; this function never uses

@@ -1,0 +1,51 @@
+--- crates/callisto-graph/src/commands/release_decision.rs
++++ replace require_version_commit_shape -> Result<(), GraphError> with Ok(())
+@@ -468,47 +468,17 @@
+ /// The commit has the shape of a version commit: it wrote the decision and touched only the paths a version commit may
+ /// touch.
+ fn require_version_commit_shape<R: CommandRunner, D: DependencyResolver>(
+     workspace: &Workspace<'_, R, D>,
+     release_commit: &CommitSha,
+     changed: &[(String, String)],
+     decision_path: &str,
+ ) -> Result<(), GraphError> {
+-    let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
+-
+-    // The decision must be written by this commit, not left over from an earlier release.
+-    let decision_freshly_written = changed
+-        .iter()
+-        .any(|(status, path)| path == decision_path && matches!(status.as_str(), "A" | "M"));
+-    if !decision_freshly_written {
+-        return Err(GraphError::ReleaseCommitVerificationFailed {
+-            commit: release_commit.clone(),
+-            reason: CommitVerificationFailure::DecisionNotWrittenByCommit,
+-        });
+-    }
+-
+-    // A version commit changes versions and what records them, nothing else. Any other path (build scripts, source,
+-    // a package manager's `.npmrc` or `.cargo/config.toml`, `callisto.toml`, an action) could change what is published
+-    // or where, under the cover of a bot-authored diff.
+-    let changelogs = workspace
+-        .graph
+-        .packages()
+-        .filter_map(|package| package.changelog.as_deref())
+-        .map(normalized_git_path)
+-        .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+-    for (_, path) in changed {
+-        if !is_version_commit_path(path, decision_path, &changeset_dir, &changelogs) {
+-            return Err(GraphError::ReleaseCommitVerificationFailed {
+-                commit: release_commit.clone(),
+-                reason: CommitVerificationFailure::UnexpectedPath { path: path.clone() },
+-            });
+-        }
+-    }
+-    Ok(())
++    Ok(()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// The commit deletes exactly the changesets the decision recorded. A decision from before that record must delete at
+ /// least one, since every release then started from a changeset.
+ fn require_recorded_changesets_consumed<R: CommandRunner, D: DependencyResolver>(
+     workspace: &Workspace<'_, R, D>,
+     release_commit: &CommitSha,
+     changed: &[(String, String)],

@@ -1514,6 +1514,9 @@ mod tests {
                 Err(other) => panic!("{recorded:?} vs {deleted:?}: {other:?}"),
             }
         }
+        // Only deleted changeset files count: a deleted lockfile is not a consumed changeset.
+        let result = verify_version_commit(Some(&[a]), &[a], "D\tpackages/web/pnpm-lock.yaml");
+        assert!(result.is_ok(), "{result:?}");
     }
 
     /// A version commit may change manifests, lockfiles, changelogs, changesets and the decision file, anywhere.
