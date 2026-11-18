@@ -1,0 +1,117 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PAJQHT7MB5F78ZN1E2CJGH",
+  "session_id": "fed51247-a185-4a6e-8a46-a4a6c2bbff9d",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T03:18:16.491121Z",
+  "branch": "worktree-wp-d-init-boundary",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".changeset/mighty-lynxes-sprint.md",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e0ccc5f65b03",
+  "checkpoint_transcript_start": 1062,
+  "transcript_lines_at_start": 1062,
+  "compact_transcript_start": 95,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 20872,
+    "cache_read_tokens": 3279255,
+    "output_tokens": 10281,
+    "api_call_count": 18,
+    "subagent_tokens": {
+      "input_tokens": 16,
+      "cache_creation_tokens": 77690,
+      "cache_read_tokens": 477439,
+      "output_tokens": 4377,
+      "api_call_count": 8
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 220,
+    "cache_creation_tokens": 162565,
+    "cache_read_tokens": 14720784,
+    "output_tokens": 48407,
+    "api_call_count": 108,
+    "subagent_tokens": {
+      "input_tokens": 16,
+      "cache_creation_tokens": 77690,
+      "cache_read_tokens": 477439,
+      "output_tokens": 4377,
+      "api_call_count": 8
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 6,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 6,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Address review findings on the workflow-only `callisto init --workflow` path (WP D / F09, tied to issue #357): fix the dry-run mislabel, make detection use the user's own callisto.toml, refuse dropped flags, and correct the changeset wording, then re-gate and push.",
+    "outcome": "Fixes were applied across the graph and CLI init code, with new tests added for the previously missed mutants. Focused init tests passed and the full gate (pre-push, lint, doc-check, test) was run. The commit was amended and a second cargo-mutants run was started, but its result is not shown, and the push, #357 linking and move to L had not happened yet.",
+    "learnings": {
+      "repo": [
+        "Mutation testing is run with `cargo mutants --in-place --in-diff <diff> --test-tool nextest`, with the diff generated from `git diff origin/main...HEAD -- '*.rs'`.",
+        "Builds use CARGO_PROFILE_DEV_DEBUG=0, CARGO_PROFILE_TEST_DEBUG=0 and CARGO_BUILD_JOBS=4 to keep runs light.",
+        "The full gate is `just pre-push`, `just lint`, `just doc-check` and `just test`.",
+        "Commits are checked for signatures (`git log --format='%h %G? %s'`), and git is invoked via /usr/bin/git.",
+        "Edits to files were scripted via python3 -I edit scripts in /tmp/claude-501, followed by `cargo fmt --all`.",
+        "Init tests use helpers like `workspace()`, `run_init`, `run_init_with_runner` and `fake_ls_remote(version)`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/render/mod.rs",
+          "line": 131,
+          "end_line": 136,
+          "finding": "`render_init` prints '[DRY-RUN] Would write … (no files written)' whenever `initialized` is false, so a real workflow-only write that reports `initialized: false` is mislabeled as a dry run."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 240,
+          "end_line": 275,
+          "finding": "`detect_initialized` calls `detect_facts`, which re-runs `detect_tag_templates` and loads the workspace from a freshly rendered config instead of the user's callisto.toml. This causes spurious E193/E194 tag-template errors and divergent ecosystem, secret and platform detection."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 123,
+          "finding": "In `run`, the early return to the workflow-only path skips later flag handling, so `--versioning` and `--artifact-target` were silently dropped on initialized workspaces (previously E190). The fix refuses them with `InitAlreadyInitialized`."
+        }
+      ],
+      "workflow": [
+        "A subagent's source-only review (no build or tests) found real defects. Its findings were verified by reading the cited code before editing.",
+        "Edits were held until the background mutation run finished because it uses the same worktree, which avoids corrupting results.",
+        "Missed mutants are addressed by adding targeted tests, then re-running mutants on the amended diff."
+      ]
+    },
+    "friction": [
+      "The background mutation run occupied the worktree, forcing edits to wait.",
+      "The first focused test run needed a second pass after the edit12 script before the init tests passed.",
+      "The reviewer worked from source only, so the defects it reported had to be checked manually."
+    ],
+    "open_items": [
+      "Check the results of the second cargo-mutants run (/tmp/claude-501/mutants2.log) for remaining MISSED mutants.",
+      "Push the amended commit and link the trail to #357.",
+      "Move on to work package L."
+    ]
+  }
+}

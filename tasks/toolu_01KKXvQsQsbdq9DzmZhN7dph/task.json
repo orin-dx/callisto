@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01KKXvQsQsbdq9DzmZhN7dph",
+  "agent_id": "a3faa115b3344bddb",
+  "subagent_type": "general-purpose",
+  "task_description": "Review WP D diff",
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 77690,
+    "cache_read_tokens": 477439,
+    "output_tokens": 4377,
+    "api_call_count": 8
+  },
+  "started_at": "2026-11-17T19:05:38.447262-08:00",
+  "completed_at": "2026-11-17T19:06:41.780482-08:00"
+}
