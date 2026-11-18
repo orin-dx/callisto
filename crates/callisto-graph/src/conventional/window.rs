@@ -246,7 +246,7 @@ mod tests {
     }
 
     /// A `CommandRunner` double standing in for the `git` binary. Returns a
-    /// canned `git log` payload in the `--format=<RS>%H<US>%B` record shape
+    /// canned `git log` payload in the `-z --format=%H%n%B` record shape
     /// `GitAccess` issues.
     struct FakeGitLogRunner {
         stdout: String,
@@ -271,8 +271,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let sha_a = "a".repeat(40);
         let sha_b = "b".repeat(40);
-        let stdout =
-            format!("\u{1e}{sha_a}\u{1f}feat(core): add thing\n\nSome body text\n\u{1e}{sha_b}\u{1f}fix: bug\n");
+        let stdout = format!("{sha_a}\nfeat(core): add thing\n\nSome body text\n\0{sha_b}\nfix: bug\n\0");
         let runner = FakeGitLogRunner { stdout };
         let git = GitAccess::new(dir.path(), &runner);
 

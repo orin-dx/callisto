@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_manifests::{open, Manifest, OpenContext, WorkspaceCargoResolver};
+use callisto_model::vcs::literal_pathspec;
 use callisto_model::{
     ApplyPermit, CommandError, CommandRunner, DepKind, Ecosystem, LockfileRefreshResult, ManifestFormat, ManifestRole,
     Version,
@@ -604,14 +605,15 @@ fn active_ecosystems(plan: &VersionPlan) -> HashSet<Ecosystem> {
     active
 }
 
-/// Runs `git <prefix> <paths...>` in `root`, mapping a non-zero exit to `GraphError::Command`.
+/// Runs `git <prefix> <paths...>` in `root` with each path matched literally, mapping a non-zero exit to
+/// `GraphError::Command`.
 fn run_git_on_paths<R: CommandRunner>(
     runner: &R,
     root: &Path,
     prefix: &[&str],
     paths: &[&PathBuf],
 ) -> Result<(), GraphError> {
-    let rendered: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+    let rendered: Vec<String> = paths.iter().map(|p| literal_pathspec(p)).collect();
     let mut args: Vec<&str> = prefix.to_vec();
     args.extend(rendered.iter().map(String::as_str));
     let output = runner.run("git", &args, root)?;

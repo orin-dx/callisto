@@ -5,10 +5,10 @@ use std::process::Command;
 use callisto_fixtures::perf::{PackageKind, ScaledWorkspace};
 
 /// Runs `callisto` over a workspace of `packages` and returns how many git processes it started.
-fn git_processes(packages: usize, args: &[&str]) -> usize {
+fn git_processes(kind: PackageKind, packages: usize, args: &[&str]) -> usize {
     let repository = tempfile::tempdir().unwrap();
     ScaledWorkspace {
-        kind: PackageKind::Cargo,
+        kind,
         packages,
         extra_commits: packages,
     }
@@ -35,8 +35,8 @@ fn git_processes(packages: usize, args: &[&str]) -> usize {
 }
 
 fn assert_independent_of_package_count(args: &[&str]) {
-    let few = git_processes(6, args);
-    let many = git_processes(30, args);
+    let few = git_processes(PackageKind::Cargo, 6, args);
+    let many = git_processes(PackageKind::Cargo, 30, args);
     assert_eq!(
         few, many,
         "`callisto {args:?}` started {few} git processes for 6 packages and {many} for 30: a git process per package"
@@ -56,4 +56,17 @@ fn version_dry_run_starts_no_git_process_per_package() {
 #[test]
 fn release_dry_run_starts_no_git_process_per_package() {
     assert_independent_of_package_count(&["--dry-run", "release"]);
+}
+
+/// Tags made on one commit by another package that held the package's name share that commit's history probes.
+#[test]
+fn foreign_tags_of_one_commit_start_no_git_process_per_tag() {
+    for args in [&["status"][..], &["--dry-run", "version"][..]] {
+        let few = git_processes(PackageKind::ForeignTags, 6, args);
+        let many = git_processes(PackageKind::ForeignTags, 30, args);
+        assert_eq!(
+            few, many,
+            "`callisto {args:?}` started {few} git processes for 6 foreign tags and {many} for 30: a git process per tag"
+        );
+    }
 }

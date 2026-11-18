@@ -1,4 +1,5 @@
-//! A large, deterministic Cargo or pnpm workspace in a real Git repository, built with one `git fast-import` stream.
+//! A large, deterministic Cargo, pnpm or foreign-tag workspace in a real Git repository, built with one `git
+//! fast-import` stream.
 //!
 //! Every package is tagged `pkg-<n>@1.0.0`, each at one of the first `extra_commits + 1` commits in turn, as if released
 //! at different times. The commits after the first each edit one package, and the last commit adds a changeset to every
@@ -17,6 +18,9 @@ pub enum PackageKind {
     Cargo,
     /// pnpm packages under `packages/`, each naming the previous one by a relative `workspace:` path.
     PnpmRelative,
+    /// One npm package `shared` at `packages/shared`, with `packages` release tags made on one earlier commit, when a
+    /// Cargo package of the same name lived at `crates/shared`.
+    ForeignTags,
 }
 
 impl PackageKind {
@@ -24,6 +28,7 @@ impl PackageKind {
         match self {
             PackageKind::Cargo => format!("crates/pkg-{index}"),
             PackageKind::PnpmRelative => format!("packages/pkg-{index}"),
+            PackageKind::ForeignTags => "packages/shared".to_owned(),
         }
     }
 
@@ -31,6 +36,7 @@ impl PackageKind {
         match self {
             PackageKind::Cargo => format!("cargo/pkg-{index}"),
             PackageKind::PnpmRelative => format!("npm/pkg-{index}"),
+            PackageKind::ForeignTags => "npm/shared".to_owned(),
         }
     }
 }
@@ -40,9 +46,9 @@ impl PackageKind {
 pub struct ScaledWorkspace {
     /// Which ecosystem the packages are in.
     pub kind: PackageKind,
-    /// Packages, each depending on the previous one except every fourth.
+    /// Packages, each depending on the previous one except every fourth; for `ForeignTags`, the number of tags.
     pub packages: usize,
-    /// Commits after the tagged one, each editing one package's source.
+    /// Commits after the tagged one, each editing one package's source; unused by `ForeignTags`.
     pub extra_commits: usize,
 }
 
@@ -66,7 +72,64 @@ impl ScaledWorkspace {
         );
     }
 
+    fn foreign_tags_stream(self) -> Vec<u8> {
+        let mut out = Vec::new();
+        let workspace = [
+            ("callisto.toml".to_owned(), "# bench\n".to_owned()),
+            (
+                "Cargo.toml".to_owned(),
+                "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n".to_owned(),
+            ),
+            ("crates/shared/Cargo.toml".to_owned(), manifest_named("shared")),
+            ("crates/shared/src/lib.rs".to_owned(), "pub fn f() {}\n".to_owned()),
+        ];
+        commit(&mut out, 1, "chore: a Cargo package named shared", &workspace);
+        for index in 0..self.packages {
+            let name = format!("shared@1.0.{index}");
+            let message = format!("Release {name}\n");
+            write!(
+                out,
+                "tag {name}\nfrom :1\ntagger Bench <bench@example.com> {TIMESTAMP} +0000\ndata {}\n{message}\n",
+                message.len()
+            )
+            .unwrap();
+        }
+        write!(
+            out,
+            "commit refs/heads/main\nmark :2\ncommitter Bench <bench@example.com> {} +0000\n",
+            TIMESTAMP + 2
+        )
+        .unwrap();
+        let message = "chore: replace it with an npm package named shared\n";
+        write!(out, "data {}\n{message}from :1\n", message.len()).unwrap();
+        for path in ["Cargo.toml", "crates/shared/Cargo.toml", "crates/shared/src/lib.rs"] {
+            writeln!(out, "D {path}").unwrap();
+        }
+        let replacement = [
+            ("pnpm-workspace.yaml", "packages:\n  - \"packages/*\"\n"),
+            ("package.json", "{\"private\":true}\n"),
+            (
+                "packages/shared/package.json",
+                "{\"name\":\"shared\",\"version\":\"1.0.0\"}\n",
+            ),
+        ];
+        for (path, content) in replacement {
+            write!(out, "M 100644 inline {path}\ndata {}\n{content}\n", content.len()).unwrap();
+        }
+        let changeset = "---\n\"npm/shared\": patch\n---\n\nFix shared.\n";
+        commit(
+            &mut out,
+            3,
+            "chore: add a changeset",
+            &[(".changeset/bench-0.md".to_owned(), changeset.to_owned())],
+        );
+        out
+    }
+
     fn stream(self) -> Vec<u8> {
+        if self.kind == PackageKind::ForeignTags {
+            return self.foreign_tags_stream();
+        }
         let mut out = Vec::new();
         let mut mark = 1;
 
@@ -83,12 +146,14 @@ impl ScaledWorkspace {
                 ));
                 files.push(("package.json".to_owned(), "{\"private\":true}\n".to_owned()));
             }
+            PackageKind::ForeignTags => unreachable!("stream hands ForeignTags to foreign_tags_stream"),
         }
         for index in 0..self.packages {
             let dir = self.kind.dir(index);
             match self.kind {
                 PackageKind::Cargo => files.push((format!("{dir}/Cargo.toml"), manifest(index))),
                 PackageKind::PnpmRelative => files.push((format!("{dir}/package.json"), pnpm_manifest(index))),
+                PackageKind::ForeignTags => unreachable!("stream hands ForeignTags to foreign_tags_stream"),
             }
             files.push((format!("{dir}/src/lib.rs"), "pub fn f() {}\n".to_owned()));
         }
@@ -134,6 +199,10 @@ impl ScaledWorkspace {
         commit(&mut out, mark, "chore: add changesets", &changesets);
         out
     }
+}
+
+fn manifest_named(name: &str) -> String {
+    format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n")
 }
 
 fn manifest(index: usize) -> String {
