@@ -446,6 +446,7 @@ fn commit_delta<R: CommandRunner, D: DependencyResolver>(
         "--name-status",
         "-r",
         "--no-renames",
+        "-z",
         parent.as_str(),
         release_commit.as_str(),
     ];
@@ -758,30 +759,25 @@ fn git_stdout<R: CommandRunner>(runner: &R, root: &std::path::Path, args: &[&str
     if !output.success() {
         return Err(command_non_zero_exit("git", args, &output));
     }
-    Ok(output.stdout_trimmed().to_string())
+    Ok(output.stdout_line().to_string())
 }
 
+/// Reads `--name-status -z` output: NUL-terminated status and path fields, the path unquoted.
 fn parse_name_status(output: &str, args: &[&str]) -> Result<Vec<(String, String)>, GraphError> {
-    output
-        .lines()
-        .map(|line| {
-            let (status, path) = line.split_once('\t').ok_or_else(|| {
-                command_malformed_output(
-                    "git",
-                    args,
-                    format!("name-status line missing a tab separator: `{line}`"),
-                )
-            })?;
-            if !matches!(status, "A" | "M" | "D") || path.is_empty() || path.contains('\0') {
-                return Err(command_malformed_output(
-                    "git",
-                    args,
-                    format!("name-status reported an unexpected status/path: `{status}` `{path}`"),
-                ));
-            }
-            Ok((status.to_string(), path.to_string()))
-        })
-        .collect()
+    let mut fields = output.strip_suffix('\0').unwrap_or(output).split('\0');
+    let mut changed = Vec::new();
+    while let Some(status) = fields.next().filter(|status| !status.is_empty()) {
+        let path = fields.next().unwrap_or_default();
+        if !matches!(status, "A" | "M" | "D") || path.is_empty() {
+            return Err(command_malformed_output(
+                "git",
+                args,
+                format!("name-status reported an unexpected status/path: `{status}` `{path}`"),
+            ));
+        }
+        changed.push((status.to_string(), path.to_string()));
+    }
+    Ok(changed)
 }
 
 fn git_file<R: CommandRunner>(
@@ -1063,14 +1059,15 @@ mod tests {
     fn release_commit_delta_parser_accepts_only_unambiguous_path_statuses() {
         let args = ["diff-tree", "--name-status"];
         assert_eq!(
-            parse_name_status("M\tCargo.toml\nD\t.changeset/release.md\n", &args).unwrap(),
+            parse_name_status("M\0Cargo.toml\0D\0.changeset/release.md\0A\0p\u{fc}ber/a\tb\0", &args).unwrap(),
             vec![
                 ("M".to_string(), "Cargo.toml".to_string()),
                 ("D".to_string(), ".changeset/release.md".to_string()),
+                ("A".to_string(), "p\u{fc}ber/a\tb".to_string()),
             ]
         );
-        assert!(parse_name_status("R100\told\tnew\n", &args).is_err());
-        assert!(parse_name_status("M Cargo.toml\n", &args).is_err());
+        assert!(parse_name_status("R100\0old\0new\0", &args).is_err());
+        assert!(parse_name_status("M\0", &args).is_err());
     }
 
     #[test]
@@ -1094,7 +1091,7 @@ mod tests {
     #[test]
     fn release_commit_delta_parser_reports_malformed_output_not_stale_intent() {
         let args = ["diff-tree", "--name-status"];
-        let err = parse_name_status("R100\told\tnew\n", &args).unwrap_err();
+        let err = parse_name_status("R100\0old\0new\0", &args).unwrap_err();
         match err {
             GraphError::ReleaseCommand {
                 program,
@@ -1292,7 +1289,9 @@ mod tests {
                 return ok(String::new());
             }
             if args.first().copied() == Some("diff-tree") {
-                return ok(self.name_status.clone());
+                // Fixtures are written `<status>\t<path>` per line; `-z` answers each field NUL-terminated.
+                let fields = self.name_status.lines().flat_map(|line| line.split('\t'));
+                return ok(fields.map(|field| format!("{field}\0")).collect());
             }
             if args.first().copied() == Some("show") && args.get(1).copied() == Some(decision_object.as_str()) {
                 return ok(self.decision_json.clone());
