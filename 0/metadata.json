@@ -1,0 +1,139 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QXFHE9BCYTZW2DJRYEPKCS",
+  "session_id": "a9a4fe33-7ec3-4bd6-a43c-3ff99bd1e04d",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:07:58.325686Z",
+  "branch": "fix/python-epoch-requirements",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "4df8712e8fa6",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 200,
+    "cache_creation_tokens": 316645,
+    "cache_read_tokens": 14128192,
+    "output_tokens": 45889,
+    "api_call_count": 96,
+    "subagent_tokens": {
+      "input_tokens": 18,
+      "cache_creation_tokens": 54354,
+      "cache_read_tokens": 532533,
+      "output_tokens": 6210,
+      "api_call_count": 9
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 200,
+    "cache_creation_tokens": 316645,
+    "cache_read_tokens": 14128192,
+    "output_tokens": 45889,
+    "api_call_count": 96,
+    "subagent_tokens": {
+      "input_tokens": 18,
+      "cache_creation_tokens": 54354,
+      "cache_read_tokens": 532533,
+      "output_tokens": 6210,
+      "api_call_count": 9
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01SvrZxCtEgCSLfs1aZ7vFfe",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "4df8712e8fa6",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 29,
+        "end": 30,
+        "entry_ids": [
+          "dbc89fb4-71da-4179-bc3e-567d58ea713b"
+        ],
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "summary": {
+    "intent": "Execute Session 3 of the v1-alpha launch plan via a multi-agent workflow (WPs A, B, C, then N), then handle follow-up work from the lead session: the RUSTSEC-2026-0542 audit fix on #560, and new WP U (preserve the PEP 440 epoch when rewriting Python requirements, trail #462).",
+    "outcome": "WPs A, B and C were pushed as PRs #560, #562 and #564 and linked to trail #357. The RUSTSEC-2026-0542 ignore was committed signed and pushed to #560. WP N was pushed as PR #568 and linked to #458; its `just test` still exits 100 on one registry test. WP U's epoch fix, tests, docs spec and changeset are written and committed locally on `fix/python-epoch-requirements`. Review nits were applied and the gates re-run, but U is not yet pushed or linked to trail #462. K is not started.",
+    "learnings": {
+      "repo": [
+        "Branch work lives in worktrees under .claude/worktrees/<name>, created with EnterWorktree. The launch rules require signed commits with no Claude-Session trailer on this public repo, and never gpgsign=false.",
+        "Gates are run by exit code: `just pre-push`, `just lint`, `just doc-check` and `just test`. They are run with CARGO_PROFILE_DEV_DEBUG=0, CARGO_PROFILE_TEST_DEBUG=0 and CARGO_BUILD_JOBS set to cores/5.",
+        "Trails are linked with `entire trail link <n>`, and `entire trail ci-pr` reports the PR backing a branch. A, B and C go on #357, K and N on #458, and U on #462. Existing trails must be linked, not created.",
+        "PR bodies carry an `<!-- entire-shadow-pr -->` marker, so edited bodies must keep it. PRs are not opened with `gh`.",
+        "`just test` is flaky in the workspace. `callisto-graph registry::tests::a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim` runs the real `cargo info` and fails with CommandFailed. `commands::init::tests::an_existing_config_errors` was reported leaky once. Neither cause is known.",
+        "`cargo mutants --in-diff` reports no mutants when the diff touches only tests. `--in-place` with an in-diff file was used for WP U. Overlapping mutants runs can leave a stray mutation in the tree. Never commit mutants.out*.",
+        "The `cascade.peer-escalation` default is resolved in crates/callisto-graph/src/config/resolve.rs and documented in docs/config.md. Flipping it to false changed outcomes in the cascade_tests and version_tests fixtures. The test fixtures needed the edge kind `Peer` (capitalised), not `peer`.",
+        "The dev dependency trycmd 1.2.1 pulls in humantime 2.4.0 through humantime-serde, which triggers RUSTSEC-2026-0542. No newer trycmd exists, so deny.toml [advisories] gets a reasoned ignore.",
+        "The Python manifest renderer is crates/callisto-manifests/src/python.rs, with tests in python/tests.rs. Native PEP 440 version support is in crates/callisto-model/src/version.rs. Poetry caret and tilde requirements have no epoch form, so rewriting one for an epoch release fails with E319."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/python.rs",
+          "line": 823,
+          "finding": "render_target rebuilt the requirement from major.minor.patch, which dropped the epoch (>=2!0.4.8 became >=0.4.9). It now renders from the native PEP 440 version, and the epoch is kept on every bound, including the upper bound."
+        },
+        {
+          "path": "crates/callisto-cli/tests/python_dependency_tables_tests.rs",
+          "finding": "An end-to-end regression test was added. A dependent with `>=2!0.4.8,<2!1` and `==2!0.4.8` is rewritten to `>=2!0.4.9, <2!1` and `==2!0.4.9` when the dependency is released."
+        },
+        {
+          "path": "docs/specs/versioning.json",
+          "finding": "The spec text was updated to describe epoch preservation in rewritten requirements."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "`git fetch` was blocked in the sandbox because github.com:22 is not allowed, so implementers fell back to local origin/main.",
+      "The workflow had to be killed and relaunched when the lead's message about existing trails arrived, which wasted several minutes of agent work.",
+      "The first commit and push for the #560 fix was blocked by the classifier because of the Claude-Session trailer, against saved memory. The message was only resent after explicit lead authorization.",
+      "The flaky registry test made `just test` exit 100 on several runs. WP N's PR was left with a failing gate that is assumed, not confirmed, to be that flake.",
+      "The compound shell commands were rejected by the guard and had to be re-run step by step."
+    ],
+    "open_items": [
+      "WP U: it still needs the post-review gates to pass, a fresh `cargo mutants --in-diff` run, a push with `HEAD:refs/heads/<branch>` checked via `git ls-remote`, linking to trail #462 and a signature check. One redundant Poetry guard was removed after a surviving mutant.",
+      "WP K is not started. It waits for Session 1 to merge G (#571) and goes on trail #458.",
+      "None of the PRs (#560, #562, #564, #568) have been merged.",
+      "The flaky registry test and the leaky init test have unknown causes. The assumption that #560 fixes the registry flake is unverified.",
+      "`just ci` and `just bench` were never run on any WP."
+    ]
+  }
+}
