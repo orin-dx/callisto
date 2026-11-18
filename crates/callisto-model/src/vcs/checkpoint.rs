@@ -86,11 +86,11 @@ impl GitAccess<'_> {
     /// otherwise.
     pub fn create_checkpoint(&self, name: &str, facts: &CheckpointFacts, date: &str) -> Result<CommitSha, VcsError> {
         let git_dir = self.git_stdout(&["rev-parse", "--absolute-git-dir"])?;
-        let index = Path::new(git_dir.trim()).join("callisto-checkpoint.index");
+        let index = Path::new(&git_dir).join("callisto-checkpoint.index");
         let index_str = index.to_string_lossy().into_owned();
         let env = [("GIT_INDEX_FILE", index_str.as_str())];
         let real_index = self.git_stdout(&["rev-parse", "--git-path", "index"])?;
-        let real_index = self.root().join(real_index.trim());
+        let real_index = self.root().join(real_index);
         let created = (|| {
             let index_commit = self.internal_commit(&self.git_stdout(&["write-tree"])?, &[&facts.head], "index")?;
             // Seeded from the real index so Git's stat cache spares rehashing every tracked file; without one it is
@@ -293,7 +293,7 @@ impl GitAccess<'_> {
         if !output.success() {
             return Err(git_failed(args, self.root(), &output.stderr));
         }
-        Ok(output.stdout_trimmed().to_string())
+        Ok(output.stdout_line().to_string())
     }
 }
 

@@ -8,6 +8,29 @@ use callisto_model::{
 use super::*;
 use crate::plan::{PlannedBump, VersionPlan};
 
+#[test]
+fn staging_a_written_path_named_with_a_glob_stages_only_that_path() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    for path in ["p/odd*/a", "p/odd-other/a"] {
+        std::fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+        std::fs::write(root.join(path), "1\n").unwrap();
+    }
+    callisto_fixtures::git::run_git(root, &["add", "-A"]);
+    callisto_fixtures::git::run_git(root, &["commit", "-q", "-m", "init"]);
+    std::fs::write(root.join("p/odd*/a"), "2\n").unwrap();
+    std::fs::write(root.join("p/odd-other/a"), "2\n").unwrap();
+
+    let written = PathBuf::from("p/odd*/a");
+    run_git_on_paths(&callisto_fixtures::git::GitRunner, root, &["add", "--"], &[&written]).unwrap();
+
+    let staged = callisto_fixtures::git::GitRunner
+        .run("git", &["diff", "--cached", "--name-only"], root)
+        .unwrap();
+    assert_eq!(staged.stdout, "p/odd*/a\n");
+}
+
 /// A no-op runner that always reports success for any git command.
 struct NoopRunner;
 
@@ -927,7 +950,13 @@ fn failed_pre_state_deletion_staging_keeps_the_only_retry_input() {
     assert!(root.join(pre_json).exists(), "pre.json must remain available for retry");
     assert_eq!(
         calls.lock().unwrap().as_slice(),
-        &[vec!["rm", "--cached", "--ignore-unmatch", "--", ".changeset/pre.json"]]
+        &[vec![
+            "rm",
+            "--cached",
+            "--ignore-unmatch",
+            "--",
+            ":(literal).changeset/pre.json"
+        ]]
     );
 }
 
@@ -962,7 +991,13 @@ fn failed_no_bump_changeset_deletion_staging_keeps_untracked_input() {
     );
     assert_eq!(
         calls.lock().unwrap().as_slice(),
-        &[vec!["rm", "--cached", "--ignore-unmatch", "--", ".changeset/no-op.md"]]
+        &[vec![
+            "rm",
+            "--cached",
+            "--ignore-unmatch",
+            "--",
+            ":(literal).changeset/no-op.md"
+        ]]
     );
 }
 

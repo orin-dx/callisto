@@ -758,7 +758,7 @@ fn git_stdout<R: CommandRunner>(runner: &R, root: &std::path::Path, args: &[&str
     if !output.success() {
         return Err(command_non_zero_exit("git", args, &output));
     }
-    Ok(output.stdout_trimmed().to_string())
+    Ok(output.stdout_line().to_string())
 }
 
 fn parse_name_status(output: &str, args: &[&str]) -> Result<Vec<(String, String)>, GraphError> {

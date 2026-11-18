@@ -550,3 +550,65 @@ fn create_tag_refuses_an_existing_tag() {
 
     assert!(matches!(result, Err(VcsError::Git(_))), "got {result:?}");
 }
+
+#[test]
+fn a_directory_named_with_a_glob_selects_only_its_own_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "packages/odd*/a.txt", b"1\n", "feat: odd");
+    commit_file(root, "packages/odd-other/a.txt", b"1\n", "fix: sibling");
+    let git = GitAccess::new(root, &SystemGit);
+
+    assert_eq!(summaries(root, None, &["packages/odd*"]), ["feat: odd"]);
+    let touching = git
+        .first_parent_commits_touching(&[PathBuf::from("packages/odd*")])
+        .unwrap();
+    assert_eq!(touching.len(), 1);
+    commit_file(root, "packages/odd-other/b.txt", b"1\n", "feat: sibling adds");
+    assert_eq!(
+        git.commit_adding(Path::new("packages/odd*/a.txt")).unwrap(),
+        Some(touching[0].clone())
+    );
+    assert_eq!(git.commit_adding(Path::new("packages/odd*/b.txt")).unwrap(), None);
+}
+
+#[test]
+fn commits_since_keeps_a_body_holding_framing_characters() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    std::fs::write(root.join("a.txt"), "x\n").unwrap();
+    std::fs::write(
+        root.join("msg"),
+        "fix: odd body\n\nrecord \u{1e} unit \u{1f} start \u{1} end\n",
+    )
+    .unwrap();
+    git(root, &["add", "a.txt"]);
+    git(root, &["commit", "-q", "-F", "msg"]);
+    commit_file(root, "b.txt", b"2\n", "feat: next");
+
+    let commits = GitAccess::new(root, &SystemGit).commits_since(None, &[]).unwrap();
+
+    assert_eq!(commits.len(), 2);
+    assert_eq!(commits[0].summary, "feat: next");
+    assert_eq!(commits[1].summary, "fix: odd body");
+    assert_eq!(
+        commits[1].body.as_deref(),
+        Some("record \u{1e} unit \u{1f} start \u{1} end")
+    );
+}
+
+#[test]
+fn a_workspace_prefix_keeps_its_leading_and_trailing_spaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "  release-work /a.txt", b"1\n", "feat: first");
+
+    let prefix = GitAccess::new(&root.join("  release-work "), &SystemGit)
+        .root_prefix()
+        .unwrap();
+
+    assert_eq!(prefix, PathBuf::from("  release-work /"));
+}
