@@ -51,6 +51,7 @@ fn run(program: &str, args: &[&str], cwd: &Path) {
     let output = std::process::Command::new(program)
         .args(args)
         .current_dir(cwd)
+        .env("COPYFILE_DISABLE", "1")
         .output()
         .unwrap_or_else(|error| panic!("{program} must be runnable: {error}"));
     assert!(
@@ -213,9 +214,15 @@ struct CargoFixtureRunner {
 
 impl CommandRunner for CargoFixtureRunner {
     fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, callisto_model::CommandError> {
-        let mut command = std::process::Command::new(program);
+        let is_cargo = program == "cargo";
+        let binary = if is_cargo {
+            std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into())
+        } else {
+            program.into()
+        };
+        let mut command = std::process::Command::new(binary);
         command.args(args).current_dir(cwd);
-        if program == "cargo" {
+        if is_cargo {
             command.env("CARGO_HOME", &self.cargo_home);
         }
         let output = command.output().map_err(|error| callisto_model::CommandError::Io {
