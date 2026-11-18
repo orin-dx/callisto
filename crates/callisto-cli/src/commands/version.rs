@@ -123,29 +123,23 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
 
-    // Derived before any write so an invalid plan fails early; written only after apply succeeds.
-    let pending_decision = if !has_errors {
-        match args.emit_decision.as_deref() {
-            Some(path) => {
-                let decision = callisto_graph::commands::derive_release_decision(plan_ws, &plan)?;
-                // Workspace-root-relative, not cwd-relative, so `git add -A` and a later `--decision` `git show` agree.
-                let relative = workspace_decision_path(path, &ws.root)?;
-                Some((ws.root.join(relative), decision))
-            }
-            None => None,
+    // Derived before any write so an invalid plan fails early; written, decision first, only after apply succeeds.
+    let mut emitted = Vec::new();
+    if !has_errors {
+        if let Some(path) = args.emit_decision.as_deref() {
+            let decision = callisto_graph::commands::derive_release_decision(plan_ws, &plan)?;
+            // Workspace-root-relative, not cwd-relative, so `git add -A` and a later `--decision` `git show` agree.
+            let relative = workspace_decision_path(path, &ws.root)?;
+            let content = serde_json::to_string_pretty(&decision).expect("release decision serializes") + "\n";
+            emitted.push((ws.root.join(relative), content));
         }
-    } else {
-        None
-    };
-
-    // Built from the plan before apply consumes the changesets it describes.
-    let pending_preview = match args.emit_preview.as_deref().filter(|_| !has_errors) {
-        Some(path) => Some((
-            global.resolve_file_arg(path),
-            callisto_graph::release_preview::build_release_preview_in(plan_ws, &plan)?,
-        )),
-        None => None,
-    };
+        // Built from the plan before apply consumes the changesets it describes.
+        if let Some(path) = args.emit_preview.as_deref() {
+            let preview = callisto_graph::release_preview::build_release_preview_in(plan_ws, &plan)?;
+            let content = serde_json::to_string_pretty(&preview).expect("release preview serializes") + "\n";
+            emitted.push((global.resolve_file_arg(path), content));
+        }
+    }
 
     // A resume must start from the checkpoint plus some of the interrupted run's own writes. The plan is applied in the
     // checkpoint's scratch worktree to learn what a finished run leaves, which takes the run's own permit and writes
@@ -153,6 +147,12 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     if let (Some(scratch), Some(checkpoint), Some(facts), Some(permit), false) =
         (&checkpoint_ws, &checkpoint, &facts, permit.as_ref(), has_errors)
     {
+        // A finished run leaves its emitted files too, so one inside the workspace is its own output, not an edited input.
+        for (full_path, content) in &emitted {
+            if let Ok(relative) = full_path.strip_prefix(&ws.root) {
+                write_emitted(&scratch.root.join(relative), content, permit)?;
+            }
+        }
         let changes =
             callisto_graph::commands::resume_input_changes(&ws, scratch, checkpoint, facts, &plan, &runner, permit)?;
         if !changes.is_empty() {
@@ -188,20 +188,10 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         }
     };
 
-    if let (Some((full_path, decision)), Some(permit)) = (pending_decision.as_ref(), permit.as_ref()) {
-        let content = serde_json::to_string_pretty(decision).expect("release decision serializes") + "\n";
-        callisto_model::atomic::atomic_write(full_path, &content, permit).map_err(|source| CliError::Io {
-            source,
-            path: Some(full_path.clone()),
-        })?;
-    }
-
-    if let (Some((full_path, preview)), Some(permit)) = (pending_preview.as_ref(), permit.as_ref()) {
-        let content = serde_json::to_string_pretty(preview).expect("release preview serializes") + "\n";
-        callisto_model::atomic::atomic_write(full_path, &content, permit).map_err(|source| CliError::Io {
-            source,
-            path: Some(full_path.clone()),
-        })?;
+    if let Some(permit) = permit.as_ref() {
+        for (full_path, content) in &emitted {
+            write_emitted(full_path, content, permit)?;
+        }
     }
 
     // Every effect, the emitted files included, has landed: the run is complete.
@@ -227,6 +217,13 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     } else {
         Ok(ExitCode::SUCCESS)
     }
+}
+
+fn write_emitted(path: &std::path::Path, content: &str, permit: &ApplyPermit) -> Result<(), CliError> {
+    callisto_model::atomic::atomic_write(path, content, permit).map_err(|source| CliError::Io {
+        source,
+        path: Some(path.to_path_buf()),
+    })
 }
 
 /// Today's UTC date as `YYYY-MM-DD`.

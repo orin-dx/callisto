@@ -450,13 +450,14 @@ pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
     let rev = checkpoint.commit.as_str();
 
     // Names can be lost on the way to the scratch checkout; the plan is this workspace's only when it was made from this
-    // workspace's own tree in the checkpoint.
+    // workspace's own tree in the checkpoint. Nothing else about another directory's plan is worth checking.
     let root = std::path::Path::new("");
     if git.blob_hash_at(rev, root)? != expected.blob_hash_at(rev, root)? {
         changes.push(format!(
             "the plan was made in another directory of the checkpoint (`{}`), not this workspace",
             scratch.root.display()
         ));
+        return Ok(changes);
     }
 
     let apply_opts = crate::apply::ApplyOptions {

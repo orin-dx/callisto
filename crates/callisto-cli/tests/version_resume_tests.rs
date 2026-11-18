@@ -821,6 +821,56 @@ fn a_run_that_failed_to_write_its_preview_writes_it_when_run_again() {
     assert!(!has_checkpoint(&repo.root));
 }
 
+/// The decision the interrupted run emitted into the changesets directory is its own output, not a changed input; an edit
+/// to it is still a change.
+#[test]
+fn a_decision_emitted_into_the_changesets_directory_does_not_block_the_resume() {
+    for edited in [false, true] {
+        let repo = repo(cargo_cascade, "", None);
+        let bin = fake_tools(repo.root.parent().unwrap());
+        let out_dir = repo.root.parent().unwrap().join("out");
+        fs::create_dir_all(&out_dir).unwrap();
+        fs::set_permissions(&out_dir, fs::Permissions::from_mode(0o555)).unwrap();
+        let preview = out_dir.join("preview.json");
+        let decision = repo.workspace.join(".changeset/decision.json");
+        let run = || {
+            Command::new(env!("CARGO_BIN_EXE_callisto"))
+                .args(["--cwd", repo.workspace.to_str().unwrap(), "version"])
+                .args(["--emit-decision", ".changeset/decision.json"])
+                .args(["--emit-preview", preview.to_str().unwrap()])
+                .env(
+                    "PATH",
+                    format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()),
+                )
+                .output()
+                .unwrap()
+        };
+
+        let first = run();
+        assert!(!first.status.success(), "the preview write should fail");
+        assert!(decision.exists(), "the decision was written before the preview");
+        let emitted = fs::read_to_string(&decision).unwrap();
+        if edited {
+            fs::write(&decision, emitted.replace("1.1.0", "9.9.9")).unwrap();
+        }
+
+        fs::set_permissions(&out_dir, fs::Permissions::from_mode(0o755)).unwrap();
+        let second = run();
+        let stderr = String::from_utf8_lossy(&second.stderr);
+        if edited {
+            assert!(
+                !second.status.success() && stderr.contains("E340") && stderr.contains("decision.json"),
+                "{stderr}"
+            );
+        } else {
+            assert!(second.status.success(), "{stderr}");
+            assert_eq!(fs::read_to_string(&decision).unwrap(), emitted);
+            assert!(preview.exists(), "running again writes the preview");
+            assert!(!has_checkpoint(&repo.root));
+        }
+    }
+}
+
 #[test]
 fn a_version_edited_by_hand_after_the_failure_is_refused_not_overwritten() {
     let repo = repo(cargo_cascade, "", None);
