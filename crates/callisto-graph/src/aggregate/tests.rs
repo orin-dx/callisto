@@ -2064,3 +2064,70 @@ fn test_pre_mode_fresh_linked_member_releases_at_the_retained_severity() {
         agg.reasons().get(&pkg_a)
     );
 }
+
+/// A member a fixed group raised is not named for its linked group, so the linked target ignores it.
+#[test]
+fn test_linked_target_ignores_a_member_raised_only_by_another_group() {
+    let [a, b, c] = ["pkg-a", "pkg-b", "pkg-c"].map(|name| PackageId::parse(name).unwrap());
+    let mut agg = Aggregation::default();
+    agg.add(&a, Severity::Patch, Source::FreshChangeset { id: "a".to_string() });
+    agg.add(&c, Severity::Major, Source::FreshChangeset { id: "c".to_string() });
+    let mut groups = linked_group("linked", &[a.clone(), b.clone()]);
+    let fixed = GroupDef {
+        name: GroupName("fixed".to_string()),
+        kind: GroupKind::Fixed,
+        members: vec![GroupMember::Package(b.clone()), GroupMember::Package(c.clone())],
+    };
+    groups.fixed.insert(fixed.name.clone(), fixed);
+    let base_versions: BTreeMap<_, _> = [&a, &b, &c]
+        .into_iter()
+        .map(|id| (id.clone(), Version::semver(1, 0, 0)))
+        .collect();
+
+    union_fixed(&mut agg, &groups, &base_versions);
+    union_linked(&mut agg, &groups, &base_versions);
+
+    assert_eq!(agg.severities().get(&b), Some(&Severity::Major));
+    assert_eq!(agg.severities().get(&a), Some(&Severity::Patch));
+}
+
+/// At equal severity the earlier source explains the bump, as before seeds kept every source.
+#[test]
+fn test_seed_reason_keeps_the_first_source_on_a_tie() {
+    let mut seed = Seed::new(
+        Severity::Minor,
+        Source::Inference {
+            commits: 2,
+            remapped: false,
+        },
+    );
+    seed.add(Severity::Minor, Source::FreshChangeset { id: "cs".to_string() });
+    assert!(matches!(seed.reason(), BumpReason::Inference { commits: 2, .. }));
+    seed.add(Severity::Major, Source::FreshChangeset { id: "big".to_string() });
+    assert!(matches!(seed.reason(), BumpReason::Changeset { changesets } if changesets == ["big"]));
+}
+
+struct NoneSeverityInference;
+
+impl SeverityInference for NoneSeverityInference {
+    fn infer(
+        &self,
+        _pkg: &Package,
+        _git: &GitAccess<'_>,
+        _window: InferenceWindowSpec<'_>,
+    ) -> Result<Option<InferenceOutcome>, GraphError> {
+        Ok(Some(InferenceOutcome {
+            severity: Severity::None,
+            commit_count: 1,
+            remapped: false,
+            commits: Vec::new(),
+        }))
+    }
+}
+
+/// Commits that infer no bump seed nothing.
+#[test]
+fn test_inference_of_no_bump_seeds_nothing() {
+    let agg = aggregate_pre_cycle(&["pkg-a"], &[], &[], None, &NoneSeverityInference);
+    assert!(agg.seeds.is_empty(), "got: {:?}", agg.seeds);
+}
