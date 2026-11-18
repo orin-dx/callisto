@@ -848,8 +848,11 @@ fn epoch_prefix(target: &Version) -> String {
     }
 }
 
+/// Major, and the minor and patch when written.
+type ReleaseCore = (u64, Option<u64>, Option<u64>);
+
 /// A clause's epoch and release core, to read the precision it was written at.
-fn parse_release_core(s: &str) -> Option<(u64, (u64, Option<u64>, Option<u64>))> {
+fn parse_release_core(s: &str) -> Option<(u64, ReleaseCore)> {
     let (epoch, release) = match s.split_once('!') {
         Some((epoch, release)) => (epoch.trim().parse().ok()?, release),
         None => (0, s),
