@@ -120,6 +120,28 @@ features-boundary:
     if [ -z "$tree" ]; then echo "cargo tree printed nothing" >&2; exit 1; fi
     if grep 'test-util' <<<"$tree"; then exit 1; fi
 
+# The local npm, PyPI and Cargo registries the real-registry suites run against, installed under target/verify-real.
+# gunicorn: pypiserver's default backend does a slow getfqdn() bind. setuptools and wheel: the offline Python build.
+verify-real-tools:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tools=target/verify-real
+    mkdir -p "$tools"
+    npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4
+    if command -v uv >/dev/null; then uv venv -q --seed --allow-existing --python 3.12 "$tools/venv"; else python3 -m venv "$tools/venv"; fi
+    python_pins="pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0 setuptools==80.9.0 wheel==0.45.1"
+    "$tools/venv/bin/python" -m pip install -q $python_pins
+    "$tools/venv/bin/python" -m pip download -q -d "$tools/wheels" setuptools==80.9.0 wheel==0.45.1
+    cargo install --locked --root "$tools/cargo" cargo-http-registry@0.1.8
+
+# Rehearses partial publish, delayed visibility, a conflicting tag and a missing Python artifact against local registries.
+verify-real: verify-real-tools
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tools="$PWD/target/verify-real"
+    export PATH="$tools/venv/bin:$tools/npm/node_modules/.bin:$tools/cargo/bin:$PATH"
+    VERIFY_REAL_WHEELS="$tools/wheels" cargo test -p callisto-cli --test release_verify_real -- --ignored --test-threads=1
+
 # Run unused dependency check via cargo-machete
 machete:
     cargo machete

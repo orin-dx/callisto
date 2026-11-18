@@ -189,6 +189,9 @@ pub struct StatusArgs {
     /// Exit 1 if any diagnostic is an error (pending changesets never fail it)
     #[arg(long)]
     pub check: bool,
+    /// Report each package changed since where this ref and HEAD diverged that no pending changeset names, as an error
+    #[arg(long, value_name = "REF")]
+    pub since: Option<String>,
 }
 
 /// Arguments for the `matrix` command.
@@ -567,6 +570,7 @@ mod tests {
             Command::Status(StatusArgs {
                 strict: false,
                 check: false,
+                since: None,
             }),
             Command::Matrix(MatrixArgs::default()),
             Command::Version(VersionArgs {

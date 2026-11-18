@@ -81,6 +81,7 @@ edition = "2021"
         StatusArgs {
             strict: false,
             check: false,
+            since: None,
         },
         &global,
     );
@@ -139,6 +140,7 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
         StatusArgs {
             strict: false,
             check: true,
+            since: None,
         },
         &global,
     )
@@ -197,6 +199,7 @@ fn test_status_check_exit_codes() {
     let check_args = StatusArgs {
         strict: false,
         check: true,
+        since: None,
     };
 
     // --- Clean workspace: nothing pending, no errors -> exit code 0 ---
@@ -264,6 +267,7 @@ fn test_status_default_exit_code_clean_workspace() {
         StatusArgs {
             strict: false,
             check: false,
+            since: None,
         },
         &global,
     )

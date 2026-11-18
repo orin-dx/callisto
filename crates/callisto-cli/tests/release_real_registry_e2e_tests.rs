@@ -12,7 +12,8 @@
 //! file, gitignored so it never dirties the release-trust worktree check),
 //! never a callisto registry binding: `registry_endpoint::canonical_registry_url`
 //! rejects non-https URLs with no loopback exception, by design, so a local `http://127.0.0.1` test
-//! registry can never be configured as a `[registries]` entry. Leaving the
+//! registry cannot be configured as a `[registries]` entry. `release_verify_real.rs` binds local `https://`
+//! registries through `[registries]` instead. Leaving the
 //! package unmatched by any `[registries]` override keeps
 //! `PreparedRegistryBinding.endpoint` at `None`, which is also what makes
 //! this reachable at all: both `npm view` (observation) and `npm publish`
@@ -50,234 +51,23 @@
 //! `.cargo/config.toml` also needs `net.git-fetch-with-cli = true` --
 //! libgit2's HTTP client rejects the server's dumb-protocol content type.
 
+#[path = "common/local_registries.rs"]
+mod local_registries;
 #[path = "common/release_harness.rs"]
 mod release_harness;
 
 use std::fs;
-use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::{Command, Stdio};
 
 use callisto_graph::commands::registry_argv::{
     cargo_publish_argv, pypi_build_argv, pypi_upload_argv, Argv, CargoVerification,
 };
 use callisto_model::{Version, VersionGrammar};
+use local_registries::*;
 use release_harness::*;
 
-/// Finds `program` on `PATH`, the way a shell would. Never panics, so a test
-/// can skip cleanly when the real tool isn't installed.
-fn find_on_path(program: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|path| {
-        std::env::split_paths(&path)
-            .map(|dir| dir.join(program))
-            .find(|candidate| candidate.is_file())
-    })
-}
-
-/// An ephemeral loopback port: bind to port 0, read back what the OS
-/// assigned, release it immediately. The gap between release and the real
-/// server binding it is a bounded TOCTOU risk, acceptable for test
-/// infrastructure that owns the box.
-fn free_loopback_port() -> u16 {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback listener must bind");
-    listener
-        .local_addr()
-        .expect("listener must have a local address")
-        .port()
-}
-
-/// A spawned server process, killed on drop so a panicking assertion never
-/// leaks it past the test. `log_path` is its combined stdout+stderr, written
-/// to a file rather than piped so a chatty server can never fill an
-/// undrained pipe and deadlock the test.
-struct ServerGuard {
-    child: Child,
-    log_path: PathBuf,
-}
-
-impl ServerGuard {
-    fn log(&self) -> String {
-        fs::read_to_string(&self.log_path).unwrap_or_default()
-    }
-}
-
-impl Drop for ServerGuard {
-    fn drop(&mut self) {
-        drop(self.child.kill());
-        drop(self.child.wait());
-    }
-}
-
-/// Redirects a spawned command's stdout and stderr to one combined log file
-/// under `dir`/`name`, so a startup crash is diagnosable instead of silent.
-fn log_to_file(command: &mut Command, dir: &Path, name: &str) -> PathBuf {
-    let log_path = dir.join(name);
-    let file = fs::File::create(&log_path).expect("server log file must be creatable");
-    let file_for_stderr = file.try_clone().expect("log file handle must be cloneable");
-    command.stdin(Stdio::null()).stdout(file).stderr(file_for_stderr);
-    log_path
-}
-
-/// Blocks until `port` accepts a loopback TCP connection, or panics after
-/// `timeout` -- including the server's captured output in the panic message
-/// either way, and its exit status if it already died. Checking `try_wait`
-/// first means a server that crashes at startup fails fast with its real
-/// error instead of spinning out the whole timeout with no evidence.
-fn wait_for_port(guard: &mut ServerGuard, port: u16, timeout: Duration) {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
-            return;
-        }
-        if let Ok(Some(status)) = guard.child.try_wait() {
-            panic!(
-                "server exited with {status} before binding 127.0.0.1:{port}; output:\n{}",
-                guard.log()
-            );
-        }
-        if Instant::now() >= deadline {
-            panic!(
-                "server on 127.0.0.1:{port} never became reachable within {timeout:?}; output:\n{}",
-                guard.log()
-            );
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-}
-
-/// GETs `url` with `curl` -- the same tool callisto's own PyPI observation
-/// uses -- for an assertion independent of callisto's own HTTP client code.
-fn curl_get(url: &str) -> String {
-    let output = Command::new("curl")
-        .args(["-sS", url])
-        .output()
-        .expect("curl must be runnable");
-    assert!(
-        output.status.success(),
-        "curl {url} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
-
-/// Starts a real local Verdaccio on an ephemeral loopback port with
-/// anonymous publish enabled (`access`/`publish`/`unpublish: $all`) and no
-/// uplinks configured, so a lookup for an unknown package fails closed (404)
-/// instead of reaching the real npm registry. Panics if it never becomes
-/// reachable; callers check `find_on_path("verdaccio")` first.
-fn start_verdaccio(external: &Path) -> (ServerGuard, u16) {
-    let config_dir = external.join("verdaccio");
-    fs::create_dir_all(config_dir.join("storage")).unwrap();
-    fs::write(
-        config_dir.join("config.yaml"),
-        "storage: ./storage\n\
-         self_path: ./storage\n\
-         web:\n  enable: false\n\
-         log: { type: stdout, format: pretty, level: warn }\n\
-         packages:\n  '**':\n    access: $all\n    publish: $all\n    unpublish: $all\n",
-    )
-    .unwrap();
-    let port = free_loopback_port();
-    let mut command = Command::new("verdaccio");
-    command.args(["-c", "config.yaml", "-l", &format!("127.0.0.1:{port}")]);
-    command.current_dir(&config_dir);
-    let log_path = log_to_file(&mut command, external, "verdaccio.log");
-    let child = command.spawn().expect("verdaccio must be spawnable");
-    let mut guard = ServerGuard { child, log_path };
-    wait_for_port(&mut guard, port, Duration::from_secs(20));
-    (guard, port)
-}
-
 const NPM_PACKAGE: &str = "callisto-e2e-probe";
-const NPM_ORIGIN: &str = "https://github.com/example/npm-registry-fixture.git";
-
-/// A minimal npm-workspace release fixture: a private workspace root plus one
-/// publishable member, `publish-to = ["npm"]` only -- no `github-release`, so
-/// `release execute` never touches `gh` (confirmed via `release plan`'s
-/// operation list: exactly a registry-publish and a tag operation, nothing
-/// forge-shaped). `.npmrc` is gitignored from the very first commit, because
-/// it's written after the release commit is sealed and `release execute`'s
-/// clean-worktree gate (E051) would otherwise reject the untracked file.
-fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, String) {
-    npm_release_fixture(&[(package_name, &[])])
-}
-
-/// The same fixture for several npm packages, each with the packages it depends on. Every package gets a minor bump.
-fn npm_release_fixture(packages: &[(&str, &[&str])]) -> (tempfile::TempDir, String) {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    callisto_fixtures::git::init_repo(root);
-    git(root, &["remote", "add", "origin", NPM_ORIGIN]);
-
-    fs::write(root.join(".gitignore"), ".npmrc\n").unwrap();
-    fs::write(
-        root.join("package.json"),
-        "{\n  \"name\": \"npm-registry-fixture-root\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"workspaces\": [\"packages/*\"]\n}\n",
-    )
-    .unwrap();
-    for (name, dependencies) in packages {
-        let directory = root.join("packages").join(name.replace('/', "-"));
-        fs::create_dir_all(&directory).unwrap();
-        let dependencies = dependencies
-            .iter()
-            .map(|dependency| format!("\"{dependency}\": \"^0.1.0\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        fs::write(
-            directory.join("package.json"),
-            format!(
-                "{{\n  \"name\": \"{name}\",\n  \"version\": \"0.1.0\",\n  \"dependencies\": {{{dependencies}}}\n}}\n"
-            ),
-        )
-        .unwrap();
-    }
-    git(root, &["add", "."]);
-    git(root, &["commit", "-m", "initial workspace"]);
-
-    let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
-    assert!(init.status.success(), "init failed: {}", stderr_of(&init));
-    let config_path = root.join("callisto.toml");
-    let mut config = fs::read_to_string(&config_path).unwrap();
-    for (name, _) in packages {
-        config.push_str(&format!(
-            "\n[[package]]\nmatch = \"npm/{name}\"\npublish-to = [\"npm\"]\n"
-        ));
-    }
-    fs::write(&config_path, config).unwrap();
-    git(root, &["add", "."]);
-    git(root, &["commit", "-m", "configure callisto"]);
-
-    let mut add_args = vec!["add".to_owned()];
-    for (name, _) in packages {
-        add_args.push("--package".to_owned());
-        add_args.push(format!("npm/{name}:minor"));
-    }
-    add_args.push("--summary".to_owned());
-    add_args.push("Ship real-registry e2e coverage".to_owned());
-    let add_args: Vec<&str> = add_args.iter().map(String::as_str).collect();
-    let add = callisto(root, &add_args);
-    assert!(add.status.success(), "add failed: {}", stderr_of(&add));
-    git(root, &["add", "."]);
-    git(root, &["commit", "-m", "add release changeset"]);
-
-    let version = callisto(root, &["version", "--emit-decision", DECISION_PATH]);
-    assert!(version.status.success(), "version failed: {}", stderr_of(&version));
-
-    for entry in fs::read_dir(root.join(".changeset")).unwrap() {
-        let path = entry.unwrap().path();
-        if path.file_name().is_some_and(|name| name != "README.md")
-            && path.extension().is_some_and(|extension| extension == "md")
-        {
-            fs::remove_file(path).unwrap();
-        }
-    }
-    git(root, &["add", "-A"]);
-    git(root, &["commit", "-m", "release npm packages 0.2.0"]);
-    let release_commit = git(root, &["rev-parse", "HEAD"]);
-    git(root, &["checkout", "--detach", &release_commit]);
-    (dir, release_commit)
-}
 
 /// The credential-free pack job's two steps: pack every npm package of the intent, then seal the tarballs. Returns the
 /// manifest and directory arguments `release execute` takes.
@@ -365,7 +155,8 @@ fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
     );
     assert!(plan.status.success(), "release plan failed: {}", stderr_of(&plan));
 
-    let (_verdaccio_guard, port) = start_verdaccio(external.path());
+    let port = free_loopback_port();
+    let _verdaccio_guard = start_verdaccio(external.path(), "npm", port, None);
 
     // npm's own configuration, not a callisto registry binding: no `[registries]` entry exists, so neither
     // `npm view` nor `npm publish` receives a `--registry` flag from callisto and both fall through to this file.
@@ -423,10 +214,13 @@ fn a_dependent_npm_package_is_published_with_its_dependency_against_a_real_verda
         return;
     };
 
-    let (dir, release_commit) = npm_release_fixture(&[
-        ("callisto-e2e-dependency", &[]),
-        ("callisto-e2e-dependent", &["callisto-e2e-dependency"]),
-    ]);
+    let (dir, release_commit) = npm_release_fixture(
+        &[
+            ("callisto-e2e-dependency", &[]),
+            ("callisto-e2e-dependent", &["callisto-e2e-dependency"]),
+        ],
+        "",
+    );
     let root = dir.path();
     let external = tempfile::tempdir().unwrap();
 
@@ -446,7 +240,8 @@ fn a_dependent_npm_package_is_published_with_its_dependency_against_a_real_verda
     );
     assert!(plan.status.success(), "release plan failed: {}", stderr_of(&plan));
 
-    let (_verdaccio_guard, port) = start_verdaccio(external.path());
+    let port = free_loopback_port();
+    let _verdaccio_guard = start_verdaccio(external.path(), "npm", port, None);
     fs::write(
         root.join(".npmrc"),
         format!("registry=http://127.0.0.1:{port}/\n//127.0.0.1:{port}/:_authToken=callisto-e2e-test-token\n"),
@@ -521,48 +316,6 @@ fn resolved_python() -> Option<&'static str> {
     }
 }
 
-/// Starts a real local `pypiserver` on an ephemeral loopback port with
-/// authentication fully disabled (`-a . -P .`, its own documented way to
-/// allow anonymous browsing and uploads) and `--disable-fallback`, so a
-/// lookup for an unknown project 404s instead of proxying to real PyPI.
-///
-/// `--server gunicorn`: pypiserver's default `auto` backend selection falls
-/// through to `wsgiref` when nothing else is installed, and `wsgiref`
-/// (like `paste` and gevent's `pywsgi`, also measured) resolves the bind
-/// address via `socket.getfqdn()` before it starts listening -- a reverse
-/// DNS lookup that measured 12-35s on a real machine exhibiting the same
-/// symptom as the CI macOS runner, against sub-second on Linux. `gunicorn`
-/// has no such call anywhere in its source (grepped) and measured
-/// consistently under 1s across repeated runs here; it forks a worker and
-/// terminates both master and worker cleanly on the one SIGTERM `ServerGuard`
-/// sends the master PID.
-fn start_pypiserver(external: &Path) -> (ServerGuard, u16) {
-    let packages_dir = external.join("pypiserver-packages");
-    fs::create_dir_all(&packages_dir).unwrap();
-    let port = free_loopback_port();
-    let mut command = Command::new("pypi-server");
-    command.args([
-        "run",
-        "--server",
-        "gunicorn",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        &port.to_string(),
-        "--authenticate",
-        ".",
-        "--passwords",
-        ".",
-        "--disable-fallback",
-        packages_dir.to_str().unwrap(),
-    ]);
-    let log_path = log_to_file(&mut command, external, "pypiserver.log");
-    let child = command.spawn().expect("pypi-server must be spawnable");
-    let mut guard = ServerGuard { child, log_path };
-    wait_for_port(&mut guard, port, Duration::from_secs(20));
-    (guard, port)
-}
-
 const PYPI_PACKAGE: &str = "callisto-e2e-probe";
 const PYPI_VERSION: &str = "0.1.0";
 
@@ -626,7 +379,9 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
     pypi_package_fixture(root, PYPI_PACKAGE, PYPI_VERSION);
 
     let external = tempfile::tempdir().unwrap();
-    let (_pypiserver_guard, port) = start_pypiserver(external.path());
+    let port = free_loopback_port();
+    let packages_dir = external.path().join("pypiserver-packages");
+    let _pypiserver_guard = start_pypiserver(external.path(), "pypi", port, &packages_dir, None);
     let index = format!("http://127.0.0.1:{port}");
 
     let outdir = tempfile::tempdir().unwrap();
@@ -706,21 +461,6 @@ fn cargo_package_fixture(root: &Path, package_name: &str, version: &str) {
     .unwrap();
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/lib.rs"), "pub fn probe() {}\n").unwrap();
-}
-
-/// Starts a real local `cargo-http-registry` on an ephemeral loopback port,
-/// serving `registry_root` as its git-protocol index and package store; no
-/// authentication is enforced (any registry token is accepted).
-fn start_cargo_http_registry(external: &Path, registry_root: &Path) -> (ServerGuard, u16) {
-    fs::create_dir_all(registry_root).unwrap();
-    let port = free_loopback_port();
-    let mut command = Command::new("cargo-http-registry");
-    command.args(["-a", &format!("127.0.0.1:{port}"), registry_root.to_str().unwrap()]);
-    let log_path = log_to_file(&mut command, external, "cargo-http-registry.log");
-    let child = command.spawn().expect("cargo-http-registry must be spawnable");
-    let mut guard = ServerGuard { child, log_path };
-    wait_for_port(&mut guard, port, Duration::from_secs(20));
-    (guard, port)
 }
 
 /// A real local `cargo-http-registry`, `registry_argv::cargo_publish_argv`'s

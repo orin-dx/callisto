@@ -79,6 +79,7 @@ After a failed committed-decision CI release, "Re-run failed jobs" adopts comple
 [`.github/actions/callisto-validate/action.yml`](../.github/actions/callisto-validate/action.yml) is a reusable action for your PR workflow:
 
 - `callisto status --check` — one gate covering config health, package discovery, and changeset syntax: exit 0 with no error-level diagnostics, exit 1 otherwise.
+- `callisto status --check --since origin/main` — also fails when the pull request changes a package that no changeset names. A change that needs no release takes a changeset with severity `none`.
 - `callisto release --dry-run --format text` — simulates the release plan without effect.
 - Writes a workspace status summary to the job's GitHub Actions summary page.
 

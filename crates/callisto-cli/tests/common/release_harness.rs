@@ -173,6 +173,17 @@ pub fn release_commit_fixture_with_product_release(product_release: bool) -> (Te
 
 /// The release commit fixture with its workspace in `subdir` of the repository; pass `dir/subdir` as `--cwd`.
 pub fn release_commit_fixture_in(product_release: bool, subdir: &str) -> (TempDir, String) {
+    release_commit_fixture_publishing_to(product_release, subdir, "crates-io", "")
+}
+
+/// The single-crate release fixture publishing to `publish_to` (a built-in target or a named registry) and github-release,
+/// with `registries` appended to `callisto.toml`.
+pub fn release_commit_fixture_publishing_to(
+    product_release: bool,
+    subdir: &str,
+    publish_to: &str,
+    registries: &str,
+) -> (TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path();
     let root = &repo.join(subdir);
@@ -213,7 +224,7 @@ pub fn release_commit_fixture_in(product_release: bool, subdir: &str) -> (TempDi
     fs::write(
         config_path,
         format!(
-            "{config}{product_config}\n[[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n{tag_template}",
+            "{config}{product_config}\n[[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"{publish_to}\", \"github-release\"]\n{tag_template}{registries}",
             product_config = product_config.unwrap_or_default(),
             tag_template = tag_template.unwrap_or_default(),
         ),

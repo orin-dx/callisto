@@ -53,6 +53,8 @@ pub struct VersionPlan {
     pub optional_dep_updates: Vec<OptionalDepUpdate>,
     pub changelog_writes: Vec<ChangelogWrite>,
     pub consumed_changesets: Vec<PathBuf>,
+    /// Packages with a bump inferred from commits this run, whichever source decides their severity.
+    pub inferred: std::collections::BTreeSet<PackageId>,
     pub pre_state_update: Option<PreState>,
     /// Workspace-relative `pre.json` path, from `ResolvedConfig::pre_json_path`. The single source
     /// `apply_version_plan` reads instead of guessing the changesets dir from `consumed_changesets`, which is

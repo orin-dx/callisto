@@ -240,7 +240,7 @@
     },
     {
       "id": "REL-PUB-06",
-      "criterion": "Cargo observation runs `cargo --config net.retry=0 info NAME@VERSION --registry <name>` from the directory of the Cargo workspace that governs the package, passing `crates-io` for the default. Exit 0 with a matching `version:` line means present, exit 101 with ``could not find `NAME@VERSION` `` means absent, and anything else is indeterminate."
+      "criterion": "Cargo observation runs `cargo --config net.retry=0 info NAME@VERSION --registry <name>` from the directory of the Cargo workspace that governs the package, passing `crates-io` for the default and the registry's own name for a `kind = \"cargo\"` registry named in `publish-to`, which `cargo publish` receives as `--registry <name>` too. Exit 0 with a matching `version:` line means present, exit 101 with ``could not find `NAME@VERSION` `` means absent, and anything else is indeterminate."
     },
     {
       "id": "REL-PUB-07",
@@ -294,7 +294,7 @@
     },
     {
       "id": "REL-PUB-18",
-      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its destination from `.cargo/config.toml`. An npm registry `url` is passed to the publish as `--registry <url>` whichever package manager packed the tarball. A registry that only yarn or bun reads, `npmPublishRegistry` or `npmRegistryServer` in the owning workspace's `.yarnrc.yml` (at the top level or under `npmScopes`) or a registry in its `bunfig.toml`, fails with E168 naming the file and key when the plan is derived, on the local route too and before any effect, because `npm publish <tarball>` does not read it; `publishConfig.registry` and `.npmrc` are honored."
+      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its URL from `.cargo/config.toml`. A `publish-to` entry that is neither a built-in target nor the name of a `cargo` registry fails config loading with E330. An npm registry `url` is passed to the publish as `--registry <url>` whichever package manager packed the tarball. A registry that only yarn or bun reads, `npmPublishRegistry` or `npmRegistryServer` in the owning workspace's `.yarnrc.yml` (at the top level or under `npmScopes`) or a registry in its `bunfig.toml`, fails with E168 naming the file and key when the plan is derived, on the local route too and before any effect, because `npm publish <tarball>` does not read it; `publishConfig.registry` and `.npmrc` are honored."
     },
     {
       "id": "REL-RERUN-01",
