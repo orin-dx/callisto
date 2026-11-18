@@ -14,7 +14,7 @@ Which version each release document writes, which versions it reads, and what a 
 | `version` checkpoint | the commit at `refs/worktree/callisto/checkpoint/version`; its message carries `Callisto-Head`, `Callisto-Tags` and `Callisto-Version` trailers | 1 | 1 | Any change in `Callisto-Version` refuses the resume with E340, so another version never replays a checkpoint. |
 | `ReleaseReceiptV1` | `release --receipt`, `release execute --receipt`; also the JSON stdout of both | 2 | 2 | Rejected at decode with an `UnsupportedSchema` error that has no diagnostic code. |
 
-- The decision digest covers the sorted consumed changesets (version 3 only) and the sorted entries (package, target version, reasons), not the schema version, so decisions of any version with the same entries and no consumed changesets share a digest. The digest is verified on every read.
+- The decision digest covers the sorted entries (package, target version, reasons) and, for version 3, the count and sorted list of consumed changesets. Versions 1 and 2 with the same entries share a digest; a version 3 decision never shares one with them. A version 3 list that is not sorted and free of duplicates fails to decode. The digest is verified on every read.
 - A receipt is written only when every operation ended `published` or `alreadySatisfied`; a failed run leaves none.
 - The release-PR documents (`ReleasePrSnapshotV2`, `ReleasePrDecisionV2`, `ReleasePrConfigV1`, `ReleasePrCommitPlanV1`) are separate types read and written by `release-pr decide`, `release-pr verify` and `release-pr commit-plan`, not by the release decision above. Each accepts exactly its own version. The config, snapshot and decision fail with E155; the commit plan fails with a plain message that has no code.
 

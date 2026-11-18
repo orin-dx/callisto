@@ -111,12 +111,15 @@ impl<'de> Deserialize<'de> for ReleaseDecisionV1 {
         check_decision_schema_version::<D::Error>(wire.schema_version, "release decision")?;
         let mut decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;
         match (wire.schema_version >= 3, wire.consumed_changesets) {
-            (true, Some(consumed)) => decision = decision.consuming(consumed),
-            (false, None) => {
-                decision.schema_version = wire.schema_version;
-                decision.consumed_changesets = None;
-                decision.digest = decision_digest(&decision.entries, None);
+            (true, Some(consumed)) => {
+                decision = decision.consuming(consumed.iter().cloned());
+                if decision.consumed_changesets.as_ref() != Some(&consumed) {
+                    return Err(serde::de::Error::custom(
+                        "release decision `consumedChangesets` must be sorted and free of duplicates",
+                    ));
+                }
             }
+            (false, None) => decision = decision.into_schema(wire.schema_version),
             (true, None) => return Err(serde::de::Error::missing_field("consumedChangesets")),
             (false, Some(_)) => {
                 return Err(serde::de::Error::custom(format!(
@@ -147,6 +150,24 @@ impl ReleaseDecisionV1 {
         self.digest = decision_digest(&self.entries, Some(&changesets));
         self.consumed_changesets = Some(changesets);
         self
+    }
+
+    /// The decision as schema 1 or 2 recorded it: no consumed changesets, and their digest.
+    fn into_schema(mut self, schema_version: u8) -> Self {
+        self.schema_version = schema_version;
+        self.consumed_changesets = None;
+        self.digest = decision_digest(&self.entries, None);
+        self
+    }
+
+    /// A schema 1 or 2 decision with these entries, as an older Callisto committed it.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn older_schema(self, schema_version: u8) -> Self {
+        assert!(
+            schema_version < 3,
+            "schema {schema_version} records consumed changesets"
+        );
+        self.into_schema(schema_version)
     }
 
     /// Creates a canonical decision or rejects an ambiguous release roster.
@@ -207,8 +228,12 @@ impl ReleaseDecisionV1 {
 
 pub(super) fn decision_digest(entries: &[ReleaseDecisionEntry], consumed: Option<&[String]>) -> DecisionDigest {
     let mut transcript = CanonicalTranscript::decision_v1();
-    for path in consumed.into_iter().flatten() {
-        transcript.push_str("consumed-changeset", path);
+    // The count marks a schema 3 decision, so rewriting it as an older schema cannot keep its digest.
+    if let Some(consumed) = consumed {
+        transcript.push_str("consumed-changesets", &consumed.len().to_string());
+        for path in consumed {
+            transcript.push_str("consumed-changeset", path);
+        }
     }
     for entry in entries {
         transcript.push_str("package", &entry.package.to_string());
@@ -303,11 +328,11 @@ mod tests {
             let serialized = serde_json::to_value(&decision).unwrap();
             assert_eq!(serialized["entries"][0]["targetVersion"], raw);
             for schema in ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS {
-                let mut wire = serialized.clone();
-                wire["schemaVersion"] = serde_json::json!(schema);
-                if schema < 3 {
-                    wire.as_object_mut().unwrap().remove("consumedChangesets");
-                }
+                let wire = if schema < 3 {
+                    serde_json::to_value(decision.clone().older_schema(schema)).unwrap()
+                } else {
+                    serialized.clone()
+                };
                 let decoded: ReleaseDecisionV1 = serde_json::from_value(wire.clone()).unwrap();
                 assert_eq!(decoded.entries, decision.entries);
                 assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
@@ -476,15 +501,31 @@ mod tests {
             Some(&[".changeset/a.md".to_string(), ".changeset/b.md".to_string()][..])
         );
         assert_ne!(consumed.digest, decision.digest);
-        let mut wire = serde_json::to_value(&consumed).unwrap();
+        let wire = serde_json::to_value(&consumed).unwrap();
         assert_eq!(
             serde_json::from_value::<ReleaseDecisionV1>(wire.clone()).unwrap(),
             consumed
         );
-        wire["consumedChangesets"] = serde_json::json!([".changeset/a.md"]);
-        assert!(serde_json::from_value::<ReleaseDecisionV1>(wire.clone()).is_err());
-        wire.as_object_mut().unwrap().remove("consumedChangesets");
-        assert!(serde_json::from_value::<ReleaseDecisionV1>(wire).is_err());
+        let mut dropped = wire.clone();
+        dropped["consumedChangesets"] = serde_json::json!([".changeset/a.md"]);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(dropped).is_err());
+        let mut unsorted = wire.clone();
+        unsorted["consumedChangesets"] = serde_json::json!([".changeset/b.md", ".changeset/a.md"]);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(unsorted).is_err());
+        let mut missing = wire.clone();
+        missing.as_object_mut().unwrap().remove("consumedChangesets");
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(missing.clone()).is_err());
+        // A schema 3 decision with no consumed changesets cannot pass as an older one under the same digest.
+        let none_consumed = serde_json::to_value(&decision).unwrap();
+        let mut downgraded = none_consumed.clone();
+        downgraded["schemaVersion"] = serde_json::json!(2);
+        downgraded.as_object_mut().unwrap().remove("consumedChangesets");
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(downgraded).is_err());
+        let older = decision.older_schema(2);
+        assert_eq!(
+            serde_json::from_value::<ReleaseDecisionV1>(serde_json::to_value(&older).unwrap()).unwrap(),
+            older
+        );
     }
 
     #[test]
