@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_model::format::{parse_changeset, Changeset};
 use callisto_model::vcs::GitAccess;
-use callisto_model::{BumpReason, CommitSha, Diagnostic, Package, PackageId, ReleaseTrigger, Severity, Version};
+use callisto_model::{
+    BumpReason, CommitSha, Diagnostic, GroupKind, GroupName, Package, PackageId, ReleaseTrigger, Severity, Version,
+};
 
 use crate::config::resolve::resolve_package_config;
 use crate::config::GroupTable;
@@ -25,9 +27,8 @@ pub struct LoadedChangeset {
 
 #[derive(Clone, Debug, Default)]
 pub struct Aggregation {
-    pub severities: BTreeMap<PackageId, Severity>,
-    pub reasons: BTreeMap<PackageId, BumpReason>,
-    pub named_by: BTreeMap<PackageId, NamedBy>,
+    /// Every package with releasable input before cascade; each holds at least one fresh source.
+    pub seeds: BTreeMap<PackageId, Seed>,
     /// Changeset files to delete from disk this run (non-pre-mode only: a pre-mode run must never delete a
     /// changeset, since it may still be re-applied on the next pre-mode `version` before `pre exit`).
     pub consumed: Vec<PathBuf>,
@@ -40,10 +41,156 @@ pub struct Aggregation {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NamedBy {
-    Changeset,
-    Inference,
+impl Aggregation {
+    /// Each seeded package's severity, the cascade's starting point.
+    pub fn severities(&self) -> BTreeMap<PackageId, Severity> {
+        self.seeds
+            .iter()
+            .map(|(id, seed)| (id.clone(), seed.severity()))
+            .collect()
+    }
+
+    /// Each seeded package's reason.
+    pub fn reasons(&self) -> BTreeMap<PackageId, BumpReason> {
+        self.seeds
+            .iter()
+            .map(|(id, seed)| (id.clone(), seed.reason()))
+            .collect()
+    }
+
+    fn add(&mut self, id: &PackageId, severity: Severity, source: Source) {
+        match self.seeds.get_mut(id) {
+            Some(seed) => seed.add(severity, source),
+            None => {
+                self.seeds.insert(id.clone(), Seed::new(severity, source));
+            }
+        }
+    }
+
+    fn severity(&self, id: &PackageId) -> Severity {
+        self.seeds.get(id).map(Seed::severity).unwrap_or(Severity::None)
+    }
+}
+
+/// What put a package into the release before cascade.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// A changeset this run applies for the first time.
+    FreshChangeset {
+        id: String,
+    },
+    /// A changeset an earlier run of the current pre cycle applied: it raises severity but releases nothing alone.
+    RetainedChangeset {
+        id: String,
+    },
+    Inference {
+        commits: usize,
+        remapped: bool,
+    },
+    /// A fixed or linked group union, added only when a member has fresh input.
+    Group {
+        group: GroupName,
+        kind: GroupKind,
+    },
+}
+
+impl Source {
+    pub fn is_fresh(&self) -> bool {
+        match self {
+            Source::FreshChangeset { .. } | Source::Inference { .. } | Source::Group { .. } => true,
+            Source::RetainedChangeset { .. } => false,
+        }
+    }
+
+    /// Named directly by a changeset or inference rather than pulled in by a group.
+    fn is_named(&self) -> bool {
+        match self {
+            Source::FreshChangeset { .. } | Source::RetainedChangeset { .. } | Source::Inference { .. } => true,
+            Source::Group { .. } => false,
+        }
+    }
+
+    fn reason(&self) -> BumpReason {
+        match self {
+            Source::FreshChangeset { id } | Source::RetainedChangeset { id } => BumpReason::Changeset {
+                changesets: vec![id.clone()],
+            },
+            Source::Inference { commits, remapped } => BumpReason::Inference {
+                commits: *commits,
+                remapped: *remapped,
+            },
+            Source::Group {
+                group,
+                kind: GroupKind::Fixed,
+            } => BumpReason::FixedGroupUnion { group: group.clone() },
+            Source::Group {
+                group,
+                kind: GroupKind::Linked,
+            } => BumpReason::LinkedGroupUnion { group: group.clone() },
+        }
+    }
+}
+
+/// One package's sources, each with the severity it asks for; never empty.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Seed {
+    first: (Severity, Source),
+    rest: Vec<(Severity, Source)>,
+}
+
+impl Seed {
+    fn new(severity: Severity, source: Source) -> Self {
+        Seed {
+            first: (severity, source),
+            rest: Vec::new(),
+        }
+    }
+
+    fn add(&mut self, severity: Severity, source: Source) {
+        self.rest.push((severity, source));
+    }
+
+    fn entries(&self) -> impl Iterator<Item = &(Severity, Source)> {
+        std::iter::once(&self.first).chain(&self.rest)
+    }
+
+    pub fn sources(&self) -> impl Iterator<Item = &Source> {
+        self.entries().map(|(_, source)| source)
+    }
+
+    /// The highest severity any source asks for, retained ones included.
+    pub fn severity(&self) -> Severity {
+        self.entries()
+            .map(|(severity, _)| *severity)
+            .fold(self.first.0, Severity::max)
+    }
+
+    pub fn is_fresh(&self) -> bool {
+        self.sources().any(Source::is_fresh)
+    }
+
+    fn is_named(&self) -> bool {
+        self.sources().any(Source::is_named)
+    }
+
+    /// The highest severity among sources that named the package directly.
+    fn named_severity(&self) -> Severity {
+        self.entries()
+            .filter(|(_, source)| source.is_named())
+            .map(|(severity, _)| *severity)
+            .fold(Severity::None, Severity::max)
+    }
+
+    /// The reason of the first fresh source at the highest fresh severity; the first source when none is fresh.
+    pub fn reason(&self) -> BumpReason {
+        let mut best = &self.first;
+        for entry in self.entries().filter(|(_, source)| source.is_fresh()) {
+            if !best.1.is_fresh() || entry.0 > best.0 {
+                best = entry;
+            }
+        }
+        best.1.reason()
+    }
 }
 
 /// One `.changeset/*.md` file that failed `parse_changeset`, kept alongside its (workspace-root-
@@ -218,7 +365,6 @@ where
     }
 
     for pkg in graph.packages() {
-        let cur_sev = agg.severities.get(&pkg.id).copied().unwrap_or(Severity::None);
         let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
         let last_tag = tags.last_tag(&pkg.id);
         let cur_ver = last_tag
@@ -255,17 +401,16 @@ where
         };
 
         if let Some(outcome) = inferred
-            && outcome.severity > cur_sev
+            && outcome.severity > Severity::None
         {
-            agg.severities.insert(pkg.id.clone(), outcome.severity);
-            agg.reasons.insert(
-                pkg.id.clone(),
-                BumpReason::Inference {
+            agg.add(
+                &pkg.id,
+                outcome.severity,
+                Source::Inference {
                     commits: outcome.commit_count,
                     remapped: outcome.remapped,
                 },
             );
-            agg.named_by.insert(pkg.id.clone(), NamedBy::Inference);
             agg.inference_commits.insert(pkg.id.clone(), outcome.commits.clone());
         }
     }
@@ -279,7 +424,6 @@ where
     let already_recorded: std::collections::HashSet<&str> = pre
         .map(|s| s.changesets.iter().map(String::as_str).collect())
         .unwrap_or_default();
-    let mut recorded_only: std::collections::HashSet<PackageId> = std::collections::HashSet::new();
 
     for cs in loaded {
         let is_already_recorded = is_pre_mode && already_recorded.contains(cs.id.as_str());
@@ -321,22 +465,17 @@ where
         for (entry, target_pkg) in resolved {
             matched_any = true;
             let canonical_id = target_pkg.id.clone();
-            let cur_sev = agg.severities.get(&canonical_id).copied().unwrap_or(Severity::None);
-            if entry.severity > cur_sev {
-                agg.severities.insert(canonical_id.clone(), entry.severity);
-                agg.reasons.insert(
-                    canonical_id.clone(),
-                    BumpReason::Changeset {
-                        changesets: vec![cs.id.clone()],
-                    },
-                );
-                agg.named_by.insert(canonical_id.clone(), NamedBy::Changeset);
+            if entry.severity == Severity::None {
+                continue;
             }
-
-            if entry.severity != Severity::None && is_already_recorded {
-                recorded_only.insert(canonical_id.clone());
-            }
-            if entry.severity != Severity::None && !is_already_recorded {
+            let id = cs.id.clone();
+            let source = if is_already_recorded {
+                Source::RetainedChangeset { id }
+            } else {
+                Source::FreshChangeset { id }
+            };
+            agg.add(&canonical_id, entry.severity, source);
+            if !is_already_recorded {
                 // In pre-release mode use the pre-cycle entry version as the
                 // changelog "from" baseline so the log covers the full pre
                 // range rather than reflecting live (pre-tagged) versions.
@@ -382,16 +521,6 @@ where
         }
     }
 
-    // A package whose only changesets are already recorded in `pre.json` has nothing new to release, so a rerun
-    // plans no further prerelease for it; recorded changesets still count when a new one names the package.
-    for id in recorded_only {
-        if !agg.changelog_inputs.contains_key(&id) && agg.named_by.get(&id) == Some(&NamedBy::Changeset) {
-            agg.severities.remove(&id);
-            agg.reasons.remove(&id);
-            agg.named_by.remove(&id);
-        }
-    }
-
     loop {
         let mut changed = false;
         if union_fixed(&mut agg, &config.groups, base_versions) {
@@ -404,6 +533,8 @@ where
             break;
         }
     }
+    // Retained changesets alone release nothing: a rerun of a pre cycle plans no further prerelease for them.
+    agg.seeds.retain(|_, seed| seed.is_fresh());
 
     Ok(agg)
 }
@@ -415,39 +546,12 @@ pub(crate) fn union_fixed(
 ) -> bool {
     let mut changed = false;
     for g in groups.fixed.values() {
-        let target = g.max_severity(&agg.severities);
-        if target == Severity::None {
-            continue;
-        }
-
-        for m in g.package_members().cloned().collect::<Vec<_>>() {
-            let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
-            if target > cur {
-                // Skip group members absent from the workspace: inserting one would make `bump_target` fail on a missing base version.
-                if !base_versions.contains_key(&m) {
-                    agg.diagnostics.push(Diagnostic {
-                        code: callisto_model::DiagnosticCode::UnknownPackage,
-                        severity: callisto_model::DiagnosticSeverity::Warning,
-                        message: format!(
-                            "Fixed group `{}` references package `{}` which is not in the \
-                             workspace; the stale group member is skipped. Remove it from \
-                             callisto.toml to silence this warning.",
-                            g.name,
-                            m.display_name()
-                        ),
-                        package: Some(m.clone()),
-                        path: None,
-                        governed_by: Some(callisto_model::ConfigKey::FIXED_GROUP),
-                        escalated_by: None,
-                    });
-                    continue;
-                }
-                agg.severities.insert(m.clone(), target);
-                agg.reasons
-                    .insert(m.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
-                changed = true;
-            }
-        }
+        let target = g
+            .package_members()
+            .filter_map(|id| agg.seeds.get(id))
+            .map(Seed::severity)
+            .fold(Severity::None, Severity::max);
+        changed |= union_group(agg, g, target, base_versions);
     }
     changed
 }
@@ -459,49 +563,70 @@ pub(crate) fn union_linked(
 ) -> bool {
     let mut changed = false;
     for g in groups.linked.values() {
-        let named_any = g.package_members().any(|id| agg.named_by.contains_key(id));
-        if !named_any {
+        // A linked group's target comes only from members a changeset or inference named, not stale sibling severities.
+        let target = g
+            .package_members()
+            .filter_map(|id| agg.seeds.get(id))
+            .filter(|seed| seed.is_named())
+            .map(Seed::named_severity)
+            .fold(Severity::None, Severity::max);
+        changed |= union_group(agg, g, target, base_versions);
+    }
+    changed
+}
+
+/// Raises every live member of `g` to `target` when a member has fresh input; a group whose members hold only
+/// retained changesets releases nothing.
+fn union_group(
+    agg: &mut Aggregation,
+    g: &crate::config::GroupDef,
+    target: Severity,
+    base_versions: &BTreeMap<PackageId, Version>,
+) -> bool {
+    let fresh = g
+        .package_members()
+        .any(|id| agg.seeds.get(id).is_some_and(Seed::is_fresh));
+    if target == Severity::None || !fresh {
+        return false;
+    }
+    let mut changed = false;
+    for m in g.package_members().cloned().collect::<Vec<_>>() {
+        let member_fresh = agg.seeds.get(&m).is_some_and(Seed::is_fresh);
+        if target <= agg.severity(&m) && member_fresh {
             continue;
         }
-
-        // A linked group's target severity comes only from members a changeset or inference named, not stale sibling severities.
-        let target_sev = g
-            .package_members()
-            .filter(|id| agg.named_by.contains_key(*id))
-            .filter_map(|id| agg.severities.get(id).copied())
-            .max()
-            .unwrap_or(Severity::None);
-
-        for m in g.package_members().cloned().collect::<Vec<_>>() {
-            let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
-            if target_sev > cur {
-                // Guard against stale linked-group members, same rationale as
-                // in `union_fixed`: a removed package must not enter
-                // `agg.severities`, which would cause `bump_target` to crash.
-                if !base_versions.contains_key(&m) {
-                    agg.diagnostics.push(Diagnostic {
-                        code: callisto_model::DiagnosticCode::UnknownPackage,
-                        severity: callisto_model::DiagnosticSeverity::Warning,
-                        message: format!(
-                            "Linked group `{}` references package `{}` which is not in the \
-                             workspace; the stale group member is skipped. Remove it from \
-                             callisto.toml to silence this warning.",
-                            g.name,
-                            m.display_name()
-                        ),
-                        package: Some(m.clone()),
-                        path: None,
-                        governed_by: Some(callisto_model::ConfigKey::LINKED_GROUP),
-                        escalated_by: None,
-                    });
-                    continue;
-                }
-                agg.severities.insert(m.clone(), target_sev);
-                agg.reasons
-                    .insert(m.clone(), BumpReason::LinkedGroupUnion { group: g.name.clone() });
-                changed = true;
-            }
+        // Skip group members absent from the workspace: inserting one would make `bump_target` fail on a missing base version.
+        if !base_versions.contains_key(&m) {
+            let (label, key) = match g.kind {
+                GroupKind::Fixed => ("Fixed", callisto_model::ConfigKey::FIXED_GROUP),
+                GroupKind::Linked => ("Linked", callisto_model::ConfigKey::LINKED_GROUP),
+            };
+            agg.diagnostics.push(Diagnostic {
+                code: callisto_model::DiagnosticCode::UnknownPackage,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: format!(
+                    "{label} group `{}` references package `{}` which is not in the \
+                     workspace; the stale group member is skipped. Remove it from \
+                     callisto.toml to silence this warning.",
+                    g.name,
+                    m.display_name()
+                ),
+                package: Some(m.clone()),
+                path: None,
+                governed_by: Some(key),
+                escalated_by: None,
+            });
+            continue;
         }
+        agg.add(
+            &m,
+            target,
+            Source::Group {
+                group: g.name.clone(),
+                kind: g.kind,
+            },
+        );
+        changed = true;
     }
     changed
 }

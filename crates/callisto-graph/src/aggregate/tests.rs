@@ -591,7 +591,7 @@ fn test_aggregate_runs_inference_for_auto_trigger_and_raises_severity() {
     .unwrap();
 
     assert_eq!(
-        agg.severities.get(&pkg_id),
+        agg.severities().get(&pkg_id),
         Some(&Severity::Minor),
         "aggregate() must invoke inference for ReleaseTrigger::Auto and let its outcome \
              raise the package's severity"
@@ -932,7 +932,7 @@ fn test_changeset_with_one_unknown_entry_not_consumed() {
 
     // The known entry must not bump: the changeset stays on disk, so applying it would bump the package again
     // on every run until the unknown entry is fixed.
-    assert_eq!(agg.severities.get(&pkg_bar_id).copied(), None);
+    assert_eq!(agg.severities().get(&pkg_bar_id).copied(), None);
     assert!(agg.changelog_inputs.is_empty(), "{:?}", agg.changelog_inputs);
 
     let unknown_pkg_diags: Vec<_> = agg
@@ -969,8 +969,11 @@ fn test_union_fixed_stale_member_emits_diagnostic_and_is_skipped() {
 
     let mut agg = Aggregation::default();
     // pkg-bar has a changeset-driven Minor bump; pkg-baz has nothing yet.
-    agg.severities.insert(pkg_bar.clone(), Severity::Minor);
-    agg.named_by.insert(pkg_bar.clone(), NamedBy::Changeset);
+    agg.add(
+        &pkg_bar,
+        Severity::Minor,
+        Source::FreshChangeset { id: "cs".to_string() },
+    );
 
     let mut groups = GroupTable::default();
     let group_def = GroupDef {
@@ -997,13 +1000,13 @@ fn test_union_fixed_stale_member_emits_diagnostic_and_is_skipped() {
         "union_fixed must return true because pkg-baz received a propagated severity"
     );
     assert_eq!(
-        agg.severities.get(&pkg_baz),
+        agg.severities().get(&pkg_baz),
         Some(&Severity::Minor),
         "real member pkg-baz must receive the propagated Minor severity"
     );
     // The stale member must never enter severities.
     assert!(
-        !agg.severities.contains_key(&pkg_foo),
+        !agg.severities().contains_key(&pkg_foo),
         "stale group member pkg-foo must NOT be inserted into severities (would crash cascade \
              with a misleading MissingField error)"
     );
@@ -1038,8 +1041,7 @@ fn test_union_linked_propagates_severity_from_named_member() {
     let pkg_b = PackageId::parse("pkg-b").unwrap();
 
     let mut agg = Aggregation::default();
-    agg.severities.insert(pkg_b.clone(), Severity::Minor);
-    agg.named_by.insert(pkg_b.clone(), NamedBy::Changeset);
+    agg.add(&pkg_b, Severity::Minor, Source::FreshChangeset { id: "cs".to_string() });
 
     let groups = linked_group("linked-pair", &[pkg_a.clone(), pkg_b.clone()]);
 
@@ -1050,10 +1052,10 @@ fn test_union_linked_propagates_severity_from_named_member() {
     let changed = union_linked(&mut agg, &groups, &base_versions);
 
     assert!(changed);
-    assert_eq!(agg.severities.get(&pkg_a), Some(&Severity::Minor));
-    assert_eq!(agg.severities.get(&pkg_b), Some(&Severity::Minor));
+    assert_eq!(agg.severities().get(&pkg_a), Some(&Severity::Minor));
+    assert_eq!(agg.severities().get(&pkg_b), Some(&Severity::Minor));
     assert_eq!(
-        agg.reasons.get(&pkg_a),
+        agg.reasons().get(&pkg_a),
         Some(&BumpReason::LinkedGroupUnion {
             group: GroupName("linked-pair".to_string()),
         })
@@ -1066,10 +1068,18 @@ fn test_union_linked_does_not_downgrade_higher_existing_severity() {
     let pkg_b = PackageId::parse("pkg-b").unwrap();
 
     let mut agg = Aggregation::default();
-    agg.severities.insert(pkg_a.clone(), Severity::Major);
-    agg.severities.insert(pkg_b.clone(), Severity::Minor);
-    agg.named_by.insert(pkg_a.clone(), NamedBy::Inference);
-    agg.named_by.insert(pkg_b.clone(), NamedBy::Changeset);
+    agg.add(&pkg_a, Severity::Major, Source::FreshChangeset { id: "cs".to_string() });
+    agg.add(&pkg_b, Severity::Minor, Source::FreshChangeset { id: "cs".to_string() });
+    agg.seeds.insert(
+        pkg_a.clone(),
+        Seed::new(
+            Severity::Major,
+            Source::Inference {
+                commits: 1,
+                remapped: false,
+            },
+        ),
+    );
 
     let groups = linked_group("linked-pair", &[pkg_a.clone(), pkg_b.clone()]);
 
@@ -1080,8 +1090,8 @@ fn test_union_linked_does_not_downgrade_higher_existing_severity() {
     let changed = union_linked(&mut agg, &groups, &base_versions);
 
     assert!(changed);
-    assert_eq!(agg.severities.get(&pkg_a), Some(&Severity::Major));
-    assert_eq!(agg.severities.get(&pkg_b), Some(&Severity::Major));
+    assert_eq!(agg.severities().get(&pkg_a), Some(&Severity::Major));
+    assert_eq!(agg.severities().get(&pkg_b), Some(&Severity::Major));
 }
 
 #[test]
@@ -1099,7 +1109,7 @@ fn test_union_linked_noop_when_no_member_named() {
     let changed = union_linked(&mut agg, &groups, &base_versions);
 
     assert!(!changed);
-    assert!(agg.severities.is_empty());
+    assert!(agg.severities().is_empty());
 }
 
 /// A Git failure while inferring severity fails `aggregate()` instead of leaving the package with no bump.
@@ -1226,7 +1236,7 @@ fn test_aggregate_repository_with_no_commits_infers_nothing() {
     )
     .unwrap();
 
-    assert!(agg.severities.is_empty());
+    assert!(agg.severities().is_empty());
 }
 
 /// Spec: a bare-name `[[package]]` rule in callisto.toml must match a workspace
@@ -1722,9 +1732,9 @@ fn test_pre_mode_already_recorded_changeset_plans_nothing_on_rerun() {
         agg.consumed
     );
     assert!(
-        !agg.severities.contains_key(&pkg_id),
+        !agg.severities().contains_key(&pkg_id),
         "an already-recorded changeset must not bump the package again; got: {:?}",
-        agg.severities.get(&pkg_id)
+        agg.severities().get(&pkg_id)
     );
     assert!(
         !agg.changelog_inputs.contains_key(&pkg_id),
@@ -1792,7 +1802,7 @@ fn test_pre_mode_new_changeset_counts_the_recorded_ones_toward_severity() {
 
     assert_eq!(agg.new_pre_changesets, vec!["small-fix".to_string()]);
     assert_eq!(
-        agg.severities.get(&pkg_id),
+        agg.severities().get(&pkg_id),
         Some(&Severity::Minor),
         "the recorded minor changeset must still set the severity the new patch changeset is added to"
     );
@@ -1908,4 +1918,119 @@ fn changeset_listing_errors_when_the_path_is_not_a_directory() {
     let not_a_directory = dir.path().join("file");
     std::fs::write(&not_a_directory, "x").unwrap();
     assert!(list_changeset_files(&not_a_directory).is_err());
+}
+
+/// Aggregates a pre cycle whose `pre.json` already records `recorded`, over `changesets` written as files.
+fn aggregate_pre_cycle<I: SeverityInference>(
+    packages: &[&str],
+    changesets: &[(&str, &str)],
+    recorded: &[&str],
+    fixed_group: bool,
+    inference: &I,
+) -> Aggregation {
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+    init_repo(root);
+    let cs_dir = root.join(".changeset");
+    std::fs::create_dir_all(&cs_dir).unwrap();
+    for (id, body) in changesets {
+        std::fs::write(cs_dir.join(format!("{id}.md")), body).unwrap();
+    }
+    std::fs::write(root.join("README.md"), "hello\n").unwrap();
+    run_git(root, &["add", "."]);
+    run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+    let ids: Vec<PackageId> = packages.iter().map(|name| PackageId::parse(name).unwrap()).collect();
+    let graph = TwoPackageGraph {
+        packages: ids.iter().cloned().map(make_pkg).collect(),
+    };
+    let mut cfg = crate::config::load(root).unwrap();
+    if fixed_group {
+        let group = GroupDef {
+            name: GroupName("pair".to_string()),
+            kind: GroupKind::Fixed,
+            members: ids.iter().cloned().map(GroupMember::Package).collect(),
+        };
+        cfg.groups.fixed.insert(group.name.clone(), group);
+    }
+    let runner = RealGitRunner;
+    let git = GitAccess::new(root, &runner);
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+    let base_versions: BTreeMap<_, _> = ids.iter().map(|id| (id.clone(), Version::semver(1, 0, 0))).collect();
+    let pre_state = callisto_model::format::PreState {
+        changesets: recorded.iter().map(|id| id.to_string()).collect(),
+        ..callisto_model::format::PreState::entering(
+            "beta",
+            packages.iter().map(|name| (name.to_string(), Version::semver(1, 0, 0))),
+        )
+    };
+    aggregate(
+        &graph,
+        &identity_for_all(&graph.packages),
+        &cfg,
+        &git,
+        &tags,
+        &base_versions,
+        Some(&pre_state),
+        inference,
+    )
+    .unwrap()
+}
+
+/// A changeset recorded earlier in the cycle keeps its severity when fresh commits arrive; it must not erase them.
+#[test]
+fn test_pre_mode_recorded_changeset_keeps_fresh_inference() {
+    let commits = FixedCommitsInference {
+        commits: vec![(CommitSha::parse(&"a".repeat(40)).unwrap(), "feat: thing".to_string())],
+    };
+    let agg = aggregate_pre_cycle(
+        &["pkg-a"],
+        &[("breaking", "---\npkg-a: major\n---\n\nBreaks.\n")],
+        &["breaking"],
+        false,
+        &commits,
+    );
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    assert_eq!(agg.severities().get(&pkg_a), Some(&Severity::Major));
+    assert!(matches!(
+        agg.reasons().get(&pkg_a),
+        Some(BumpReason::Inference { commits: 1, .. })
+    ));
+}
+
+/// A fresh changeset on one fixed-group member releases the group at the cycle's retained severity.
+#[test]
+fn test_pre_mode_fresh_group_member_releases_retained_member_at_group_severity() {
+    let agg = aggregate_pre_cycle(
+        &["pkg-a", "pkg-b"],
+        &[
+            ("breaking", "---\npkg-a: major\n---\n\nBreaks.\n"),
+            ("small-fix", "---\npkg-b: patch\n---\n\nFixes.\n"),
+        ],
+        &["breaking"],
+        true,
+        &crate::infer::NoInference,
+    );
+    let severities = agg.severities();
+    assert_eq!(
+        severities.get(&PackageId::parse("pkg-a").unwrap()),
+        Some(&Severity::Major)
+    );
+    assert_eq!(
+        severities.get(&PackageId::parse("pkg-b").unwrap()),
+        Some(&Severity::Major)
+    );
+}
+
+/// A fixed group whose members hold only recorded changesets releases nothing.
+#[test]
+fn test_pre_mode_group_with_only_recorded_changesets_releases_nothing() {
+    let agg = aggregate_pre_cycle(
+        &["pkg-a", "pkg-b"],
+        &[("breaking", "---\npkg-a: major\n---\n\nBreaks.\n")],
+        &["breaking"],
+        true,
+        &crate::infer::NoInference,
+    );
+    assert!(agg.seeds.is_empty(), "got: {:?}", agg.seeds);
 }
