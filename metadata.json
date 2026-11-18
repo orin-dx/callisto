@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PDAEQ1DTZPFFND8HKJN0VD",
+  "strategy": "manual-commit",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/calm-otters-fly.md",
+    "crates/callisto-cli/tests/pre_v3_tests.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/preflight.rs",
+    "crates/callisto-graph/src/apply/preflight/tests.rs",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/commands/snapshot.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/plan.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/adr/0001-changesets-compatible-change-records.md",
+    "docs/specs/versioning.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 39305,
+    "cache_read_tokens": 15423331,
+    "output_tokens": 18377,
+    "api_call_count": 30
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
