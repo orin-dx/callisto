@@ -8,7 +8,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 21.228341875,
+          "duration": 0.286697333,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -21,7 +21,7 @@
         },
         {
           "phase": "Test",
-          "duration": 9.298159083,
+          "duration": 7.987961375,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -67,13 +67,13 @@
           "genre": "FnValue"
         }
       },
-      "summary": "MissedMutant",
+      "summary": "CaughtMutant",
       "log_path": "log/crates__callisto-graph__src__plan.rs_line_107_col_9.log",
       "diff_path": "diff/crates__callisto-graph__src__plan.rs_line_107_col_9.diff",
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 6.521961667,
+          "duration": 4.695918583,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -86,8 +86,10 @@
         },
         {
           "phase": "Test",
-          "duration": 10.722595666,
-          "process_status": "Success",
+          "duration": 7.311668416,
+          "process_status": {
+            "Failure": 100
+          },
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
             "nextest",
@@ -138,7 +140,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 1.6020982080000001,
+          "duration": 1.024475167,
           "process_status": {
             "Failure": 101
           },
@@ -193,7 +195,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 1.7359492090000002,
+          "duration": 1.202874458,
           "process_status": {
             "Failure": 101
           },
@@ -248,7 +250,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 1.185724542,
+          "duration": 1.20798875,
           "process_status": {
             "Failure": 101
           },
@@ -303,7 +305,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 6.23065325,
+          "duration": 4.565097042,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -316,7 +318,7 @@
         },
         {
           "phase": "Test",
-          "duration": 10.114149292,
+          "duration": 9.450438208,
           "process_status": {
             "Failure": 100
           },
@@ -364,13 +366,13 @@
           "genre": "FnValue"
         }
       },
-      "summary": "MissedMutant",
+      "summary": "CaughtMutant",
       "log_path": "log/crates__callisto-graph__src__commands__release_decision.rs_line_517_col_5.log",
       "diff_path": "diff/crates__callisto-graph__src__commands__release_decision.rs_line_517_col_5.diff",
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 5.936736084,
+          "duration": 5.543624917,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -383,8 +385,10 @@
         },
         {
           "phase": "Test",
-          "duration": 11.72005525,
-          "process_status": "Success",
+          "duration": 9.926673,
+          "process_status": {
+            "Failure": 100
+          },
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
             "nextest",
@@ -435,7 +439,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 5.602207166,
+          "duration": 7.95772275,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -448,7 +452,7 @@
         },
         {
           "phase": "Test",
-          "duration": 12.341212542,
+          "duration": 16.388377333,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -500,7 +504,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 3.58772575,
+          "duration": 4.939682708,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -513,7 +517,7 @@
         },
         {
           "phase": "Test",
-          "duration": 9.696575125,
+          "duration": 12.678210041,
           "process_status": {
             "Failure": 100
           },
@@ -561,13 +565,13 @@
           "genre": "UnaryOperator"
         }
       },
-      "summary": "MissedMutant",
+      "summary": "CaughtMutant",
       "log_path": "log/crates__callisto-graph__src__commands__release_decision.rs_line_525_col_17.log",
       "diff_path": "diff/crates__callisto-graph__src__commands__release_decision.rs_line_525_col_17.diff",
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 4.424748625,
+          "duration": 5.336962084,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -580,8 +584,10 @@
         },
         {
           "phase": "Test",
-          "duration": 10.053087833,
-          "process_status": "Success",
+          "duration": 12.798546167,
+          "process_status": {
+            "Failure": 100
+          },
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
             "nextest",
@@ -632,7 +638,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 5.101357209,
+          "duration": 3.322826875,
           "process_status": "Success",
           "argv": [
             "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
@@ -645,7 +651,7 @@
         },
         {
           "phase": "Test",
-          "duration": 10.951182125,
+          "duration": 5.926858042,
           "process_status": {
             "Failure": 100
           },
@@ -699,7 +705,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 2.271821292,
+          "duration": 1.018677625,
           "process_status": {
             "Failure": 101
           },
@@ -716,12 +722,12 @@
     }
   ],
   "total_mutants": 11,
-  "missed": 4,
-  "caught": 3,
+  "missed": 1,
+  "caught": 6,
   "timeout": 0,
   "unviable": 4,
   "success": 0,
-  "start_time": "2026-11-18T03:43:10.210405Z",
-  "end_time": "2026-11-18T03:45:40.569008Z",
+  "start_time": "2026-11-18T03:47:06.837682Z",
+  "end_time": "2026-11-18T03:49:10.447787Z",
   "cargo_mutants_version": "27.1.0"
 }

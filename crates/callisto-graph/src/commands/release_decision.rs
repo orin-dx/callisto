@@ -1490,12 +1490,15 @@ mod tests {
         )
     }
 
+    /// Recorded changesets (`None`: a schema 2 decision), deleted changesets, and whether the commit verifies.
+    type ConsumedCase<'a> = (Option<&'a [&'a str]>, &'a [&'a str], bool);
+
     /// The commit deletes exactly the changesets its decision records; a schema 2 decision needs at least one.
     #[test]
     fn a_version_commit_deletes_exactly_the_changesets_its_decision_records() {
         let a = ".changeset/a-minor.md";
         let b = ".changeset/b-patch.md";
-        let cases: [(Option<&[&str]>, &[&str], bool); 7] = [
+        let cases: [ConsumedCase; 7] = [
             (Some(&[a]), &[a], true),
             (Some(&[]), &[], true),
             (Some(&[a, b]), &[a, b], true),

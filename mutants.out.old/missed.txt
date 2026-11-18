@@ -1,4 +1,1 @@
-crates/callisto-graph/src/plan.rs:107:9: replace VersionPlan::pending_release -> Option<callisto_model::PendingRelease> with None
-crates/callisto-graph/src/commands/release_decision.rs:517:5: replace require_recorded_changesets_consumed -> Result<(), GraphError> with Ok(())
 crates/callisto-graph/src/commands/release_decision.rs:520:48: replace && with || in require_recorded_changesets_consumed
-crates/callisto-graph/src/commands/release_decision.rs:525:17: delete ! in require_recorded_changesets_consumed
