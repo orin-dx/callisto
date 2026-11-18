@@ -261,35 +261,6 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                     });
                 }
 
-                if d.rewrite || d.severity > Severity::None {
-                    out.dependency_updates
-                        .entry(edge.from.clone())
-                        .or_default()
-                        .insert(edge.to.clone(), edge.kind);
-                }
-
-                if d.rewrite {
-                    match rewrite_edge(&edge, &new_version, input.cfg)? {
-                        RewriteOutcome::Rewritten(to_spec) => {
-                            let key = dependency_rewrite_key(&edge);
-                            rewrite_attempted.insert(key.clone());
-                            out.rewrites.insert(
-                                key.clone(),
-                                SpecRewrite {
-                                    key,
-                                    dependency: edge.to.clone(),
-                                    from: edge.spec.clone(),
-                                    to: to_spec,
-                                },
-                            );
-                        }
-                        RewriteOutcome::LeftAlone(dg) => {
-                            rewrite_attempted.insert(dependency_rewrite_key(&edge));
-                            out.diagnostics.push(dg);
-                        }
-                    }
-                }
-
                 let cur_sev = out.severities.get(&edge.from).copied().unwrap_or(Severity::None);
                 if d.severity > cur_sev {
                     raise(
@@ -424,6 +395,51 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                         .insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
                     worklist.insert(id.clone());
                     changed = true;
+                }
+            }
+        }
+    }
+
+    // Group alignment can move a target after the worklist first visited it, so rewrites and rejections are derived
+    // from the converged targets only.
+    for pkg in out.targets.keys().cloned().collect::<Vec<_>>() {
+        let new_version = out.targets[&pkg].clone();
+        let src_sev = out.severities[&pkg];
+        let dependents: Vec<DepEdge> = input.graph.dependents_of(&pkg).cloned().collect();
+        for edge in dependents {
+            let cov = coverage(&edge.spec, &new_version).map_err(|source| GraphError::GrammarMismatch {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                source,
+            })?;
+            let d = cascade_action(edge.kind, cov, src_sev, input.cfg);
+
+            if d.rewrite || d.severity > Severity::None {
+                out.dependency_updates
+                    .entry(edge.from.clone())
+                    .or_default()
+                    .insert(edge.to.clone(), edge.kind);
+            }
+
+            if d.rewrite {
+                match rewrite_edge(&edge, &new_version, input.cfg)? {
+                    RewriteOutcome::Rewritten(to_spec) => {
+                        let key = dependency_rewrite_key(&edge);
+                        rewrite_attempted.insert(key.clone());
+                        out.rewrites.insert(
+                            key.clone(),
+                            SpecRewrite {
+                                key,
+                                dependency: edge.to.clone(),
+                                from: edge.spec.clone(),
+                                to: to_spec,
+                            },
+                        );
+                    }
+                    RewriteOutcome::LeftAlone(dg) => {
+                        rewrite_attempted.insert(dependency_rewrite_key(&edge));
+                        out.diagnostics.push(dg);
+                    }
                 }
             }
         }
