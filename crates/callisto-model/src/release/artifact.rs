@@ -971,6 +971,42 @@ mod tests {
         .unwrap()
     }
 
+    /// An intent publishing a crate and an npm package, which only the crate's publish belongs to Cargo.
+    #[test]
+    fn cargo_publishes_name_only_the_crates_of_the_plan() {
+        let crate_id = ReleasePackageId::new(Ecosystem::Cargo, "core").unwrap();
+        let npm_id = ReleasePackageId::new(Ecosystem::Npm, "web").unwrap();
+        let operations = vec![
+            ReleaseOperation::registry_publish(
+                crate_id,
+                Version::parse_for_ecosystem("1.0.0", Ecosystem::Cargo).unwrap(),
+                super::super::test_support::registry_binding("crates"),
+                vec![],
+            )
+            .unwrap(),
+            ReleaseOperation::registry_publish(
+                npm_id,
+                Version::parse_for_ecosystem("1.0.0", Ecosystem::Npm).unwrap(),
+                super::super::test_support::registry_binding("npm"),
+                vec![],
+            )
+            .unwrap(),
+        ];
+        let intent = test_intent_with_slots(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            operations,
+            vec![],
+        )
+        .unwrap();
+        let names: Vec<String> = cargo_publishes(&intent)
+            .into_iter()
+            .map(|(package, version)| format!("{package} {version}"))
+            .collect();
+        assert_eq!(names, ["cargo/core 1.0.0"]);
+        assert!(cargo_publishes(&python_intent(&["demo"])).is_empty());
+    }
+
     fn npm_set(name: &str, files: &[&str]) -> DistributionSetV1 {
         DistributionSetV1 {
             package: ReleasePackageId::new(Ecosystem::Npm, name).unwrap(),

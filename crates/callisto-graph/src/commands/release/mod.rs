@@ -756,7 +756,11 @@ pub(crate) mod tests {
 
     /// Packages the crates of a fixture whose manifests are `files` (crate name, manifest path) with the real
     /// derivation of the plan, and returns each `cargo package` call: where it ran and its arguments.
-    fn package_calls(workspaces: &[(&str, &str)], crates: &[(&str, &str)]) -> Vec<(std::path::PathBuf, Vec<String>)> {
+    fn package_calls(
+        workspaces: &[(&str, &str)],
+        crates: &[(&str, &str)],
+        npm: &[&str],
+    ) -> Vec<(std::path::PathBuf, Vec<String>)> {
         let dir = tempfile::tempdir().unwrap();
         let write = |rel: &str, body: &str| {
             let path = dir.path().join(rel);
@@ -779,6 +783,15 @@ pub(crate) mod tests {
                 "[[package]]\nmatch = \"cargo/{name}\"\npublish-to = [\"crates-io\"]\n\n"
             ));
         }
+        for name in npm {
+            write(
+                &format!("{name}/package.json"),
+                &format!(r#"{{"name":"{name}","version":"0.1.0"}}"#),
+            );
+            config.push_str(&format!(
+                "[[package]]\nmatch = \"npm/{name}\"\npublish-to = [\"npm\"]\n\n"
+            ));
+        }
         write("callisto.toml", &config);
         callisto_fixtures::git::init_repo(dir.path());
         for args in [
@@ -797,17 +810,19 @@ pub(crate) mod tests {
         let runner = CargoPackageRecorder {
             calls: Default::default(),
         };
-        let decision = ReleaseDecisionV1::new(
-            crates
-                .iter()
-                .map(|(name, _)| callisto_model::ReleaseDecisionEntry {
-                    package: ReleasePackageId::new(Ecosystem::Cargo, name).unwrap(),
+        let entries = |ecosystem, names: Vec<&str>| {
+            names
+                .into_iter()
+                .map(move |name| callisto_model::ReleaseDecisionEntry {
+                    package: ReleasePackageId::new(ecosystem, name).unwrap(),
                     target_version: Version::parse("0.1.0", VersionGrammar::SemVer).unwrap(),
                     reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
                 })
-                .collect(),
-        )
-        .unwrap();
+                .collect::<Vec<_>>()
+        };
+        let mut all = entries(Ecosystem::Cargo, crates.iter().map(|(name, _)| *name).collect());
+        all.extend(entries(Ecosystem::Npm, npm.to_vec()));
+        let decision = ReleaseDecisionV1::new(all).unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let intent = build_release_intent(
             dir.path(),
@@ -845,8 +860,16 @@ pub(crate) mod tests {
                 ("alpha", "native/crates/alpha/Cargo.toml"),
                 ("beta", "native/crates/beta/Cargo.toml"),
             ],
+            &[],
         );
         assert_eq!(calls, [call("native", &["alpha", "beta"])]);
+    }
+
+    /// Only crate publishes are packaged: an npm package of the same plan is never handed to cargo.
+    #[test]
+    fn an_npm_package_in_the_plan_is_not_packaged_with_cargo() {
+        let calls = package_calls(&[("Cargo.toml", "\"core\"")], &[("core", "core/Cargo.toml")], &["web"]);
+        assert_eq!(calls, [call("", &["core"])]);
     }
 
     /// One call per owning workspace, each from its own directory; the common single-workspace layout is one call
@@ -863,12 +886,14 @@ pub(crate) mod tests {
                 ("beta", "native/crates/beta/Cargo.toml"),
                 ("gamma", "tools/crates/gamma/Cargo.toml"),
             ],
+            &[],
         );
         assert_eq!(calls, [call("native", &["alpha", "beta"]), call("tools", &["gamma"])]);
 
         let single = package_calls(
             &[("Cargo.toml", "\"a\", \"b\"")],
             &[("a", "a/Cargo.toml"), ("b", "b/Cargo.toml")],
+            &[],
         );
         assert_eq!(single, [call("", &["a", "b"])]);
     }
