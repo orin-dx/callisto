@@ -36,6 +36,8 @@ pub struct Aggregation {
     /// caller records these into `pre.json` so a rerun recognizes them as already-applied and skips re-adding
     /// their changelog entry, without deleting the file.
     pub new_pre_changesets: Vec<String>,
+    /// Changeset files a Changesets v3 pre cycle moves into `.changeset/pre/` this run, marking them applied.
+    pub archived: Vec<PathBuf>,
     pub changelog_inputs: BTreeMap<PackageId, ChangelogInput>,
     pub inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>,
     pub diagnostics: Vec<Diagnostic>,
@@ -232,7 +234,14 @@ pub fn load_changesets_permissive(
     root: &Path,
     cfg: &ResolvedConfig,
 ) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
-    let dir = root.join(&cfg.changesets_dir);
+    load_changesets_in(root, &cfg.changesets_dir)
+}
+
+fn load_changesets_in(
+    root: &Path,
+    dir: &Path,
+) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
+    let dir = root.join(dir);
     let files = list_changeset_files(&dir).map_err(|e| callisto_model::ManifestError::Read {
         path: dir.clone(),
         message: e.to_string(),
@@ -266,7 +275,17 @@ pub fn load_changesets_permissive(
 }
 
 pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
-    let (loaded, mut failures) = load_changesets_permissive(root, cfg)?;
+    strict(load_changesets_permissive(root, cfg)?)
+}
+
+/// The changesets a Changesets v3 pre cycle archived in `.changeset/pre/`, which earlier prereleases already applied.
+pub fn load_archived_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
+    strict(load_changesets_in(root, &cfg.pre_archive_dir())?)
+}
+
+fn strict(
+    (loaded, mut failures): (Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>),
+) -> Result<Vec<LoadedChangeset>, GraphError> {
     if !failures.is_empty() {
         let failure = failures.remove(0);
         return Err(GraphError::ParseChangeset {
@@ -349,7 +368,14 @@ where
     D: DependencyResolver,
     I: SeverityInference,
 {
-    let loaded = load_changesets(&config.root, config)?;
+    let mut loaded = load_changesets(&config.root, config)?;
+    // A v3 cycle archives applied changesets in `pre/`: retained while the cycle runs, consumed with the rest at exit.
+    let archived = match pre.map(callisto_model::format::PreState::shape) {
+        Some(callisto_model::format::PreStateShape::V3) => load_archived_changesets(&config.root, config)?,
+        Some(callisto_model::format::PreStateShape::V2) | None => Vec::new(),
+    };
+    let archived_paths: std::collections::HashSet<PathBuf> = archived.iter().map(|cs| cs.path.clone()).collect();
+    loaded.extend(archived);
     let mut agg = Aggregation::default();
     // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
     if graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
@@ -419,7 +445,8 @@ where
         .unwrap_or_default();
 
     for cs in loaded {
-        let is_already_recorded = is_pre_mode && already_recorded.contains(cs.id.as_str());
+        let is_already_recorded =
+            is_pre_mode && (already_recorded.contains(cs.id.as_str()) || archived_paths.contains(&cs.path));
         // Consume a changeset only once an entry resolves; a mixed or fully unresolved one stays on disk and is ignored whole.
         let mut has_unresolved = false;
         let mut resolved = Vec::new();
@@ -507,6 +534,11 @@ where
                 // Records newly-seen ids so a rerun treats them as already-applied and skips the changelog entry.
                 if !is_already_recorded {
                     agg.new_pre_changesets.push(cs.id.clone());
+                    if pre.map(callisto_model::format::PreState::shape)
+                        == Some(callisto_model::format::PreStateShape::V3)
+                    {
+                        agg.archived.push(cs.path.clone());
+                    }
                 }
             } else {
                 agg.consumed.push(cs.path.clone());

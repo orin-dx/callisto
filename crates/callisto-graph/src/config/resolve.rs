@@ -66,6 +66,11 @@ impl ResolvedConfig {
         self.changesets_dir.join("pre.json")
     }
 
+    /// Where a Changesets v3 pre cycle keeps the changesets an earlier prerelease already applied.
+    pub fn pre_archive_dir(&self) -> PathBuf {
+        self.changesets_dir.join("pre")
+    }
+
     pub fn rendered_value(&self, key: &ConfigKey) -> Option<String> {
         if key == &ConfigKey::CASCADE_MODE {
             Some(match self.cascade.mode {

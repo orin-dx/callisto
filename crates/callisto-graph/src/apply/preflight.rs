@@ -62,6 +62,10 @@ fn targets(plan: &VersionPlan, opts: &ApplyOptions) -> BTreeSet<(PathBuf, Target
                 .iter()
                 .map(|path| (path.clone(), Target::Removed)),
         );
+        for archived in &plan.archived_changesets {
+            targets.insert((archived.from.clone(), Target::Removed));
+            targets.insert((archived.to.clone(), Target::Creatable));
+        }
         if plan.pre_state_update.is_some() {
             targets.insert((plan.pre_json_path.clone(), Target::Creatable));
         } else if let Some(path) = &plan.delete_pre_json {

@@ -82,9 +82,11 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
             });
         }
     }
+    // An archived changeset leaves its place, so the version commit deletes it there too.
     let consumed = plan
         .consumed_changesets
         .iter()
+        .chain(plan.archived_changesets.iter().map(|archived| &archived.from))
         .map(|path| normalized_git_path(path))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ReleaseDecisionV1::new(entries)?.consuming(consumed))
@@ -722,6 +724,8 @@ fn is_changeset_path(path: &str, changeset_dir: &str) -> bool {
         return false;
     };
 
+    // A Changesets v3 pre cycle archives applied changesets one level down, in `pre/`.
+    let file_name = file_name.strip_prefix("pre/").unwrap_or(file_name);
     !file_name.contains('/') && file_name.ends_with(".md") && file_name != "README.md"
 }
 
@@ -1074,8 +1078,10 @@ mod tests {
     }
 
     #[test]
-    fn changeset_path_matches_only_direct_child_markdown_files() {
+    fn changeset_path_matches_only_direct_child_and_v3_archive_markdown_files() {
         assert!(is_changeset_path(".changeset/release.md", ".changeset"));
+        assert!(is_changeset_path(".changeset/pre/release.md", ".changeset"));
+        assert!(!is_changeset_path(".changeset/pre/nested/release.md", ".changeset"));
         assert!(!is_changeset_path(".changeset/README.md", ".changeset"));
         assert!(!is_changeset_path(".changeset/nested/release.md", ".changeset"));
         assert!(!is_changeset_path(".changesets/release.md", ".changeset"));

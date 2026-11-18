@@ -57,7 +57,7 @@ pub use identity::IdentityIndex;
 pub use infer::{InferenceOutcome, InferenceWindowSpec, NoInference, SeverityInference};
 pub use locate::{find_workspace_root, IgnoreWalkLocator, LocateError, ProjectLocator};
 pub use napi::{napi_drift, role_to_triple, triple_to_role, NapiTargetsIndex};
-pub use plan::{PlannedBump, VersionPlan, VersionWriteTarget};
+pub use plan::{ArchivedChangeset, PlannedBump, VersionPlan, VersionWriteTarget};
 pub use resolver::{DependencyResolver, ManifestWalkResolver};
 pub use tags::TagIndex;
 pub use toposort::toposort_impl;

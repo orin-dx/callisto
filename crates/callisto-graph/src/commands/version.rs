@@ -399,6 +399,17 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
         optional_dep_updates,
         changelog_writes,
         consumed_changesets: agg.consumed,
+        archived_changesets: agg
+            .archived
+            .iter()
+            .map(|from| crate::plan::ArchivedChangeset {
+                from: from.clone(),
+                to: ws
+                    .config
+                    .pre_archive_dir()
+                    .join(from.file_name().expect("a listed changeset file has a name")),
+            })
+            .collect(),
         pre_state_update,
         pre_json_path: ws.config.pre_json_path(),
         pre_json_original_text,

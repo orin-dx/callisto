@@ -183,12 +183,16 @@
       "criterion": "In pre mode, `version` never deletes a changeset from disk. A changeset whose id is not yet in `pre.json`'s `changesets` list counts toward severity, produces a changelog entry, and has its id added to `changesets`; a changeset whose id is already there is not pending again: a package named only by recorded changesets is not bumped, so a rerun with nothing new changes nothing. A package with any new input (a new changeset, a bump inferred from commits, or a fixed or linked group member with new input) still counts its recorded changesets toward its severity, so its group and dependents are bumped at that severity too. The `allow-empty-changesets`/`--strict` handling from VER-AGG-06 triggers when no changeset in pre mode is new."
     },
     {
+      "id": "VER-PRE-04-V3",
+      "criterion": "A `pre.json` with only `mode` and `tag` is a Changesets v3 cycle and is written back with only those keys plus any unknown keys it held. In its pre mode, `version` moves each changeset it applies for the first time into `pre/` inside the changesets directory instead of recording its id; a changeset already in `pre/` counts toward severity the way a recorded id does and is not applied again. After `pre exit`, the next `version` consumes and deletes the changesets in `pre/` together with any new ones. The release decision records a moved changeset as consumed, and release verification accepts its deletion and its copy in `pre/`."
+    },
+    {
       "id": "VER-PRE-05",
       "criterion": "After `pre exit`, the next `version` moves every package at a prerelease version to its stable release (0.2.0-beta.1 becomes 0.2.0), consumes and deletes the pending changesets, and deletes `pre.json`."
     },
     {
       "id": "VER-PRE-06",
-      "criterion": "A malformed `.changeset/pre.json` (invalid JSON, a missing `mode`, `tag`, `initialVersions` or `changesets` field, a mode other than `pre` or `exit`, or an unparsable version) makes `version` fail with E114 and write nothing; an unreadable file fails with E115.",
+      "criterion": "A malformed `.changeset/pre.json` (invalid JSON, a missing `mode` or `tag`, exactly one of `initialVersions` and `changesets`, a mode other than `pre` or `exit`, or an unparsable version) makes `version` fail with E114 and write nothing; an unreadable file fails with E115.",
       "is_error_case": true
     },
     {

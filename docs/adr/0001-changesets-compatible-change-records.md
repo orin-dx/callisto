@@ -10,7 +10,7 @@ Status: Accepted (the original design, docs/00-design.md §4 P1)
 
 ## Decision
 
-The human-written change record is a `.changeset/*.md` file in `@changesets/cli`'s format: YAML frontmatter mapping package names to `none`/`patch`/`minor`/`major`, then a Markdown summary. Compatibility means each tool reads the other's files; output is not byte-identical (callisto quotes names only when needed). Same `pre.json` shape, same `bump_version` semantics (no 0.x remap on an explicit major). Commit inference is opt-in per package (`release-trigger = "auto"`); an unset key resolves to `ReleaseTrigger::Changeset` (`crates/callisto-graph/src/walk.rs`). For an `auto` package, severity is the highest of its changeset entries and its inferred severity (VER-AGG-01, `docs/specs/versioning.json`).
+The human-written change record is a `.changeset/*.md` file in `@changesets/cli`'s format: YAML frontmatter mapping package names to `none`/`patch`/`minor`/`major`, then a Markdown summary. Compatibility means each tool reads the other's files; output is not byte-identical (callisto quotes names only when needed). `pre.json` is read in either Changesets shape and written back in the shape read: v2 (`mode`, `tag`, `initialVersions`, the applied `changesets` ids) or v3 (`mode` and `tag` only, applied changesets moved to `.changeset/pre/`); a cycle Callisto starts writes v2. Same `bump_version` semantics (no 0.x remap on an explicit major). Commit inference is opt-in per package (`release-trigger = "auto"`); an unset key resolves to `ReleaseTrigger::Changeset` (`crates/callisto-graph/src/walk.rs`). For an `auto` package, severity is the highest of its changeset entries and its inferred severity (VER-AGG-01, `docs/specs/versioning.json`).
 
 ## Options considered
 

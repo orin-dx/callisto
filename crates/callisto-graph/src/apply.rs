@@ -181,6 +181,21 @@ pub fn apply_version_plan<R: CommandRunner>(
         for cs_path in &plan.consumed_changesets {
             deferred_deletions.push(cs_path.clone());
         }
+        for archived in &plan.archived_changesets {
+            let from = root.join(&archived.from);
+            let text = fs::read_to_string(&from).map_err(|e| GraphError::ApplyIo {
+                path: archived.from.clone(),
+                message: e.to_string(),
+            })?;
+            callisto_model::atomic::atomic_write(&root.join(&archived.to), &text, permit).map_err(|e| {
+                GraphError::ApplyIo {
+                    path: archived.to.clone(),
+                    message: e.to_string(),
+                }
+            })?;
+            modified_paths.push(archived.to.clone());
+            deferred_deletions.push(archived.from.clone());
+        }
 
         if let Some(ref pre_state) = plan.pre_state_update {
             // Written from `plan.pre_json_path`, not derived from `consumed_changesets` (always empty in pre mode).

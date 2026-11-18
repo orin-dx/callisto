@@ -1952,13 +1952,15 @@ fn aggregate_pre_cycle<I: SeverityInference>(
     let git = GitAccess::new(root, &runner);
     let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let base_versions: BTreeMap<_, _> = ids.iter().map(|id| (id.clone(), Version::semver(1, 0, 0))).collect();
-    let pre_state = callisto_model::format::PreState {
-        changesets: recorded.iter().map(|id| id.to_string()).collect(),
-        ..callisto_model::format::PreState::entering(
-            "beta",
-            packages.iter().map(|name| (name.to_string(), Version::semver(1, 0, 0))),
-        )
-    };
+    let pre_state = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Pre,
+        "beta".to_string(),
+        packages
+            .iter()
+            .map(|name| (name.to_string(), Version::semver(1, 0, 0)))
+            .collect(),
+        recorded.iter().map(|id| id.to_string()).collect(),
+    );
     aggregate(
         &graph,
         &identity_for_all(&graph.packages),
