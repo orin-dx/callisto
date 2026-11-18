@@ -399,17 +399,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
         optional_dep_updates,
         changelog_writes,
         consumed_changesets: agg.consumed,
-        archived_changesets: agg
-            .archived
-            .iter()
-            .map(|from| crate::plan::ArchivedChangeset {
-                from: from.clone(),
-                to: ws
-                    .config
-                    .pre_archive_dir()
-                    .join(from.file_name().expect("a listed changeset file has a name")),
-            })
-            .collect(),
+        archived_changesets: agg.archived,
         pre_state_update,
         pre_json_path: ws.config.pre_json_path(),
         pre_json_original_text,
@@ -645,12 +635,18 @@ fn prefetch_head_manifests<R: CommandRunner, D: DependencyResolver>(
 fn working_tree_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
 ) -> Result<bool, GraphError> {
-    let dir = ws.root.join(&ws.config.changesets_dir);
-    let files = crate::aggregate::list_changeset_files(&dir).map_err(|error| GraphError::ApplyIo {
-        path: ws.config.changesets_dir.clone(),
-        message: error.to_string(),
-    })?;
-    Ok(!files.is_empty())
+    // A Changesets v3 cycle keeps applied changesets in its archive until `pre exit` consumes them.
+    for dir in [ws.config.changesets_dir.clone(), ws.config.pre_archive_dir()] {
+        let files =
+            crate::aggregate::list_changeset_files(&ws.root.join(&dir)).map_err(|error| GraphError::ApplyIo {
+                path: dir.clone(),
+                message: error.to_string(),
+            })?;
+        if !files.is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// True when a canonical manifest differs between index and HEAD: `git add`ed by a prior `apply` but never committed.
@@ -693,7 +689,16 @@ fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     head: &str,
 ) -> Result<bool, GraphError> {
-    let dir = super::release_decision::normalized_git_path(&ws.config.changesets_dir)?;
+    Ok(head_dir_has_changeset(ws, head, &ws.config.changesets_dir)?
+        || head_dir_has_changeset(ws, head, &ws.config.pre_archive_dir())?)
+}
+
+fn head_dir_has_changeset<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    head: &str,
+    dir: &std::path::Path,
+) -> Result<bool, GraphError> {
+    let dir = super::release_decision::normalized_git_path(dir)?;
     let spec = super::release_decision::object_at(head, &dir);
     if !head_object_exists(ws, &spec)? {
         // The changesets directory didn't exist at HEAD (e.g. the first `version` run); nothing left pending.

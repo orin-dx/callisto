@@ -16,6 +16,8 @@ pub fn changeset_pull_requests(
     changesets_dir: &Path,
 ) -> Result<BTreeMap<String, u64>, GraphError> {
     let dir = changesets_dir.to_string_lossy();
+    // A Changesets v3 pre cycle's archive gains notes in version commits; their pull request is not the author's.
+    let archive = format!(":(exclude){}", changesets_dir.join("pre").to_string_lossy());
     let args = [
         "log",
         "--first-parent",
@@ -25,6 +27,7 @@ pub fn changeset_pull_requests(
         "--format=%x01%s",
         "--",
         dir.as_ref(),
+        archive.as_str(),
     ];
     let output = git.runner().run("git", &args, git.root()).map_err(VcsError::from)?;
     // A repository with no commit has no history to read; every other failure stays an error.

@@ -37,7 +37,7 @@ pub struct Aggregation {
     /// their changelog entry, without deleting the file.
     pub new_pre_changesets: Vec<String>,
     /// Changeset files a Changesets v3 pre cycle moves into `.changeset/pre/` this run, marking them applied.
-    pub archived: Vec<PathBuf>,
+    pub archived: Vec<crate::plan::ArchivedChangeset>,
     pub changelog_inputs: BTreeMap<PackageId, ChangelogInput>,
     pub inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>,
     pub diagnostics: Vec<Diagnostic>,
@@ -296,6 +296,18 @@ fn strict(
     Ok(loaded)
 }
 
+/// `from`'s file name in the archive, or `<stem>-<n>.md` when an archived note of another content already has it.
+fn free_archive_name(archive_dir: &Path, from: &Path, taken: &BTreeMap<std::ffi::OsString, Changeset>) -> PathBuf {
+    let stem = from.file_stem().and_then(|stem| stem.to_str()).unwrap_or("changeset");
+    let mut name = format!("{stem}.md");
+    let mut n = 2;
+    while taken.contains_key(std::ffi::OsStr::new(&name)) {
+        name = format!("{stem}-{n}.md");
+        n += 1;
+    }
+    archive_dir.join(name)
+}
+
 pub fn apply_pre_major(
     inferred: Severity,
     policy: PreMajorInferencePolicy,
@@ -375,6 +387,11 @@ where
         Some(callisto_model::format::PreStateShape::V2) | None => Vec::new(),
     };
     let archived_paths: std::collections::HashSet<PathBuf> = archived.iter().map(|cs| cs.path.clone()).collect();
+    let mut archive_names: BTreeMap<std::ffi::OsString, Changeset> = archived
+        .iter()
+        .filter_map(|cs| Some((cs.path.file_name()?.to_os_string(), cs.changeset.clone())))
+        .collect();
+    let archive_dir = config.pre_archive_dir();
     loaded.extend(archived);
     let mut agg = Aggregation::default();
     // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
@@ -445,11 +462,26 @@ where
         .unwrap_or_default();
 
     for cs in loaded {
-        let is_already_recorded =
-            is_pre_mode && (already_recorded.contains(cs.id.as_str()) || archived_paths.contains(&cs.path));
+        // The same note left in place beside its archived copy is a move an interrupted run did not finish.
+        let unfinished_move = !archived_paths.contains(&cs.path)
+            && cs
+                .path
+                .file_name()
+                .and_then(|name| archive_names.get(name))
+                .is_some_and(|archived| *archived == cs.changeset);
+        let is_already_recorded = is_pre_mode
+            && (already_recorded.contains(cs.id.as_str()) || archived_paths.contains(&cs.path) || unfinished_move);
+        if is_pre_mode && unfinished_move {
+            let name = cs.path.file_name().expect("a listed changeset file has a name");
+            agg.archived.push(crate::plan::ArchivedChangeset {
+                from: cs.path.clone(),
+                to: archive_dir.join(name),
+            });
+        }
         // Consume a changeset only once an entry resolves; a mixed or fully unresolved one stays on disk and is ignored whole.
         let mut has_unresolved = false;
         let mut resolved = Vec::new();
+        let note = cs.changeset.clone();
         for entry in cs.changeset.entries {
             let unresolved = match PackageId::parse(&entry.name) {
                 Err(_) => Some("contains invalid package name"),
@@ -537,7 +569,14 @@ where
                     if pre.map(callisto_model::format::PreState::shape)
                         == Some(callisto_model::format::PreStateShape::V3)
                     {
-                        agg.archived.push(cs.path.clone());
+                        let to = free_archive_name(&archive_dir, &cs.path, &archive_names);
+                        if let Some(name) = to.file_name() {
+                            archive_names.insert(name.to_os_string(), note.clone());
+                        }
+                        agg.archived.push(crate::plan::ArchivedChangeset {
+                            from: cs.path.clone(),
+                            to,
+                        });
                     }
                 }
             } else {

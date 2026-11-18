@@ -51,6 +51,86 @@ fn add_changeset(root: &Path, id: &str, bump: &str) {
     run_git(root, &["commit", "-q", "-m", id]);
 }
 
+/// One Cargo package at 1.0.0 in a committed v3 pre cycle.
+fn v3_cycle() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"pkg-alpha\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/pre.json"),
+        "{\"mode\":\"pre\",\"tag\":\"beta\"}\n",
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "enter pre"]);
+    dir
+}
+
+/// A run that archived a note but stopped before deleting it is finished on rerun, not applied again.
+#[test]
+fn a_note_left_beside_its_archived_copy_is_not_applied_twice() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    add_changeset(root, "feature", "minor");
+    version(root);
+    fs::copy(
+        root.join(".changeset/pre/feature.md"),
+        root.join(".changeset/feature.md"),
+    )
+    .unwrap();
+
+    let rerun = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    assert!(rerun.status.success(), "{}", String::from_utf8_lossy(&rerun.stderr));
+    assert_eq!(manifest_version(root), "1.1.0-beta.0");
+    assert_eq!(markdown_in(&root.join(".changeset")), Vec::<String>::new());
+    assert_eq!(markdown_in(&root.join(".changeset/pre")), ["feature.md"]);
+}
+
+/// A different note under an archived note's name is archived beside it, never over it.
+#[test]
+fn a_new_note_with_an_archived_name_is_archived_under_a_free_name() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    add_changeset(root, "feature", "minor");
+    version(root);
+    add_changeset(root, "feature", "patch");
+    version(root);
+    assert_eq!(manifest_version(root), "1.1.0-beta.1");
+    assert_eq!(
+        markdown_in(&root.join(".changeset/pre")),
+        ["feature-2.md", "feature.md"]
+    );
+    assert!(fs::read_to_string(root.join(".changeset/pre/feature.md"))
+        .unwrap()
+        .contains("minor"));
+}
+
+/// After `pre exit`, a version written to disk but not committed is an interrupted run while the archive is pending.
+#[test]
+fn an_interrupted_exit_run_is_refused_while_the_archive_is_pending() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    add_changeset(root, "feature", "minor");
+    version(root);
+    let exit = callisto(root, &["pre", "exit"]);
+    assert!(exit.status.success(), "{}", String::from_utf8_lossy(&exit.stderr));
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "exit pre"]);
+    let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    fs::write(root.join("Cargo.toml"), manifest.replace("1.1.0-beta.0", "1.1.0")).unwrap();
+
+    let rerun = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    let stderr = String::from_utf8_lossy(&rerun.stderr);
+    assert!(!rerun.status.success(), "{stderr}");
+    assert!(stderr.contains("E121"), "{stderr}");
+}
+
 #[test]
 fn a_v3_pre_cycle_archives_applied_changesets_and_releases_them_at_exit() {
     let dir = tempfile::tempdir().unwrap();

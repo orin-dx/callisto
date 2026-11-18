@@ -258,7 +258,7 @@ pub fn parse_pre_json(input: &str) -> Result<PreState, PreJsonError> {
 }
 
 pub fn write_pre_json(state: &PreState) -> String {
-    render_pre_json(state, "  ")
+    render_pre_json(state, "  ", &[])
 }
 
 /// Renders `state`, then reapplies `existing`'s on-disk formatting (BOM, CRLF vs LF, indent width) instead of the
@@ -266,11 +266,16 @@ pub fn write_pre_json(state: &PreState) -> String {
 /// is not reformatted on a `pre exit` or mid-cycle `version` rewrite.
 pub fn write_pre_json_preserving(state: &PreState, existing: &str) -> String {
     let fp = PreJsonFingerprint::detect(existing);
-    let rendered = render_pre_json(state, &fp.indent_str());
+    let order: Vec<String> =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(existing.trim_start_matches('\u{FEFF}'))
+            .map(|keys| keys.keys().cloned().collect())
+            .unwrap_or_default();
+    let rendered = render_pre_json(state, &fp.indent_str(), &order);
     fp.apply(&rendered)
 }
 
-fn render_pre_json(state: &PreState, indent_str: &str) -> String {
+/// Keys present in `order` come first, in that order, so a rewrite keeps the file's own key order.
+fn render_pre_json(state: &PreState, indent_str: &str, order: &[String]) -> String {
     let mut map = IndexMap::new();
     map.insert(
         "mode".to_string(),
@@ -307,6 +312,10 @@ fn render_pre_json(state: &PreState, indent_str: &str) -> String {
     for (key, value) in &state.extra {
         map.entry(key.clone()).or_insert_with(|| value.clone());
     }
+    let mut ordered: IndexMap<String, serde_json::Value> =
+        order.iter().filter_map(|key| map.shift_remove_entry(key)).collect();
+    ordered.extend(map);
+    let map = ordered;
 
     let formatter = serde_json::ser::PrettyFormatter::with_indent(indent_str.as_bytes());
     let mut buf = Vec::new();
@@ -667,6 +676,13 @@ mod tests {
             assert!(written.find("\"zeta\"").unwrap() < written.find("\"alpha\"").unwrap());
             assert_eq!(parse_pre_json(&written).unwrap(), state);
         }
+    }
+
+    #[test]
+    fn a_rewrite_keeps_the_files_own_key_order() {
+        let json = "{\n  \"zeta\": 1,\n  \"tag\": \"a\",\n  \"mode\": \"pre\"\n}\n";
+        let state = parse_pre_json(json).unwrap();
+        assert_eq!(write_pre_json_preserving(&state, json), json);
     }
 
     #[test]
