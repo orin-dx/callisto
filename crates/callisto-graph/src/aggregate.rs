@@ -279,11 +279,14 @@ pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedCh
 }
 
 /// The changesets a Changesets v3 pre cycle archived in `.changeset/pre/`, which earlier prereleases already applied.
+/// Prefixes the id of a changeset loaded from a v3 pre cycle's archive.
+pub(crate) const ARCHIVED_ID_PREFIX: &str = "pre/";
+
 pub fn load_archived_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
     let mut archived = strict(load_changesets_in(root, &cfg.pre_archive_dir())?)?;
     // A new note may reuse an archived note's name; the two are distinct changes.
     for cs in &mut archived {
-        cs.id = format!("pre/{}", cs.id);
+        cs.id = format!("{ARCHIVED_ID_PREFIX}{}", cs.id);
     }
     Ok(archived)
 }
@@ -478,7 +481,7 @@ where
         .unwrap_or_default();
 
     for cs in loaded {
-        // Where this note goes in the archive; already there means a move an interrupted run did not finish.
+        // Where this note goes in the archive; already there means it duplicates a note this cycle released.
         let slot = (is_pre_mode && is_v3 && !archived_paths.contains(&cs.path))
             .then(|| archive_slot(&archive_dir, &cs.path, &cs.changeset, &archive_names));
         let unfinished_move = slot.as_ref().is_some_and(|(_, present)| *present);
@@ -488,6 +491,7 @@ where
             agg.archived.push(crate::plan::ArchivedChangeset {
                 from: cs.path.clone(),
                 to: to.clone(),
+                duplicate: true,
             });
         }
         // Consume a changeset only once an entry resolves; a mixed or fully unresolved one stays on disk and is ignored whole.
@@ -585,6 +589,7 @@ where
                         agg.archived.push(crate::plan::ArchivedChangeset {
                             from: cs.path.clone(),
                             to,
+                            duplicate: false,
                         });
                     }
                 }

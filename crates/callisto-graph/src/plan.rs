@@ -72,6 +72,8 @@ pub struct VersionPlan {
 pub struct ArchivedChangeset {
     pub from: PathBuf,
     pub to: PathBuf,
+    /// `to` already holds this note, so only `from` is removed.
+    pub duplicate: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

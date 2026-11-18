@@ -208,7 +208,11 @@ impl ReleasePreview {
     pub fn with_change_prs(mut self, prs: &std::collections::BTreeMap<String, u64>) -> Self {
         for change in &mut self.changes {
             if let ChangeKind::Changeset { filename, pr, .. } = &mut change.kind {
-                *pr = prs.get(filename.as_str()).copied();
+                // An archived note was added at the changesets root under its own name.
+                let added_as = filename
+                    .strip_prefix(crate::aggregate::ARCHIVED_ID_PREFIX)
+                    .unwrap_or(filename);
+                *pr = prs.get(added_as).copied();
             }
         }
         self

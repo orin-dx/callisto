@@ -182,6 +182,15 @@ pub fn apply_version_plan<R: CommandRunner>(
             deferred_deletions.push(cs_path.clone());
         }
         for archived in &plan.archived_changesets {
+            if archived.duplicate {
+                crate::note::note_once(format!(
+                    "note: removing `{}`: it duplicates `{}`, which this pre cycle already released",
+                    archived.from.display(),
+                    archived.to.display()
+                ));
+                deferred_deletions.push(archived.from.clone());
+                continue;
+            }
             let from = root.join(&archived.from);
             let text = fs::read_to_string(&from).map_err(|e| GraphError::ApplyIo {
                 path: archived.from.clone(),

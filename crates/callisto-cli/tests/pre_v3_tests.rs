@@ -22,6 +22,12 @@ fn version(root: &Path) {
     run_git(root, &["commit", "-q", "-m", "version"]);
 }
 
+/// `version` stopped after archiving: its writes are on disk, nothing is committed.
+fn uncommitted_version(root: &Path) {
+    let out = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
 fn manifest_version(root: &Path) -> String {
     let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
     let line = manifest.lines().find(|line| line.starts_with("version")).unwrap();
@@ -80,7 +86,7 @@ fn a_note_left_beside_its_suffixed_archived_copy_is_not_applied_twice() {
     add_changeset(root, "feature", "minor");
     version(root);
     add_changeset(root, "feature", "patch");
-    version(root);
+    uncommitted_version(root);
     assert_eq!(manifest_version(root), "1.1.0-beta.1");
     fs::copy(
         root.join(".changeset/pre/feature-2.md"),
@@ -103,7 +109,13 @@ fn a_note_left_beside_its_suffixed_archived_copy_is_not_applied_twice() {
 fn an_archived_note_and_a_new_note_of_the_same_name_both_reach_the_release_preview() {
     let dir = v3_cycle();
     let root = dir.path();
-    add_changeset(root, "feature", "minor");
+    fs::write(
+        root.join(".changeset/feature.md"),
+        "---\ncargo/pkg-alpha: minor\n---\n\nfeature\n",
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "Add a feature (#12)"]);
     version(root);
     let exit = callisto(root, &["pre", "exit"]);
     assert!(exit.status.success(), "{}", String::from_utf8_lossy(&exit.stderr));
@@ -129,6 +141,37 @@ fn an_archived_note_and_a_new_note_of_the_same_name_both_reach_the_release_previ
     let text = fs::read_to_string(&preview).unwrap();
     assert!(text.contains("second note"), "{text}");
     assert!(text.contains("\"summary\": \"feature\""), "{text}");
+    fn change_named<'a>(value: &'a serde_json::Value, filename: &str) -> Option<&'a serde_json::Value> {
+        match value {
+            serde_json::Value::Object(map) if map.get("filename").is_some_and(|f| f == filename) => Some(value),
+            serde_json::Value::Object(map) => map.values().find_map(|v| change_named(v, filename)),
+            serde_json::Value::Array(items) => items.iter().find_map(|v| change_named(v, filename)),
+            _ => None,
+        }
+    }
+    let preview: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let archived = change_named(&preview, "pre/feature").expect("the archived note is a change of its own");
+    assert_eq!(archived["pr"], 12, "{text}");
+}
+
+/// A note identical to one this cycle already archived is a duplicate: it is removed, and the run says so.
+#[test]
+fn a_duplicate_of_an_archived_note_is_removed_with_a_note() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    add_changeset(root, "feature", "minor");
+    version(root);
+    add_changeset(root, "feature", "minor");
+    let out = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(
+        stderr.contains(".changeset/feature.md") && stderr.contains(".changeset/pre/feature.md"),
+        "{stderr}"
+    );
+    assert_eq!(manifest_version(root), "1.1.0-beta.0");
+    assert_eq!(markdown_in(&root.join(".changeset")), Vec::<String>::new());
+    assert_eq!(markdown_in(&root.join(".changeset/pre")), ["feature.md"]);
 }
 
 /// A run that archived a note but stopped before deleting it is finished on rerun, not applied again.
@@ -137,7 +180,7 @@ fn a_note_left_beside_its_archived_copy_is_not_applied_twice() {
     let dir = v3_cycle();
     let root = dir.path();
     add_changeset(root, "feature", "minor");
-    version(root);
+    uncommitted_version(root);
     fs::copy(
         root.join(".changeset/pre/feature.md"),
         root.join(".changeset/feature.md"),
