@@ -288,7 +288,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E235 | Cannot issue the terminal release receipt | re-run `callisto release execute`; it adopts effects that already landed |
 | E236 | Release intent file is invalid | re-run `callisto release plan` to derive a fresh intent |
 | E237 | Artifact manifest file is invalid | re-run `callisto release artifact-manifest` to regenerate it |
-| E238 | A release JSON file (intent, decision, manifest) is not well-formed | check the file is complete, well-formed JSON |
+| E238 | A release JSON file (intent, decision, snapshot, manifest) is not well-formed | check the file is complete, well-formed JSON |
 | E239 | This workspace cannot release locally | release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally |
 | E240 | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
 | E241 | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |
@@ -306,7 +306,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E277 | `--strict` escalated one or more workspace graph diagnostics to errors | resolve each listed diagnostic, or drop --strict if it is expected |
 | E279 | `pre enter` was given an empty or whitespace-only tag | pass a non-empty tag, for example `callisto pre enter beta` |
 | E280 | `pre exit` was run after prerelease mode was already exited | run `callisto version` to finalize the release |
-| E281 | A `release-pr` `--decision`/`--snapshot` argument is not valid JSON | check the JSON is well-formed and matches the expected schema |
+| E281 | A `release-pr` `--decision`/`--snapshot` argument given inline or on stdin is not valid JSON | check the JSON is well-formed and matches the expected schema |
 | E282 | `release-pr commit-plan` was run with both `--out` and `--dry-run` | re-run without --dry-run, or drop --out |
 | E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
 | E298 | `init --forge-repository`/`--product-package` given without `--artifact-target` | drop --<flag>, or pass --artifact-target to ship the product's binaries |

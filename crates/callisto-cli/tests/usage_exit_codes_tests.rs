@@ -72,6 +72,34 @@ fn bad_or_missing_flag_values_checked_after_parsing_exit_2() {
 }
 
 #[test]
+fn release_pr_json_input_errors_follow_their_origin() {
+    let dir = workspace();
+    let root = dir.path();
+    // A relative file is read under --cwd, and a malformed file is a runtime failure naming the file.
+    fs::write(root.join("bad.json"), "{not json").unwrap();
+    assert_exit(
+        root,
+        &["release-pr", "verify", "--decision", "bad.json", "--snapshot", "{}"],
+        1,
+        "E238",
+    );
+    // A missing file is an I/O failure, not a usage error.
+    assert_exit(
+        root,
+        &["release-pr", "verify", "--decision", "missing.json", "--snapshot", "{}"],
+        1,
+        "E213",
+    );
+    // Malformed inline JSON is a usage error naming the flag.
+    assert_exit(
+        root,
+        &["release-pr", "verify", "--decision", "{not json", "--snapshot", "{}"],
+        2,
+        "E281",
+    );
+}
+
+#[test]
 fn init_flag_values_checked_against_the_workspace_exit_2() {
     let dir = workspace();
     let root = dir.path();
