@@ -1,0 +1,114 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PAHZ41M8MDJ7AMNV3VPA61",
+  "session_id": "b38d2eaf-94d2-40f8-9072-4c207ac00fef",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T03:17:53.901918Z",
+  "branch": "worktree-wp-f2-pending-release",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/release_pr.rs",
+    "crates/callisto-cli/tests/release_pr_decide_tests.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/commands/status.rs",
+    "crates/callisto-graph/src/plan.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "crates/callisto-model/src/release/decision.rs",
+    "crates/callisto-model/src/release_pr.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "63133fb17bbd",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 292,
+    "cache_creation_tokens": 332084,
+    "cache_read_tokens": 29809403,
+    "output_tokens": 76344,
+    "api_call_count": 146,
+    "subagent_tokens": {
+      "input_tokens": 318,
+      "cache_creation_tokens": 250286,
+      "cache_read_tokens": 16200740,
+      "output_tokens": 63104,
+      "api_call_count": 147
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 292,
+    "cache_creation_tokens": 332084,
+    "cache_read_tokens": 29809403,
+    "output_tokens": 76344,
+    "api_call_count": 146,
+    "subagent_tokens": {
+      "input_tokens": 318,
+      "cache_creation_tokens": 250286,
+      "cache_read_tokens": 16200740,
+      "output_tokens": 63104,
+      "api_call_count": 147
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 4,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Run Session 1 of the LAUNCH-v1-alpha plan in the callisto repo: implement F1 (Seed/Source in aggregation so retained prerelease changesets don't erase fresh inference) and F2 (release-PR decide driven by the version plan), with G's pre.json v2/v3 reader as a parallel subagent.",
+    "outcome": "F1 was implemented, tested, linted, and committed (signed, 8be427806) with a changeset; its full-suite run and fresh-context review were still pending. F2 core edits (pending-release decide, decision schema v3, E165 set comparison, specs/docs) were made and compiled but two tests were still failing and it was uncommitted; G's storage was committed on its own branch.",
+    "learnings": {
+      "repo": [
+        "Aggregation now holds `seeds: BTreeMap<PackageId, Seed>` with `Source` variants (FreshChangeset, RetainedChangeset, Inference, Group); severities()/reasons() are derived, replacing the old `severities`/`reasons`/`named_by` fields and the `NamedBy` enum.",
+        "In pre mode, a retained (already-recorded in pre.json) changeset sets severity but releases nothing; a package is released only if it has at least one fresh source, including group unions driven by fresh members.",
+        "Repo gate is `just pre-push && just lint && just doc-check && just test`; tests run via cargo nextest (1924 tests in callisto-graph/cli), which is slow, so builds are throttled via CARGO_BUILD_JOBS and debug=0 env vars through a wrapper script.",
+        "Behavioral changes require spec/doc updates: docs/specs/versioning.json, cli.json, release.json, docs/adr/0002, docs/architecture/release.md, docs/releasing.md, docs/errors.md; and a changeset created via `callisto add`.",
+        "Removing a diagnostic code (inferred-release-without-changeset) requires also removing it from the schema_guard_test list.",
+        "Commits are signed and messages are written from a file; worktrees live under .claude/worktrees/wp-* per work package."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "finding": "Seed holds a non-empty first+rest entries; reason() picks first fresh source at highest fresh severity; union_fixed/union_linked were merged into one freshness-aware implementation."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "E165 failure NoChangesetConsumed was renamed ConsumedChangesetsDiffer and now compares deleted changesets against those recorded in the v3 decision; reason_from_bump now errors on a missing reason instead of defaulting to Changeset."
+        },
+        {
+          "path": "crates/callisto-model/src/release_pr.rs",
+          "finding": "ReleasePrDecisionV2::derive now takes Option<&PendingRelease> instead of a has_changesets bool, so inferred-only changes open a release PR."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Full test suite is very slow (1924 tests), delaying F1 verification.",
+      "The G subagent repeatedly re-sent the same report and had to be stopped.",
+      "The first two combined git fetch/gh/worktree commands were duplicated and a later one needed rewriting, wasting calls.",
+      "F1's full run exposed one existing test that pinned the old F02 behavior and had to be rewritten.",
+      "cargo fmt failures were caught by pre-push and needed a rerun."
+    ],
+    "open_items": [
+      "F2's two failing tests (investigated around intent.rs and ReleasePrDecideReport) still need fixing before commit.",
+      "F1's full `just test` run and the fresh-context reviewer results are pending.",
+      "cargo-mutants mutation testing was planned for F1 but not yet run (availability was being checked).",
+      "F2 still needs verification, a changeset, and a commit; G's branch commit (8b70877) is held pending G's own work.",
+      "Session plan items H and M (trail #457/#458) remain; no trails were created."
+    ]
+  }
+}
