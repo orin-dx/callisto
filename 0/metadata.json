@@ -1,0 +1,95 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PEHPP3GW8W30X81M7ZFVGX",
+  "session_id": "25ffa14c-7bd0-4ef5-b7b2-3d26828c91ba",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T04:27:40.084817Z",
+  "branch": "worktree-wp-d-init-boundary",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8fea1c203310",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 9797,
+    "cache_read_tokens": 1346506,
+    "output_tokens": 5350,
+    "api_call_count": 6
+  },
+  "session_token_usage": {
+    "input_tokens": 274,
+    "cache_creation_tokens": 200344,
+    "cache_read_tokens": 20102151,
+    "output_tokens": 60686,
+    "api_call_count": 134
+  },
+  "redaction": {
+    "replacements": 11,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 9,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Run Session 2 of the v1-alpha launch plan: implement WP D (callisto init branch/workflow boundary fixes, findings F04/F05/F09), then continue to WP J and L. Mid-session the lead added follow-ups on PR #565: untrack mutants.out.old, fix placeholder re-expansion, and reject unsupported artifact owners on the workflow-only retry path.",
+    "outcome": "WP D was implemented (BranchName type, WorkflowScalar quoting, new `init --workflow` retry path), reviewed, mutation-tested, gated green, and pushed as PR #565 on trail #357. The lead's follow-ups (a)-(c) were committed locally, but the rebase, re-gate, push/ls-remote check, finding resolution, and the J and L work are not done.",
+    "learnings": {
+      "repo": [
+        "Branch handling in init previously took the last `/` segment of a ref (`last_ref_segment`), truncating `release/next` to `next`; now replaced by `BranchName::from_full_ref` / `from_remote_ref` in callisto-model `identity.rs`, re-exported by glob.",
+        "Generated workflow branch values are always JSON-double-quoted, and `+`/`!` are escaped in trigger filters via `WorkflowScalar::branch_filter`; tests assert the quoted form (`branch: \\\"main\\\"`).",
+        "callisto-model has its own `Version` type, so callisto-cli should not add a semver dependency.",
+        "CLI init tests live in `crates/callisto-cli/src/commands/init/tests.rs`; graph init tests in `crates/callisto-graph/src/commands/init/tests.rs`.",
+        "Repo gate is `just pre-push`, `just lint`, `just doc-check`, `just test`; an architecture test (`apply_permits_are_never_granted_from_a_literal`) failed once and needed a fix in cli init.rs.",
+        "Changesets are added via `./target/debug/callisto add --package cargo/callisto-cli:patch --summary ...`.",
+        "`commands/matrix.rs` (~line 58) drops artifacts with non-Cargo owners, so a workflow generated for an npm-owned artifact fails at release with 'callisto matrix has no entry for artifact slot'.",
+        "Adversarial audit findings (F04, F05, F09) live in /tmp/callisto-adversarial-audit-2026-11-17/report.md; docs/research JSONs are untracked in the main checkout.",
+        "Trail workflow: `entire trail link 357 --base main` and `entire trail ci-pr`; commits must be signed, no session trailer, pushed with an explicit refspec and verified with `git ls-remote`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "finding": "`run_workflow_only` originally always built `InitReport { initialized: false }`, so a real write printed '[DRY-RUN] Would write' (render/mod.rs:131-136); the reviewer caught this and it was fixed."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 240,
+          "end_line": 275,
+          "finding": "`detect_initialized`/`detect_facts` re-synthesized a config and re-ran tag-template detection, ignoring the user's existing callisto.toml (E193/E194 false failures); reworked to read the user's own config."
+        }
+      ],
+      "workflow": [
+        "A subagent reviewing from source only (no build) still found four real defects; running it concurrently with cargo mutants meant edits had to wait since both use the same worktree.",
+        "Mutation runs with `--in-diff` on a diff file surfaced missed mutants that drove additional tests.",
+        "BSD sed on macOS failed with `\\\"` escapes and `-i` syntax; the Edit tool or Python scripts run with `-I` were more reliable.",
+        "Setting CARGO_PROFILE_*_DEBUG=0 and limiting CARGO_BUILD_JOBS kept parallel worktree builds manageable; deleting a worktree's `target` after finishing frees space."
+      ]
+    },
+    "friction": [
+      "A worktree-entry/relocation prompt stopped the session; the lead had to resume it and asked to use EnterWorktree name= rather than path=.",
+      "BSD sed incompatibilities forced redoing several quoted-branch test replacements.",
+      "Repeated duplicate bash calls and failed grep attempts when locating files (e.g. F09 in untracked research JSONs, CLI init test location).",
+      "The final `git rebase origin/worktree-wp-d-init-boundary` output was not examined, so the rebase state is unverified."
+    ],
+    "open_items": [
+      "Confirm the rebase succeeded, then re-run just pre-push, lint, doc-check and test by exit code on #565.",
+      "Push the new commits with an explicit refspec, verify with `git ls-remote`, and resolve both Entire findings on callisto/173 with `entire trail finding`.",
+      "Item (c) reused existing error E304 for unsupported artifact owners; the lead said to ask before adding a new code, so confirm that fit.",
+      "Work packages J (twine env isolation, worktree wp-j-twine-env prepared) and L remain, with trail linking to #459.",
+      "Changeset wording was to say every `+`/`!` is escaped; verify it was updated.",
+      "No GitHub issues were created for the trail guidance (D→#357, L and J→#459)."
+    ]
+  }
+}
