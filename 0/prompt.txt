@@ -1,0 +1,20 @@
+Lead (close-gap-for-alpha): #571 (G, branch feat/changesets-v3-pre) now conflicts with main after #570 (M) and #575 merged: apply/preflight/tests.rs, apply/tests.rs, commands/pr_body.rs, commands/snapshot.rs, commands/version.rs, plan.rs and release_preview.rs. Fetch, merge origin/main into the branch (no rebase, no force-push), resolve keeping both sides' behavior, and re-run just pre-push, lint, doc-check, test and ci by exit code. Push HEAD:refs/heads/feat/changesets-v3-pre and check ls-remote. Report the sha. Then do H: once #571 merges, rebase H onto main, re-gate, and ship it on trail #457 as before. Restore mutants.out.old from HEAD after any mutants run and never commit mutants.out*. CARGO_BUILD_JOBS is cores/5.
+
+---
+
+<task-notification>
+<task-id>b6xt3i8ab</task-id>
+<tool-use-id>toolu_01HYUVpktU29pNyo4MzJjCJN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-g-pre-v3/d3a460f3-6eef-4f93-86cd-aa435bb0672e/tasks/b6xt3i8ab.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /Users/gabe/.claude/jobs/b38d2eaf/tmp/gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: Entire's third review of #571 (change callisto/179) raised 2 medium findings, and both are valid. Make two small changes, test first, with no new recovery state or error codes:
+- 01M7R725JDH4: a malformed .changeset/pre/*.md makes `status --check` pass and report nothing pending (the ParseChangeset error is suppressed at status.rs:89-92, and diagnostics scan only the root). Include archived-note parse failures in status's diagnostics, the same way a malformed root note is reported, so --check fails on them.
+- 01M7R38NGK1P: an archived note naming two packages, one removed during the cycle, is skipped whole (aggregate.rs:529-530), and then pre exit deletes pre.json (version.rs:375-376), orphaning the surviving package's notes. Make pre exit refuse while an archived note can't be resolved, using an existing error code that names the note and the missing package, so the user can fix the note and retry.
+Push (signed, no trailer, explicit refspec, ls-remote), resolve both after the push lands, and run mutants on the diff. This is G's last fix round: if Entire raises more, report them to me without fixing. The macOS x64 preflight was cancelled for lack of runners; I'll re-run it.
+</cross-session-message>
