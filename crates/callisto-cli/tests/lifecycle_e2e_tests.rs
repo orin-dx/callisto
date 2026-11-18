@@ -57,6 +57,7 @@ fn test_full_polyglot_workspace_release_lifecycle() {
         StatusArgs {
             strict: false,
             check: false,
+            since: None,
         },
         &global,
     );

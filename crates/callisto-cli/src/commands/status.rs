@@ -25,7 +25,10 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    let opts = StatusOptions { strict: args.strict };
+    let opts = StatusOptions {
+        strict: args.strict,
+        since: args.since,
+    };
 
     let inference = crate::workspace::select_inference();
     let report = callisto_graph::commands::status(&ws, &inference, &opts)?;
@@ -147,6 +150,7 @@ mod tests {
             StatusArgs {
                 strict: false,
                 check: false,
+                since: None,
             },
             &global,
         );
@@ -187,6 +191,7 @@ mod tests {
             StatusArgs {
                 strict: false,
                 check: true,
+                since: None,
             },
             &global,
         );
@@ -234,6 +239,7 @@ mod tests {
             StatusArgs {
                 strict: false,
                 check: true,
+                since: None,
             },
             &global,
         );

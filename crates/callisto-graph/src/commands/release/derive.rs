@@ -399,7 +399,7 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
             if !target.is_implemented() {
                 return Err(GraphError::PublishTargetNotImplemented {
                     package: id.clone(),
-                    target: target.config_str(),
+                    target: target.config_str().to_owned(),
                 });
             }
             if target.ecosystem() == Some(id.ecosystem()) {
@@ -1044,7 +1044,7 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     transcript.push_str("target.kind", target.config_str());
     match target {
         PublishTarget::GitHubRelease | PublishTarget::None => {}
-        PublishTarget::CratesIo => {
+        PublishTarget::CratesIo | PublishTarget::CargoRegistry { .. } => {
             push_registry_binding(
                 &mut transcript,
                 prepared_registry_binding(workspace, target, package)?.identity,
@@ -1578,7 +1578,7 @@ mod tests {
         assert!(
             matches!(
                 &error,
-                GraphError::PublishTargetNotImplemented { package, target: "nuget" } if package.name() == "core"
+                GraphError::PublishTargetNotImplemented { package, target } if target == "nuget" && package.name() == "core"
             ),
             "{error:?}"
         );

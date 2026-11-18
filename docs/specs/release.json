@@ -224,7 +224,7 @@
     },
     {
       "id": "REL-PUB-06",
-      "criterion": "Cargo observation runs `cargo --config net.retry=0 info NAME@VERSION --registry <name>` from the directory of the Cargo workspace that governs the package, passing `crates-io` for the default. Exit 0 with a matching `version:` line means present, exit 101 with ``could not find `NAME@VERSION` `` means absent, and anything else is indeterminate."
+      "criterion": "Cargo observation runs `cargo --config net.retry=0 info NAME@VERSION --registry <name>` from the directory of the Cargo workspace that governs the package, passing `crates-io` for the default and the registry's own name for a `kind = \"cargo\"` registry named in `publish-to`, which `cargo publish` receives as `--registry <name>` too. Exit 0 with a matching `version:` line means present, exit 101 with ``could not find `NAME@VERSION` `` means absent, and anything else is indeterminate."
     },
     {
       "id": "REL-PUB-07",
@@ -278,7 +278,7 @@
     },
     {
       "id": "REL-PUB-18",
-      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its destination from `.cargo/config.toml`. Publishing an npm package with yarn while the npm registry has a `url` fails with E168 before yarn runs, because `yarn npm publish` has no `--registry`; the same configuration with npm, pnpm or bun passes `--registry <url>`."
+      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its URL from `.cargo/config.toml`. A `publish-to` entry that is neither a built-in target nor the name of a `cargo` registry fails config loading with E330. Publishing an npm package with yarn while the npm registry has a `url` fails with E168 before yarn runs, because `yarn npm publish` has no `--registry`; the same configuration with npm, pnpm or bun passes `--registry <url>`."
     },
     {
       "id": "REL-RERUN-01",
