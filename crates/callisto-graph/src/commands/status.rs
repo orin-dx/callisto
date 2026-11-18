@@ -18,6 +18,8 @@ use crate::Workspace;
 #[derive(Clone, Debug, Default)]
 pub struct StatusOptions {
     pub strict: bool,
+    /// Report packages changed since where this ref and `HEAD` diverged that nothing releases.
+    pub since: Option<String>,
 }
 
 /// Per-package accumulator: pending changeset names and their max severity.
@@ -142,6 +144,32 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
             governed_by: None,
             escalated_by: None,
         });
+    }
+    if let Some(since) = &opts.since {
+        let changed =
+            crate::changed::changed_since_ref(&all_packages, ws.git_access(), since, &ws.config.changesets_dir)?;
+        // Only a changeset added or edited since the ref, or a bump inferred from commits, accounts for a change.
+        let inferred: std::collections::BTreeSet<&PackageId> = plan.iter().flat_map(|plan| &plan.inferred).collect();
+        for id in changed.packages {
+            let named = pending
+                .get(&id)
+                .is_some_and(|(names, _)| names.iter().any(|name| changed.changesets.contains(name)));
+            if named || inferred.contains(&id) {
+                continue;
+            }
+            diagnostics.push(Diagnostic {
+                code: DiagnosticCode::ChangedWithoutChangeset,
+                severity: DiagnosticSeverity::Error,
+                message: format!(
+                    "`{}` changed since `{since}` and no changeset names it; add one with `callisto add`, with severity `none` when the change needs no release",
+                    id.display_name()
+                ),
+                package: Some(id),
+                path: None,
+                governed_by: None,
+                escalated_by: None,
+            });
+        }
     }
     // The plan's strict-escalatable warnings, so `status --strict` fails where `version --strict` does.
     for d in plan.iter().flat_map(|plan| &plan.diagnostics) {
