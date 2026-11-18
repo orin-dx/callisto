@@ -403,6 +403,36 @@ fn exit_refuses_while_an_archived_note_names_a_removed_package() {
     assert_eq!(markdown_in(&root.join(".changeset/pre")), ["both.md"]);
 }
 
+/// A run that archived its note and then failed writing the decision resumes without bumping or logging twice.
+#[test]
+fn a_run_interrupted_after_archiving_resumes() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    add_changeset(root, "feature", "minor");
+    fs::write(root.join("blocked"), "a file where the preview's directory should be\n").unwrap();
+    let args = [
+        "version",
+        "--no-refresh-lockfiles",
+        "--emit-decision",
+        ".callisto/release-decision.json",
+        "--emit-preview",
+        "blocked/preview.json",
+    ];
+
+    let failed = callisto(root, &args);
+    assert!(!failed.status.success(), "the preview write must fail");
+    assert_eq!(markdown_in(&root.join(".changeset/pre")), ["feature.md"]);
+    assert!(!root.join(".changeset/feature.md").exists());
+
+    fs::remove_file(root.join("blocked")).unwrap();
+    let resumed = callisto(root, &args);
+    assert!(resumed.status.success(), "{}", String::from_utf8_lossy(&resumed.stderr));
+    assert_eq!(manifest_version(root), "1.1.0-beta.0");
+    assert!(root.join(".callisto/release-decision.json").exists());
+    let changelog = fs::read_to_string(root.join("CHANGELOG.md")).unwrap_or_default();
+    assert!(changelog.matches("## 1.1.0-beta.0").count() <= 1, "{changelog}");
+}
+
 /// A new note naming an unknown package stays on disk with a warning at exit; only an archived one blocks it.
 #[test]
 fn exit_keeps_warning_about_a_new_note_that_names_an_unknown_package() {

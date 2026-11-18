@@ -2885,3 +2885,44 @@ fn a_package_with_no_lockfile_above_it_refreshes_nothing() {
     assert!(outcome.lockfile_refresh_results.is_none());
     assert!(runner.0.lock().unwrap().iter().all(|(program, ..)| program != "npm"));
 }
+
+/// With the note already moved, a resumed archive move succeeds only when the archive holds exactly the planned note.
+#[test]
+fn an_archive_move_already_made_is_accepted_only_for_the_planned_note() {
+    let note = "---\ncargo/pkg: minor\n---\n\nA feature.\n";
+    for (archived, accepted) in [(note, true), ("---\ncargo/pkg: major\n---\n\nSomething else.\n", false)] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(".changeset/pre")).unwrap();
+        std::fs::write(root.join(".changeset/pre/feature.md"), archived).unwrap();
+        let plan = VersionPlan {
+            archived_changesets: vec![crate::plan::ArchivedChangeset {
+                from: PathBuf::from(".changeset/feature.md"),
+                to: PathBuf::from(".changeset/pre/feature.md"),
+                duplicate: false,
+                text: note.to_string(),
+            }],
+            ..Default::default()
+        };
+        let runner = FailingGitRmRunner {
+            calls: Default::default(),
+        };
+        let opts = ApplyOptions {
+            refresh_lockfiles: false,
+            transient: false,
+        };
+        let result = apply_version_plan(root, &plan, &runner, &opts, &ApplyPermit::force_for_tests());
+        match (accepted, result) {
+            (true, result) => assert!(
+                !matches!(result, Err(GraphError::ApplyIo { ref path, .. }) if path.ends_with("feature.md")),
+                "{result:?}"
+            ),
+            (false, Err(GraphError::ApplyIo { path, .. })) => assert_eq!(path, PathBuf::from(".changeset/feature.md")),
+            (false, other) => panic!("a different archived note must refuse the move: {other:?}"),
+        }
+        assert_eq!(
+            std::fs::read_to_string(root.join(".changeset/pre/feature.md")).unwrap(),
+            archived
+        );
+    }
+}

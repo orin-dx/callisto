@@ -338,6 +338,7 @@ mod tests {
                 }],
                 summary: "test summary".to_string(),
             },
+            text: String::new(),
         }
     }
 

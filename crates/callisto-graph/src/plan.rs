@@ -76,6 +76,8 @@ pub struct ArchivedChangeset {
     pub to: PathBuf,
     /// `to` already holds this note, so only `from` is removed.
     pub duplicate: bool,
+    /// The note's text when planned: what `to` receives, and what lets a resumed run accept a move already made.
+    pub text: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

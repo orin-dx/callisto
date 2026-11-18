@@ -23,6 +23,8 @@ pub struct LoadedChangeset {
     pub path: PathBuf,
     pub id: String,
     pub changeset: Changeset,
+    /// The file's text as read, which an archive move writes and a resumed one recognizes.
+    pub text: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -265,6 +267,7 @@ fn load_changesets_in(
                     path: rel_path,
                     id: stem,
                     changeset,
+                    text: content,
                 });
             }
             Err(source) => failures.push(ChangesetLoadFailure { path: rel_path, source }),
@@ -501,6 +504,7 @@ where
                 from: cs.path.clone(),
                 to: to.clone(),
                 duplicate: true,
+                text: cs.text.clone(),
             });
         }
         // Consume a changeset only once an entry resolves; a mixed or fully unresolved one stays on disk and is ignored whole.
@@ -609,6 +613,7 @@ where
                             from: cs.path.clone(),
                             to,
                             duplicate: false,
+                            text: cs.text.clone(),
                         });
                     }
                 }
