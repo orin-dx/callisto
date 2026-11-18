@@ -761,6 +761,7 @@ fn refresh_lockfiles_failure_stops_apply_with_coded_error_naming_command_and_loc
         }],
         consumed_changesets: vec![changeset.clone()],
         archived_changesets: Vec::new(),
+        inferred: Default::default(),
         ..Default::default()
     };
 
@@ -813,6 +814,7 @@ fn staging_failure_retains_consumed_changeset_input() {
         }],
         consumed_changesets: vec![changeset.clone()],
         archived_changesets: Vec::new(),
+        inferred: Default::default(),
         ..Default::default()
     };
     let runner = FailingProgramRunner {
@@ -868,6 +870,7 @@ fn changeset_removal_is_attempted_only_after_generated_state_is_staged() {
         }],
         consumed_changesets: vec![changeset.clone()],
         archived_changesets: Vec::new(),
+        inferred: Default::default(),
         ..Default::default()
     };
     let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -949,6 +952,7 @@ fn failed_no_bump_changeset_deletion_staging_keeps_untracked_input() {
         &VersionPlan {
             consumed_changesets: vec![changeset.clone()],
             archived_changesets: Vec::new(),
+            inferred: Default::default(),
             ..Default::default()
         },
         &runner,
@@ -1010,6 +1014,7 @@ fn apply_is_idempotent_when_manifest_already_at_target_version() {
         }],
         consumed_changesets: vec![cs_rel.clone()],
         archived_changesets: Vec::new(),
+        inferred: Default::default(),
         ..Default::default()
     };
 
@@ -1131,6 +1136,7 @@ fn apply_stages_changeset_path_even_when_file_already_deleted() {
         }],
         consumed_changesets: vec![cs_rel.clone()],
         archived_changesets: Vec::new(),
+        inferred: Default::default(),
         ..Default::default()
     };
 
@@ -2110,6 +2116,7 @@ fn snapshot_transient_mode_mutates_manifests_but_suppresses_changelogs_changeset
         }],
         consumed_changesets: vec![PathBuf::from(".changeset/test-change.md")],
         archived_changesets: Vec::new(),
+        inferred: Default::default(),
         ..Default::default()
     };
 

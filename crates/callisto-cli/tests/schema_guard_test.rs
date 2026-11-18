@@ -523,6 +523,7 @@ fn diagnostic_code_enum_variants_match_expected_set() {
         "tag-glob-non-version-match",
         "changesets-config-key-dropped",
         "changeset-parse-failed",
+        "changed-without-changeset",
         "init-origin-missing",
         "manifest-unresolved",
         "unrecognised-platform-triple",

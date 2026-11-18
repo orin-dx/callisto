@@ -154,6 +154,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         changelog_writes: Vec::new(),
         consumed_changesets: Vec::new(),
         archived_changesets: Vec::new(),
+        inferred: Default::default(),
         pre_state_update: None,
         pre_json_path: std::path::PathBuf::new(),
         pre_json_original_text: None,

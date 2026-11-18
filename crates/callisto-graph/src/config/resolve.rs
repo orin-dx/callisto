@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use callisto_model::release::is_safe_artifact_component;
+use callisto_model::release::{is_safe_artifact_component, validated_registry_key};
 use callisto_model::{
     ConfigKey, Ecosystem, GitHubRepository, NativeName, PackageId, PublishTarget, RegistryKey, ReleaseTrigger,
     Severity, TagTemplate,
@@ -237,7 +237,8 @@ pub enum PreMajorInferencePolicy {
     ConservativeFeat,
 }
 
-pub fn parse_publish_target(s: &str) -> Option<PublishTarget> {
+/// `registries` supplies the names a cargo package may publish to besides crates.io.
+pub fn parse_publish_target(s: &str, registries: &BTreeMap<RegistryKey, RegistryConfig>) -> Option<PublishTarget> {
     match s {
         "crates-io" => Some(PublishTarget::CratesIo),
         "npm" => Some(PublishTarget::Npm {
@@ -248,7 +249,14 @@ pub fn parse_publish_target(s: &str) -> Option<PublishTarget> {
         "nuget" => Some(PublishTarget::NuGet { source: None }),
         "github-release" => Some(PublishTarget::GitHubRelease),
         "none" => Some(PublishTarget::None),
-        _ => None,
+        name => {
+            let key = validated_registry_key(name.to_owned()).ok()?;
+            let is_cargo = registries
+                .get(&key)
+                .is_some_and(|registry| registry.kind == Ecosystem::Cargo);
+            // The built-in crates.io key has one spelling, `crates-io`.
+            (is_cargo && name != RegistryKey::CRATES_IO).then_some(PublishTarget::CargoRegistry { name: key })
+        }
     }
 }
 
@@ -312,6 +320,7 @@ fn parse_package_config_fields(
     changelog: Option<&str>,
     pre_major_inference: Option<&str>,
     publish_to: Option<&[String]>,
+    registries: &BTreeMap<RegistryKey, RegistryConfig>,
 ) -> Result<PackageConfig, ConfigError> {
     let release_trigger = release_trigger
         .map(|value| {
@@ -351,7 +360,7 @@ fn parse_package_config_fields(
             targets
                 .iter()
                 .map(|value| {
-                    parse_publish_target(value).ok_or_else(|| ConfigError::InvalidPublishTarget {
+                    parse_publish_target(value, registries).ok_or_else(|| ConfigError::InvalidPublishTarget {
                         path: callisto_toml.to_path_buf(),
                         location: format!("{error_prefix} publish-to"),
                         value: value.clone(),
@@ -606,6 +615,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             raw_pkg.changelog.as_deref(),
             raw_pkg.pre_major_inference.as_deref(),
             raw_pkg.publish_to.as_deref(),
+            &registries,
         )?;
 
         packages.push((pattern, cfg));
@@ -644,6 +654,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             raw_pkg.changelog.as_deref(),
             raw_pkg.pre_major_inference.as_deref(),
             raw_pkg.publish_to.as_deref(),
+            &registries,
         )?;
 
         package_sets.push((pattern, cfg));
@@ -1287,34 +1298,86 @@ mod tests {
 
     // --- parse_publish_target / parse_release_trigger direct coverage ------
 
+    fn registry_table(entries: &[(&str, Ecosystem)]) -> BTreeMap<RegistryKey, RegistryConfig> {
+        entries
+            .iter()
+            .map(|(name, kind)| {
+                (
+                    RegistryKey((*name).to_owned()),
+                    RegistryConfig {
+                        kind: *kind,
+                        url: None,
+                        publish_url: None,
+                        confirm_timeout: None,
+                        publish_timeout: None,
+                    },
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn parse_publish_target_parses_all_known_variants() {
-        assert_eq!(parse_publish_target("crates-io").unwrap(), PublishTarget::CratesIo);
+        let none = BTreeMap::new();
         assert_eq!(
-            parse_publish_target("npm").unwrap(),
+            parse_publish_target("crates-io", &none).unwrap(),
+            PublishTarget::CratesIo
+        );
+        assert_eq!(
+            parse_publish_target("npm", &none).unwrap(),
             PublishTarget::Npm {
                 registry: None,
                 access: None
             }
         );
         assert_eq!(
-            parse_publish_target("pypi").unwrap(),
+            parse_publish_target("pypi", &none).unwrap(),
             PublishTarget::Pypi { index: None }
         );
         assert_eq!(
-            parse_publish_target("nuget").unwrap(),
+            parse_publish_target("nuget", &none).unwrap(),
             PublishTarget::NuGet { source: None }
         );
         assert_eq!(
-            parse_publish_target("github-release").unwrap(),
+            parse_publish_target("github-release", &none).unwrap(),
             PublishTarget::GitHubRelease
         );
-        assert_eq!(parse_publish_target("none").unwrap(), PublishTarget::None);
+        assert_eq!(parse_publish_target("none", &none).unwrap(), PublishTarget::None);
     }
 
     #[test]
     fn parse_publish_target_rejects_unknown_string() {
-        assert!(parse_publish_target("bogus-registry").is_none());
+        assert!(parse_publish_target("bogus-registry", &BTreeMap::new()).is_none());
+    }
+
+    #[test]
+    fn parse_publish_target_accepts_only_a_cargo_registry_name() {
+        let registries = registry_table(&[
+            ("my-reg", Ecosystem::Cargo),
+            ("my-npm", Ecosystem::Npm),
+            (RegistryKey::CRATES_IO, Ecosystem::Cargo),
+            ("my.reg", Ecosystem::Cargo),
+        ]);
+        assert!(
+            parse_publish_target("my.reg", &registries).is_none(),
+            "a name cargo cannot take as `--registry` fails at load"
+        );
+        assert_eq!(
+            parse_publish_target("my-reg", &registries),
+            Some(PublishTarget::CargoRegistry {
+                name: RegistryKey("my-reg".to_owned())
+            })
+        );
+        assert!(parse_publish_target("my-npm", &registries).is_none());
+        assert!(parse_publish_target("unlisted", &registries).is_none());
+        assert!(
+            parse_publish_target(RegistryKey::CRATES_IO, &registries).is_none(),
+            "the built-in key has one spelling"
+        );
+        assert_eq!(
+            parse_publish_target("crates-io", &registries),
+            Some(PublishTarget::CratesIo)
+        );
     }
 
     #[test]

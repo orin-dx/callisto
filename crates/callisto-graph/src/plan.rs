@@ -55,6 +55,8 @@ pub struct VersionPlan {
     pub consumed_changesets: Vec<PathBuf>,
     /// Changesets a Changesets v3 pre cycle moves into its archive: applied, kept for the cycle's exit.
     pub archived_changesets: Vec<ArchivedChangeset>,
+    /// Packages with a bump inferred from commits this run, whichever source decides their severity.
+    pub inferred: std::collections::BTreeSet<PackageId>,
     pub pre_state_update: Option<PreState>,
     /// Workspace-relative `pre.json` path, from `ResolvedConfig::pre_json_path`. The single source
     /// `apply_version_plan` reads instead of guessing the changesets dir from `consumed_changesets`, which is

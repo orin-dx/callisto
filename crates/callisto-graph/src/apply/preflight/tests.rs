@@ -120,6 +120,7 @@ fn a_changelog_may_be_created_but_a_changeset_removal_only_needs_a_clean_path() 
     let plan = VersionPlan {
         consumed_changesets: vec![PathBuf::from(".changeset/gone.md")],
         archived_changesets: Vec::new(),
+        inferred: Default::default(),
         changelog_writes: vec![crate::plan::ChangelogWrite {
             changelog_path: PathBuf::from("docs/CHANGELOG.md"),
             input: crate::changelog::ChangelogInput {
