@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01M5m38gw6LrCP4HegAfG3pC",
+  "agent_id": "a14bbadb8137bfe75",
+  "subagent_type": "general-purpose",
+  "task_description": "Design named Cargo registries",
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 116655,
+    "cache_read_tokens": 3484958,
+    "output_tokens": 19675,
+    "api_call_count": 40
+  },
+  "started_at": "2026-11-18T09:53:40.546322-08:00",
+  "completed_at": "2026-11-18T09:58:07.606698-08:00"
+}
