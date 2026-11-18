@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_016fZjb5fxDC7QcQkwofPwmt",
+  "agent_id": "a559332f5ade3bbfc",
+  "subagent_type": "general-purpose",
+  "task_description": "Review dir index diff",
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 75045,
+    "cache_read_tokens": 582243,
+    "output_tokens": 4699,
+    "api_call_count": 10
+  },
+  "started_at": "2026-11-17T19:17:48.338485-08:00",
+  "completed_at": "2026-11-17T19:18:55.112161-08:00"
+}

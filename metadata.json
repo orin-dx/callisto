@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PAYB6ZM1WC6JKQJWA8TJGP",
+  "strategy": "manual-commit",
+  "branch": "worktree-wp-i-dir-index",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/bright-lynxes-strut.md",
+    "crates/callisto-cli/benches/commands.rs",
+    "crates/callisto-cli/tests/git_process_count_tests.rs",
+    "crates/callisto-fixtures/src/perf.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-manifests/src/npm.rs",
+    "crates/callisto-manifests/src/npm/tests.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 48414,
+    "cache_read_tokens": 6454717,
+    "output_tokens": 17440,
+    "api_call_count": 40,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 75045,
+      "cache_read_tokens": 582243,
+      "output_tokens": 4699,
+      "api_call_count": 10
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
