@@ -191,9 +191,9 @@ pre-push: fmt-check lint-affected
 
 # Install native Git pre-commit and pre-push hooks
 hooks:
-    @echo '#!/bin/sh\njust pre-commit' > .git/hooks/pre-commit
+    @printf '#!/bin/sh\njust pre-commit\n' > .git/hooks/pre-commit
     @chmod +x .git/hooks/pre-commit
-    @echo '#!/bin/sh\njust pre-push' > .git/hooks/pre-push
+    @printf '#!/bin/sh\njust pre-push\n' > .git/hooks/pre-push
     @chmod +x .git/hooks/pre-push
     @echo "Git pre-commit and pre-push hooks installed successfully."
 

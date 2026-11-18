@@ -624,7 +624,6 @@ fn packed_pnpm_manifest(root: &Path) -> serde_json::Value {
         .collect();
     assert_eq!(archives.len(), 1);
     let output = Command::new("tar")
-        .env("COPYFILE_DISABLE", "1")
         .arg("-xOf")
         .arg(&archives[0])
         .arg("package/package.json")
