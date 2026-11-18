@@ -84,6 +84,7 @@ fn commit_plan_reproduces_git_write_tree() {
     assert!(archive_out.status.success());
     let tar_status = {
         let mut child = Command::new("tar")
+            .env("COPYFILE_DISABLE", "1")
             .args(["-x", "-C", recon.path().to_str().unwrap()])
             .stdin(std::process::Stdio::piped())
             .spawn()

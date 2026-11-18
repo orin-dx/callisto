@@ -62,12 +62,14 @@ fn setup_mixed_native_resolution_workspace(root: &Path) {
     .unwrap();
 
     // Lockfiles are generated before any callisto command runs, so the later check is a real regression test.
-    assert!(Command::new("cargo")
-        .args(["generate-lockfile"])
-        .current_dir(root)
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+            .args(["generate-lockfile"])
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success()
+    );
 
     if find_on_path("npm").is_some() {
         assert!(Command::new("npm")
@@ -152,7 +154,7 @@ fn setup_promoted_dual_npm_snapshot_workspace(root: &Path) {
 
 /// `cargo metadata --locked --offline` always; `npm ci` too, when npm is on PATH.
 fn assert_native_resolution(root: &Path) {
-    let cargo_out = Command::new("cargo")
+    let cargo_out = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
         .args(["metadata", "--locked", "--offline", "--format-version", "1"])
         .current_dir(root)
         .output()
@@ -622,6 +624,7 @@ fn packed_pnpm_manifest(root: &Path) -> serde_json::Value {
         .collect();
     assert_eq!(archives.len(), 1);
     let output = Command::new("tar")
+        .env("COPYFILE_DISABLE", "1")
         .arg("-xOf")
         .arg(&archives[0])
         .arg("package/package.json")
