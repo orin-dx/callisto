@@ -1,0 +1,93 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QXHFN9TFS2XJ897C847RW9",
+  "session_id": "bbcfd2d3-839e-43dc-808d-db9f0fe31bb0",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:08:58.515962Z",
+  "branch": "worktree-wp-m-changed-without-changeset",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/plan.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "7815777dd815",
+  "compact_transcript_start": 0,
+  "session_token_usage": {
+    "input_tokens": 892,
+    "cache_creation_tokens": 1396868,
+    "cache_read_tokens": 180188144,
+    "output_tokens": 225070,
+    "api_call_count": 429
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Run Session 1 of the v1-alpha launch plan for the callisto release tool: fix pre-cycle aggregation (F1), drive release-PR decide from the version plan (F2), then ship Changesets v3 pre support (G), managed prerelease cycles via release PRs (H) and `status --since` (M). The lead later asked to ship G and M as independent PRs off main.",
+    "outcome": "F1 (#566) and F2 (#567) were pushed and merged. G (#571) and M (#570) were rebased on main, passed the full gate including `just ci`, and were pushed, linked to trails #457/#458 and marked ready. H is committed locally and waits for G to merge.",
+    "learnings": {
+      "repo": [
+        "Worktree branch names (worktree-wp-*) differ from PR branch names, so plain `git push` silently no-ops; push with `HEAD:refs/heads/<branch>` and verify with `git ls-remote`. This was saved as a memory note.",
+        "Repo gate is `just pre-push`, `just lint`, `just doc-check`, `just test`, plus `just ci`. Rules forbid stacked PRs, so dependent work waits for the base PR to merge.",
+        "Each user-visible change needs a changeset created with `callisto add --package ... --summary ...`.",
+        "Specs in docs/specs/*.json, docs/errors.md, docs/releasing.md and ADRs must be updated alongside behavior changes; this was done via small Python -I edit scripts with count==1 asserts.",
+        "`entire trail link` can race a fresh push (\"branch does not exist\") and needs retry with the idempotency key; then `entire trail ci-pr` opens the PR.",
+        "The JSON status report omits `diagnostics` when empty, which matters when writing CLI boundary tests.",
+        "In exit mode `plan_version` seeds a patch for every package still at a prerelease version, so `decide` opens the stable PR after `pre exit` even for inference-only packages; a reviewer claim to the contrary was wrong.",
+        "New public surface is permanent after 1.0: the `status --since` flag, the `changed-without-changeset` diagnostic, decision schema 3 with `consumedChangesets`, and removal of `inferred-release-without-changeset` and E318."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "finding": "`NamedBy` and the separate severities/reasons maps were replaced by `Seed`/`Source`. Sources are FreshChangeset, RetainedChangeset, Inference or Group. Only fresh sources release a package, while retained changesets still set severity. Fixed/linked group unions became one freshness-aware `union_group`."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "E165 (`CommitVerificationFailure::ConsumedChangesetsDiffer`, renamed from `NoChangesetConsumed`) now compares the changesets a commit deletes with the decision's `consumedChangesets`; `reason_from_bump` errors on a missing reason instead of defaulting to Changeset."
+        },
+        {
+          "path": "crates/callisto-model/src/format/pre.rs",
+          "finding": "`pre.json` rewrites now preserve the file's own key order, and unknown keys no longer move to the end."
+        },
+        {
+          "path": "crates/callisto-graph/src/changed.rs",
+          "finding": "`changed_since_ref` uses `paths_differing_from` plus the new `untracked_paths`, so three git processes regardless of workspace size. It counts only changesets added or changed since the ref. The README.md exclusion was redundant and removed after a surviving mutant."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "The F1 full suite is slow (1924 tests), so the work moved to F2 in a parallel worktree while it ran.",
+      "Stale or concurrent test and mutants runs wrote to the same log, producing confusing mixed output.",
+      "The sandbox blocked a `sed` edit to the mutants script, so the old script ran again and had to be stopped and rewritten.",
+      "The first mutants attempts failed because the test filter named a binary that exists only on H.",
+      "`just ci` on F1 failed at `audit` on RUSTSEC-2026-0542, fixed separately by #560.",
+      "`entire trail link` raced the push and had to be retried."
+    ],
+    "open_items": [
+      "H (`worktree-wp-h-managed-prerelease`, E318 retirement) is held until #571 merges. Then it must be rebased onto main, re-gated and shipped to trail #457 with the known limits in its PR body.",
+      "Known limit: a stale release PR that deletes no changesets (inferred-only, or a prerelease PR in a v2 cycle) is not caught by E165's changeset check; only the Hold release PR workflow and the manifest check stop it.",
+      "Known limit: rerunning `version` locally before the prerelease is tagged re-infers the same commits, so a `release-trigger = \"auto\"` package plans another beta. The release-PR flow is unaffected.",
+      "Reviewer finding on F1: a linked group's `named_severity` excludes Group sources, so non-pre behavior may differ when a fixed group raises a member of a linked group (suggested fix `.filter(is_named).map(Seed::severity)`). Whether it was resolved is not visible in the transcript.",
+      "Review nit: an auto-package case could be added to `release_pr_pre_cycle_tests.rs`.",
+      "`crates/callisto-cli/CHANGELOG.md:387` still says decide refuses pre mode; left as history."
+    ]
+  }
+}
