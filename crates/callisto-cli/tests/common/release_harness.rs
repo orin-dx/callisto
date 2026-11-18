@@ -854,7 +854,7 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     ToolShape {
         tool: "cargo",
         subcommand: &["publish"],
-        flags: &["--manifest-path", "--locked", "--registry"],
+        flags: &["--manifest-path", "--locked", "--registry", "--no-verify"],
     },
     ToolShape {
         tool: "cargo",
@@ -869,7 +869,12 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     ToolShape {
         tool: "npm",
         subcommand: &["publish"],
-        flags: &["--workspace", "--tag", "--access", "--registry"],
+        flags: &["--ignore-scripts", "--tag", "--access", "--registry"],
+    },
+    ToolShape {
+        tool: "npm",
+        subcommand: &["pack"],
+        flags: &["--pack-destination"],
     },
 ];
 

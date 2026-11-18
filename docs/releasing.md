@@ -27,7 +27,6 @@ A local release refuses with E320, before any effect, when the registry already 
 If a local release tags a version but fails before pushing the tag or completing GitHub work, a fresh `callisto release` at the same commit lists the package again, observes each remaining effect and finishes it.
 
 - `Nothing to release.` is not proof of completion for a tag on an older commit: the retry looks only at tags on the commit being released.
-- Generated simple workflows share this limit.
 - CI releases based on the merged release PR retain the original package list.
 
 ---
@@ -38,8 +37,8 @@ If a local release tags a version but fails before pushing the tag or completing
 
 Init never overwrites an existing file. This repo's [release workflow](../.github/workflows/callisto-release.yml) is a worked example.
 
-- **Simple shape** (no artifact slots or napi platform packages): `version-pr` maintains the release PR. On each default-branch push, `release` runs `callisto release`; it is a no-op until an untagged version is merged.
-- **Build-matrix shape** (artifact slots or napi platform packages): a release PR, then plan -> build -> publish. The build covers configured targets and artifact slots.
+- **Simple shape** (no artifact slots or napi platform packages): `version-pr` maintains the release PR. On each default-branch push, `package` (no secrets) checks whether the commit adds or modifies the release decision, and if so plans the release, builds Python distributions and packs npm packages, and hands them to `execute`, which publishes exactly those files. A push that merely contains an untagged version publishes nothing; recovery is "Re-run failed jobs".
+- **Build-matrix shape** (artifact slots or napi platform packages): a release PR, then plan, build (read-only), attest (no checkout, no commands), optional Python build, crate packaging and npm pack jobs (no credentials), and execute. The build covers configured targets and artifact slots.
 - Maturin builds, and platform packages without `napi.targets`, get no generated workflow.
 
 Generated actions configure npm and Twine authentication during execution. Manual workflows must configure native authentication as described in [publishing.md](publishing.md).
@@ -61,7 +60,7 @@ Build-matrix limits:
 - Generated `.node` files must be gitignored; release execution requires a clean checkout.
 - Cargo `bin` targets build with `cargo build --release --locked`. Other products, such as `cdylib`s, need a manual workflow.
 - The napi build and placement roster comes from the release intent, so an unrelated addon does not block a release of another package.
-- Native npm lifecycle hooks run unchanged, including any owner-defined publishing or forge effects. Those effects are outside Callisto's release graph.
+- npm lifecycle hooks split at the pack. `prepack` and `prepare` run in the job that packs the package, which holds no registry credentials. The publish is `npm publish <tarball> --ignore-scripts`, so `prepublishOnly`, `publish` and `postpublish` no longer run. Move work that must happen before a release into `prepack`, and anything that acts on the registry into a step of your own after `execute`. Effects an owner-defined hook still has at pack time are outside Callisto's release graph.
 
 ---
 
@@ -69,9 +68,9 @@ Build-matrix limits:
 
 The generated workflow keeps a release PR current. Merging that PR to the protected default branch authorizes publication; Callisto adds no approval step. Require reviews and CI checks in branch protection. A CODEOWNERS file alone does not enforce review.
 
-The action's `version-pr` mode updates the PR; `release` runs `callisto release` for simple workspaces. Artifact and platform packages use plan/build/execute. See the [action inputs](../.github/actions/callisto-action/action.yml).
+The action's `version-pr` mode updates the PR; `release` runs `callisto release` for a hand-written local workflow, and `execute` runs `callisto release execute` on the intent and files a credential-free job prepared. Generated workflows use plan/build/execute (build-matrix) or package/execute (simple). See the [action inputs](../.github/actions/callisto-action/action.yml).
 
-Only `execute` receives registry credentials. Keep `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, and `TWINE_PASSWORD` out of workflow scope, planning and build jobs, and action inputs.
+Only `execute` receives registry credentials or an OIDC token for publishing. Keep `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, and `TWINE_PASSWORD` out of workflow scope, planning, build, pack and attestation jobs, and action inputs. The attestation job holds `id-token: write`, so it has no checkout and runs no command.
 
 After a failed committed-decision CI release, "Re-run failed jobs" adopts completed effects and performs the rest. A green workflow alone is not proof of publication: check the receipt and providers.
 

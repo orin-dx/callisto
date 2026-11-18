@@ -88,7 +88,8 @@ fn inventory(dir: &Path, package_name: &str, version: &Version) -> Result<Vec<Bu
         (files.iter().any(|file| is_pypi_sdist(&file.filename)), "sdist"),
     ] {
         if !present {
-            return Err(GraphError::PypiBuildOutputIncomplete {
+            return Err(GraphError::BuildOutputIncomplete {
+                tool: "Python build",
                 package: package_name.to_string(),
                 version: version.clone(),
                 missing,

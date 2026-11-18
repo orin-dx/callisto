@@ -102,6 +102,7 @@ impl Command {
                 ReleaseArgs::Execute(_) => ReleaseExecuteReport::COMMAND,
                 ReleaseArgs::Pending(_) => callisto_model::ReleasePendingReport::COMMAND,
                 ReleaseArgs::BuildPython(_) => callisto_model::ReleaseBuildPythonReport::COMMAND,
+                ReleaseArgs::PackNpm(_) => callisto_model::ReleasePackNpmReport::COMMAND,
                 ReleaseArgs::Inspect(_) => "release",
             },
             Command::ReleasePr(ReleasePrArgs::Decide(_)) => ReleasePrDecideReport::COMMAND,
@@ -340,6 +341,9 @@ pub enum ReleaseArgs {
     /// Build the intent's Python distributions without registry credentials, for `artifact-manifest --seal-python`.
     #[command(hide = true)]
     BuildPython(ReleaseBuildPythonArgs),
+    /// Pack the intent's npm packages without registry credentials, for `artifact-manifest --seal-npm`.
+    #[command(hide = true)]
+    PackNpm(ReleasePackNpmArgs),
     /// Create the exact artifact manifest for a completed intent-bound build.
     #[command(hide = true)]
     ArtifactManifest(ReleaseArtifactManifestArgs),
@@ -475,17 +479,33 @@ pub struct ReleaseBuildPythonArgs {
 }
 
 #[derive(Args, Clone, Debug)]
+pub struct ReleasePackNpmArgs {
+    /// Pack from this release-source checkout instead of the current directory.
+    #[arg(long, value_name = "DIR")]
+    pub source_root: Option<PathBuf>,
+    /// Exact durable release intent whose npm publishes are packed.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
+    /// Existing directory that receives one tarball per npm package.
+    #[arg(long, value_name = "DIR")]
+    pub artifact_dir: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
 pub struct ReleaseArtifactManifestArgs {
     /// Exact durable release intent that declares the expected artifact slots.
     #[arg(long, value_name = "FILE")]
     pub intent: PathBuf,
-    /// Directory containing one regular file for every declared artifact slot, and with --seal-python the built
-    /// distributions.
+    /// Directory containing one regular file for every declared artifact slot, and with --seal-python or --seal-npm
+    /// the built distributions or packed tarballs.
     #[arg(long, value_name = "DIR")]
     pub artifact_dir: PathBuf,
     /// Also seal the sdist and wheel of every Python publish in the intent, found in the artifact directory.
     #[arg(long)]
     pub seal_python: bool,
+    /// Also seal the tarball of every npm publish in the intent, found in the artifact directory.
+    #[arg(long)]
+    pub seal_npm: bool,
     /// Explicit path where the artifact manifest will be atomically written; a relative path is relative to `--cwd`.
     #[arg(long, value_name = "FILE")]
     pub out: PathBuf,
@@ -908,7 +928,14 @@ mod tests {
             .get_subcommands()
             .find(|s| s.get_name() == "release")
             .expect("release subcommand must exist");
-        for name in ["plan", "inspect", "build-python", "artifact-manifest", "execute"] {
+        for name in [
+            "plan",
+            "inspect",
+            "build-python",
+            "pack-npm",
+            "artifact-manifest",
+            "execute",
+        ] {
             let sub = release
                 .get_subcommands()
                 .find(|s| s.get_name() == name)

@@ -147,7 +147,7 @@ fn require_verified_artifact_manifest(
 ) -> Result<(), GraphError> {
     match (intent.artifact_slots.is_empty(), artifacts) {
         (true, None) => Ok(()),
-        (true, Some(artifacts)) if !callisto_model::python_publishes(intent).is_empty() => {
+        (true, Some(artifacts)) if callisto_model::has_sealable_publishes(intent) => {
             require_artifact_manifest_matches_intent(intent, Some(artifacts.manifest()))
         }
         (true, Some(_)) => Err(GraphError::ReleaseInvariant {

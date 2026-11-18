@@ -11,8 +11,8 @@ use std::process::ExitCode;
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, ci_release_route, derive_release_commit_decision,
     derive_selected_release_decision, execute_release, origin_tag_probe, pending_releases, plan_loaded_release,
-    seal_python_distributions, validate_local_release_intent, validate_release_intent, verify_artifact_manifest,
-    LocalReleasePlan, LocalReleaseSource, VersionOptions,
+    require_sealed_publishes, seal_npm_tarballs, seal_python_distributions, validate_local_release_intent,
+    validate_release_intent, verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -24,7 +24,7 @@ use callisto_model::{
 
 use crate::cli::{
     GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseBuildPythonArgs, ReleaseCommandArgs,
-    ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePendingArgs, ReleasePlanArgs,
+    ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePackNpmArgs, ReleasePendingArgs, ReleasePlanArgs,
 };
 use crate::error::CliError;
 use crate::io::{read_json_file, OutputFile, OutputKind};
@@ -39,6 +39,7 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
         Some(ReleaseArgs::Plan(args)) => plan(args, global),
         Some(ReleaseArgs::Inspect(args)) => inspect(args, global),
         Some(ReleaseArgs::BuildPython(args)) => build_python(args, global),
+        Some(ReleaseArgs::PackNpm(args)) => pack_npm(args, global),
         Some(ReleaseArgs::ArtifactManifest(args)) => artifact_manifest(args, global),
         Some(ReleaseArgs::Execute(args)) => execute(args, global),
     }
@@ -357,11 +358,13 @@ fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 
 fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     if global.dry_run {
-        return Err(CliError::ReleaseBuildPythonDryRun);
+        return Err(CliError::ReleaseBuildDryRun {
+            command: "build-python",
+        });
     }
     let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
     if callisto_model::python_publishes(&intent).is_empty() {
-        return Err(CliError::ReleaseNoPythonPublishes);
+        return Err(CliError::ReleaseNoSealablePublishes { ecosystem: "Python" });
     }
     let artifact_dir = global.resolve_file_arg(&args.artifact_dir);
     let outdir = artifact_dir.canonicalize().map_err(|source| CliError::Io {
@@ -389,6 +392,40 @@ fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<Exi
     Ok(ExitCode::SUCCESS)
 }
 
+fn pack_npm(args: ReleasePackNpmArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    if global.dry_run {
+        return Err(CliError::ReleaseBuildDryRun { command: "pack-npm" });
+    }
+    let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
+    if callisto_model::npm_publishes(&intent).is_empty() {
+        return Err(CliError::ReleaseNoSealablePublishes { ecosystem: "npm" });
+    }
+    let artifact_dir = global.resolve_file_arg(&args.artifact_dir);
+    let outdir = artifact_dir.canonicalize().map_err(|source| CliError::Io {
+        source,
+        path: Some(artifact_dir.clone()),
+    })?;
+    let runner = CliCommandRunner;
+    let source_workspace = load_workspace(&source_global(global, args.source_root.as_deref()), &runner)?;
+    let root = source_workspace.root.clone();
+    let locator = IgnoreWalkLocator::new(&root);
+    let capability = validate_release_intent(&root, &locator, &runner, intent)?;
+    let built = capability.pack_npm_tarballs(&outdir)?;
+    match global.format {
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &callisto_model::ReleasePackNpmReport { built },
+            global.dry_run,
+        )?,
+        OutputFormat::Text => emit_line(&format!(
+            "Packed npm packages {} into {}",
+            built.join(", "),
+            outdir.display()
+        ))?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let out = OutputFile::new(
         global.resolve_file_arg(&args.out),
@@ -397,9 +434,12 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
     )?;
     let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
     if args.seal_python && callisto_model::python_publishes(&intent).is_empty() {
-        return Err(CliError::ReleaseNoPythonPublishes);
+        return Err(CliError::ReleaseNoSealablePublishes { ecosystem: "Python" });
     }
-    if intent.artifact_slots.is_empty() && !args.seal_python {
+    if args.seal_npm && callisto_model::npm_publishes(&intent).is_empty() {
+        return Err(CliError::ReleaseNoSealablePublishes { ecosystem: "npm" });
+    }
+    if intent.artifact_slots.is_empty() && !args.seal_python && !args.seal_npm {
         return Err(CliError::ReleaseNoArtifactSlots);
     }
     let artifact_dir = global.resolve_file_arg(&args.artifact_dir);
@@ -454,11 +494,13 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
             },
         });
     }
-    let distributions = if args.seal_python {
-        seal_python_distributions(&intent, &root)?
-    } else {
-        Vec::new()
-    };
+    let mut distributions = Vec::new();
+    if args.seal_python {
+        distributions.extend(seal_python_distributions(&intent, &root)?);
+    }
+    if args.seal_npm {
+        distributions.extend(seal_npm_tarballs(&intent, &root)?);
+    }
     let manifest = ArtifactManifestV1::with_distributions(&intent, entries, distributions).map_err(|error| {
         CliError::ReleaseManifestInvalid {
             detail: error.to_string(),
@@ -686,10 +728,12 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         .as_deref()
         .map(|path| read_artifact_manifest(&global.resolve_file_arg(path)))
         .transpose()?;
-    let sealed_python = manifest
+    // The CI executor publishes only what a credential-free job sealed; a plan with none stops before any effect.
+    require_sealed_publishes(&intent, manifest.as_ref())?;
+    let sealed_files = manifest
         .as_ref()
         .is_some_and(|manifest| !manifest.distributions.is_empty());
-    let needs_artifacts = sealed_python || !intent.artifact_slots.is_empty();
+    let needs_artifacts = sealed_files || !intent.artifact_slots.is_empty();
     let artifact_dir = args.artifact_dir.as_deref().map(|dir| global.resolve_file_arg(dir));
     let verified_artifacts = match (manifest.as_ref(), artifact_dir.as_deref()) {
         (None, None) if !needs_artifacts => None,

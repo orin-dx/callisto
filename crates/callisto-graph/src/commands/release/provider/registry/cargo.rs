@@ -93,6 +93,11 @@ impl RegistryEcosystem for CargoRegistry {
         operation: &RegistryPublishOperation,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<CommandOutput, GraphError> {
+        // The CI route follows a credential-free `cargo package` of every crate, so it compiles nothing with the token.
+        let verification = match context.route() {
+            PublishRoute::Ci => registry_argv::CargoVerification::PackagedElsewhere,
+            PublishRoute::Local => registry_argv::CargoVerification::Build,
+        };
         let registry_key =
             (operation.registry.key.as_str() != RegistryKey::CRATES_IO).then(|| operation.registry.key.as_str());
         let argv = registry_argv::cargo_publish_argv(
@@ -101,6 +106,7 @@ impl RegistryEcosystem for CargoRegistry {
             &operation.package_name,
             &operation.version,
             registry_key,
+            verification,
         )?;
         run_argv(context, &argv, publish_timeout(operation))
     }

@@ -1056,7 +1056,7 @@ fn interactive_workflow_confirm_writes_the_generated_file() {
         "{workflow}"
     );
     assert!(workflow.contains("with: {mode: version-pr, branch: \"main\"}"));
-    assert!(workflow.contains("with: {mode: release}"));
+    assert!(workflow.contains("mode: execute"));
     assert!(
         run.out.contains(".github/workflows/callisto-release.yml:"),
         "{}",

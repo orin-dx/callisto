@@ -1,5 +1,6 @@
 //! The registry-publish role: one adapter per ecosystem, selected once.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,8 +20,9 @@ use super::pypi_files::{self, BuiltFile, BuiltSet, PypiSimpleFile, PypiSimpleInd
 use super::repository;
 use super::{
     preflight_from_observation, wrong_role, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest,
-    RegistryPublishOperation, ReleasePreflight, ReleaseProvider, VerifiedArtifactManifest,
+    PublishRoute, RegistryPublishOperation, ReleasePreflight, ReleaseProvider, VerifiedArtifactManifest,
 };
+use crate::commands::release_artifacts::SealedFile;
 
 pub(crate) struct RegistryProvider;
 
@@ -325,7 +327,7 @@ fn run_argv(
         .run_with_timeout(&argv.program, &args, &argv.cwd, timeout)?)
 }
 
-/// Withheld from a build backend, which runs project code and needs none of them.
+/// Withheld from a build backend or a pack, which run project code and need none of them.
 const RELEASE_CREDENTIALS: &[&str] = &[
     "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
     "ACTIONS_ID_TOKEN_REQUEST_URL",
@@ -373,6 +375,15 @@ pub(crate) fn build_python_into(
     outdir: &std::path::Path,
 ) -> Result<(), GraphError> {
     PypiRegistry::build_into(context, operation, outdir)
+}
+
+/// Packs the tarball of an npm publish into `outdir`, for a pack job that seals it.
+pub(crate) fn pack_npm_into(
+    context: &ProviderContext<'_>,
+    operation: &RegistryPublishOperation,
+    outdir: &std::path::Path,
+) -> Result<PathBuf, GraphError> {
+    NpmRegistry::pack_into(context, operation, outdir)
 }
 
 /// The plan-time gate: an ecosystem whose client cannot prove a version absent

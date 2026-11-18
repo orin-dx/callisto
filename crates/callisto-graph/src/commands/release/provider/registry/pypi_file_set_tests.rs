@@ -615,7 +615,7 @@ fn a_build_that_produces_no_sdist_is_an_error_before_any_upload() {
         PypiRunner::new(&[(WHEEL, "wheel bytes")]).with(|world| world.visible = vec![held(WHEEL, "wheel bytes")]);
     let error = preflight(&run, &runner).unwrap_err();
     assert!(
-        matches!(error, GraphError::PypiBuildOutputIncomplete { missing: "sdist", .. }),
+        matches!(error, GraphError::BuildOutputIncomplete { missing: "sdist", .. }),
         "{error:?}"
     );
     assert_eq!(runner.count("twine"), 0);
@@ -728,8 +728,10 @@ fn an_index_file_with_other_bytes_than_the_sealed_file_is_an_error_before_any_up
     assert_eq!(runner.count("twine"), 0);
 }
 
+/// A manifest that seals nothing for this release means the build job did not run: building here would run the build
+/// backend beside the registry credentials.
 #[test]
-fn a_manifest_that_seals_no_python_files_leaves_the_build_to_this_job() {
+fn a_manifest_that_seals_no_python_files_is_refused_without_building() {
     let run = Run::new();
     let sealed = Sealed::new(&[]);
     let artifacts = sealed.verified();
@@ -738,8 +740,47 @@ fn a_manifest_that_seals_no_python_files_leaves_the_build_to_this_job() {
         preflight_with(&run, &runner, Some(&artifacts)).unwrap(),
         ReleasePreflight::Proceed { .. }
     ));
-    publish_and_confirm_with(&run, &runner, Some(&artifacts)).unwrap();
-    assert_eq!(runner.count("python3") + runner.count("python"), 1);
+    let error = publish_and_confirm_with(&run, &runner, Some(&artifacts)).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            GraphError::BuildOutputIncomplete {
+                tool: "artifact manifest",
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    assert_eq!(
+        runner.count("python3") + runner.count("python") + runner.count("twine"),
+        0
+    );
+}
+
+/// The CI executor follows a credential-free build job, so with no manifest at all it builds nothing itself.
+#[test]
+fn the_ci_route_without_a_manifest_refuses_to_build_beside_the_credentials() {
+    let run = Run::new();
+    let runner = PypiRunner::new(&BUILD);
+    let operation = operation();
+    let context = run.context(&runner).with_route(PublishRoute::Ci);
+    let error = PypiRegistry
+        .publish(&context, &id(&operation), &operation, None)
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            GraphError::BuildOutputIncomplete {
+                tool: "artifact manifest",
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    assert_eq!(
+        runner.count("python3") + runner.count("python") + runner.count("twine"),
+        0
+    );
 }
 
 #[test]

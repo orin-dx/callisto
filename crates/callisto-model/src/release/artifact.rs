@@ -7,7 +7,10 @@ use super::{
     version_ord_key, ArtifactDigest, GitHubAttestationPolicyV1, GitHubRepository, IntentDigest, ReleaseIntentV1,
     ReleaseOperationRole, ReleasePackageId, SourceIdentity,
 };
-use crate::{is_pypi_sdist, is_pypi_wheel, pypi_dist_belongs_to, CommitSha, Ecosystem, Version, VersionGrammar};
+use crate::{
+    is_pypi_sdist, is_pypi_wheel, npm_tarball_filename, pypi_dist_belongs_to, CommitSha, Ecosystem, Version,
+    VersionGrammar,
+};
 
 /// Exact binary asset declaration authorized by a durable release intent.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
@@ -154,7 +157,7 @@ pub struct DistributionFileV1 {
     pub byte_length: u64,
 }
 
-/// The sdist and wheels one build produced for one Python release.
+/// The files one credential-free build produced for one release: a Python sdist and wheels, or one npm tarball.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DistributionSetV1 {
@@ -177,7 +180,7 @@ pub struct ArtifactManifestV1 {
     pub intent_digest: IntentDigest,
     pub source_commit: CommitSha,
     pub entries: Vec<ArtifactManifestEntryV1>,
-    /// Sealed Python file sets: empty, or one per Python registry publish of the intent.
+    /// Sealed file sets: per ecosystem (Python, npm), empty or one per registry publish of the intent.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub distributions: Vec<DistributionSetV1>,
 }
@@ -262,7 +265,38 @@ pub fn python_publishes(intent: &ReleaseIntentV1) -> Vec<(&ReleasePackageId, Str
     publishes
 }
 
-/// Sealed sets are all or none: each one belongs to a Python publish of the intent and carries a wheel and an sdist.
+/// The versions the intent publishes to an npm registry, keyed by the npm package each publish uploads: the package of
+/// a registry publish, or the platform package of a platform publish.
+pub fn npm_publishes(intent: &ReleaseIntentV1) -> Vec<(&ReleasePackageId, String)> {
+    let mut publishes: Vec<_> = intent
+        .operations
+        .iter()
+        .map(|operation| operation.id())
+        .filter_map(|id| {
+            let published = match &id.role {
+                ReleaseOperationRole::RegistryPublish { .. } if id.package.ecosystem() == Ecosystem::Npm => &id.package,
+                ReleaseOperationRole::PlatformPublish { platform, .. } => platform.name(),
+                ReleaseOperationRole::RegistryPublish { .. }
+                | ReleaseOperationRole::Tag
+                | ReleaseOperationRole::ForgeRelease
+                | ReleaseOperationRole::ArtifactUpload { .. }
+                | ReleaseOperationRole::ForgePublish => return None,
+            };
+            Some((published, id.version.render().to_string()))
+        })
+        .collect();
+    publishes.sort();
+    publishes.dedup();
+    publishes
+}
+
+/// Whether the intent has a publish whose files a build job seals: a Python or an npm publish.
+pub fn has_sealable_publishes(intent: &ReleaseIntentV1) -> bool {
+    !python_publishes(intent).is_empty() || !npm_publishes(intent).is_empty()
+}
+
+/// Sealed sets are all or none per ecosystem: each one belongs to a publish of the intent and carries the files that
+/// ecosystem publishes (a wheel and an sdist, or one tarball).
 fn validate_distributions(
     intent: &ReleaseIntentV1,
     entries: &[ArtifactManifestEntryV1],
@@ -274,14 +308,23 @@ fn validate_distributions(
     if distributions.windows(2).any(|pair| pair[0].key() == pair[1].key()) {
         return Err(ArtifactManifestError::DuplicateDistributionSet);
     }
-    let expected = python_publishes(intent);
-    if distributions
-        .iter()
-        .map(|set| (set.package.clone(), set.version.clone()))
-        .ne(expected
+    let sealed = |ecosystem: Ecosystem| {
+        distributions
             .iter()
-            .map(|(package, version)| ((*package).clone(), version.clone())))
-    {
+            .filter(move |set| set.package.ecosystem() == ecosystem)
+            .map(|set| (set.package.clone(), set.version.clone()))
+            .collect::<Vec<_>>()
+    };
+    let owned_roster = |publishes: Vec<(&ReleasePackageId, String)>| {
+        publishes
+            .into_iter()
+            .map(|(package, version)| (package.clone(), version))
+            .collect::<Vec<_>>()
+    };
+    let (python, npm) = (sealed(Ecosystem::Pypi), sealed(Ecosystem::Npm));
+    let roster_matches = python.is_empty() || python == owned_roster(python_publishes(intent));
+    let roster_matches = roster_matches && (npm.is_empty() || npm == owned_roster(npm_publishes(intent)));
+    if python.len() + npm.len() != distributions.len() || !roster_matches {
         return Err(ArtifactManifestError::MismatchedDistributionRoster);
     }
     let mut names: Vec<&str> = entries.iter().map(|entry| entry.slot.asset_name.as_str()).collect();
@@ -290,13 +333,18 @@ fn validate_distributions(
         if files().any(|name| !is_safe_artifact_component(name)) {
             return Err(ArtifactManifestError::UnsafeDistributionFile);
         }
-        if !files().any(is_pypi_wheel) || !files().any(is_pypi_sdist) {
-            return Err(ArtifactManifestError::IncompleteDistributionSet);
-        }
-        let owned = Version::parse(&set.version, VersionGrammar::Pep440)
-            .is_ok_and(|version| files().all(|name| pypi_dist_belongs_to(name, set.package.name(), &version)));
-        if !owned {
-            return Err(ArtifactManifestError::ForeignDistributionFile);
+        match set.package.ecosystem() {
+            Ecosystem::Npm => validate_npm_set(set)?,
+            _ => {
+                if !files().any(is_pypi_wheel) || !files().any(is_pypi_sdist) {
+                    return Err(ArtifactManifestError::IncompleteDistributionSet);
+                }
+                let owned = Version::parse(&set.version, VersionGrammar::Pep440)
+                    .is_ok_and(|version| files().all(|name| pypi_dist_belongs_to(name, set.package.name(), &version)));
+                if !owned {
+                    return Err(ArtifactManifestError::ForeignDistributionFile);
+                }
+            }
         }
         names.extend(files());
     }
@@ -305,6 +353,20 @@ fn validate_distributions(
         return Err(ArtifactManifestError::DuplicateDistributionFile);
     }
     Ok(())
+}
+
+/// An npm set is exactly the one tarball npm names for the package and version.
+fn validate_npm_set(set: &DistributionSetV1) -> Result<(), ArtifactManifestError> {
+    let [file] = set.files.as_slice() else {
+        return Err(ArtifactManifestError::IncompleteDistributionSet);
+    };
+    let named = Version::parse_for_ecosystem(&set.version, Ecosystem::Npm)
+        .is_ok_and(|version| file.filename == npm_tarball_filename(set.package.name(), &version));
+    if named {
+        Ok(())
+    } else {
+        Err(ArtifactManifestError::ForeignDistributionFile)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -329,17 +391,17 @@ pub enum ArtifactManifestError {
     MismatchedIntent,
     #[error("artifact manifest source commit differs from the intent release source")]
     MismatchedSourceCommit,
-    #[error("artifact manifest repeats a Python file set")]
+    #[error("artifact manifest repeats a sealed file set")]
     DuplicateDistributionSet,
-    #[error("artifact manifest Python file sets differ from the intent's Python publishes")]
+    #[error("artifact manifest file sets differ from the intent's publishes")]
     MismatchedDistributionRoster,
-    #[error("a sealed Python file set needs both a wheel and an sdist")]
+    #[error("a sealed file set needs a wheel and an sdist (Python) or exactly one tarball (npm)")]
     IncompleteDistributionSet,
-    #[error("a sealed Python file name must be a safe relative identifier")]
+    #[error("a sealed file name must be a safe relative identifier")]
     UnsafeDistributionFile,
-    #[error("a sealed Python file is not a distribution of its file set's package and version")]
+    #[error("a sealed file is not a distribution of its file set's package and version")]
     ForeignDistributionFile,
-    #[error("artifact manifest names one file twice across its assets and Python file sets")]
+    #[error("artifact manifest names one file twice across its assets and file sets")]
     DuplicateDistributionFile,
 }
 
@@ -865,6 +927,121 @@ mod tests {
         let intent = python_intent(&["demo"]);
         let twice = ArtifactManifestV1::with_distributions(&intent, vec![], vec![full_set("demo"), full_set("demo")]);
         assert!(matches!(twice, Err(ArtifactManifestError::DuplicateDistributionSet)));
+    }
+
+    /// An npm owner with a registry publish and one platform package, which is published under its own name.
+    fn npm_intent() -> ReleaseIntentV1 {
+        let owner = ReleasePackageId::new(Ecosystem::Npm, "@s/cli").unwrap();
+        let version = Version::parse_for_ecosystem("1.0.0", Ecosystem::Npm).unwrap();
+        let platform = PlatformPackageV1::new(
+            ReleasePackageId::new(Ecosystem::Npm, "@s/cli-linux-x64-gnu").unwrap(),
+            "npm/linux-x64-gnu",
+        )
+        .unwrap();
+        let registry = super::super::test_support::registry_binding("npm");
+        let operations = vec![
+            ReleaseOperation::registry_publish(owner.clone(), version.clone(), registry.clone(), vec![]).unwrap(),
+            ReleaseOperation::new(
+                ReleaseOperationId::platform_publish(owner, version, registry, platform),
+                vec![],
+            )
+            .unwrap(),
+        ];
+        test_intent_with_slots(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            operations,
+            vec![],
+        )
+        .unwrap()
+    }
+
+    fn npm_set(name: &str, files: &[&str]) -> DistributionSetV1 {
+        DistributionSetV1 {
+            package: ReleasePackageId::new(Ecosystem::Npm, name).unwrap(),
+            version: "1.0.0".to_string(),
+            files: files.iter().map(|name| file(name)).collect(),
+        }
+    }
+
+    fn npm_sets() -> Vec<DistributionSetV1> {
+        vec![
+            npm_set("@s/cli", &["s-cli-1.0.0.tgz"]),
+            npm_set("@s/cli-linux-x64-gnu", &["s-cli-linux-x64-gnu-1.0.0.tgz"]),
+        ]
+    }
+
+    #[test]
+    fn npm_publishes_name_each_published_package_and_a_platform_by_its_own_name() {
+        let intent = npm_intent();
+        let names: Vec<String> = npm_publishes(&intent)
+            .into_iter()
+            .map(|(package, version)| format!("{package} {version}"))
+            .collect();
+        assert_eq!(names, ["npm/@s/cli 1.0.0", "npm/@s/cli-linux-x64-gnu 1.0.0"]);
+        assert!(python_publishes(&intent).is_empty());
+        assert!(has_sealable_publishes(&intent));
+    }
+
+    #[test]
+    fn sealed_npm_sets_cover_every_npm_publish_and_round_trip() {
+        let intent = npm_intent();
+        let manifest = ArtifactManifestV1::with_distributions(&intent, vec![], npm_sets()).unwrap();
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let decoded: ArtifactManifestV1 = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(decoded, manifest);
+        decoded.validate_for_intent(&intent).unwrap();
+        let orchestration = CommitSha::parse(&"b".repeat(40)).unwrap();
+        ReleaseRunEnvelopeV1::new(orchestration, &intent, Some(manifest.digest())).unwrap();
+
+        let partial = ArtifactManifestV1::with_distributions(&intent, vec![], vec![npm_sets().remove(0)]);
+        assert!(matches!(
+            partial,
+            Err(ArtifactManifestError::MismatchedDistributionRoster)
+        ));
+    }
+
+    #[test]
+    fn a_sealed_npm_set_is_exactly_the_one_tarball_npm_names() {
+        let intent = npm_intent();
+        let seal = |first: DistributionSetV1| {
+            ArtifactManifestV1::with_distributions(&intent, vec![], vec![first, npm_sets().remove(1)])
+        };
+        assert!(matches!(
+            seal(npm_set("@s/cli", &[])),
+            Err(ArtifactManifestError::IncompleteDistributionSet)
+        ));
+        assert!(matches!(
+            seal(npm_set("@s/cli", &["s-cli-1.0.0.tgz", "extra-1.0.0.tgz"])),
+            Err(ArtifactManifestError::IncompleteDistributionSet)
+        ));
+        for wrong in ["s-cli-1.0.1.tgz", "other-1.0.0.tgz", "s-cli-1.0.0.tar.gz"] {
+            assert!(
+                matches!(
+                    seal(npm_set("@s/cli", &[wrong])),
+                    Err(ArtifactManifestError::ForeignDistributionFile)
+                ),
+                "{wrong}"
+            );
+        }
+        assert!(matches!(
+            seal(npm_set("@s/cli", &["../s-cli-1.0.0.tgz"])),
+            Err(ArtifactManifestError::UnsafeDistributionFile)
+        ));
+    }
+
+    #[test]
+    fn an_npm_set_in_a_python_only_intent_is_a_mismatched_roster() {
+        let intent = python_intent(&["demo"]);
+        let sealed = ArtifactManifestV1::with_distributions(
+            &intent,
+            vec![],
+            vec![full_set("demo"), npm_set("@s/cli", &["s-cli-1.0.0.tgz"])],
+        );
+        assert!(matches!(
+            sealed,
+            Err(ArtifactManifestError::MismatchedDistributionRoster)
+        ));
     }
 
     #[test]

@@ -26,7 +26,10 @@ pub use release::{
     validate_local_release_intent, validate_release_intent, ArtifactBuildPolicy, CiReleaseRoute, LocalReleasePlan,
     LocalReleaseSource, OriginTagProbe, ReleasePreflight, ReleaseProviderSet, ValidatedReleaseIntent,
 };
-pub use release_artifacts::{seal_python_distributions, verify_artifact_manifest, VerifiedArtifactManifest};
+pub use release_artifacts::{
+    require_sealed_publishes, seal_npm_tarballs, seal_python_distributions, verify_artifact_manifest,
+    VerifiedArtifactManifest,
+};
 pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};
 pub use release_execution::execute_release;
 pub use snapshot::{plan_snapshot, validate_tag};

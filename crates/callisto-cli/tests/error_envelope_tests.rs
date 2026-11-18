@@ -152,6 +152,18 @@ fn failing_release_commands_keep_schema_version_and_report_dry_run() {
             dry_run,
         );
         assert_envelope_with_dry_run(
+            &[
+                "release",
+                "pack-npm",
+                "--intent",
+                "missing.json",
+                "--artifact-dir",
+                "dist",
+            ],
+            "release pack-npm",
+            dry_run,
+        );
+        assert_envelope_with_dry_run(
             &["release", "plan", "--package", "cargo/a", "--out", "intent.json"],
             "release plan",
             dry_run,

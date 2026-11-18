@@ -9,7 +9,7 @@ Status: Accepted (implemented in #143)
 
 ## Decision
 
-Callisto decides what to publish and in what order, then runs the ecosystem tool as a subprocess through `CommandRunner`: `cargo`; `npm`, `pnpm`, `yarn` or `bun`; `python -m build` then `twine`; `gh`. The tool uses whatever credentials it finds and reports its own auth errors. Before each effect callisto observes provider state itself (`cargo info`, `npm view`, `curl` against the PyPI simple index, `gh api`, `git ls-remote`) and retries only those read-only observations (`retry_observation`, `crates/callisto-graph/src/commands/release/provider/policy.rs`). Callisto links no HTTP client crate and runs no credential pre-flight.
+Callisto decides what to publish and in what order, then runs the ecosystem tool as a subprocess through `CommandRunner`: `cargo`; `npm` (publishing a tarball packed by `npm`, `pnpm`, `yarn` or `bun`); `python -m build` then `twine`; `gh`. The tool uses whatever credentials it finds and reports its own auth errors. Before each effect callisto observes provider state itself (`cargo info`, `npm view`, `curl` against the PyPI simple index, `gh api`, `git ls-remote`) and retries only those read-only observations (`retry_observation`, `crates/callisto-graph/src/commands/release/provider/policy.rs`). Callisto links no HTTP client crate and runs no credential pre-flight.
 
 ## Options considered
 
@@ -26,7 +26,7 @@ Callisto decides what to publish and in what order, then runs the ecosystem tool
 
 ## Enforcement
 
-- None automated. The fixed programs are in `crates/callisto-graph/src/commands/release/provider/policy.rs` (`programs`: git, gh, cargo, npm, curl); the publish programs (pnpm, yarn, bun, `python3` or `python`, twine) are built in `crates/callisto-graph/src/commands/registry_argv.rs`.
+- None automated. The fixed programs are in `crates/callisto-graph/src/commands/release/provider/policy.rs` (`programs`: git, gh, cargo, npm, curl); the pack programs (pnpm, yarn, bun), the Python build and upload programs (`python3` or `python`, twine) and the `npm publish` argv are built in `crates/callisto-graph/src/commands/registry_argv.rs`.
 - No HTTP client crate (`reqwest`, `ureq`, `octocrab`, `hyper`) appears in `Cargo.lock`; nothing checks this.
 
 ## Revisit when

@@ -264,6 +264,15 @@ pub fn pypi_dist_belongs_to(filename: &str, package_name: &str, version: &Versio
     })
 }
 
+/// The file `npm pack` names the tarball of `package_name` at `version`: the scope's `@` dropped, its `/` a `-`.
+pub fn npm_tarball_filename(package_name: &str, version: &Version) -> String {
+    format!(
+        "{}-{}.tgz",
+        package_name.trim_start_matches('@').replace('/', "-"),
+        version.render()
+    )
+}
+
 fn pypi_name_parts(name: &str) -> Vec<String> {
     name.to_lowercase()
         .split(['-', '.', '_'])
@@ -311,6 +320,13 @@ mod tests {
         assert!(!pypi_dist_belongs_to("my_pkg-1.0.1.tar.gz", "my-pkg", &version));
         assert!(!pypi_dist_belongs_to("other-1.0.0.tar.gz", "my-pkg", &version));
         assert!(!pypi_dist_belongs_to("README.md", "my-pkg", &version));
+    }
+
+    #[test]
+    fn an_npm_tarball_is_named_the_way_npm_pack_names_it() {
+        let version = Version::parse("1.2.3-beta.1", VersionGrammar::SemVer).unwrap();
+        assert_eq!(npm_tarball_filename("left-pad", &version), "left-pad-1.2.3-beta.1.tgz");
+        assert_eq!(npm_tarball_filename("@s/cli", &version), "s-cli-1.2.3-beta.1.tgz");
     }
 
     #[test]

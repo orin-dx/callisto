@@ -104,8 +104,8 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 ### CI and automation
 
 - `callisto init` detects packages and writes `callisto.toml` and `.changeset/`. With a GitHub origin it also writes `.github/workflows/callisto-release.yml` unless you pass `--no-workflow` ([releasing](docs/releasing.md#generated-workflows)).
-- The simple workflow has a `version-pr` job that keeps the release PR current and a `release` job that runs `callisto release` on each default-branch push. With binaries or napi targets it becomes version-pr, plan, build, an optional Python build and execute, and only `execute` gets registry secrets.
-- `callisto-action` runs in `mode: version-pr` (create or update the release PR) or `mode: release` (run `callisto release`). `setup-callisto` installs Callisto, checking the release binary with `gh attestation verify` (`verification: require`, `fallback` or `skip`). `callisto-validate` runs `status --check` and `release --dry-run` for your PR workflow ([releasing](docs/releasing.md#pr-pre-flight-verification)).
+- The simple workflow has a `version-pr` job that keeps the release PR current, a `package` job without secrets that plans the release and builds or packs what it publishes, and an `execute` job that publishes exactly those files. With binaries or napi targets it becomes version-pr, plan, build, attest, optional Python build, crate packaging and npm pack jobs, and execute. Only `execute` gets registry secrets.
+- `callisto-action` runs in `mode: version-pr` (create or update the release PR), `mode: release` (run `callisto release`) or `mode: execute` (run `callisto release execute` on a prepared handoff directory). `setup-callisto` installs Callisto, checking the release binary with `gh attestation verify` (`verification: require`, `fallback` or `skip`). `callisto-validate` runs `status --check` and `release --dry-run` for your PR workflow ([releasing](docs/releasing.md#pr-pre-flight-verification)).
 - To adopt it: run `callisto init`, add the registry secrets it names, and require pull requests and reviews on the default branch.
 
 ### Scripting and stability

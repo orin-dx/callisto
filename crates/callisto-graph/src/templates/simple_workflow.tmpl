@@ -4,6 +4,10 @@ on: {push: {branches: [__BRANCH_FILTER__]}}
 
 permissions: {}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   version-pr:
     runs-on: ubuntu-latest
@@ -16,14 +20,70 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  release:
+  # No registry credentials: project build code runs here, and the executing job publishes these exact files.
+  package:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    outputs:
+      release: ${{ steps.decision.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      # Content precondition, not release detection: `release plan` requires this commit to write its decision.
+      - name: Check for a release decision
+        id: decision
+        run: |
+          set -euo pipefail
+          release=false
+          if git rev-parse --verify --quiet HEAD^ > /dev/null &&
+            git diff-tree --no-commit-id --name-only --diff-filter=AM -r HEAD^ HEAD | grep -qxF .callisto/release-decision.json; then
+            release=true
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+      - if: steps.decision.outputs.release == 'true'
+        uses: orin-dx/callisto/.github/actions/setup-callisto@__COMMIT__ # callisto@__VERSION__
+        with: {version: callisto@__VERSION__}
+      - name: Plan the release
+        id: plan
+        if: steps.decision.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          handoff="$RUNNER_TEMP/release-handoff"
+          mkdir -p "$handoff"
+          callisto release plan --from-release-commit "$GITHUB_SHA" --decision .callisto/release-decision.json \
+            --orchestration-revision "$GITHUB_SHA" --artifact-repository "$GITHUB_REPOSITORY" \
+            --out "$handoff/release-intent.json"
+          {
+            echo "has_python=$(jq '[.operations[].id | select(.role.kind == "registryPublish" and (.package | startswith("pypi/")))] | length > 0' "$handoff/release-intent.json")"
+            echo "has_cargo=$(jq '[.operations[].id | select(.role.kind == "registryPublish" and (.package | startswith("cargo/")))] | length > 0' "$handoff/release-intent.json")"
+            echo "has_npm=$(jq '[.operations[].id | select(.role.kind == "platformPublish" or (.role.kind == "registryPublish" and (.package | startswith("npm/"))))] | length > 0' "$handoff/release-intent.json")"
+          } >> "$GITHUB_OUTPUT"
+      __PACKAGE_STEPS__
+      - if: steps.decision.outputs.release == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-handoff
+          path: ${{ runner.temp }}/release-handoff
+          if-no-files-found: error
+
+  execute:
+    needs: package
+    if: needs.package.outputs.release == 'true'
     runs-on: ubuntu-latest
     concurrency: {group: callisto-release, cancel-in-progress: false}
     permissions: {contents: write, id-token: write}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: {fetch-depth: 0} # zizmor: ignore[artipacked] tag push needs persisted credentials
-      __PYTHON_TOOLS__
+        with: {ref: "${{ github.sha }}", fetch-depth: 0} # zizmor: ignore[artipacked] tag push needs persisted credentials
+      __TWINE_STEP__
+      # The action's own setup would install the checkout's project-selected toolchains beside the credentials.
+      - uses: orin-dx/callisto/.github/actions/setup-callisto@__COMMIT__ # callisto@__VERSION__
+        with: {version: callisto@__VERSION__}
+      # Downloads land under $RUNNER_TEMP: `release execute` requires a clean worktree.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-handoff
+          path: ${{ runner.temp }}/release-handoff
       - uses: orin-dx/callisto/.github/actions/callisto-action@__COMMIT__ # callisto@__VERSION__
-        with: {mode: release}
+        with: {mode: execute, handoff: "${{ runner.temp }}/release-handoff", setup_callisto: "false"}
         __RELEASE_ENV__

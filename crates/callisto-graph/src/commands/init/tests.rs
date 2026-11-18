@@ -635,21 +635,20 @@ fn render_workflow_passes_the_detected_branch_to_the_release_pr_action() {
     );
 }
 
-// Two jobs, no matrix/recovery/SHA-gating machinery,
+// A version-pr job, a credential-free package job and an execute job, with no matrix/recovery/SHA-gating machinery,
 // per-job permissions, and secrets scoped to the cargo-only workspace's own ecosystem.
 #[test]
-fn render_workflow_is_a_cargo_only_two_job_workflow_within_the_line_budget() {
+fn render_workflow_is_a_cargo_only_package_then_execute_workflow() {
     let facts = cargo_only_facts();
     let workflow = render_workflow_0_8_0(&facts, "main");
-    let line_count = workflow.lines().count();
-    assert!(line_count <= 40, "{line_count} lines:\n{workflow}");
-    assert_eq!(workflow.matches("runs-on: ubuntu-latest").count(), 2, "{workflow}");
+    assert_eq!(workflow.matches("runs-on: ubuntu-latest").count(), 3, "{workflow}");
     assert!(workflow.contains("branches: [\"main\"]"), "{workflow}");
     assert!(
         workflow.contains("with: {mode: version-pr, branch: \"main\"}"),
         "{workflow}"
     );
-    assert!(workflow.contains("with: {mode: release}"), "{workflow}");
+    assert!(workflow.contains("mode: execute"), "{workflow}");
+    assert!(!workflow.contains("mode: release"), "{workflow}");
     assert!(
         workflow.contains(&format!(
             "uses: orin-dx/callisto/.github/actions/callisto-action@{FAKE_COMMIT} # callisto@0.8.0"
@@ -661,17 +660,28 @@ fn render_workflow_is_a_cargo_only_two_job_workflow_within_the_line_budget() {
         "{workflow}"
     );
     assert!(
-        workflow.contains("permissions: {contents: write, id-token: write}"),
+        job(&workflow, "package").contains("permissions: {contents: read}"),
+        "{workflow}"
+    );
+    assert!(
+        job(&workflow, "execute").contains("permissions: {contents: write, id-token: write}"),
         "{workflow}"
     );
     assert!(
         workflow.contains("CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}"),
         "{workflow}"
     );
-    assert!(!workflow.contains("NPM_TOKEN"), "{workflow}");
-    assert!(!workflow.contains("NPM_CONFIG_PROVENANCE"), "{workflow}");
-    assert!(!workflow.contains("PYPI_TOKEN"), "{workflow}");
-    for absent in ["needs:", "recovery", "coordinator", "github.sha", "release_source_sha"] {
+    for absent in [
+        "NPM_TOKEN",
+        "NPM_CONFIG_PROVENANCE",
+        "PYPI_TOKEN",
+        "pack-npm",
+        "build-python",
+        "twine",
+        "recovery",
+        "coordinator",
+        "release_source_sha",
+    ] {
         assert!(!workflow.contains(absent), "`{absent}` present:\n{workflow}");
     }
 }
@@ -682,18 +692,25 @@ fn render_workflow_wires_a_secret_per_detected_ecosystem() {
     let mut facts = facts_for_render();
     facts.ecosystems = BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi]);
     let all = render_workflow_0_8_0(&facts, "main");
-    let release = job(&all, "release");
-    let version_pr = job(&all, "version-pr");
+    let execute = job(&all, "execute");
+    for other in ["version-pr", "package"] {
+        let other = job(&all, other);
+        for secret in [
+            "CARGO_REGISTRY_TOKEN",
+            "NPM_TOKEN",
+            "PYPI_TOKEN",
+            "NPM_CONFIG_PROVENANCE",
+        ] {
+            assert!(!other.contains(secret), "{other}");
+        }
+    }
     for secret in ["CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "PYPI_TOKEN"] {
-        assert!(release.contains(secret), "{release}");
-        assert!(!version_pr.contains(secret), "{version_pr}");
+        assert!(execute.contains(secret), "{execute}");
     }
     assert!(
-        release.contains("          NPM_CONFIG_PROVENANCE: \"true\"\n"),
-        "{release}"
+        execute.contains("          NPM_CONFIG_PROVENANCE: \"true\"\n"),
+        "{execute}"
     );
-    assert!(!version_pr.contains("NPM_CONFIG_PROVENANCE"), "{version_pr}");
-    assert!(all.lines().count() <= 40, "{}", all.lines().count());
 
     facts.ecosystems = BTreeSet::from([Ecosystem::Go]);
     let none = render_workflow_0_8_0(&facts, "main");
@@ -913,27 +930,41 @@ fn matrix_workflow_artifact_slots_build_and_archive_to_the_asset_name() {
         "{build}"
     );
     assert!(build.contains(r#"tar -czf "$out/$ASSET" ./*"#), "{build}");
-    assert!(build.contains("actions/attest-build-provenance@"), "{build}");
+    assert!(!build.contains("actions/attest-build-provenance@"), "{build}");
     assert!(build.contains("name: asset-${{ matrix.artifactName }}"), "{build}");
+    let attest = job(&workflow, "attest");
+    assert!(attest.contains("actions/attest-build-provenance@"), "{attest}");
+    assert!(attest.contains("pattern: asset-*"), "{attest}");
 }
 
-// Napi artifacts are placed after every build, then the execute job
-// runs `release artifact-manifest` before `release execute`.
+// Napi artifacts are placed and packed in a job with no credentials; the execute job seals the tarballs in the manifest
+// before `release execute`, and holds no step that runs a package's scripts.
 #[test]
-fn matrix_workflow_execute_places_napi_artifacts_then_manifests_then_executes() {
+fn matrix_workflow_packs_npm_without_credentials_and_executes_the_sealed_tarballs() {
     let workflow = render_matrix_workflow();
-    let execute = job(&workflow, "execute");
-    assert!(execute.contains("needs: [plan, build, build-python]"), "{execute}");
-    let place = execute
+    let pack = job(&workflow, "pack-npm");
+    let place = pack
         .find("npx --yes --package @napi-rs/cli@3.10.4 napi artifacts")
         .expect("napi artifacts step");
-    let manifest = execute
-        .find("callisto release artifact-manifest")
-        .expect("artifact-manifest");
+    let packed = pack.find("callisto release pack-npm").expect("pack-npm");
+    assert!(place < packed, "{pack}");
+    assert!(pack.contains("permissions: {contents: read}"), "{pack}");
+    assert!(pack.contains("name: npm-dist"), "{pack}");
+    assert!(!pack.contains("secrets."), "{pack}");
+    let plan = job(&workflow, "plan");
+    assert!(plan.contains("has_npm: ${{ steps.matrix.outputs.has_npm }}"), "{plan}");
+    let execute = job(&workflow, "execute");
+    assert!(
+        execute.contains("needs: [plan, build, attest, build-python, package-cargo, pack-npm]"),
+        "{execute}"
+    );
+    assert!(!execute.contains("napi"), "{execute}");
+    let download = execute.find("name: npm-dist").expect("npm download");
+    let manifest = execute.find("--seal-npm").expect("sealed manifest");
     let run = execute
         .find(r#"callisto release execute "${args[@]}""#)
         .expect("release execute");
-    assert!(place < manifest && manifest < run, "{execute}");
+    assert!(download < manifest && manifest < run, "{execute}");
     assert!(
         execute.contains("CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}"),
         "{execute}"
@@ -945,7 +976,7 @@ fn matrix_workflow_execute_places_napi_artifacts_then_manifests_then_executes() 
         "{execute}"
     );
     assert!(!workflow.contains("PYPI_TOKEN"), "{workflow}");
-    for job_name in ["plan", "build", "build-python"] {
+    for job_name in ["plan", "build", "attest", "build-python", "package-cargo", "pack-npm"] {
         let non_publishing = job(&workflow, job_name);
         for secret in ["CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "PYPI_TOKEN"] {
             assert!(!non_publishing.contains(secret), "{job_name}: {non_publishing}");
@@ -978,20 +1009,41 @@ fn matrix_workflow_builds_python_without_credentials_and_seals_the_files_in_exec
     assert!(twine < run && !execute[..twine].contains("secrets."), "{execute}");
 }
 
-// A Python-only workspace publishes from one job, so that job needs the build and upload tools on its PATH.
+// The package job builds and seals the Python files with no credentials; only the execute job installs the upload tool.
 #[test]
-fn simple_workflow_installs_the_python_tools_only_when_publishing_to_pypi() {
+fn simple_workflow_builds_python_in_the_package_job_and_uploads_from_execute() {
     let mut facts = cargo_only_facts();
     let without = render_workflow_0_8_0(&facts, "main");
-    assert!(!without.contains("twine"), "{without}");
+    assert!(!without.contains("twine") && !without.contains("build=="), "{without}");
 
     facts.ecosystems = BTreeSet::from([Ecosystem::Cargo, Ecosystem::Pypi]);
     let with = render_workflow_0_8_0(&facts, "main");
-    let release = job(&with, "release");
-    let install = release.find("pip install --quiet build==").expect("tools install");
-    let action = release.find("callisto-action@").expect("release action");
-    assert!(release.contains("twine=="), "{release}");
-    assert!(install < action && !release[..action].contains("secrets."), "{release}");
+    let package = job(&with, "package");
+    assert!(package.contains("pip install --quiet build=="), "{package}");
+    assert!(!package.contains("twine") && !package.contains("secrets."), "{package}");
+    let build = package.find("callisto release build-python").expect("build-python");
+    let seal = package.find("--seal-python").expect("seal");
+    let upload = package.find("name: release-handoff").expect("handoff upload");
+    assert!(build < seal && seal < upload, "{package}");
+    let execute = job(&with, "execute");
+    let install = execute.find("pip install --quiet twine==").expect("twine install");
+    let action = execute.find("callisto-action@").expect("release action");
+    assert!(!execute.contains("build=="), "{execute}");
+    assert!(install < action && !execute[..action].contains("secrets."), "{execute}");
+}
+
+// An npm workspace packs in the package job; the execute job downloads the sealed tarballs and runs no pack.
+#[test]
+fn simple_workflow_packs_npm_in_the_package_job() {
+    let mut facts = cargo_only_facts();
+    facts.ecosystems = BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm]);
+    let workflow = render_workflow_0_8_0(&facts, "main");
+    let package = job(&workflow, "package");
+    let pack = package.find("callisto release pack-npm").expect("pack-npm");
+    let seal = package.find("--seal-npm").expect("seal");
+    assert!(pack < seal, "{package}");
+    assert!(!package.contains("secrets."), "{package}");
+    assert!(!job(&workflow, "execute").contains("pack-npm"), "{workflow}");
 }
 
 // npm provenance is requested only when the workspace has an npm package.
@@ -1033,14 +1085,14 @@ fn matrix_workflow_has_no_recovery_or_sha_gating() {
     ] {
         assert!(!workflow.contains(absent), "`{absent}` present:\n{workflow}");
     }
-    // `release plan`, `build-python` and `execute` require a detached HEAD (E170), and a push checkout is attached.
-    for name in ["plan", "build-python", "execute"] {
+    // `release plan`, `build-python`, `pack-npm` and `execute` require a detached HEAD (E170), and a push checkout is attached.
+    for name in ["plan", "build-python", "package-cargo", "pack-npm", "execute"] {
         assert!(
             job(&workflow, name).contains("ref: \"${{ github.sha }}\""),
             "`{name}` must check out the commit, not the branch:\n{workflow}"
         );
     }
-    assert_eq!(workflow.matches("github.sha").count(), 3, "{workflow}");
+    assert_eq!(workflow.matches("github.sha").count(), 5, "{workflow}");
     assert!(
             workflow.contains("git diff-tree --no-commit-id --name-only --diff-filter=AM -r HEAD^ HEAD | grep -qxF .callisto/release-decision.json"),
             "{workflow}"
@@ -1050,6 +1102,119 @@ fn matrix_workflow_has_no_recovery_or_sha_gating() {
         4,
         "{workflow}"
     );
+}
+
+fn all_ecosystem_facts() -> InitFacts {
+    InitFacts {
+        ecosystems: BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi]),
+        ..facts_for_render()
+    }
+}
+
+/// Every scalar under `node`, however deep.
+fn scalars(node: &yaml_rust2::Yaml) -> Vec<&str> {
+    use yaml_rust2::Yaml;
+    match node {
+        Yaml::String(text) => vec![text.as_str()],
+        Yaml::Array(items) => items.iter().flat_map(scalars).collect(),
+        Yaml::Hash(map) => map
+            .iter()
+            .flat_map(|(key, value)| scalars(key).into_iter().chain(scalars(value)))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A job that can run project code holds no OIDC token and no registry secret, and the job that holds the OIDC token
+/// for attestation sees no source: checked on the parsed YAML of both shapes.
+#[test]
+fn no_job_that_runs_project_code_holds_id_token_or_registry_secrets() {
+    for shape in [WorkflowShape::Simple, WorkflowShape::BuildMatrix] {
+        let text = render_workflow(
+            &all_ecosystem_facts(),
+            shape,
+            &branch("main"),
+            &fake_commit(),
+            &v0_8_0(),
+        );
+        let docs = yaml_rust2::YamlLoader::load_from_str(&text).expect("the generated workflow is YAML");
+        let jobs = docs[0]["jobs"].as_hash().expect("a workflow has jobs");
+        assert!(jobs.len() >= 3, "{shape:?}: {text}");
+        for (name, job) in jobs {
+            let name = name.as_str().expect("job names are strings");
+            let id_token = job["permissions"]["id-token"].as_str() == Some("write");
+            let steps = job["steps"].as_vec().expect("a job has steps");
+            let checks_out = steps.iter().any(|step| {
+                step["uses"]
+                    .as_str()
+                    .is_some_and(|uses| uses.starts_with("actions/checkout@"))
+            });
+            let runs_shell = steps.iter().any(|step| !step["run"].is_badvalue());
+            if scalars(job).iter().any(|text| text.contains("secrets.")) {
+                assert_eq!(name, "execute", "{shape:?}: registry secrets outside execute");
+            }
+            if id_token && name != "execute" {
+                assert!(
+                    !checks_out && !runs_shell,
+                    "{shape:?}: {name} holds id-token and can run project code"
+                );
+            }
+            // The release action's own setup installs the checkout's project-selected toolchains, so a job that holds
+            // credentials must switch it off.
+            if id_token || scalars(job).iter().any(|text| text.contains("secrets.")) {
+                for step in steps {
+                    if step["uses"]
+                        .as_str()
+                        .is_some_and(|uses| uses.contains("/callisto-action@"))
+                    {
+                        assert_eq!(
+                            step["with"]["setup_callisto"].as_str(),
+                            Some("false"),
+                            "{shape:?}: {name} runs the action's project toolchain setup beside credentials"
+                        );
+                    }
+                }
+            }
+        }
+        // execute publishes crates with --no-verify, so a job without credentials must compile them all in one call,
+        // and execute must wait for it.
+        let compiles_crates: Vec<&str> = jobs
+            .iter()
+            .filter(|(_, job)| {
+                job["steps"].as_vec().is_some_and(|steps| {
+                    steps.iter().any(|step| {
+                        step["run"]
+                            .as_str()
+                            .is_some_and(|run| run.contains("cargo package --locked"))
+                    })
+                })
+            })
+            .filter_map(|(name, _)| name.as_str())
+            .collect();
+        assert_eq!(
+            compiles_crates.len(),
+            1,
+            "{shape:?}: one job packages the crates: {compiles_crates:?}"
+        );
+        let execute = &jobs[&yaml_rust2::Yaml::String("execute".to_owned())];
+        let needs: Vec<&str> = match &execute["needs"] {
+            yaml_rust2::Yaml::String(one) => vec![one.as_str()],
+            other => other
+                .as_vec()
+                .expect("execute has needs")
+                .iter()
+                .filter_map(|n| n.as_str())
+                .collect(),
+        };
+        assert!(
+            needs.contains(&compiles_crates[0]),
+            "{shape:?}: execute must need {compiles_crates:?}: {needs:?}"
+        );
+        assert!(
+            jobs.iter().any(|(name, _)| name.as_str() == Some("execute")),
+            "{shape:?}: no execute job"
+        );
+    }
 }
 
 /// Real git, except `ls-remote --symref` answers from `remote_head` instead of touching

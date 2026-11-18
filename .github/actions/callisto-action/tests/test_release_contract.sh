@@ -9,20 +9,20 @@ release_script="$action_dir/scripts/run-release.sh"
 fail=0
 
 # --- validate-mode.sh: accepted values and rejection ---
-for mode in version-pr release; do
+for mode in version-pr release execute; do
   if ! INPUT_MODE="$mode" bash "$mode_script" > /dev/null 2>&1; then
     echo "FAIL: mode '$mode' must be accepted"
     fail=1
   fi
 done
-echo 'PASS: validate-mode accepts version-pr and release'
+echo 'PASS: validate-mode accepts version-pr, release and execute'
 
 set +e
 invalid_output=$(INPUT_MODE=bogus bash "$mode_script" 2>&1)
 invalid_rc=$?
 set -e
 if [[ "$invalid_rc" == 0 ]] \
-  || [[ "$invalid_output" != *"'version-pr' or 'release'"* ]] \
+  || [[ "$invalid_output" != *"'version-pr', 'release' or 'execute'"* ]] \
   || [[ "$invalid_output" != *"'bogus'"* ]]; then
   echo "FAIL: an invalid mode must fail naming the accepted values: $invalid_output"
   fail=1
@@ -138,6 +138,57 @@ else
   echo 'PASS: run-release leaves Bun token mapping to publisher dispatch'
 fi
 rm -rf "$auth_dir"
+
+# mode execute runs `release execute` on the handoff directory, passing the manifest only when the handoff has one.
+exec_dir="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+[[ -n "$exec_dir" && -d "$exec_dir" ]] || { echo "mktemp -d failed" >&2; exit 1; }
+mkdir -p "$exec_dir/bin" "$exec_dir/handoff" "$exec_dir/runner-temp"
+: > "$exec_dir/handoff/release-intent.json"
+cat > "$exec_dir/bin/callisto" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$EXEC_CAPTURE"
+prev=''
+for a in "$@"; do
+  [[ "$prev" == '--receipt' ]] && printf '%s' '{"outcomes":[{"operation":{"package":"npm/app","role":{"kind":"registryPublish"},"version":"1.0.0"},"outcome":{"kind":"published"}}]}' > "$a"
+  prev="$a"
+done
+STUB
+chmod +x "$exec_dir/bin/callisto"
+run_execute() {
+  PATH="$exec_dir/bin:$PATH" RUNNER_TEMP="$exec_dir/runner-temp" EXEC_CAPTURE="$exec_dir/capture" \
+    INPUT_MODE=execute INPUT_HANDOFF="$exec_dir/handoff" INPUT_CWD=. GITHUB_SHA=abc123 \
+    GITHUB_OUTPUT="$exec_dir/github-output" bash "$release_script" > /dev/null 2>&1
+}
+if ! run_execute; then
+  echo 'FAIL: mode execute must run release execute on the handoff directory'
+  fail=1
+else
+  captured="$(<"$exec_dir/capture")"
+  if [[ "$captured" != "release execute --intent $exec_dir/handoff/release-intent.json --receipt "* ]] \
+    || [[ "$captured" == *'--artifact-manifest'* ]] \
+    || [[ "$(<"$exec_dir/github-output")" != *'publishedPackages=["npm/app"]'* ]]; then
+    echo "FAIL: mode execute without a manifest must pass only the intent, receipt and revision: $captured"
+    fail=1
+  else
+    : > "$exec_dir/handoff/release-manifest.json"
+    : > "$exec_dir/capture"
+    run_execute
+    if [[ "$(<"$exec_dir/capture")" != *"--artifact-manifest $exec_dir/handoff/release-manifest.json --artifact-dir $exec_dir/handoff"* ]]; then
+      echo 'FAIL: mode execute must pass a sealed manifest and the handoff as the artifact directory'
+      fail=1
+    else
+      echo 'PASS: mode execute runs release execute on the handoff and fills the outputs'
+    fi
+  fi
+fi
+if INPUT_MODE=execute INPUT_HANDOFF='' INPUT_CWD=. PATH="$exec_dir/bin:$PATH" GITHUB_OUTPUT="$exec_dir/github-output" \
+  RUNNER_TEMP="$exec_dir/runner-temp" bash "$release_script" > /dev/null 2>&1; then
+  echo 'FAIL: mode execute without a handoff must fail'
+  fail=1
+else
+  echo 'PASS: mode execute without a handoff fails'
+fi
+rm -rf "$exec_dir"
 
 # The action must call the sibling setup-callisto script by github.action_path, not `$/` or owner/repo/path@ref.
 action_contents="$(<"$action_dir/action.yml")"

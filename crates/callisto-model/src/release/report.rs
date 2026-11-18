@@ -167,6 +167,25 @@ impl crate::report::Report for ReleaseBuildPythonReport {
     }
 }
 
+/// `callisto release pack-npm --format json` report: the npm packages packed.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasePackNpmReport {
+    pub built: Vec<String>,
+}
+
+impl crate::report::Report for ReleasePackNpmReport {
+    const COMMAND: &'static str = "release pack-npm";
+
+    fn schema_version(&self) -> u32 {
+        crate::SCHEMA_VERSION
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::Ecosystem;

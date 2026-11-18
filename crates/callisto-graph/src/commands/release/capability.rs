@@ -18,7 +18,7 @@ use super::derive::{
     GitRemoteRequirement,
 };
 use super::provider::{
-    provider_for, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest, PypiFileSets,
+    provider_for, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest, PublishRoute, PypiFileSets,
     ReleasePreflight, ReleaseProviderSet,
 };
 use super::release_artifacts::VerifiedArtifactManifest;
@@ -43,6 +43,7 @@ pub struct ValidatedReleaseIntent<'a> {
     prepared: PreparedReleaseInputs,
     runner: &'a dyn CommandRunner,
     file_sets: PypiFileSets,
+    route: PublishRoute,
 }
 
 impl std::fmt::Debug for ValidatedReleaseIntent<'_> {
@@ -67,6 +68,7 @@ impl ValidatedReleaseIntent<'_> {
     fn context(&self) -> ProviderContext<'_> {
         ProviderContext::new(&self.prepared.root, self.runner, self.prepared.git_remote.as_ref())
             .with_file_sets(&self.file_sets)
+            .with_route(self.route)
     }
 
     /// Builds every Python publish of the intent into `outdir` and returns the packages built.
@@ -86,6 +88,36 @@ impl ValidatedReleaseIntent<'_> {
             built.push(operation.package_name.clone());
         }
         Ok(built)
+    }
+
+    /// Packs every npm publish of the intent into `outdir` and returns the packages packed.
+    ///
+    /// This is the credential-free pack job's work: the executing job later publishes these exact tarballs.
+    pub fn pack_npm_tarballs(&self, outdir: &Path) -> Result<Vec<String>, GraphError> {
+        let context = self.context();
+        let mut packed = std::collections::BTreeSet::new();
+        for (id, prepared) in &self.prepared.operations {
+            let PreparedOperation::RegistryPublish(operation) = prepared else {
+                continue;
+            };
+            let publishes_to_npm = match &id.role {
+                callisto_model::ReleaseOperationRole::RegistryPublish { .. } => {
+                    id.package.ecosystem() == callisto_model::Ecosystem::Npm
+                }
+                callisto_model::ReleaseOperationRole::PlatformPublish { .. } => true,
+                callisto_model::ReleaseOperationRole::Tag
+                | callisto_model::ReleaseOperationRole::ForgeRelease
+                | callisto_model::ReleaseOperationRole::ArtifactUpload { .. }
+                | callisto_model::ReleaseOperationRole::ForgePublish => false,
+            };
+            // One tarball per package version, even when it publishes to several registries.
+            if publishes_to_npm
+                && packed.insert((operation.package_name.clone(), operation.version.render().to_owned()))
+            {
+                super::provider::pack_npm_into(&context, operation, outdir)?;
+            }
+        }
+        Ok(packed.into_iter().map(|(name, _)| name).collect())
     }
 
     fn prepared_operation(&self, id: &ReleaseOperationId) -> Result<&PreparedOperation, GraphError> {
@@ -359,6 +391,10 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
         intent: received,
         runner,
         file_sets: PypiFileSets::default(),
+        route: match checkout {
+            ReleaseCheckout::Detached => PublishRoute::Ci,
+            ReleaseCheckout::AnyHead => PublishRoute::Local,
+        },
     })
 }
 

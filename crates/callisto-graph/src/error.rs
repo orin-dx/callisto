@@ -402,12 +402,13 @@ pub enum GraphError {
         waited: std::time::Duration,
     },
 
-    #[error("the Python build for `{package}` {} produced no {missing}", .version.render())]
+    #[error("the {tool} for `{package}` {} produced no {missing}", .version.render())]
     #[diagnostic(
         code(E306),
-        help("Callisto builds an sdist and a wheel with `python -m build --sdist --wheel` and publishes both. Make the build produce both for this version, then re-run the release.")
+        help("A Python release publishes an sdist and a wheel, built with `python -m build --sdist --wheel`. An npm release publishes the one tarball `npm pack` names after the package and version, packed by `callisto release pack-npm` and sealed by `callisto release artifact-manifest --seal-npm` in a job without registry credentials. Make the build produce it for this version, then re-run the release.")
     )]
-    PypiBuildOutputIncomplete {
+    BuildOutputIncomplete {
+        tool: &'static str,
         package: String,
         version: callisto_model::Version,
         missing: &'static str,
@@ -981,8 +982,6 @@ pub enum UnsupportedReleaseFeature {
     BumpReason,
     #[error("publish target")]
     PublishTarget,
-    #[error("a configured npm registry url with yarn (`yarn npm publish` has no --registry; set `npmPublishRegistry` in .yarnrc.yml)")]
-    YarnRegistryUrl,
 }
 
 /// Why a `--package` release selection is invalid, carried by

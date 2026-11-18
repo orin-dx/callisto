@@ -859,12 +859,57 @@ const MATRIX_WORKFLOW_TEMPLATE: &str = include_str!("../templates/matrix_workflo
 const BUILD_REQUIREMENT: &str = "build==1.4.4";
 const TWINE_REQUIREMENT: &str = "twine==7.0.0";
 
-/// Installs the Python build and upload tools into a venv put on the PATH of the later steps; carries no secrets.
-const SIMPLE_PYTHON_TOOLS_STEP: &str = "      - name: Install the Python publishing tools
+/// The simple workflow's package-job steps. They run project code (a build backend, `prepack`), so they hold no secret.
+/// Compiles every crate of the release in one invocation, so the executing job publishes with `--no-verify`.
+const PACKAGE_CARGO_STEP: &str = "      - name: Package the crates
+        if: steps.plan.outputs.has_cargo == 'true'
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r name; do args+=(-p \"$name\"); done < <(jq -r '[.operations[].id | select(.role.kind == \"registryPublish\" and (.package | startswith(\"cargo/\"))) | .package | ltrimstr(\"cargo/\")] | unique[]' \"$RUNNER_TEMP/release-handoff/release-intent.json\")
+          cargo package --locked \"${args[@]}\"
+";
+
+const PACKAGE_PYTHON_STEP: &str = "      - name: Build the Python distributions
+        if: steps.plan.outputs.has_python == 'true'
+        run: |
+          set -euo pipefail
+          python3 -m venv \"$RUNNER_TEMP/build-venv\"
+          \"$RUNNER_TEMP/build-venv/bin/python\" -m pip install --quiet __BUILD__
+          export PATH=\"$RUNNER_TEMP/build-venv/bin:$PATH\"
+          callisto release build-python --intent \"$RUNNER_TEMP/release-handoff/release-intent.json\" \\
+            --artifact-dir \"$RUNNER_TEMP/release-handoff\"
+";
+
+const PACKAGE_NPM_STEP: &str = "      - name: Pack the npm packages
+        if: steps.plan.outputs.has_npm == 'true'
+        run: |
+          set -euo pipefail
+          callisto release pack-npm --intent \"$RUNNER_TEMP/release-handoff/release-intent.json\" \\
+            --artifact-dir \"$RUNNER_TEMP/release-handoff\"
+";
+
+/// Seals what the Python and npm steps produced into the manifest the executing job verifies.
+const PACKAGE_SEAL_STEP: &str = "      - name: Seal the artifact manifest
+        if: steps.plan.outputs.has_python == 'true' || steps.plan.outputs.has_npm == 'true'
+        env:
+          HAS_PYTHON: ${{ steps.plan.outputs.has_python }}
+          HAS_NPM: ${{ steps.plan.outputs.has_npm }}
+        run: |
+          set -euo pipefail
+          handoff=\"$RUNNER_TEMP/release-handoff\"
+          args=(--intent \"$handoff/release-intent.json\" --artifact-dir \"$handoff\" --out \"$handoff/release-manifest.json\")
+          if [[ \"$HAS_PYTHON\" == true ]]; then args+=(--seal-python); fi
+          if [[ \"$HAS_NPM\" == true ]]; then args+=(--seal-npm); fi
+          callisto release artifact-manifest \"${args[@]}\"
+";
+
+/// Installs the upload tool into a venv put on the PATH of the later steps; the executing job is the only one with credentials.
+const SIMPLE_TWINE_STEP: &str = "      - name: Install twine
         run: |
           set -euo pipefail
           python3 -m venv \"$RUNNER_TEMP/publish-venv\"
-          \"$RUNNER_TEMP/publish-venv/bin/python\" -m pip install --quiet __BUILD__ __TWINE__
+          \"$RUNNER_TEMP/publish-venv/bin/python\" -m pip install --quiet __TWINE__
           echo \"$RUNNER_TEMP/publish-venv/bin\" >> \"$GITHUB_PATH\"
 ";
 
@@ -1018,17 +1063,28 @@ pub fn render_workflow(
         WorkflowShape::Simple => WORKFLOW_TEMPLATE,
         WorkflowShape::BuildMatrix => MATRIX_WORKFLOW_TEMPLATE,
     };
-    let python_tools = if facts.ecosystems.contains(&Ecosystem::Pypi) {
-        SIMPLE_PYTHON_TOOLS_STEP
-            .replace("__BUILD__", BUILD_REQUIREMENT)
-            .replace("__TWINE__", TWINE_REQUIREMENT)
-    } else {
-        String::new()
-    };
+    let has = |ecosystem| facts.ecosystems.contains(&ecosystem);
+    let package_steps: String = [
+        (has(Ecosystem::Cargo), PACKAGE_CARGO_STEP),
+        (has(Ecosystem::Pypi), PACKAGE_PYTHON_STEP),
+        (has(Ecosystem::Npm), PACKAGE_NPM_STEP),
+        (has(Ecosystem::Pypi) || has(Ecosystem::Npm), PACKAGE_SEAL_STEP),
+    ]
+    .into_iter()
+    .filter_map(|(wanted, step)| wanted.then_some(step))
+    .collect();
+    let twine_step = if has(Ecosystem::Pypi) { SIMPLE_TWINE_STEP } else { "" };
     fill(
         template,
         &[
-            ("      __PYTHON_TOOLS__\n", WorkflowScalar::trusted(python_tools)),
+            (
+                "      __PACKAGE_STEPS__\n",
+                WorkflowScalar::trusted(package_steps.replace("__BUILD__", BUILD_REQUIREMENT)),
+            ),
+            (
+                "      __TWINE_STEP__\n",
+                WorkflowScalar::trusted(twine_step.replace("__TWINE__", TWINE_REQUIREMENT)),
+            ),
             ("__BUILD__", WorkflowScalar::trusted(BUILD_REQUIREMENT)),
             ("__TWINE__", WorkflowScalar::trusted(TWINE_REQUIREMENT)),
             (
