@@ -100,6 +100,10 @@ impl Ecosystem {
 #[non_exhaustive]
 pub enum PublishTarget {
     CratesIo,
+    /// A `[registries]` entry of `kind = "cargo"`, named in `publish-to`; cargo resolves its URL.
+    CargoRegistry {
+        name: RegistryKey,
+    },
     Npm {
         registry: Option<String>,
         /// The operator's explicit `publishConfig.access` from `package.json`,
@@ -125,6 +129,7 @@ impl PublishTarget {
     pub fn registry_key(&self) -> Option<RegistryKey> {
         match self {
             PublishTarget::CratesIo => Some(RegistryKey(RegistryKey::CRATES_IO.to_string())),
+            PublishTarget::CargoRegistry { name } => Some(name.clone()),
             PublishTarget::Npm { .. } => Some(RegistryKey(RegistryKey::NPM.to_string())),
             PublishTarget::Pypi { .. } => Some(RegistryKey(RegistryKey::PYPI.to_string())),
             PublishTarget::NuGet { .. } => Some(RegistryKey(RegistryKey::NUGET.to_string())),
@@ -134,7 +139,7 @@ impl PublishTarget {
 
     pub fn ecosystem(&self) -> Option<Ecosystem> {
         match self {
-            PublishTarget::CratesIo => Some(Ecosystem::Cargo),
+            PublishTarget::CratesIo | PublishTarget::CargoRegistry { .. } => Some(Ecosystem::Cargo),
             PublishTarget::Npm { .. } => Some(Ecosystem::Npm),
             PublishTarget::Pypi { .. } => Some(Ecosystem::Pypi),
             PublishTarget::NuGet { .. } => Some(Ecosystem::NuGet),
@@ -149,9 +154,10 @@ impl PublishTarget {
     /// semantic-fingerprint "kind" string (`target_fingerprint` in
     /// `callisto_graph::commands::release`) since both need the exact same
     /// stable, variant-identifying string.
-    pub fn config_str(&self) -> &'static str {
+    pub fn config_str(&self) -> &str {
         match self {
             PublishTarget::CratesIo => "crates-io",
+            PublishTarget::CargoRegistry { name } => name.as_str(),
             PublishTarget::Npm { .. } => "npm",
             PublishTarget::Pypi { .. } => "pypi",
             PublishTarget::NuGet { .. } => "nuget",
@@ -169,7 +175,10 @@ impl PublishTarget {
             PublishTarget::Npm { registry, .. } => registry.as_deref(),
             PublishTarget::Pypi { index } => index.as_deref(),
             PublishTarget::NuGet { source } => source.as_deref(),
-            PublishTarget::CratesIo | PublishTarget::GitHubRelease | PublishTarget::None => None,
+            PublishTarget::CratesIo
+            | PublishTarget::CargoRegistry { .. }
+            | PublishTarget::GitHubRelease
+            | PublishTarget::None => None,
         }
     }
 
@@ -209,6 +218,7 @@ impl PublishTarget {
         match self {
             PublishTarget::None | PublishTarget::GitHubRelease => true,
             PublishTarget::CratesIo
+            | PublishTarget::CargoRegistry { .. }
             | PublishTarget::Npm { .. }
             | PublishTarget::Pypi { .. }
             | PublishTarget::NuGet { .. } => self.ecosystem().is_some_and(|ecosystem| ecosystem.is_implemented()),
@@ -284,6 +294,17 @@ pub enum ReleaseTrigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cargo_registry_target_is_named_and_keyed_by_its_registry() {
+        let target = PublishTarget::CargoRegistry {
+            name: RegistryKey("my-reg".to_owned()),
+        };
+        assert_eq!(target.config_str(), "my-reg");
+        assert_eq!(target.registry_key(), Some(RegistryKey("my-reg".to_owned())));
+        assert_eq!(target.ecosystem(), Some(Ecosystem::Cargo));
+        assert_eq!(target.registry_override(), None);
+    }
 
     #[test]
     fn a_distribution_filename_splits_into_its_name_and_version() {
