@@ -141,4 +141,14 @@ Downloaded binaries are checked with `gh attestation verify` against `orin-dx/ca
 
 Product assets target `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, and `x86_64-unknown-linux-musl`. The Intel macOS asset is cross-compiled on an Apple silicon runner, and the arm64 Linux asset is built natively on an arm64 runner. Apple signing and notarization are out of scope. GitHub provenance binds assets to the orchestration revision; the intent and artifact manifest bind their bytes to the release source. Callisto publishes its crates to crates.io and product assets to GitHub Releases, not to another registry for rehearsal.
 
-`just verify-real` rehearses recovery against local registries through the production registry binding, with no test-only allowance in the https rule: Verdaccio, `pypiserver` and a JSON simple index serve a self-signed loopback certificate that npm, curl and Twine trust through their own CA variables. The rehearsals are a partial npm publish adopted by a rerun, a PyPI index that shows an upload late or never, a remote tag on another commit, and a PyPI release whose index lacks one built file. Cargo is not rehearsed: its publish and observation always name the `crates-io` registry, which cannot be pointed at a local one.
+`just verify-real` rehearses recovery against local registries through the production registry binding, with no test-only allowance in the https rule: Verdaccio, `pypiserver` and a JSON simple index serve a self-signed loopback certificate that npm, curl and Twine trust through their own CA variables. The rehearsals are a partial npm publish adopted by a rerun, a PyPI index that shows an upload late or never, a remote tag on another commit, and a PyPI release whose index lacks one built file. Cargo is rehearsed through a `kind = "cargo"` registry named in `publish-to`: a local sparse registry with the publish and download API stands behind `[registries.<name>] index` in a scratch `CARGO_HOME`, and callisto passes `--registry <name>` to `cargo publish` and `cargo info`. The Cargo registry is plain `http` on loopback because callisto never sees its URL, so no https rule applies to it. The Cargo rehearsals are a partial publish adopted by a rerun, an index that shows a publish late (cargo itself does not wait), and a remote tag on another commit. A `crates-io` publish runs plain `cargo publish`, so it is not rehearsed against a local registry.
+
+`just verify-real` then runs `native_resolution_e2e_tests` and fails when `npm`, `pnpm` or `uv` is missing, so the matrix is recorded rather than skipped. After `version` or `snapshot` each ecosystem's own locked install must still succeed:
+
+| Ecosystem | Command | Checked after |
+| --- | --- | --- |
+| Cargo | `cargo metadata --locked --offline` | `version`, `snapshot` |
+| npm | `npm ci` | `version`, `snapshot` |
+| pnpm | `pnpm install --frozen-lockfile` | `version`, `snapshot`, lockfile refresh |
+| pnpm | `pnpm pack` with `workspace:` protocols rewritten to the released versions | `version`, `snapshot` |
+| Python | `uv lock --check` | `version`, `snapshot` |
