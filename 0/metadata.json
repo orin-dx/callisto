@@ -1,0 +1,138 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7P9SK2M3B38EE8JXW1RRMB7",
+  "session_id": "3d27cecb-bc0e-4f46-832e-f140ed152480",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T03:04:36.91429Z",
+  "branch": "worktree-wp-e-native-name",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/swift-cheetahs-sprint.md",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/cascade/tests.rs",
+    "crates/callisto-graph/src/commands/status.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/history.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/ecosystem_bugs_test.rs",
+    "crates/callisto-graph/tests/fixtures/graph_builder.rs",
+    "crates/callisto-model/src/identity.rs",
+    "docs/errors.md",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "0880cbe4656d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 109986,
+    "cache_read_tokens": 5108664,
+    "output_tokens": 22283,
+    "api_call_count": 48,
+    "subagent_tokens": {
+      "input_tokens": 54,
+      "cache_creation_tokens": 178958,
+      "cache_read_tokens": 1856763,
+      "output_tokens": 18127,
+      "api_call_count": 27
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 109986,
+    "cache_read_tokens": 5108664,
+    "output_tokens": 22283,
+    "api_call_count": 48,
+    "subagent_tokens": {
+      "input_tokens": 54,
+      "cache_creation_tokens": 178958,
+      "cache_read_tokens": 1856763,
+      "output_tokens": 18127,
+      "api_call_count": 27
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Run Session 5 of the LAUNCH-v1-alpha plan, starting with WP E: introduce a NativeName type so registry-equivalent package names (PyPI PEP 503, Cargo case and -/_) are treated as one identity, with WP I (dir index for relative workspace:) to follow.",
+    "outcome": "Implemented NativeName in callisto-model and migrated the graph crate (walk owner admission, identity index, config rule matching, history name checks) so equivalent names now fail loading with E100. Added boundary tests, updated docs/spec and a changeset, applied review fixes, and committed. WP I was not started, and no push or mutants run appears in the transcript.",
+    "learnings": {
+      "repo": [
+        "Worktree-based workflow: Session work happens in .claude/worktrees/wp-e-native-name off origin/main; fetching needs github.com allowed in the sandbox.",
+        "Gate commands are `just pre-push`, `just lint`, `just doc-check`; a gate script wrapped them and the first run failed only on formatting, fixed by `cargo fmt --all`.",
+        "Changesets are created with `cargo run -p callisto-cli -- add --package cargo/callisto-cli:patch --summary ...`, with a bold headline, Why it matters, Action and Limits structure.",
+        "Builds use CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 and CARGO_BUILD_JOBS=4 to limit resource use.",
+        "Cross-ecosystem fallbacks and bare selectors must stay exact-spelling matches; only qualified selectors (ecosystem/name) apply registry equivalence. Review caught that the initial implementation over-applied equivalence.",
+        "ReleasePackageId.name deliberately stays a String: keying it on NativeName would reorder serialized rosters and could make a stored decision match a renamed package.",
+        "The plan's claims about Cargo equivalence code and a settled decision were unverified by the design subagent: check_cargo_name only validates characters, and no memory backed the decision that Cargo foo-bar/foo_bar is E100."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/identity.rs",
+          "finding": "New NativeName struct (ecosystem, spelling, key) with hand-written Eq/Hash/Ord on (ecosystem, key); the key is the PEP 503 form for PyPI, lowercase with _ to - for Cargo, and exact for others."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 268,
+          "end_line": 310,
+          "finding": "native_owner and path_native_keys are now keyed on NativeName, which is the actual duplicate-detection fix."
+        },
+        {
+          "path": "crates/callisto-graph/src/identity.rs",
+          "line": 541,
+          "end_line": 605,
+          "finding": "native_in_ecosystem becomes a single get returning Option; the PyPI ambiguity Err path is removed because E100 now prevents equivalent-name collisions."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "line": 264,
+          "finding": "rule_applies now compares NativeName values, which fixes [[package]] rule matching for equivalent spellings."
+        },
+        {
+          "path": "crates/callisto-graph/src/history.rs",
+          "line": 108,
+          "end_line": 112,
+          "finding": "names_equal was deleted in favor of NativeName equality."
+        }
+      ],
+      "workflow": [
+        "Delegating a read-only design to a subagent surfaced false premises in the plan before any code was written. Its report was treated as input, not as authority.",
+        "Bulk refactors by Python/perl regex scripts needed several rounds of compiler-driven cleanup, and BSD sed on macOS lacks GNU in-place syntax (the Edit tool or perl works).",
+        "Writing the boundary test first against the real Workspace::load avoids testing only helper functions."
+      ]
+    },
+    "friction": [
+      "BSD sed `-i` syntax failed on macOS, forcing a switch to the Edit tool or perl.",
+      "Regex-based mass rewrites of tuple keys to NativeName::new broke some test lookups that needed reverting or manual fixes, taking several clippy iterations.",
+      "The first pre-push gate failed on formatting only.",
+      "The initial implementation applied equivalence to bare and cross-ecosystem lookups, which review flagged as too broad."
+    ],
+    "open_items": [
+      "Glob patterns (PackagePattern::matches_native, pattern.rs:72) still match on the manifest spelling, so pypi/my-* does not match My_Pkg; needs a code comment or tracked follow-up.",
+      "The owner should confirm that Cargo foo-bar/foo_bar should be E100, since no existing code or memory enforced it.",
+      "The owner should decide whether the new E100 rejection counts as **Breaking:** in the changeset; it is currently a patch.",
+      "The E102 'did you mean' candidate order may change for mixed-case names, so insta snapshots should be checked.",
+      "WP I (dir index for relative workspace:) remains for Session 5, and mutants, push and trail steps were not yet done."
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01WoourNRw6HLdid68r1Pknb",
+  "agent_id": "a2a0afb8e6a3d1df1",
+  "subagent_type": "general-purpose",
+  "task_description": "Review NativeName diff",
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 95130,
+    "cache_read_tokens": 963179,
+    "output_tokens": 8629,
+    "api_call_count": 13
+  },
+  "started_at": "2026-11-17T18:55:56.28297-08:00",
+  "completed_at": "2026-11-17T18:57:49.362014-08:00"
+}
