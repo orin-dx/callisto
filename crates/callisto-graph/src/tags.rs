@@ -858,4 +858,58 @@ mod tests {
             "TagIndex::build must propagate the CommandRunner error as GraphError::Command"
         );
     }
+
+    /// Every tag of a commit that held the name in another ecosystem is rejected, not only the newest.
+    #[test]
+    fn all_tags_made_on_one_commit_by_another_package_are_foreign() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        callisto_fixtures::git::init_repo(root);
+        let run = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}");
+        };
+        std::fs::create_dir_all(root.join("crates/foo")).unwrap();
+        std::fs::write(
+            root.join("crates/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        run(&["add", "-A"]);
+        run(&["commit", "-q", "-m", "cargo foo"]);
+        for version in ["1.0.0", "1.0.1", "1.0.2"] {
+            run(&[
+                "-c",
+                "tag.gpgSign=false",
+                "tag",
+                "-a",
+                "-m",
+                "release",
+                &format!("foo@{version}"),
+            ]);
+        }
+        run(&["rm", "-rq", "crates"]);
+        std::fs::create_dir_all(root.join("packages/foo")).unwrap();
+        std::fs::write(
+            root.join("packages/foo/package.json"),
+            r#"{"name":"foo","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        run(&["add", "-A"]);
+        run(&["commit", "-q", "-m", "npm foo"]);
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &callisto_fixtures::git::GitRunner).expect("load");
+        let pkg = ws.graph.packages().next().expect("one package").id.clone();
+        let index = ws.tags().expect("tags");
+        assert!(index.last_tag(&pkg).is_none(), "{:?}", index.last_tag(&pkg));
+        for version in ["1.0.0", "1.0.1", "1.0.2"] {
+            assert!(!index.is_tag_of(&pkg, &format!("foo@{version}")), "foo@{version}");
+        }
+    }
 }
