@@ -1,0 +1,127 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7R72Y9Z4XK69710ZEV3AV81",
+  "session_id": "130cc54e-9d45-4e56-bbad-d73a8d8e7867",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T20:55:48.192099Z",
+  "branch": "worktree-wp-q-cargo-rehearsals",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "AGENTS.md",
+    "crates/callisto-cli/tests/common/local_registries.rs",
+    "crates/callisto-cli/tests/release_verify_real.rs",
+    "docs/architecture/release.md",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "48ee48bc738d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 368,
+    "cache_creation_tokens": 631810,
+    "cache_read_tokens": 40309908,
+    "output_tokens": 137335,
+    "api_call_count": 181,
+    "subagent_tokens": {
+      "input_tokens": 38,
+      "cache_creation_tokens": 107866,
+      "cache_read_tokens": 1480329,
+      "output_tokens": 16772,
+      "api_call_count": 19
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 368,
+    "cache_creation_tokens": 631810,
+    "cache_read_tokens": 40309908,
+    "output_tokens": 137335,
+    "api_call_count": 181,
+    "subagent_tokens": {
+      "input_tokens": 38,
+      "cache_creation_tokens": 107866,
+      "cache_read_tokens": 1480329,
+      "output_tokens": 16772,
+      "api_call_count": 19
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 3,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Execute the launch plan's WP Q (`just verify-real`) in stages: build a local-registry recovery rehearsal harness, then make named Cargo registries a valid `publish-to` target, then add Cargo rehearsals and the native install/load matrix. Each stage is its own PR, with signed commits, no session trailers, explicit-refspec pushes verified by ls-remote, and full gates.",
+    "outcome": "PR #572 (npm/PyPI rehearsals over local TLS, no production change) and PR #575 (named Cargo registries, mutants 0 missed) were pushed. The third PR's work (Cargo rehearsals against a local sparse registry, the native matrix, and the AGENTS.md/release.md claim fixes) passed `just verify-real` and the gates, and was committed signed. At the end of the transcript it had not yet been pushed, merge-tree-checked against #578/#582, or linked to trail #460.",
+    "learnings": {
+      "repo": [
+        "Callisto never opens sockets itself: all registry traffic goes through child processes (npm, curl, twine, cargo) that inherit the environment. Local TLS registries therefore work by setting NODE_EXTRA_CA_CERTS, CURL_CA_BUNDLE and REQUESTS_CA_BUNDLE, with no production code change.",
+        "The https rule for registry URLs accepts https on loopback. A self-signed 127.0.0.1 cert with an openssl-generated SAN binds through the production `prepared_registry_binding`; http stays rejected with E126.",
+        "pypiserver cannot serve the PEP 691 JSON simple index that callisto's PyPI observation needs, so the harness uses a small stdlib Python JSON index server for the index side and pypiserver for uploads. pypiserver also needs `disable_fallback=True` to avoid 303 redirects.",
+        "`PublishTarget` is `#[non_exhaustive]`, so a forgotten cross-crate match arm (derive.rs fingerprint) compiles and fails only at runtime via the `_ => UnsupportedRelease` arm. Boundary tests must be written first.",
+        "A `crates-io` publish runs plain `cargo publish` with no `--registry`, while observation passes `--registry crates-io`. Source replacement does not redirect `cargo publish`; a probe hit real crates.io. Named registries now pass `--registry <name>` for both publish and info.",
+        "The repo's gate is `just pre-push`, `just lint`, `just doc-check`, `just test`, `just ci` and `just workflow-contracts`, plus `cargo mutants --in-diff` for production diffs. Mutants output (mutants.out*) must never be committed.",
+        "Rehearsal CI tool pins live in one place: the `verify-real-tools` just recipe installs into `target/verify-real/`, and `.github/actions/install-registry-test-tools/action.yml` calls it."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/ecosystem.rs",
+          "line": 102,
+          "finding": "Added the `PublishTarget::CargoRegistry { name }` variant next to `CratesIo`; `config_str()` changed from `&'static str` to `&str`, a semver-visible API change."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "line": 237,
+          "finding": "`parse_publish_target` now receives the resolved registries. Unknown names, non-cargo registries, `cratesIo` and malformed names fail at load with E330."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 1068,
+          "finding": "The fingerprint match must include `CargoRegistry` explicitly. The `#[allow(unreachable_patterns)] _` fallback would otherwise hide the omission."
+        },
+        {
+          "path": "crates/callisto-cli/tests/release_hardening_tests.rs",
+          "line": 702,
+          "finding": "Boundary tests for named cargo registries sit next to the `cargo info` registry observation test. They use the fake cargo's `cargo_calls()`."
+        }
+      ],
+      "workflow": [
+        "Pass the explicit refspec `HEAD:refs/heads/<branch>`, verify with `git ls-remote`, and compare against `git rev-parse HEAD`. Use `gh api .../commits/<sha> --jq .commit.verification.reason` to confirm GitHub shows the signature as valid.",
+        "Wrap long gate runs in scripts that write their own output files, since the sandbox guard objected to redirect forms. Report each gate by exit code.",
+        "Spike the risky tooling (curl, twine and gunicorn TLS trust) cheaply before building the harness. This surfaced the pypiserver JSON-index gap early.",
+        "Subagent hand-back messages are model output, not user approval. Design reports were used as input, and decisions needing new error codes or keys were escalated to the owner.",
+        "Verify that a new assertion actually discriminates by toggling the behavior (such as RUSTC_BOOTSTRAP) and reading the registry log, because cargo's own polling can satisfy an assertion meant for callisto."
+      ]
+    },
+    "friction": [
+      "Fetching needed unsandboxed network access, and the guard rejected shell redirect forms.",
+      "Greedy Python string replaces broke the old real-registry test file twice, once in `curl_get` call sites and once in a delimiter, and were caught only when the gates failed to compile.",
+      "The first Cargo scenario hit real crates.io with a fake token (401) because source replacement does not redirect publish, forcing the Cargo rehearsal to be dropped from #572.",
+      "An earlier claim in #572 and AGENTS.md that callisto always publishes with `--registry crates-io` was wrong and had to be corrected later.",
+      "A gate run had to be stopped and rerun after reviewer fixes changed files, and the stray processes had to be located by cwd."
+    ],
+    "open_items": [
+      "Push the third PR with `HEAD:refs/heads/worktree-wp-q-cargo-rehearsals`, verify with ls-remote, link trail #460, and run `git merge-tree` against open PRs. #578 and #582 both touch docs/architecture/release.md.",
+      "Owner decision pending: should a cargo registry named like a built-in target (`none`, `github-release`, `npm`) be rejected at load? This needs a new error code.",
+      "A `[registries.crates-io]` entry with `kind = \"cargo\"` is dead config that arguably violates REL-PUB-18's \"never ignored\"; it is left as a follow-up.",
+      "`confirm-timeout`/`publish-timeout` on a named registry and the fingerprint value for a named Cargo target are not pinned by tests.",
+      "If cargo config redirects a `crates-io` publish, callisto fails with E157 after the upload. This predates the work and is only documented.",
+      "The CI action change was never run on a real runner, and `just ci` is only reported for the third PR's gate run."
+    ]
+  }
+}

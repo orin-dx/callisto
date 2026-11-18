@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_011c7Sq3a4BScqhWF6HmR9Do",
+  "agent_id": "a98744030d9685c69",
+  "subagent_type": "general-purpose",
+  "task_description": "Review Cargo rehearsals diff",
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 107866,
+    "cache_read_tokens": 1480329,
+    "output_tokens": 16772,
+    "api_call_count": 19
+  },
+  "started_at": "2026-11-18T12:29:47.041876-08:00",
+  "completed_at": "2026-11-18T12:33:02.193576-08:00"
+}
