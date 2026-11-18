@@ -40,10 +40,8 @@ fn commit(root: &Path, message: &str) {
     run_git(root, &["commit", "-q", "-m", message]);
 }
 
-#[test]
-fn a_branch_change_without_a_changeset_fails_status_since() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
+/// Two Cargo packages, `a` and `b`, in a fresh repository on `main`.
+fn two_packages(root: &Path) {
     init_repo(root);
     fs::write(
         root.join("Cargo.toml"),
@@ -59,6 +57,54 @@ fn a_branch_change_without_a_changeset_fails_status_since() {
         .unwrap();
         fs::write(root.join(name).join("src/lib.rs"), "pub fn f() {}\n").unwrap();
     }
+}
+
+/// Only a changeset the loader reads counts: a nested file of the same name does not cover a pending one.
+#[test]
+fn a_nested_file_named_like_a_pending_changeset_is_not_coverage() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    two_packages(root);
+    fs::create_dir_all(root.join(".changeset/archive")).unwrap();
+    fs::write(root.join(".changeset/old.md"), "---\ncargo/pkg-a: patch\n---\n\nOld.\n").unwrap();
+    commit(root, "initial");
+    run_git(root, &["checkout", "-q", "-b", "feature"]);
+    fs::write(root.join("a/src/lib.rs"), "pub fn f() { let _ = 1; }\n").unwrap();
+    fs::write(root.join(".changeset/archive/old.md"), "notes\n").unwrap();
+    commit(root, "change a");
+    assert_eq!(flagged(&status_since(root)), ["cargo/pkg-a"]);
+}
+
+/// A bump inferred from the branch's commits covers the change though an older changeset decides the severity.
+#[test]
+fn an_inferred_bump_covers_a_change_when_an_older_changeset_wins_the_severity() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    two_packages(root);
+    fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"cargo/pkg-a\"\nrelease-trigger = \"auto\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(root.join(".changeset/big.md"), "---\ncargo/pkg-a: major\n---\n\nBig.\n").unwrap();
+    commit(root, "chore: initial");
+    run_git(root, &["checkout", "-q", "-b", "feature"]);
+    fs::write(root.join("a/src/lib.rs"), "pub fn f() { let _ = 1; }\n").unwrap();
+    commit(root, "fix: tweak a");
+    let output = status_since(root);
+    assert!(
+        flagged(&output).is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn a_branch_change_without_a_changeset_fails_status_since() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    two_packages(root);
     // A changeset already on main belongs to an earlier change; it does not cover this branch's.
     fs::create_dir_all(root.join(".changeset")).unwrap();
     fs::write(

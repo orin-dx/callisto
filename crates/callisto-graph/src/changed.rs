@@ -61,7 +61,9 @@ pub fn changed_since_ref(
     let mut changed = ChangedSince::default();
     for path in &paths {
         if let Ok(inside) = path.strip_prefix(changesets_dir) {
-            if inside.extension().is_some_and(|ext| ext == "md")
+            // Only a direct child is a changeset the loader reads.
+            if inside.components().count() == 1
+                && inside.extension().is_some_and(|ext| ext == "md")
                 && let Some(id) = inside.file_stem().and_then(|stem| stem.to_str())
             {
                 changed.changesets.insert(id.to_owned());

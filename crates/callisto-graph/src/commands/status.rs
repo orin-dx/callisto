@@ -149,12 +149,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         let changed =
             crate::changed::changed_since_ref(&all_packages, ws.git_access(), since, &ws.config.changesets_dir)?;
         // Only a changeset added or edited since the ref, or a bump inferred from commits, accounts for a change.
-        let inferred: std::collections::BTreeSet<&PackageId> = plan
-            .iter()
-            .flat_map(|plan| &plan.bumps)
-            .filter(|bump| matches!(bump.reason, Some(callisto_model::BumpReason::Inference { .. })))
-            .map(|bump| &bump.package)
-            .collect();
+        let inferred: std::collections::BTreeSet<&PackageId> = plan.iter().flat_map(|plan| &plan.inferred).collect();
         for id in changed.packages {
             let named = pending
                 .get(&id)
