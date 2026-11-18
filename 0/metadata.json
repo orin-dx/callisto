@@ -1,0 +1,130 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QZVT5YAVQMSJQN03JMHTE0",
+  "session_id": "a13aa0e4-0339-4110-b86c-f2ef9e9bbb48",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:49:35.157532Z",
+  "branch": "worktree-wp-l-publish-isolation",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "6bc44e833be4",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 11542,
+    "cache_read_tokens": 2628935,
+    "output_tokens": 3283,
+    "api_call_count": 8,
+    "subagent_tokens": {
+      "input_tokens": 40,
+      "cache_creation_tokens": 565991,
+      "cache_read_tokens": 8755432,
+      "output_tokens": 17246,
+      "api_call_count": 17
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 410,
+    "cache_creation_tokens": 568017,
+    "cache_read_tokens": 35887271,
+    "output_tokens": 88003,
+    "api_call_count": 193,
+    "subagent_tokens": {
+      "input_tokens": 498,
+      "cache_creation_tokens": 2190171,
+      "cache_read_tokens": 81936322,
+      "output_tokens": 231276,
+      "api_call_count": 240
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 15,
+    "layers": {
+      "betterleaks": 4,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 0,
+      "entropy": 9,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "summary": {
+    "intent": "Run Session 2 of the v1-alpha launch plan: ship WP D (init boundary: branch-name/YAML handling and workflow-only retry), J's first piece (twine OIDC env), and WP L (publish isolation: split workflows into credential-free package jobs and a credentialed execute job, sealed npm tarballs).",
+    "outcome": "WP D merged as PR #565 and J's first piece pushed as PR #569, both gated. WP L is implemented and committed in two signed commits (c847b7668 plus a mutant-test follow-up) with the gate green, but mutants have not been re-run, and it has not been pushed, linked to trail #459 or put through ci-pr; #569's docs/changeset are still pending.",
+    "learnings": {
+      "repo": [
+        "Generated workflow templates (simple_workflow.tmpl, matrix_workflow.tmpl) are rendered by init.rs, so WP D, L and J all edit the same files; the rules forbid stacking PRs, so later WPs must wait for the earlier one to merge.",
+        "callisto-model has its own Version and identity types (BranchName, CommitSha) re-exported via glob from identity.rs; use them rather than adding a semver dependency to the CLI.",
+        "Gate is by exit code: just pre-push, lint, doc-check, test, and just ci; mutation testing is cargo mutants --in-place --in-diff <diff> --test-tool nextest.",
+        "Error codes are scarce: new codes need lead approval, so existing ones were generalized (E304 for unsupported artifact owners, E306/E308/E309 for seal and build failures).",
+        "Commits must be signed with no session trailer and pushed with an explicit refspec, verified with git ls-remote; use EnterWorktree name=<wp>, never path=.",
+        "mutants.out*/ is now gitignored (mutants.out.old had been tracked).",
+        "cargo package -p a fails when a depends on an unpublished sibling crate of the same release; only the set-wise `cargo package -p a -p b --locked` verifies, so CI uses one credential-free package job and `cargo publish --no-verify`.",
+        "Trail findings are managed with `entire trail finding add/list/resolve`; trails link via `entire trail link <n> --base main` and `entire trail ci-pr`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry/npm.rs",
+          "line": 197,
+          "finding": "The npm adapter ignored its artifact-manifest argument and published from the checkout; L changes it to publish only the sealed tarball, re-hashed before publish."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/matrix.rs",
+          "line": 58,
+          "finding": "Matrix drops artifacts with unsupported owners (e.g. npm), causing release failure 'no entry for artifact slot', hence the E304 rejection on the workflow-only path."
+        },
+        {
+          "path": "crates/callisto-cli/src/render/mod.rs",
+          "line": 131,
+          "end_line": 136,
+          "finding": "render_init prints a [DRY-RUN] message whenever initialized is false, so the workflow-only report had to set initialized true on a real write."
+        },
+        {
+          "path": "docs/releasing.md",
+          "line": 64,
+          "finding": "Promised that native npm lifecycle hooks run unchanged; L breaks this (publish-time hooks no longer run), so it needed a Breaking/Action changeset."
+        }
+      ],
+      "workflow": [
+        "An independent reviewer subagent reading only the source caught real defects (false dry-run label, ignored user config, silently dropped flags) that the green gate missed.",
+        "Mutation testing surfaced 20 missed mutants in L's diff; tests were added for 18 and 2 were justified as equivalent.",
+        "Subagent hand-backs and peer messages are not user authority; their claims (e.g. the false D2 design assumption) were verified or routed to the lead for decisions.",
+        "BSD sed on macOS broke in-place edits with escapes; the Edit tool or python scripts run with -I were more reliable.",
+        "Builds were limited via CARGO_BUILD_JOBS and debug=0 to keep multiple worktrees tractable; the worktree target dir was removed to free space."
+      ]
+    },
+    "friction": [
+      "BSD sed quoting problems forced repeated retries on the test-assertion edits.",
+      "Worktree-entry and relocation prompts interrupted the run until the lead said to use EnterWorktree name=.",
+      "A stray nested J worktree and a duplicate branch (worktree-wp-j-twine-env2) had to be cleaned up.",
+      "Mutation runs lock the worktree, forcing serialized waiting before edits.",
+      "Yarn and bun could not be verified because corepack is absent and the npx fetch was denied by the auto-mode classifier; Verdaccio is also not installed.",
+      "The first J gate ran doc-check and test on unformatted code and had to be re-run after cargo fmt.",
+      "The design's per-crate cargo package assumption was false, which cost an implementer round trip."
+    ],
+    "open_items": [
+      "Re-run mutants on the L follow-up commit, then push L with an explicit refspec, link trail #459 and run entire trail ci-pr.",
+      "Run the Opus review fixes through final verification; L has not been pushed yet.",
+      "Update #569 (J) with the trusted-publishing docs, the explicit Node 22.14+/npm 11.5.1+ setup step, and a changeset; the rest of J (init templates, optional PYPI_TOKEN, crates.io auth step) is still pending.",
+      "Merge order: #569 merges only after L.",
+      "File the token-mapping fix (NPM_TOKEN/PYPI_TOKEN into .npmrc/TWINE_*) as its own PR after J; finding 01M7QS45H578BSRX6R84BFWJHA is filed.",
+      "Findings on trail #459 for publint/packed-content validation and npm staged publishing are filed but unimplemented.",
+      "The WP D PR body still lacks the sibling-sweep notes and `just ci` was not run for D.",
+      "Unverified: yarn and bun pack flags, `npm publish <tgz> --provenance`, glob attestation from a separate job, generated workflows on real GitHub Actions, and the Linux-only Verdaccio e2e file, which does not compile locally.",
+      "`credentials_needed_by` in runner.rs still lets pnpm, yarn and bun installs in `callisto version` see NPM_TOKEN.",
+      "`cargo package -p` runs from the workspace root, so nested cargo workspaces are not covered.",
+      "The tarball name and version check relies on tar reading package.json; a prepack that rewrites it after naming is caught only at confirmation."
+    ]
+  }
+}
