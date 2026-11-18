@@ -1,0 +1,100 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7RDETJ6F2QH5BYDQXWXTNHK",
+  "session_id": "a13aa0e4-0339-4110-b86c-f2ef9e9bbb48",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T22:47:01.839623Z",
+  "branch": "worktree-wp-l-publish-isolation",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "README.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a523614316da",
+  "checkpoint_transcript_start": 2100,
+  "transcript_lines_at_start": 2100,
+  "compact_transcript_start": 271,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 6445,
+    "cache_read_tokens": 3799296,
+    "output_tokens": 3588,
+    "api_call_count": 10
+  },
+  "session_token_usage": {
+    "input_tokens": 552,
+    "cache_creation_tokens": 614863,
+    "cache_read_tokens": 55698491,
+    "output_tokens": 109098,
+    "api_call_count": 248,
+    "subagent_tokens": {
+      "input_tokens": 602,
+      "cache_creation_tokens": 4066183,
+      "cache_read_tokens": 108568477,
+      "output_tokens": 287275,
+      "api_call_count": 287
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 17,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 0,
+      "entropy": 9,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 22
+  },
+  "summary": {
+    "intent": "Get PR #578 (change callisto/186, release publish isolation) through review: fix two blocking findings, push, resolve them, then merge latest origin/main after #582 and others merged, and prepare for the token-mapping PR.",
+    "outcome": "Both blocking findings were fixed, mutation-tested, pushed (sha 9cb8496c) and resolved on callisto/186. The origin/main merge was started: a conflict in docs/architecture/release.md was resolved via a script and a merge commit attempted, but the post-merge gates, push, ls-remote check and sha report were not yet done.",
+    "learnings": {
+      "repo": [
+        "Release tooling has a hidden `callisto release package-cargo` subcommand that runs one `cargo package --locked` per owning Cargo workspace, reusing error codes E308 and E309.",
+        "Scoped npm tarball names carry a 12-char SHA-256 prefix so `@acme/lib` and `acme-lib` stay distinct through pack, seal and publish.",
+        "Release workflow templates and this repo's own workflow must be kept in agreement with policy rules; merges from main (#576, #577, #581, #582) require rechecking this.",
+        "Gates are run via `just pre-push`, `lint`, `doc-check`, `test`, `ci`, and success is judged by exit code.",
+        "Mutation testing uses `cargo mutants --in-place --in-diff <diff> --test-tool nextest` with debug info disabled and 4 jobs to speed it up.",
+        "Two mutants remain as known equivalents: `ReleasePackageCargoReport` schema_version -> 1 and an empty-slice `Vec::leak`.",
+        "Findings are resolved with `entire trail finding resolve callisto/186 <id> -m <msg>`; commits are signed, and pushes use an explicit refspec followed by ls-remote verification."
+      ],
+      "code": [
+        {
+          "path": "docs/architecture/release.md",
+          "line": 9,
+          "end_line": 13,
+          "finding": "Merge conflict region between #582's `targets`/`asset-name` and forge-inference wording and this branch's pack, seal, package-cargo and publish text; both sides must be kept."
+        }
+      ],
+      "workflow": [
+        "Verify pushes by comparing `git rev-parse HEAD` against `git ls-remote` for the explicit refspec.",
+        "Merge main without rebase or force-push when the lead requests it.",
+        "Long-running mutation runs go in the background with output logged to a file, then are inspected via grep for MISSED/TIMEOUT.",
+        "Report what was not re-run (e.g. `just ci` after the test-only second commit) rather than implying full coverage."
+      ]
+    },
+    "friction": [
+      "#578 conflicted with main in docs/architecture/release.md after #582 merged.",
+      "The `just ci` run was not repeated after the second commit, leaving a small verification gap.",
+      "The recorded modified file (README.md) does not match the release.md conflict resolution, so the merge's file changes are unclear from the transcript."
+    ],
+    "open_items": [
+      "Run just pre-push, lint, doc-check, test and ci on the merged tree, push with an explicit refspec, check ls-remote and report the sha.",
+      "Check that release workflow templates and policy rules still agree after #576, #577, #581 and #582 merged.",
+      "Verify the merge commit was created and signed; the transcript does not show the output.",
+      "Start the token-mapping PR after #578 merges, keeping it up to date with main before pushing.",
+      "Still unverified: generated workflows on real GitHub Actions, the `yarn` and `bun` pack flags, and anything against real registries.",
+      "The hidden `release package-cargo` subcommand is permanent surface area, flagged to the lead."
+    ]
+  }
+}
