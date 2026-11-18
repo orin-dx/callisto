@@ -174,8 +174,8 @@ pub enum DiagnosticCode {
     /// package and no commit inference releases it.
     ChangedWithoutChangeset,
     /// Release derivation selected a `[release].product` artifact's owner package without
-    /// selecting the product package itself, or found no forge destination, so the declared asset
-    /// has no release to upload into.
+    /// selecting the product package itself, so the owner's declared asset has no release to
+    /// upload into.
     ProductArtifactOwnerWithoutProduct,
     /// `callisto init` found no `origin` remote: it writes the config but skips the release
     /// workflow and shipping-binaries questions until one is added.
@@ -188,6 +188,9 @@ pub enum DiagnosticCode {
     /// under that name, so the package did not make it and does not take it as its last release. A package that
     /// was renamed declares its old tags with `previous-tag-templates`.
     TagOwnedByAnotherPackage,
+    /// A preview found neither `[release] forge-repository` nor a GitHub `origin`, so a declared artifact is bound to
+    /// no repository and would not be uploaded.
+    ArtifactWithoutForgeDestination,
 }
 
 #[cfg(test)]

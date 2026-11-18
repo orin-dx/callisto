@@ -233,7 +233,8 @@ fn a_preview_without_forge_repository_or_origin_still_plans() {
         text.contains("core-linux.tar.gz") && text.contains("plugin.wasm"),
         "{plan}"
     );
-    assert!(text.contains("no forge destination"), "{plan}");
+    assert!(text.contains("artifact-without-forge-destination"), "{plan}");
+    assert!(!text.contains("product-artifact-owner-without-product"), "{plan}");
 }
 
 // Owner validation does not depend on a destination: an artifact whose package is not released still fails a preview.

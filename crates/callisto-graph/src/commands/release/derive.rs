@@ -938,7 +938,7 @@ fn unbound_product_artifact_diagnostic(
     artifact: &crate::config::resolve::ProductArtifactConfig,
 ) -> Diagnostic {
     Diagnostic {
-        code: DiagnosticCode::ProductArtifactOwnerWithoutProduct,
+        code: DiagnosticCode::ArtifactWithoutForgeDestination,
         severity: DiagnosticSeverity::Warning,
         message: format!(
             "no forge destination (set `[release] forge-repository` or point origin at GitHub): the `{}` asset of product `{product}` is not bound and will not be uploaded",
