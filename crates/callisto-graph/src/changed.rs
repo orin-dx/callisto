@@ -23,6 +23,49 @@ pub fn package_paths(pkg: &Package) -> Vec<PathBuf> {
     set.into_iter().collect()
 }
 
+/// The packages with a file changed between where `since` and `HEAD` diverged and the working tree, outside
+/// `changesets_dir`. A file belongs to the package whose directory holds it most closely. Two git processes, however
+/// many packages there are.
+pub fn changed_since_ref(
+    packages: &[&Package],
+    git: &GitAccess<'_>,
+    since: &str,
+    changesets_dir: &Path,
+) -> Result<BTreeSet<PackageId>, GraphError> {
+    let run = |args: &[&str]| -> Result<Option<String>, GraphError> {
+        let output = git.runner().run("git", args, git.root()).map_err(VcsError::from)?;
+        Ok(output.success().then_some(output.stdout))
+    };
+    let target = format!("{since}^{{commit}}");
+    let base = run(&["merge-base", &target, "HEAD"])?.ok_or_else(|| {
+        GraphError::Vcs(VcsError::RefNotFound {
+            ref_name: since.to_string(),
+        })
+    })?;
+    let diff = run(&["diff", "--name-only", "-z", "--relative", base.trim(), "--"])?
+        .ok_or_else(|| GraphError::Vcs(VcsError::Git(format!("`git diff` against `{}` failed", base.trim()))))?;
+
+    let dirs: Vec<(PathBuf, &PackageId)> = packages
+        .iter()
+        .flat_map(|pkg| package_paths(pkg).into_iter().map(move |dir| (dir, &pkg.id)))
+        .map(|(dir, id)| (if dir == Path::new(".") { PathBuf::new() } else { dir }, id))
+        .collect();
+    let mut touched = BTreeSet::new();
+    for path in diff.split('\0').filter(|path| !path.is_empty()).map(Path::new) {
+        if path.starts_with(changesets_dir) {
+            continue;
+        }
+        let owner = dirs
+            .iter()
+            .filter(|(dir, _)| path.starts_with(dir))
+            .max_by_key(|(dir, _)| dir.components().count());
+        if let Some((_, id)) = owner {
+            touched.insert((*id).clone());
+        }
+    }
+    Ok(touched)
+}
+
 /// Whether each of `packages` changed since its last tag: a directory of the package holds different files than it did
 /// at the tag, or its tracked files have uncommitted changes. An untagged package counts as changed. A change that was
 /// made and then reverted leaves the package as it was released, so it is not a change.
