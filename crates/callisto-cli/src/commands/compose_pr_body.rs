@@ -34,8 +34,8 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
                 path: Some(path.clone()),
             })?;
             let mut preview = callisto_graph::release_preview::ReleasePreview::from_json(&text).map_err(|detail| {
-                CliError::ReleasePrArgJsonInvalid {
-                    flag: "preview",
+                CliError::ReleaseJsonInvalid {
+                    path: path.display().to_string(),
                     detail,
                 }
             })?;

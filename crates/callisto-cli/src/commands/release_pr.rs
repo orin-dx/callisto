@@ -21,7 +21,7 @@ use crate::cli::{
     GlobalArgs, OutputFormat, ReleasePrArgs, ReleasePrCommitPlanArgs, ReleasePrDecideArgs, ReleasePrVerifyArgs,
 };
 use crate::error::CliError;
-use crate::io::{read_json_input, OutputFile, OutputKind};
+use crate::io::{JsonInput, OutputFile, OutputKind};
 use crate::output::{emit_line, emit_report};
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
@@ -56,16 +56,16 @@ where
     T::deserialize(deserializer).map(Some)
 }
 
-fn read_decision_arg(arg: &str) -> Result<ReleasePrDecisionWireV2, CliError> {
-    let input: ReleasePrDecisionInput = read_json_input("decision", arg)?;
+fn read_decision_arg(origin: JsonInput) -> Result<ReleasePrDecisionWireV2, CliError> {
+    let input: ReleasePrDecisionInput = origin.read("decision")?;
     match (&input.command, input.dry_run) {
         (None, None) => {}
         (Some(command), Some(_)) if command == <ReleasePrDecideReport as callisto_model::Report>::COMMAND => {}
         _ => {
-            return Err(CliError::ReleasePrArgJsonInvalid {
-                flag: "decision",
-                detail: "report metadata must include command=\"release-pr decide\" and a boolean dryRun".into(),
-            });
+            return Err(origin.invalid(
+                "decision",
+                "report metadata must include command=\"release-pr decide\" and a boolean dryRun".into(),
+            ));
         }
     }
     Ok(ReleasePrDecisionWireV2 {
@@ -77,9 +77,9 @@ fn read_decision_arg(arg: &str) -> Result<ReleasePrDecisionWireV2, CliError> {
 }
 
 fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let decision_wire = read_decision_arg(&args.decision)?;
+    let decision_wire = read_decision_arg(JsonInput::from_arg(&args.decision, global))?;
     let decision = ReleasePrDecisionV2::from_wire(decision_wire)?;
-    let snapshot_wire: ReleasePrSnapshotWireV2 = read_json_input("snapshot", &args.snapshot)?;
+    let snapshot_wire: ReleasePrSnapshotWireV2 = JsonInput::from_arg(&args.snapshot, global).read("snapshot")?;
     let snapshot = ReleasePrSnapshotV2::from_wire(snapshot_wire)?;
     match args.applied_head {
         Some(head) => decision.verify_snapshot_after_update(&snapshot, &CommitSha::parse(&head)?)?,
@@ -97,7 +97,7 @@ fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 }
 
 fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let snapshot_wire: ReleasePrSnapshotWireV2 = read_json_input("snapshot", &args.snapshot)?;
+    let snapshot_wire: ReleasePrSnapshotWireV2 = JsonInput::from_arg(&args.snapshot, global).read("snapshot")?;
     let snapshot = ReleasePrSnapshotV2::from_wire(snapshot_wire)?;
     let repository =
         GitHubRepository::parse(&args.repository).map_err(|_error| ReleasePrDecisionError::InvalidRepository {
@@ -192,10 +192,13 @@ fn render_decision(decision: &ReleasePrDecisionV2) -> Result<(), CliError> {
 mod tests {
     use clap::Parser;
 
-    use super::read_decision_arg;
     use crate::cli::{Cli, Command, ReleasePrArgs};
     use crate::error::CliError;
-    use crate::io::read_json_input;
+    use crate::io::JsonInput;
+
+    fn read_decision_arg(text: &str) -> Result<callisto_model::ReleasePrDecisionWireV2, CliError> {
+        super::read_decision_arg(JsonInput::Inline(text.to_owned()))
+    }
 
     fn decision_json() -> serde_json::Value {
         serde_json::json!({
@@ -285,7 +288,9 @@ mod tests {
     /// error nor `CliError::Other`.
     #[test]
     fn read_json_input_reports_typed_error_for_malformed_json() {
-        let err = read_json_input::<serde_json::Value>("snapshot", "{not json").unwrap_err();
+        let err = JsonInput::Inline("{not json".to_owned())
+            .read::<serde_json::Value>("snapshot")
+            .unwrap_err();
         match err {
             CliError::ReleasePrArgJsonInvalid { flag, detail } => {
                 assert_eq!(flag, "snapshot");
