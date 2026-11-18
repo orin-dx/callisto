@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use callisto_manifests::read_identity;
 use callisto_model::vcs::GitAccess;
-use callisto_model::{Ecosystem, ManifestFormat, NativeName, Package};
+use callisto_model::{normalize_pypi_project_name, Ecosystem, ManifestFormat, Package};
 
 use crate::commands::git_batch::{batch_blobs, BatchBlob};
 use crate::error::GraphError;
@@ -82,9 +82,9 @@ fn declares(
     format: ManifestFormat,
     file_name: &str,
 ) -> Result<bool, GraphError> {
-    // Registry-equivalent names may be spelled with other separators, so search the first word.
+    // A normalized Python name may be spelled with other separators, so search its first word.
     let needle = match ecosystem {
-        Ecosystem::Pypi | Ecosystem::Cargo => name
+        Ecosystem::Pypi => name
             .split(['-', '_', '.'])
             .find(|word| !word.is_empty())
             .unwrap_or(name),
@@ -98,11 +98,20 @@ fn declares(
         let declared = read_identity(format, &text, &path)
             .ok()
             .and_then(|identity| identity.name);
-        if declared.is_some_and(|declared| NativeName::new(ecosystem, &declared) == NativeName::new(ecosystem, name)) {
+        if declared.is_some_and(|declared| names_equal(ecosystem, &declared, name)) {
             return Ok(true);
         }
     }
     Ok(false)
+}
+
+/// Whether two declared names are one: PyPI names by PEP 503, every other ecosystem by spelling, as a default tag
+/// `{name}@` carries the literal spelling.
+fn names_equal(ecosystem: Ecosystem, left: &str, right: &str) -> bool {
+    match ecosystem {
+        Ecosystem::Pypi => normalize_pypi_project_name(left) == normalize_pypi_project_name(right),
+        _ => left == right,
+    }
 }
 
 /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.
@@ -124,9 +133,7 @@ fn first_manifest_declares_at(
     let declared = read_identity(manifest.format, &text, path)
         .ok()
         .and_then(|identity| identity.name);
-    Ok(declared.is_some_and(|declared| {
-        NativeName::new(manifest.ecosystem(), &declared) == NativeName::new(manifest.ecosystem(), name)
-    }))
+    Ok(declared.is_some_and(|declared| names_equal(manifest.ecosystem(), &declared, name)))
 }
 
 /// The one package among `candidates` that owned the bare name `name` at `rev`, if exactly one did.
@@ -159,7 +166,7 @@ pub(crate) fn sole_owner_at<'p>(
         declaring.iter().any(|ecosystem| {
             identity
                 .native_name(&pkg.id, *ecosystem)
-                .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))
+                .is_some_and(|native| names_equal(*ecosystem, native, name))
         })
     });
     let first = holders.next();
@@ -188,7 +195,7 @@ pub(crate) fn may_have_held_name_at(
     Ok(declaring.iter().any(|ecosystem| {
         identity
             .native_name(&pkg.id, *ecosystem)
-            .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))
+            .is_some_and(|native| names_equal(*ecosystem, native, name))
     }))
 }
 
@@ -245,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_declares_a_name_its_registry_treats_as_equal() {
+    fn a_manifest_declares_a_name_equal_by_the_ecosystems_history_rule() {
         let dir = repository();
         let git = GitAccess::new(dir.path(), &GitRunner);
         let declares = |name, ecosystem, format, file| declares(&git, "HEAD~1", name, ecosystem, format, file).unwrap();
@@ -262,13 +269,13 @@ mod tests {
             "pyproject.toml"
         ));
         assert!(declares(
-            "Foo-Bar",
+            "foo_bar",
             Ecosystem::Cargo,
             ManifestFormat::CargoToml,
             "Cargo.toml"
         ));
         assert!(!declares(
-            "foo-baz",
+            "foo-bar",
             Ecosystem::Cargo,
             ManifestFormat::CargoToml,
             "Cargo.toml"
@@ -276,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn ownership_of_a_bare_name_follows_registry_equivalence() {
+    fn ownership_of_a_bare_name_follows_the_ecosystems_history_rule() {
         let dir = repository();
         let locator = crate::locate::IgnoreWalkLocator::new(dir.path());
         let ws = crate::Workspace::load(dir.path().to_path_buf(), &locator, &GitRunner).expect("load");
@@ -292,18 +299,41 @@ mod tests {
         // The package's own manifest path held the name at the second commit.
         assert!(first_manifest_declares_at(&git, "HEAD", python, "my-pkg", &mut rosters).unwrap());
         assert!(!first_manifest_declares_at(&git, "HEAD", python, "my-other", &mut rosters).unwrap());
-        assert!(first_manifest_declares_at(&git, "HEAD", cargo, "Foo-Bar", &mut rosters).unwrap());
-        assert!(!first_manifest_declares_at(&git, "HEAD", cargo, "foo-baz", &mut rosters).unwrap());
+        assert!(first_manifest_declares_at(&git, "HEAD", cargo, "foo_bar", &mut rosters).unwrap());
+        assert!(!first_manifest_declares_at(&git, "HEAD", cargo, "foo-bar", &mut rosters).unwrap());
 
         // At the first commit the PyPI manifest sat elsewhere, so ownership falls back to the declaring roster.
         let both = [python, cargo];
         let owner = sole_owner_at(&git, "HEAD~1", "my-pkg", &both, &ws.identity, &mut rosters).unwrap();
         assert_eq!(owner.map(|p| p.id.clone()), Some(python.id.clone()));
-        let owner = sole_owner_at(&git, "HEAD~1", "foo-bar", &both, &ws.identity, &mut rosters).unwrap();
+        let owner = sole_owner_at(&git, "HEAD~1", "foo_bar", &both, &ws.identity, &mut rosters).unwrap();
         assert_eq!(owner.map(|p| p.id.clone()), Some(cargo.id.clone()));
 
         assert!(may_have_held_name_at(&git, "HEAD~1", "my-pkg", python, &ws.identity, &mut rosters).unwrap());
         assert!(!may_have_held_name_at(&git, "HEAD~1", "my-pkg", cargo, &ws.identity, &mut rosters).unwrap());
         assert!(may_have_held_name_at(&git, "HEAD~1", "nobody", python, &ws.identity, &mut rosters).unwrap());
+    }
+
+    /// A default tag `foo-bar@` names the literal spelling: a commit holding Cargo `foo_bar` beside npm `foo-bar` made
+    /// that tag for npm, so a Cargo package later renamed `foo-bar` does not inherit it.
+    #[test]
+    fn a_cargo_name_that_differs_only_by_separator_does_not_own_a_tag_of_the_literal_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init_repo(root);
+        write(root, "c/Cargo.toml", &cargo_toml("foo_bar"));
+        write(root, "n/package.json", r#"{"name":"foo-bar","version":"1.0.0"}"#);
+        commit(root, "both");
+        git(root, &["rm", "-rq", "n"]);
+        write(root, "c/Cargo.toml", &cargo_toml("foo-bar"));
+        commit(root, "npm removed, cargo renamed");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &GitRunner).expect("load");
+        let git = GitAccess::new(root, &GitRunner);
+        let cargo = ws.graph.packages().next().expect("one package");
+        let mut rosters = Rosters::default();
+
+        let held = may_have_held_name_at(&git, "HEAD~1", "foo-bar", cargo, &ws.identity, &mut rosters).unwrap();
+        assert!(!held, "the earlier commit's `foo-bar` was npm");
     }
 }
