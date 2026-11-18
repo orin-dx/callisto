@@ -102,9 +102,12 @@ fn a_new_note_with_an_archived_name_is_archived_under_a_free_name() {
     add_changeset(root, "feature", "patch");
     version(root);
     assert_eq!(manifest_version(root), "1.1.0-beta.1");
+    add_changeset(root, "feature", "major");
+    version(root);
+    assert_eq!(manifest_version(root), "2.0.0-beta.0");
     assert_eq!(
         markdown_in(&root.join(".changeset/pre")),
-        ["feature-2.md", "feature.md"]
+        ["feature-2.md", "feature-3.md", "feature.md"]
     );
     assert!(fs::read_to_string(root.join(".changeset/pre/feature.md"))
         .unwrap()
@@ -129,6 +132,30 @@ fn an_interrupted_exit_run_is_refused_while_the_archive_is_pending() {
     let stderr = String::from_utf8_lossy(&rerun.stderr);
     assert!(!rerun.status.success(), "{stderr}");
     assert!(stderr.contains("E121"), "{stderr}");
+
+    // The run had already deleted the archive from disk: `HEAD` still holds it, so the run is still refused.
+    fs::remove_dir_all(root.join(".changeset/pre")).unwrap();
+    let rerun = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    let stderr = String::from_utf8_lossy(&rerun.stderr);
+    assert!(!rerun.status.success(), "{stderr}");
+    assert!(stderr.contains("E121"), "{stderr}");
+}
+
+/// A version edited by hand with nothing pending, archive included, is not an interrupted run.
+#[test]
+fn a_hand_edited_version_with_nothing_pending_is_not_refused() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    let exit = callisto(root, &["pre", "exit"]);
+    assert!(exit.status.success(), "{}", String::from_utf8_lossy(&exit.stderr));
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "exit pre"]);
+    let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    fs::write(root.join("Cargo.toml"), manifest.replace("1.0.0", "1.0.5")).unwrap();
+
+    let run = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(!stderr.contains("E121"), "{stderr}");
 }
 
 #[test]
