@@ -1,0 +1,23 @@
+{
+  "tool_use_id": "toolu_01UC2jzfPdfk9ysGDcQNc7q6",
+  "agent_id": "a63e7f6b06ada20c0",
+  "subagent_type": "general-purpose",
+  "task_description": "Implement WP L publish isolation",
+  "files": [
+    ".github/actions/callisto-action/scripts/run-release.sh",
+    "README.md",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+    "crates/callisto-graph/src/templates/simple_workflow.tmpl",
+    "crates/callisto-model/src/ecosystem.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 424,
+    "cache_creation_tokens": 1501918,
+    "cache_read_tokens": 71448462,
+    "output_tokens": 198150,
+    "api_call_count": 206
+  },
+  "started_at": "2026-11-18T09:20:23.875356-08:00",
+  "completed_at": "2026-11-18T09:42:51.673769-08:00"
+}
