@@ -662,12 +662,12 @@ fn test_bump_target_exit_mode_finalizes_to_stable() {
     );
 
     // PreMode::Exit: the release cycle is being finalized.
-    let pre = callisto_model::format::PreState {
-        mode: callisto_model::format::PreMode::Exit,
-        tag: "alpha".to_string(),
+    let pre = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Exit,
+        "alpha".to_string(),
         initial_versions,
-        changesets: Vec::new(),
-    };
+        Vec::new(),
+    );
 
     let groups = GroupTable::default();
     let cfg = CascadeConfig {
@@ -857,12 +857,12 @@ fn test_prerelease_cascade_stable_spec_out_of_range_triggers_cascade() {
         Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
     );
 
-    let pre = callisto_model::format::PreState {
-        mode: callisto_model::format::PreMode::Pre,
-        tag: "alpha".to_string(),
+    let pre = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Pre,
+        "alpha".to_string(),
         initial_versions,
-        changesets: Vec::new(),
-    };
+        Vec::new(),
+    );
 
     // D is seeded with Major; in PreMode::Pre it bumps to 2.0.0-alpha.0.
     let mut seed = BTreeMap::new();
@@ -943,12 +943,12 @@ fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
         "pkg-a".to_string(),
         Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
     );
-    let pre = callisto_model::format::PreState {
-        mode: callisto_model::format::PreMode::Pre,
-        tag: "next".to_string(),
+    let pre = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Pre,
+        "next".to_string(),
         initial_versions,
-        changesets: Vec::new(),
-    };
+        Vec::new(),
+    );
 
     let groups = GroupTable::default();
     let cfg = CascadeConfig {

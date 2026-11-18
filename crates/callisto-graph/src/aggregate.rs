@@ -414,7 +414,8 @@ where
         .unwrap_or(false);
     // Ids already recorded in pre.json still resolve for severity, but are not re-added to the changelog.
     let already_recorded: std::collections::HashSet<&str> = pre
-        .map(|s| s.changesets.iter().map(String::as_str).collect())
+        .and_then(|s| s.changesets())
+        .map(|ids| ids.iter().map(String::as_str).collect())
         .unwrap_or_default();
 
     for cs in loaded {

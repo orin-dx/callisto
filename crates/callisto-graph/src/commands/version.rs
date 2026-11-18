@@ -376,9 +376,11 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
             (None, Some(ws.config.pre_json_path()))
         } else {
             // Records ids aggregate() determined are newly-seen this run; see Aggregation::new_pre_changesets.
-            for id in &agg.new_pre_changesets {
-                if !state.changesets.iter().any(|s| s == id) {
-                    state.changesets.push(id.clone());
+            if let Some(recorded) = state.changesets_mut() {
+                for id in &agg.new_pre_changesets {
+                    if !recorded.iter().any(|s| s == id) {
+                        recorded.push(id.clone());
+                    }
                 }
             }
             (Some(state), None)

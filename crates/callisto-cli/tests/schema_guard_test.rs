@@ -235,7 +235,10 @@ fn pre_state_schema_validates_native_version_strings() {
             ),
         ],
     );
-    state.changesets.push("quiet-widget".into());
+    state
+        .changesets_mut()
+        .expect("entering produces a v2 state")
+        .push("quiet-widget".into());
     for state in [state.clone(), state.exiting()] {
         let payload = serde_json::to_value(state).unwrap();
         assert_eq!(payload["initialVersions"]["pypi/widget-py"], "1.2.3rc1");
