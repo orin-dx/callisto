@@ -137,26 +137,41 @@ fn persisted(eco: Eco, root: &Path) -> String {
     fs::read_to_string(root.join(eco.app_manifest())).unwrap()
 }
 
-#[test]
-fn a_requirement_the_aligned_version_satisfies_is_never_widened_to_the_provisional_version() {
-    for (eco, expected) in [(Eco::Cargo, "<=1.0.1"), (Eco::Npm, "<=1.0.1"), (Eco::Python, "<=2.0.0")] {
-        let dir = workspace(eco, "<=2.0.0");
+/// `range` admits the aligned 1.0.1 and forbids the provisional 2.0.1, so nothing needs rewriting and `app` is not released.
+fn assert_untouched(range: &str) {
+    for eco in ECOSYSTEMS {
+        let dir = workspace(eco, range);
+        let before = persisted(eco, dir.path());
         let out = patch_lib_b(eco, dir.path());
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-        let after = persisted(eco, dir.path());
-        assert!(after.contains(expected), "{}: {after}", eco.prefix());
         assert!(
-            !after.contains("2.0.1"),
-            "{}: the provisional version leaked:\n{after}",
+            out.status.success(),
+            "{}: {}",
+            eco.prefix(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            persisted(eco, dir.path()),
+            before,
+            "{}: a requirement the aligned version satisfies is left as written and its dependent is not released",
             eco.prefix()
         );
     }
 }
 
 #[test]
+fn a_requirement_the_aligned_version_satisfies_is_never_widened_to_the_provisional_version() {
+    assert_untouched("<=2.0.0");
+}
+
+#[test]
 fn a_requirement_that_admits_the_aligned_version_is_not_rejected_for_the_provisional_version() {
-    for eco in ECOSYSTEMS {
-        let dir = workspace(eco, "<2.0.1");
+    assert_untouched("<2.0.1");
+}
+
+#[test]
+fn a_pin_the_aligned_version_leaves_behind_is_rewritten_to_it() {
+    for (eco, pin) in [(Eco::Cargo, "=2.0.0"), (Eco::Npm, "2.0.0"), (Eco::Python, "==2.0.0")] {
+        let dir = workspace(eco, pin);
         let out = patch_lib_b(eco, dir.path());
         assert!(
             out.status.success(),
@@ -165,9 +180,10 @@ fn a_requirement_that_admits_the_aligned_version_is_not_rejected_for_the_provisi
             String::from_utf8_lossy(&out.stderr)
         );
         let after = persisted(eco, dir.path());
+        assert!(after.contains("1.0.1"), "{}: {after}", eco.prefix());
         assert!(
-            after.contains("<2.0.1"),
-            "{}: the range stays as written:\n{after}",
+            !after.contains("2.0.1"),
+            "{}: the provisional version leaked:\n{after}",
             eco.prefix()
         );
     }

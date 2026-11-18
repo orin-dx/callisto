@@ -515,6 +515,18 @@ fn bump_target<D: DependencyResolver>(
     sev: Severity,
     input: &CascadeInput<'_, D>,
 ) -> Result<Version, GraphError> {
+    // A fixed-group member's own bump is never visible: its target is always the group's aligned version.
+    if let Some(group) = input.groups.fixed_group_of(id) {
+        let live: Vec<PackageId> = group
+            .package_members()
+            .filter(|member| input.base.contains_key(*member))
+            .cloned()
+            .collect();
+        if !live.is_empty() {
+            return crate::groups::fixed_group_target(&group.name, &live, input.base, sev, input.tags, input.pre);
+        }
+    }
+
     let base = input.base.get(id).cloned().ok_or_else(|| {
         GraphError::Manifest(callisto_model::ManifestError::MissingField {
             path: PathBuf::from(id.name()),
