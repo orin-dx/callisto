@@ -167,6 +167,25 @@ impl crate::report::Report for ReleaseBuildPythonReport {
     }
 }
 
+/// `callisto release package-cargo --format json` report: the crates packaged.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasePackageCargoReport {
+    pub built: Vec<String>,
+}
+
+impl crate::report::Report for ReleasePackageCargoReport {
+    const COMMAND: &'static str = "release package-cargo";
+
+    fn schema_version(&self) -> u32 {
+        crate::SCHEMA_VERSION
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
 /// `callisto release pack-npm --format json` report: the npm packages packed.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -193,6 +212,21 @@ mod tests {
     use super::super::test_support::test_intent;
     use super::*;
     use crate::release::*;
+
+    #[test]
+    fn the_package_cargo_report_carries_the_shared_schema_version_and_the_crates() {
+        use crate::report::Report;
+        let report = ReleasePackageCargoReport {
+            built: vec!["a".to_owned()],
+        };
+        assert_eq!(report.schema_version(), crate::SCHEMA_VERSION);
+        assert!(report.diagnostics().is_empty());
+        assert_eq!(ReleasePackageCargoReport::COMMAND, "release package-cargo");
+        assert_eq!(
+            serde_json::to_value(&report).unwrap(),
+            serde_json::json!({"built": ["a"]})
+        );
+    }
 
     #[test]
     fn the_pack_npm_report_carries_the_shared_schema_version_and_the_built_packages() {

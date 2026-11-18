@@ -120,6 +120,37 @@ impl ValidatedReleaseIntent<'_> {
         Ok(packed.into_iter().map(|(name, _)| name).collect())
     }
 
+    /// Packages every crate of the intent with `cargo package --locked`, one call per owning Cargo workspace and run
+    /// from that workspace's directory, and returns the crates packaged.
+    ///
+    /// This is the credential-free job's work: the executing job then publishes with `--no-verify`.
+    pub fn package_cargo_crates(&self) -> Result<Vec<String>, GraphError> {
+        let context = self.context();
+        let mut workspaces: BTreeMap<std::path::PathBuf, std::collections::BTreeSet<String>> = BTreeMap::new();
+        for (id, prepared) in &self.prepared.operations {
+            let PreparedOperation::RegistryPublish(operation) = prepared else {
+                continue;
+            };
+            let publishes_crate = matches!(id.role, callisto_model::ReleaseOperationRole::RegistryPublish { .. })
+                && id.package.ecosystem() == callisto_model::Ecosystem::Cargo;
+            if publishes_crate {
+                let workspace =
+                    crate::commands::registry_argv::cargo_workspace_dir(&self.prepared.root, &operation.package_dir)?;
+                workspaces
+                    .entry(workspace)
+                    .or_default()
+                    .insert(operation.package_name.clone());
+            }
+        }
+        let mut packaged = Vec::new();
+        for (workspace, crates) in workspaces {
+            let crates: Vec<String> = crates.into_iter().collect();
+            super::provider::package_cargo_workspace(&context, &workspace, &crates)?;
+            packaged.extend(crates);
+        }
+        Ok(packaged)
+    }
+
     fn prepared_operation(&self, id: &ReleaseOperationId) -> Result<&PreparedOperation, GraphError> {
         self.prepared
             .operations

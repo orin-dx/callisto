@@ -171,6 +171,21 @@ fn verify_cargo_ondisk_version(
     Ok(())
 }
 
+/// `cargo package --locked -p <crate>...` for the crates of one Cargo workspace, run from that workspace's directory.
+/// One call for the whole set: a crate cannot resolve an unpublished sibling of the same release on its own.
+pub fn cargo_package_argv(workspace_dir: &Path, crates: &[String]) -> Argv {
+    let mut args = vec!["package".to_string(), "--locked".to_string()];
+    for name in crates {
+        args.push("-p".to_string());
+        args.push(name.clone());
+    }
+    Argv {
+        program: "cargo".to_string(),
+        args,
+        cwd: workspace_dir.to_path_buf(),
+    }
+}
+
 // ------------------------------------------------------------------ npm
 
 /// The npm-compatible package manager a workspace uses, detected from

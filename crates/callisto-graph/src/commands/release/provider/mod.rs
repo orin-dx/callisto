@@ -20,7 +20,7 @@ use super::binding::{recheck_git_remote, PreparedGitRemote, PreparedRegistryBind
 use super::release_artifacts::VerifiedArtifactManifest;
 
 pub(crate) use pypi_files::{seal_distributions, PypiFileSets};
-pub(crate) use registry::{build_python_into, pack_npm_into};
+pub(crate) use registry::{build_python_into, pack_npm_into, package_cargo_workspace};
 
 pub(crate) mod artifact;
 pub(crate) mod forge;

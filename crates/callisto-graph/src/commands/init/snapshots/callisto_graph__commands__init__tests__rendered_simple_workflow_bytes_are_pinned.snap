@@ -66,9 +66,7 @@ jobs:
         if: steps.plan.outputs.has_cargo == 'true'
         run: |
           set -euo pipefail
-          args=()
-          while IFS= read -r name; do args+=(-p "$name"); done < <(jq -r '[.operations[].id | select(.role.kind == "registryPublish" and (.package | startswith("cargo/"))) | .package | ltrimstr("cargo/")] | unique[]' "$RUNNER_TEMP/release-handoff/release-intent.json")
-          cargo package --locked "${args[@]}"
+          callisto release package-cargo --intent "$RUNNER_TEMP/release-handoff/release-intent.json"
       - name: Build the Python distributions
         if: steps.plan.outputs.has_python == 'true'
         run: |

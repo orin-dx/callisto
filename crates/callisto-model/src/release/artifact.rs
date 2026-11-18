@@ -265,6 +265,21 @@ pub fn python_publishes(intent: &ReleaseIntentV1) -> Vec<(&ReleasePackageId, Str
     publishes
 }
 
+/// The versions the intent publishes to a Cargo registry.
+pub fn cargo_publishes(intent: &ReleaseIntentV1) -> Vec<(&ReleasePackageId, String)> {
+    let mut publishes: Vec<_> = intent
+        .operations
+        .iter()
+        .map(|operation| operation.id())
+        .filter(|id| id.package.ecosystem() == Ecosystem::Cargo)
+        .filter(|id| matches!(id.role, ReleaseOperationRole::RegistryPublish { .. }))
+        .map(|id| (&id.package, id.version.render().to_string()))
+        .collect();
+    publishes.sort();
+    publishes.dedup();
+    publishes
+}
+
 /// The versions the intent publishes to an npm registry, keyed by the npm package each publish uploads: the package of
 /// a registry publish, or the platform package of a platform publish.
 pub fn npm_publishes(intent: &ReleaseIntentV1) -> Vec<(&ReleasePackageId, String)> {
@@ -964,10 +979,14 @@ mod tests {
         }
     }
 
+    fn tgz(name: &str) -> String {
+        npm_tarball_filename(name, &Version::parse_for_ecosystem("1.0.0", Ecosystem::Npm).unwrap())
+    }
+
     fn npm_sets() -> Vec<DistributionSetV1> {
         vec![
-            npm_set("@s/cli", &["s-cli-1.0.0.tgz"]),
-            npm_set("@s/cli-linux-x64-gnu", &["s-cli-linux-x64-gnu-1.0.0.tgz"]),
+            npm_set("@s/cli", &[&tgz("@s/cli")]),
+            npm_set("@s/cli-linux-x64-gnu", &[&tgz("@s/cli-linux-x64-gnu")]),
         ]
     }
 
@@ -1012,13 +1031,18 @@ mod tests {
             Err(ArtifactManifestError::IncompleteDistributionSet)
         ));
         assert!(matches!(
-            seal(npm_set("@s/cli", &["s-cli-1.0.0.tgz", "extra-1.0.0.tgz"])),
+            seal(npm_set("@s/cli", &[&tgz("@s/cli"), "extra-1.0.0.tgz"])),
             Err(ArtifactManifestError::IncompleteDistributionSet)
         ));
-        for wrong in ["s-cli-1.0.1.tgz", "other-1.0.0.tgz", "s-cli-1.0.0.tar.gz"] {
+        for wrong in [
+            tgz("@s/cli").replace("-1.0.0", "-1.0.1"),
+            "other-1.0.0.tgz".to_owned(),
+            "s-cli-1.0.0.tar.gz".to_owned(),
+            "s-cli-1.0.0.tgz".to_owned(),
+        ] {
             assert!(
                 matches!(
-                    seal(npm_set("@s/cli", &[wrong])),
+                    seal(npm_set("@s/cli", &[&wrong])),
                     Err(ArtifactManifestError::ForeignDistributionFile)
                 ),
                 "{wrong}"
@@ -1036,7 +1060,7 @@ mod tests {
         let sealed = ArtifactManifestV1::with_distributions(
             &intent,
             vec![],
-            vec![full_set("demo"), npm_set("@s/cli", &["s-cli-1.0.0.tgz"])],
+            vec![full_set("demo"), npm_set("@s/cli", &[&tgz("@s/cli")])],
         );
         assert!(matches!(
             sealed,

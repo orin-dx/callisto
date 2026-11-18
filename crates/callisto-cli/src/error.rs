@@ -205,7 +205,7 @@ pub enum CliError {
     #[error("release intent publishes no {ecosystem} package; there is nothing to build or seal")]
     #[diagnostic(
         code(E308),
-        help("drop --seal-python and `release build-python` for an intent without a Python publish, or --seal-npm and `release pack-npm` for one without an npm publish")
+        help("drop --seal-python and `release build-python` for an intent without a Python publish, --seal-npm and `release pack-npm` for one without an npm publish, or `release package-cargo` for one without a crate publish")
     )]
     ReleaseNoSealablePublishes { ecosystem: &'static str },
 

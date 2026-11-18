@@ -42,6 +42,16 @@
       ]
     },
     {
+      "name": "callisto release package-cargo (hidden)",
+      "signature": "callisto release package-cargo [--source-root DIR] --intent FILE",
+      "description": "Runs `cargo package --locked -p <crate>...` for every crate the plan publishes, one call per owning Cargo workspace and from that workspace's directory, without registry credentials.",
+      "error_conditions": [
+        "--dry-run: E309.",
+        "Plan publishes no crate: E308.",
+        "A cargo package that fails: E164."
+      ]
+    },
+    {
       "name": "callisto release pack-npm (hidden)",
       "signature": "callisto release pack-npm [--source-root DIR] --intent FILE --artifact-dir DIR",
       "description": "Packs every npm publish in the plan, platform packages included, into the directory with its workspace's package manager, without registry credentials. The package's `prepack` and `prepare` scripts run here.",
@@ -218,7 +228,7 @@
     },
     {
       "id": "REL-PUB-02",
-      "criterion": "npm publish packs with the tool of the workspace that owns the package, then publishes the tarball with `npm`. The owner is the nearest directory at or above the package whose `package.json` declares `workspaces` or whose `pnpm-workspace.yaml` has a `packages` list, else for a package no workspace declares the nearest directory with a lockfile, else the root; a lockfile beside a package never moves it out of a declared workspace. The `npm view` observation and the publish run in that same directory, so one `.npmrc` governs what is looked for and what is published. A marker that cannot be inspected is an error, not `npm`. A `pnpm-workspace.yaml` alone, without a lockfile, selects pnpm. The pack runs in the package directory without registry credentials: `pnpm pack --pack-destination <dir>`, `yarn pack --out <dir>/%s-%v.tgz`, `bun pm pack --destination <dir>`, and otherwise `npm pack --pack-destination <dir>`; a platform package is always packed with `npm`. The pack must leave exactly one tarball named as `npm pack` names it for the package and version, or the run fails with E306. The publish is `npm publish <tarball> --ignore-scripts`, so only `prepack` and `prepare` run, in the pack, and `prepublishOnly`, `publish` and `postpublish` do not run. It appends `--tag <label>` for prerelease versions, where the label is the lowercase letters that start the first prerelease identifier (`1.0.0-beta.2` publishes under `beta`), or `next` when there are none or the word is `latest`, and `--access` and `--registry` when set. A stable version takes the registry default tag."
+      "criterion": "npm publish packs with the tool of the workspace that owns the package, then publishes the tarball with `npm`. The owner is the nearest directory at or above the package whose `package.json` declares `workspaces` or whose `pnpm-workspace.yaml` has a `packages` list, else for a package no workspace declares the nearest directory with a lockfile, else the root; a lockfile beside a package never moves it out of a declared workspace. The `npm view` observation and the publish run in that same directory, so one `.npmrc` governs what is looked for and what is published. A marker that cannot be inspected is an error, not `npm`. A `pnpm-workspace.yaml` alone, without a lockfile, selects pnpm. The pack runs in the package directory without registry credentials: `pnpm pack --pack-destination <dir>`, `yarn pack --out <dir>/%s-%v.tgz`, `bun pm pack --destination <dir>`, and otherwise `npm pack --pack-destination <dir>`; a platform package is always packed with `npm`. The pack must leave exactly one tarball whose `package.json` names the package and version, or the run fails with E306. It is staged as `<flattened name>-<version>.tgz`, and a scoped package carries a digest of its full name in that name, so `@acme/lib` and `acme-lib` at one version stay two files. The publish is `npm publish <tarball> --ignore-scripts`, so only `prepack` and `prepare` run, in the pack, and `prepublishOnly`, `publish` and `postpublish` do not run. It appends `--tag <label>` for prerelease versions, where the label is the lowercase letters that start the first prerelease identifier (`1.0.0-beta.2` publishes under `beta`), or `next` when there are none or the word is `latest`, and `--access` and `--registry` when set. A stable version takes the registry default tag."
     },
     {
       "id": "REL-PUB-03",
@@ -427,7 +437,7 @@
     },
     {
       "id": "REL-ERR-02",
-      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest`, `release execute`, `release build-python` or `release pack-npm` fails with `E217`, `E216`, `E218` or `E309` and writes nothing.",
+      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest`, `release execute`, `release build-python`, `release pack-npm` or `release package-cargo` fails with `E217`, `E216`, `E218` or `E309` and writes nothing.",
       "is_error_case": true
     },
     {

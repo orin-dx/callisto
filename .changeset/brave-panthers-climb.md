@@ -4,7 +4,7 @@ callisto-cli: minor
 
 **Generated release workflows publish only what a credential-free job built.** Package scripts, build backends and crate builds no longer run in the job that holds your registry tokens.
 
-- The publish job uploads exactly the Python files and npm tarballs a job without credentials built and sealed, and publishes crates with `cargo publish --no-verify` after that job compiled every crate of the release in one `cargo package --locked` call.
+- The publish job uploads exactly the Python files and npm tarballs a job without credentials built and sealed, and publishes crates with `cargo publish --no-verify` after that job compiled every crate of the release, one `cargo package --locked` call per Cargo workspace, including a workspace under a directory such as `native/` with no root manifest.
 - The simple workflow now has `version-pr`, `package` and `execute` jobs, and the build-matrix workflow gains `attest`, `package-cargo` and `pack-npm` jobs, so only `execute` holds secrets and only the attestation job holds an OIDC token without checking out your code.
 - npm packages are packed by their workspace's own package manager, so `workspace:` and `catalog:` ranges are rewritten in the published tarball.
 - A local `callisto release` still verifies crates and packs in place, with registry credentials withheld from the build.

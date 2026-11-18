@@ -24,7 +24,8 @@ use callisto_model::{
 
 use crate::cli::{
     GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseBuildPythonArgs, ReleaseCommandArgs,
-    ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePackNpmArgs, ReleasePendingArgs, ReleasePlanArgs,
+    ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePackNpmArgs, ReleasePackageCargoArgs, ReleasePendingArgs,
+    ReleasePlanArgs,
 };
 use crate::error::CliError;
 use crate::io::{read_json_file, OutputFile, OutputKind};
@@ -40,6 +41,7 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
         Some(ReleaseArgs::Inspect(args)) => inspect(args, global),
         Some(ReleaseArgs::BuildPython(args)) => build_python(args, global),
         Some(ReleaseArgs::PackNpm(args)) => pack_npm(args, global),
+        Some(ReleaseArgs::PackageCargo(args)) => package_cargo(args, global),
         Some(ReleaseArgs::ArtifactManifest(args)) => artifact_manifest(args, global),
         Some(ReleaseArgs::Execute(args)) => execute(args, global),
     }
@@ -422,6 +424,33 @@ fn pack_npm(args: ReleasePackNpmArgs, global: &GlobalArgs) -> Result<ExitCode, C
             built.join(", "),
             outdir.display()
         ))?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn package_cargo(args: ReleasePackageCargoArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    if global.dry_run {
+        return Err(CliError::ReleaseBuildDryRun {
+            command: "package-cargo",
+        });
+    }
+    let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
+    if callisto_model::cargo_publishes(&intent).is_empty() {
+        return Err(CliError::ReleaseNoSealablePublishes { ecosystem: "Cargo" });
+    }
+    let runner = CliCommandRunner;
+    let source_workspace = load_workspace(&source_global(global, args.source_root.as_deref()), &runner)?;
+    let root = source_workspace.root.clone();
+    let locator = IgnoreWalkLocator::new(&root);
+    let capability = validate_release_intent(&root, &locator, &runner, intent)?;
+    let built = capability.package_cargo_crates()?;
+    match global.format {
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &callisto_model::ReleasePackageCargoReport { built },
+            global.dry_run,
+        )?,
+        OutputFormat::Text => emit_line(&format!("Packaged crates {}", built.join(", ")))?,
     }
     Ok(ExitCode::SUCCESS)
 }

@@ -377,6 +377,27 @@ pub(crate) fn build_python_into(
     PypiRegistry::build_into(context, operation, outdir)
 }
 
+/// Compiles the crates of one Cargo workspace by packaging them in one call, with registry credentials withheld.
+pub(crate) fn package_cargo_workspace(
+    context: &ProviderContext<'_>,
+    workspace_dir: &std::path::Path,
+    crates: &[String],
+) -> Result<(), GraphError> {
+    let argv = registry_argv::cargo_package_argv(workspace_dir, crates);
+    let output = run_build_argv(context, &argv)?;
+    if output.exit_code != Some(0) {
+        return Err(GraphError::ReleaseCommand {
+            program: argv.program.clone(),
+            args: argv.args.clone(),
+            failure: CommandFailure::NonZeroExit {
+                exit_code: output.exit_code,
+                stderr: output.stderr,
+            },
+        });
+    }
+    Ok(())
+}
+
 /// Packs the tarball of an npm publish into `outdir`, for a pack job that seals it.
 pub(crate) fn pack_npm_into(
     context: &ProviderContext<'_>,

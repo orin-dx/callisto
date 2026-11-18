@@ -1176,8 +1176,9 @@ fn no_job_that_runs_project_code_holds_id_token_or_registry_secrets() {
                 }
             }
         }
-        // execute publishes crates with --no-verify, so a job without credentials must compile them all in one call,
-        // and execute must wait for it.
+        // execute publishes crates with --no-verify, so a job without credentials must compile them all, one call per
+        // Cargo workspace from that workspace's directory (the command groups them; a bare `cargo package` at the
+        // checkout root cannot), and execute must wait for it.
         let compiles_crates: Vec<&str> = jobs
             .iter()
             .filter(|(_, job)| {
@@ -1185,7 +1186,7 @@ fn no_job_that_runs_project_code_holds_id_token_or_registry_secrets() {
                     steps.iter().any(|step| {
                         step["run"]
                             .as_str()
-                            .is_some_and(|run| run.contains("cargo package --locked"))
+                            .is_some_and(|run| run.contains("callisto release package-cargo"))
                     })
                 })
             })
@@ -1196,6 +1197,18 @@ fn no_job_that_runs_project_code_holds_id_token_or_registry_secrets() {
             1,
             "{shape:?}: one job packages the crates: {compiles_crates:?}"
         );
+        for (name, job) in jobs {
+            for step in job["steps"].as_vec().expect("a job has steps") {
+                let run = step["run"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .replace("callisto release package-cargo", "");
+                assert!(
+                    !run.contains("cargo package"),
+                    "{shape:?}: {name:?} packages from one directory: {run}"
+                );
+            }
+        }
         let execute = &jobs[&yaml_rust2::Yaml::String("execute".to_owned())];
         let needs: Vec<&str> = match &execute["needs"] {
             yaml_rust2::Yaml::String(one) => vec![one.as_str()],

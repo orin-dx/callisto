@@ -860,14 +860,13 @@ const BUILD_REQUIREMENT: &str = "build==1.4.4";
 const TWINE_REQUIREMENT: &str = "twine==7.0.0";
 
 /// The simple workflow's package-job steps. They run project code (a build backend, `prepack`), so they hold no secret.
-/// Compiles every crate of the release in one invocation, so the executing job publishes with `--no-verify`.
+/// Compiles every crate of the release, one `cargo package` call per Cargo workspace, so the executing job publishes
+/// with `--no-verify`.
 const PACKAGE_CARGO_STEP: &str = "      - name: Package the crates
         if: steps.plan.outputs.has_cargo == 'true'
         run: |
           set -euo pipefail
-          args=()
-          while IFS= read -r name; do args+=(-p \"$name\"); done < <(jq -r '[.operations[].id | select(.role.kind == \"registryPublish\" and (.package | startswith(\"cargo/\"))) | .package | ltrimstr(\"cargo/\")] | unique[]' \"$RUNNER_TEMP/release-handoff/release-intent.json\")
-          cargo package --locked \"${args[@]}\"
+          callisto release package-cargo --intent \"$RUNNER_TEMP/release-handoff/release-intent.json\"
 ";
 
 const PACKAGE_PYTHON_STEP: &str = "      - name: Build the Python distributions

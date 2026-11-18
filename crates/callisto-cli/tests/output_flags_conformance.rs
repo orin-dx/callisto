@@ -60,6 +60,8 @@ const FLAGS: &[(&str, Role, &[&str])] = &[
     ("release pack-npm --source-root", Dir, &[]),
     ("release pack-npm --intent", Input, &[]),
     ("release pack-npm --artifact-dir", Dir, &[]),
+    ("release package-cargo --source-root", Dir, &[]),
+    ("release package-cargo --intent", Input, &[]),
     ("release artifact-manifest --intent", Input, &[]),
     ("release artifact-manifest --artifact-dir", Dir, &[]),
     (

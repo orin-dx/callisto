@@ -282,8 +282,8 @@ jobs:
           # A stuck run may need "execute" re-run days later; a short retention would force a full rerun.
           retention-days: 7
 
-  # No registry credentials: compiles every crate of the release (build scripts, proc macros) so that execute publishes
-  # them with --no-verify. One invocation, because a crate cannot resolve an unpublished sibling alone.
+  # No registry credentials: compiles every crate of the release (build scripts, proc macros), one `cargo package` call per
+  # Cargo workspace, so that execute publishes them with --no-verify.
   package-crates:
     name: Package every crate of the release
     needs: [plan, release-candidate]
@@ -295,7 +295,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: $/.github/actions/setup-callisto
+        with:
+          source: local
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
           ref: ${{ needs.release-candidate.outputs.release_source_sha }}
+          path: release-source
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -305,9 +314,7 @@ jobs:
       - name: Package the crates
         run: |
           set -euo pipefail
-          args=()
-          while IFS= read -r name; do args+=(-p "$name"); done < <(jq -r '[.operations[].id | select(.role.kind == "registryPublish" and (.package | startswith("cargo/"))) | .package | ltrimstr("cargo/")] | unique[]' "${RUNNER_TEMP}/release-intent/release-intent.json")
-          cargo package --locked "${args[@]}"
+          callisto release package-cargo --source-root "$GITHUB_WORKSPACE/release-source" --intent "${RUNNER_TEMP}/release-intent/release-intent.json"
 
   build-artifact:
     name: Build ${{ matrix.target }} from the intent-bound source tree

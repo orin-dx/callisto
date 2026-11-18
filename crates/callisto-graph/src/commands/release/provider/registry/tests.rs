@@ -1218,6 +1218,11 @@ fn publisher_environment_maps_only_the_selected_native_tool() {
     assert!(pypi_publisher_environment(None, None).is_empty());
 }
 
+/// The staged name of `name`'s tarball at 1.0.0.
+fn staged(name: &str) -> String {
+    callisto_model::npm_tarball_filename(name, &Version::parse("1.0.0", VersionGrammar::SemVer).unwrap())
+}
+
 /// Records every command, answers success, and writes the tarball a pack names into its destination as the real tools
 /// do. Commands run with credentials removed are listed apart.
 struct PackingRunner {
@@ -1328,7 +1333,7 @@ fn a_platform_package_is_packed_by_directory_with_npm_and_published_as_a_tarball
         );
         assert_eq!(publish.0, "npm");
         assert_eq!(publish.1[0], "publish");
-        assert!(publish.1[1].ends_with("s-cli-linux-x64-gnu-1.0.0.tgz"), "{publish:?}");
+        assert!(publish.1[1].ends_with(&staged("@s/cli-linux-x64-gnu")), "{publish:?}");
         assert_eq!(publish.1[2..], ["--ignore-scripts", "--access", "public"]);
         assert_eq!(publish.2, root.path().to_path_buf());
 
@@ -1377,7 +1382,7 @@ fn a_tarball_the_manager_named_its_own_way_is_accepted_when_its_manifest_matches
         let package = operation("npm", "@s/lib", "1.0.0");
         let out = tempfile::tempdir().unwrap();
         let tarball = NpmRegistry::pack_into(&context, &package, out.path()).unwrap();
-        assert_eq!(tarball, out.path().join("s-lib-1.0.0.tgz"));
+        assert_eq!(tarball, out.path().join(staged("@s/lib")));
     });
 }
 
@@ -1410,7 +1415,7 @@ fn a_sealed_tarball_is_published_without_packing() {
         let runner = PackingRunner::new("unused.tgz", "pkg", "1.0.0");
         let context = ProviderContext::new(root.path(), &runner, None);
         let package = operation("npm", "@s/cli", "1.0.0");
-        let sealed = SealedNpm::new("npm/@s/cli", &[("s-cli-1.0.0.tgz", "sealed bytes")]);
+        let sealed = SealedNpm::new("npm/@s/cli", &[(staged("@s/cli").as_str(), "sealed bytes")]);
         let artifacts = sealed.verified();
 
         adapter_for(Ecosystem::Npm)
@@ -1428,7 +1433,7 @@ fn a_sealed_tarball_is_published_without_packing() {
         assert_eq!(calls[0].1[0], "publish");
         assert_eq!(
             calls[0].1[1],
-            sealed.dir.path().join("s-cli-1.0.0.tgz").to_string_lossy()
+            sealed.dir.path().join(staged("@s/cli")).to_string_lossy()
         );
         assert!(calls[0].1.contains(&"--ignore-scripts".to_owned()), "{calls:?}");
     });

@@ -18,7 +18,7 @@ What Callisto promises to keep working from 1.0, and what it does not. A breakin
 
 ## CI plumbing
 
-The generated workflows use `release plan`, `release inspect`, `release execute`, `release artifact-manifest`, `release build-python`, `release pack-npm`, `release-pr`, `matrix`, `compose-pr-body` and `schema`. They are hidden from `--help` and work only with the same Callisto version that generated them: the intent, decision, receipt and run envelope carry versions, and a reader rejects any other. Keep the action and the binary on one version, and regenerate with `callisto init` after an upgrade.
+The generated workflows use `release plan`, `release inspect`, `release execute`, `release artifact-manifest`, `release build-python`, `release pack-npm`, `release package-cargo`, `release-pr`, `matrix`, `compose-pr-body` and `schema`. They are hidden from `--help` and work only with the same Callisto version that generated them: the intent, decision, receipt and run envelope carry versions, and a reader rejects any other. Keep the action and the binary on one version, and regenerate with `callisto init` after an upgrade.
 
 `release pending` also appears in `release --help` and the release workflow uses it. Its JSON output follows the report envelope, but its flags are not part of the 1.0 CLI promise.
 

@@ -107,8 +107,11 @@ def check(path):
     package = jobs.get("package-crates", {})
     if "package-crates" not in needs or "needs.package-crates.result == 'success'" not in ex_if:
         errs.append("execute must need a successful package-crates job")
-    if not any("cargo package --locked" in str(s.get("run", "")) for s in package.get("steps", [])):
-        errs.append("package-crates must run cargo package --locked over every crate of the release")
+    # The command groups the crates by owning Cargo workspace and runs each group from that workspace's directory; a
+    # shell `cargo package` at the checkout root fails for a layout with no root manifest.
+    runs = [str(s.get("run", "")) for s in package.get("steps", [])]
+    if not any("callisto release package-cargo" in run for run in runs) or any("cargo package" in run.replace("callisto release package-cargo", "") for run in runs):
+        errs.append("package-crates must package the crates with callisto release package-cargo, not a bare cargo package")
     src = [
         s for s in ex.get("steps", [])
         if str(s.get("uses", "")).startswith("actions/checkout@") and (s.get("with") or {}).get("path") == "release-source"

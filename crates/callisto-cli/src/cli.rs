@@ -103,6 +103,7 @@ impl Command {
                 ReleaseArgs::Pending(_) => callisto_model::ReleasePendingReport::COMMAND,
                 ReleaseArgs::BuildPython(_) => callisto_model::ReleaseBuildPythonReport::COMMAND,
                 ReleaseArgs::PackNpm(_) => callisto_model::ReleasePackNpmReport::COMMAND,
+                ReleaseArgs::PackageCargo(_) => callisto_model::ReleasePackageCargoReport::COMMAND,
                 ReleaseArgs::Inspect(_) => "release",
             },
             Command::ReleasePr(ReleasePrArgs::Decide(_)) => ReleasePrDecideReport::COMMAND,
@@ -347,6 +348,9 @@ pub enum ReleaseArgs {
     /// Pack the intent's npm packages without registry credentials, for `artifact-manifest --seal-npm`.
     #[command(hide = true)]
     PackNpm(ReleasePackNpmArgs),
+    /// Package the intent's crates without registry credentials, so the executing job can publish with `--no-verify`.
+    #[command(hide = true)]
+    PackageCargo(ReleasePackageCargoArgs),
     /// Create the exact artifact manifest for a completed intent-bound build.
     #[command(hide = true)]
     ArtifactManifest(ReleaseArtifactManifestArgs),
@@ -479,6 +483,16 @@ pub struct ReleaseBuildPythonArgs {
     /// Existing directory that receives every sdist and wheel.
     #[arg(long, value_name = "DIR")]
     pub artifact_dir: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleasePackageCargoArgs {
+    /// Package from this release-source checkout instead of the current directory.
+    #[arg(long, value_name = "DIR")]
+    pub source_root: Option<PathBuf>,
+    /// Exact durable release intent whose crates are packaged.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -937,6 +951,7 @@ mod tests {
             "inspect",
             "build-python",
             "pack-npm",
+            "package-cargo",
             "artifact-manifest",
             "execute",
         ] {
