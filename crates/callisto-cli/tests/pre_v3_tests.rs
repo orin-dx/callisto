@@ -402,3 +402,23 @@ fn exit_refuses_while_an_archived_note_names_a_removed_package() {
     assert!(root.join(".changeset/pre.json").exists());
     assert_eq!(markdown_in(&root.join(".changeset/pre")), ["both.md"]);
 }
+
+/// A new note naming an unknown package stays on disk with a warning at exit; only an archived one blocks it.
+#[test]
+fn exit_keeps_warning_about_a_new_note_that_names_an_unknown_package() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    let exit = callisto(root, &["pre", "exit"]);
+    assert!(exit.status.success(), "{}", String::from_utf8_lossy(&exit.stderr));
+    fs::write(
+        root.join(".changeset/ghost.md"),
+        "---\ncargo/ghost: minor\n---\n\nNames a package that does not exist.\n",
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "exit with a stray note"]);
+
+    let run = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
+    assert!(root.join(".changeset/ghost.md").exists());
+}
