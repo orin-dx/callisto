@@ -223,13 +223,30 @@ pub fn is_initialized(root: &Path) -> Result<bool, GraphError> {
 ///
 /// # Errors
 ///
-/// The file cannot be read or does not resolve.
+/// The file cannot be read or does not resolve, or an artifact's owner is not a Cargo package.
 pub fn existing_config_ships_binaries(root: &Path) -> Result<bool, GraphError> {
     let path = root.join("callisto.toml");
     let text = callisto_model::strict_fs::read_optional(&path)
         .map_err(io_err(&path))?
         .unwrap_or_default();
-    Ok(resolve_config_text(root, &text)?.product_release.is_some())
+    let Some(release) = resolve_config_text(root, &text)?.product_release else {
+        return Ok(false);
+    };
+    // The generated builder builds Cargo artifacts only; the matrix drops any other owner.
+    if let Some(artifact) = release
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.package.ecosystem() != Some(Ecosystem::Cargo))
+    {
+        return Err(GraphError::InitUnsupportedArtifactBuilder {
+            package: artifact.package.display_name(),
+            ecosystem: artifact
+                .package
+                .ecosystem()
+                .map_or_else(|| "unknown".to_owned(), |ecosystem| ecosystem.prefix().to_owned()),
+        });
+    }
+    Ok(true)
 }
 
 fn detect_facts<L: ProjectLocator, R: CommandRunner>(
@@ -949,12 +966,28 @@ impl WorkflowScalar {
     fn version(version: &semver::Version) -> Self {
         Self(version.to_string())
     }
+
+    /// Text this program wrote itself: a fixed step or a block built from constants.
+    fn trusted(text: impl Into<String>) -> Self {
+        Self(text.into())
+    }
 }
 
+/// Substitutes every placeholder in one pass, so an inserted value is never scanned for placeholders.
 fn fill(template: &str, values: &[(&str, WorkflowScalar)]) -> String {
-    values.iter().fold(template.to_owned(), |text, (placeholder, scalar)| {
-        text.replace(placeholder, &scalar.0)
-    })
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some((at, placeholder, scalar)) = values
+        .iter()
+        .filter_map(|(placeholder, scalar)| rest.find(placeholder).map(|at| (at, *placeholder, scalar)))
+        .min_by_key(|(at, placeholder, _)| (*at, std::cmp::Reverse(placeholder.len())))
+    {
+        out.push_str(&rest[..at]);
+        out.push_str(&scalar.0);
+        rest = &rest[at + placeholder.len()..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Renders the release workflow for `shape`.
@@ -987,17 +1020,21 @@ pub fn render_workflow(
     };
     let python_tools = if facts.ecosystems.contains(&Ecosystem::Pypi) {
         SIMPLE_PYTHON_TOOLS_STEP
+            .replace("__BUILD__", BUILD_REQUIREMENT)
+            .replace("__TWINE__", TWINE_REQUIREMENT)
     } else {
-        ""
+        String::new()
     };
-    let text = template
-        .replace("      __PYTHON_TOOLS__\n", python_tools)
-        .replace("__BUILD__", BUILD_REQUIREMENT)
-        .replace("__TWINE__", TWINE_REQUIREMENT)
-        .replace("        __RELEASE_ENV__", &format!("        {release_env}"));
     fill(
-        &text,
+        template,
         &[
+            ("      __PYTHON_TOOLS__\n", WorkflowScalar::trusted(python_tools)),
+            ("__BUILD__", WorkflowScalar::trusted(BUILD_REQUIREMENT)),
+            ("__TWINE__", WorkflowScalar::trusted(TWINE_REQUIREMENT)),
+            (
+                "        __RELEASE_ENV__",
+                WorkflowScalar::trusted(format!("        {release_env}")),
+            ),
             ("__BRANCH_FILTER__", WorkflowScalar::branch_filter(branch)),
             ("__BRANCH__", WorkflowScalar::branch(branch)),
             ("__COMMIT__", WorkflowScalar::commit(commit)),

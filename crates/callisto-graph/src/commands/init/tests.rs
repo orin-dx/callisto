@@ -1160,6 +1160,8 @@ fn default_branch_keeps_slashes_from_every_source() {
 fn render_workflow_carries_any_valid_branch_name_exactly() {
     for name in [
         "release/next",
+        "__BRANCH__",
+        "__COMMIT__",
         "release,alpha",
         "#release",
         "a]b}c",
@@ -1506,4 +1508,19 @@ fn detect_initialized_reads_a_workspace_that_already_has_a_config() {
     let facts = detect_initialized(dir.path(), &IgnoreWalkLocator::new(dir.path()), &RealGitRunner).unwrap();
     assert!(facts.tag_templates.is_empty());
     assert!(facts.packages.iter().any(|package| package.id == "cargo/app"));
+}
+
+#[test]
+fn existing_config_with_a_non_cargo_artifact_owner_is_unsupported() {
+    let dir = workspace();
+    std::fs::write(
+        dir.path().join("callisto.toml"),
+        "[release]\nproduct-package = \"npm/web\"\n[[release.artifact]]\npackage = \"npm/web\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"web.tar.gz\"\n",
+    )
+    .unwrap();
+    let error = existing_config_ships_binaries(dir.path()).unwrap_err();
+    assert!(
+        matches!(&error, GraphError::InitUnsupportedArtifactBuilder { package, ecosystem } if package == "npm/web" && ecosystem == "npm"),
+        "{error}"
+    );
 }
