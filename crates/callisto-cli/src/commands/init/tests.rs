@@ -317,6 +317,58 @@ fn an_unrequested_workflow_that_cannot_be_built_is_skipped_not_fatal() {
     assert!(run.out.contains("Skipping the GitHub Actions workflow"), "{}", run.out);
 }
 
+// The retry the skipped-workflow note advertises works: `--workflow` adds the workflow and leaves `callisto.toml` alone.
+#[test]
+fn the_advertised_workflow_retry_writes_only_the_workflow() {
+    let dir = workspace(0);
+    let first = InitArgs {
+        yes: true,
+        ..Default::default()
+    };
+    let run = run_init_with_runner(dir.path(), first, false, vec![], false, &FakeLsRemote { stdout: "" });
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert!(
+        run.out.contains("Run `callisto init --workflow` to retry."),
+        "{}",
+        run.out
+    );
+    let config = std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap();
+
+    let retry = InitArgs {
+        workflow: true,
+        ..Default::default()
+    };
+    let run = run_init_with_runner(
+        dir.path(),
+        retry,
+        false,
+        vec![],
+        false,
+        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+    );
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert!(workflow_file(dir.path()).contains("callisto-action@"));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap(),
+        config
+    );
+    assert!(run.out.contains("Next steps:"), "{}", run.out);
+}
+
+// An existing config without `--workflow` is still refused.
+#[test]
+fn an_initialized_workspace_without_the_workflow_flag_is_refused() {
+    let dir = workspace(0);
+    std::fs::write(dir.path().join("callisto.toml"), "# existing\n").unwrap();
+    let error = run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false)
+        .result
+        .unwrap_err();
+    assert!(
+        matches!(error, CliError::Graph(GraphError::InitAlreadyInitialized { .. })),
+        "{error}"
+    );
+}
+
 // An origin that is not on GitHub gets no workflow unasked.
 #[test]
 fn a_non_github_origin_gets_no_unrequested_workflow() {
@@ -1003,7 +1055,7 @@ fn interactive_workflow_confirm_writes_the_generated_file() {
         )),
         "{workflow}"
     );
-    assert!(workflow.contains("with: {mode: version-pr, branch: main}"));
+    assert!(workflow.contains("with: {mode: version-pr, branch: \"main\"}"));
     assert!(workflow.contains("with: {mode: release}"));
     assert!(
         run.out.contains(".github/workflows/callisto-release.yml:"),
@@ -1292,7 +1344,7 @@ fn shipping_binaries_generates_the_build_matrix_workflow() {
         "callisto release plan --from-release-commit",
         "include: ${{ fromJSON(needs.plan.outputs.matrix) }}",
         "callisto release execute",
-        "with: {mode: version-pr, branch: main}",
+        "with: {mode: version-pr, branch: \"main\"}",
     ] {
         assert!(workflow.contains(expected), "`{expected}` missing:\n{workflow}");
     }

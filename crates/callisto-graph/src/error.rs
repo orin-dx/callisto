@@ -797,14 +797,14 @@ pub enum GraphError {
     #[error("`{}` already exists; this workspace is already initialized", .path.display())]
     #[diagnostic(
         code(E190),
-        help("Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one.")
+        help("Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. `callisto init --workflow` adds the release workflow to an initialized workspace.")
     )]
     InitAlreadyInitialized { path: PathBuf },
 
     #[error("failed to write `{}`: {message}", .path.display())]
     #[diagnostic(
         code(E278),
-        help("Check file permissions and that the path still exists, then re-run `callisto init`.")
+        help("Check file permissions and that the path still exists, then re-run `callisto init` (or `callisto init --workflow` if `callisto.toml` was already written).")
     )]
     InitIo { path: PathBuf, message: String },
 

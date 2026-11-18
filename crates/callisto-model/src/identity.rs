@@ -376,6 +376,42 @@ impl TryFrom<String> for CommitSha {
     }
 }
 
+/// A Git branch name, taken whole from a full ref so a slash inside it is never mistaken for a ref separator.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct BranchName(String);
+
+impl BranchName {
+    /// `refs/heads/release/next` -> `release/next`; `None` for any other ref.
+    pub fn from_full_ref(reference: &str) -> Option<Self> {
+        Self::strip(reference, "refs/heads/")
+    }
+
+    /// `refs/remotes/origin/release/next` -> `release/next` for `remote` `origin`; `None` for any other ref.
+    pub fn from_remote_ref(reference: &str, remote: &str) -> Option<Self> {
+        Self::strip(reference, &format!("refs/remotes/{remote}/"))
+    }
+
+    /// The branch a repository with no other signal defaults to.
+    pub fn fallback() -> Self {
+        Self("main".to_owned())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn strip(reference: &str, prefix: &str) -> Option<Self> {
+        let branch = reference.trim().strip_prefix(prefix)?;
+        (!branch.is_empty()).then(|| Self(branch.to_owned()))
+    }
+}
+
+impl std::fmt::Display for BranchName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn assert_string_wire_schema<T>(value: &T, name: &str, wire: &str)
 where
@@ -421,6 +457,19 @@ mod tests {
             let id = PackageId::parse(raw).unwrap();
             assert_string_wire_schema(&id, "PackageId", &id.display_name());
         }
+    }
+
+    #[test]
+    fn branch_name_keeps_slashes_and_rejects_other_namespaces() {
+        let local = BranchName::from_full_ref("refs/heads/release/next\n").unwrap();
+        assert_eq!(local.as_str(), "release/next");
+        assert_eq!(local.to_string(), "release/next");
+        let remote = BranchName::from_remote_ref("refs/remotes/origin/release/next", "origin").unwrap();
+        assert_eq!(remote, local);
+        assert_eq!(BranchName::from_remote_ref("refs/remotes/upstream/x", "origin"), None);
+        assert_eq!(BranchName::from_full_ref("refs/tags/v1"), None);
+        assert_eq!(BranchName::from_full_ref("refs/heads/"), None);
+        assert_eq!(BranchName::fallback().as_str(), "main");
     }
 
     #[test]

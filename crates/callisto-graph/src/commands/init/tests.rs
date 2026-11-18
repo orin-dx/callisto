@@ -587,8 +587,26 @@ fn cargo_only_facts() -> InitFacts {
 
 const FAKE_COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+fn fake_commit() -> CommitSha {
+    CommitSha::parse(FAKE_COMMIT).unwrap()
+}
+
+fn branch(name: &str) -> BranchName {
+    BranchName::from_full_ref(&format!("refs/heads/{name}")).unwrap()
+}
+
+fn v0_8_0() -> semver::Version {
+    semver::Version::new(0, 8, 0)
+}
+
 fn render_workflow_0_8_0(facts: &InitFacts, branch: &str) -> String {
-    render_workflow(facts, WorkflowShape::Simple, branch, FAKE_COMMIT, "0.8.0")
+    render_workflow(
+        facts,
+        WorkflowShape::Simple,
+        &self::branch(branch),
+        &fake_commit(),
+        &v0_8_0(),
+    )
 }
 
 // A non-`main` default branch must reach both the push trigger and the release-PR
@@ -597,18 +615,24 @@ fn render_workflow_0_8_0(facts: &InitFacts, branch: &str) -> String {
 #[test]
 fn render_workflow_passes_the_detected_branch_to_the_release_pr_action() {
     let simple = render_workflow_0_8_0(&cargo_only_facts(), "trunk");
-    assert!(simple.contains("branches: [trunk]"), "{simple}");
-    assert!(simple.contains("with: {mode: version-pr, branch: trunk}"), "{simple}");
+    assert!(simple.contains("branches: [\"trunk\"]"), "{simple}");
+    assert!(
+        simple.contains("with: {mode: version-pr, branch: \"trunk\"}"),
+        "{simple}"
+    );
 
     let matrix = render_workflow(
         &facts_for_render(),
         WorkflowShape::BuildMatrix,
-        "trunk",
-        FAKE_COMMIT,
-        "0.8.0",
+        &branch("trunk"),
+        &fake_commit(),
+        &v0_8_0(),
     );
-    assert!(matrix.contains("branches: [trunk]"), "{matrix}");
-    assert!(matrix.contains("with: {mode: version-pr, branch: trunk}"), "{matrix}");
+    assert!(matrix.contains("branches: [\"trunk\"]"), "{matrix}");
+    assert!(
+        matrix.contains("with: {mode: version-pr, branch: \"trunk\"}"),
+        "{matrix}"
+    );
 }
 
 // Two jobs, no matrix/recovery/SHA-gating machinery,
@@ -620,9 +644,9 @@ fn render_workflow_is_a_cargo_only_two_job_workflow_within_the_line_budget() {
     let line_count = workflow.lines().count();
     assert!(line_count <= 40, "{line_count} lines:\n{workflow}");
     assert_eq!(workflow.matches("runs-on: ubuntu-latest").count(), 2, "{workflow}");
-    assert!(workflow.contains("branches: [main]"), "{workflow}");
+    assert!(workflow.contains("branches: [\"main\"]"), "{workflow}");
     assert!(
-        workflow.contains("with: {mode: version-pr, branch: main}"),
+        workflow.contains("with: {mode: version-pr, branch: \"main\"}"),
         "{workflow}"
     );
     assert!(workflow.contains("with: {mode: release}"), "{workflow}");
@@ -782,9 +806,9 @@ fn render_matrix_workflow() -> String {
     render_workflow(
         &oxc_shaped_facts(),
         WorkflowShape::BuildMatrix,
-        "main",
-        FAKE_COMMIT,
-        "0.8.0",
+        &branch("main"),
+        &fake_commit(),
+        &v0_8_0(),
     )
 }
 
@@ -976,9 +1000,9 @@ fn matrix_workflow_requests_npm_provenance_only_for_npm_workspaces() {
     let cargo_only = render_workflow(
         &cargo_only_facts(),
         WorkflowShape::BuildMatrix,
-        "main",
-        FAKE_COMMIT,
-        "0.8.0",
+        &branch("main"),
+        &fake_commit(),
+        &v0_8_0(),
     );
     assert!(!cargo_only.contains("NPM_CONFIG_PROVENANCE"), "{cargo_only}");
     assert!(render_matrix_workflow().contains("NPM_CONFIG_PROVENANCE: \"true\""));
@@ -990,7 +1014,7 @@ fn matrix_workflow_keeps_the_simple_version_pr_job() {
     let simple = render_workflow_0_8_0(&cargo_only_facts(), "main");
     let matrix = render_matrix_workflow();
     assert_eq!(job(&matrix, "version-pr"), job(&simple, "version-pr"));
-    assert!(job(&matrix, "version-pr").contains("with: {mode: version-pr, branch: main}"));
+    assert!(job(&matrix, "version-pr").contains("with: {mode: version-pr, branch: \"main\"}"));
 }
 
 // No recovery, coordinator, or SHA-based release-candidate detection; the
@@ -1082,7 +1106,7 @@ fn default_branch_prefers_local_origin_head() {
         },
         dir.path(),
     );
-    assert_eq!(resolved.name, "develop");
+    assert_eq!(resolved.name.as_str(), "develop");
     assert_eq!(resolved.source, DefaultBranchSource::OriginHead);
 }
 
@@ -1096,8 +1120,78 @@ fn default_branch_queries_the_remote_when_local_origin_head_is_unset() {
         },
         dir.path(),
     );
-    assert_eq!(resolved.name, "trunk");
+    assert_eq!(resolved.name.as_str(), "trunk");
     assert_eq!(resolved.source, DefaultBranchSource::RemoteHead);
+}
+
+// A slash inside the branch is part of its name, whichever source reports it.
+#[test]
+fn default_branch_keeps_slashes_from_every_source() {
+    let dir = workspace();
+    git(dir.path(), &["branch", "release/next"]);
+    git(
+        dir.path(),
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/release/next",
+        ],
+    );
+    let local = default_branch(&StubRemoteHead { remote_head: None }, dir.path());
+    assert_eq!(local.name.as_str(), "release/next");
+
+    let dir = workspace();
+    let remote = default_branch(
+        &StubRemoteHead {
+            remote_head: Some("release/next"),
+        },
+        dir.path(),
+    );
+    assert_eq!(remote.name.as_str(), "release/next");
+
+    let dir = workspace();
+    git(dir.path(), &["checkout", "-q", "-b", "release/next"]);
+    let current = default_branch(&StubRemoteHead { remote_head: None }, dir.path());
+    assert_eq!(current.name.as_str(), "release/next");
+}
+
+// Valid Git branch names that are YAML or Actions-filter syntax reach both consumers exactly, in both shapes.
+#[test]
+fn render_workflow_carries_any_valid_branch_name_exactly() {
+    for name in [
+        "release/next",
+        "release,alpha",
+        "#release",
+        "a]b}c",
+        "x: y",
+        "it's \"q\"",
+        "-lead",
+        "!bang",
+        "a+b",
+        "100%",
+    ] {
+        for shape in [WorkflowShape::Simple, WorkflowShape::BuildMatrix] {
+            let facts = if shape == WorkflowShape::Simple {
+                cargo_only_facts()
+            } else {
+                oxc_shaped_facts()
+            };
+            let text = render_workflow(&facts, shape, &branch(name), &fake_commit(), &v0_8_0());
+            let docs = yaml_rust2::YamlLoader::load_from_str(&text).unwrap_or_else(|error| panic!("{name}: {error}"));
+            let doc = &docs[0];
+            let on = &doc["on"]["push"]["branches"];
+            let filter = on[0].as_str().unwrap();
+            assert_eq!(on.as_vec().unwrap().len(), 1, "{name}");
+            assert_eq!(filter.replace("\\+", "+").replace("\\!", "!"), name);
+            let action_input = doc["jobs"]["version-pr"]["steps"]
+                .as_vec()
+                .unwrap()
+                .iter()
+                .find_map(|step| step["with"]["branch"].as_str())
+                .unwrap();
+            assert_eq!(action_input, name);
+        }
+    }
 }
 
 // Neither local nor remote resolves a HEAD: falls back to the branch checked out.
@@ -1106,7 +1200,7 @@ fn default_branch_falls_back_to_the_current_branch() {
     let dir = workspace();
     git(dir.path(), &["checkout", "-q", "-b", "release"]);
     let resolved = default_branch(&StubRemoteHead { remote_head: None }, dir.path());
-    assert_eq!(resolved.name, "release");
+    assert_eq!(resolved.name.as_str(), "release");
     assert_eq!(resolved.source, DefaultBranchSource::CurrentBranch);
 }
 
@@ -1115,7 +1209,7 @@ fn default_branch_falls_back_to_the_current_branch() {
 fn default_branch_falls_back_to_main_when_nothing_resolves() {
     let none = tempfile::tempdir().unwrap();
     let resolved = default_branch(&RealGitRunner, none.path());
-    assert_eq!(resolved.name, "main");
+    assert_eq!(resolved.name.as_str(), "main");
     assert_eq!(resolved.source, DefaultBranchSource::Fallback);
 }
 
@@ -1124,30 +1218,24 @@ fn default_branch_falls_back_to_main_when_nothing_resolves() {
 #[test]
 fn workflow_shape_routes_slots_and_napi_to_the_build_matrix() {
     let facts = cargo_only_facts();
-    assert_eq!(workflow_shape(&facts, &INDEPENDENT), Ok(WorkflowShape::Simple));
-    assert_eq!(
-        workflow_shape(&facts, &release(&["x86_64-unknown-linux-gnu"])),
-        Ok(WorkflowShape::BuildMatrix)
-    );
+    assert_eq!(workflow_shape(&facts, false), Ok(WorkflowShape::Simple));
+    assert_eq!(workflow_shape(&facts, true), Ok(WorkflowShape::BuildMatrix));
     let napi = facts_for_render();
-    assert_eq!(workflow_shape(&napi, &INDEPENDENT), Ok(WorkflowShape::BuildMatrix));
+    assert_eq!(workflow_shape(&napi, false), Ok(WorkflowShape::BuildMatrix));
 
     let no_targets = InitFacts {
         has_napi_targets: false,
         ..facts_for_render()
     };
     assert_eq!(
-        workflow_shape(&no_targets, &INDEPENDENT),
+        workflow_shape(&no_targets, false),
         Err(WorkflowUnsupported::PlatformPackagesWithoutNapiTargets)
     );
     let maturin = InitFacts {
         has_maturin_targets: true,
         ..facts_for_render()
     };
-    assert_eq!(
-        workflow_shape(&maturin, &release(&["x86_64-unknown-linux-gnu"])),
-        Err(WorkflowUnsupported::Maturin)
-    );
+    assert_eq!(workflow_shape(&maturin, true), Err(WorkflowUnsupported::Maturin));
     assert!(WorkflowUnsupported::Maturin.to_string().contains("maturin"));
 }
 
@@ -1204,7 +1292,7 @@ fn detect_flags_a_workspace_with_only_an_attached_platform_package() {
         "the attached platform package must still be detected"
     );
     assert_eq!(
-        workflow_shape(&facts, &INDEPENDENT),
+        workflow_shape(&facts, false),
         Err(WorkflowUnsupported::PlatformPackagesWithoutNapiTargets)
     );
 }
@@ -1233,8 +1321,8 @@ fn resolve_release_commit_prefers_the_peeled_commit_over_the_tag_object() {
                      6363646464626262636364646262626363646464\trefs/tags/callisto@0.8.0^{}\n",
         exit_code: Some(0),
     };
-    let commit = resolve_release_commit(&runner, Path::new("."), "0.8.0").unwrap();
-    assert_eq!(commit, "6363646464626262636364646262626363646464");
+    let commit = resolve_release_commit(&runner, Path::new("."), &v0_8_0()).unwrap();
+    assert_eq!(commit.as_str(), "6363646464626262636364646262626363646464");
 }
 
 // A lightweight tag has no peeled line; its own SHA already is the commit.
@@ -1244,8 +1332,8 @@ fn resolve_release_commit_falls_back_to_the_tag_object_for_a_lightweight_tag() {
         stdout: "6161616161626262626363636364646464626262\trefs/tags/callisto@0.8.0\n",
         exit_code: Some(0),
     };
-    let commit = resolve_release_commit(&runner, Path::new("."), "0.8.0").unwrap();
-    assert_eq!(commit, "6161616161626262626363636364646464626262");
+    let commit = resolve_release_commit(&runner, Path::new("."), &v0_8_0()).unwrap();
+    assert_eq!(commit.as_str(), "6161616161626262626363636364646464626262");
 }
 
 // An unresolvable tag (offline, or an unreleased version) errors
@@ -1256,7 +1344,7 @@ fn resolve_release_commit_errors_when_the_tag_is_not_found() {
         stdout: "",
         exit_code: Some(0),
     };
-    let error = resolve_release_commit(&empty, Path::new("."), "9.9.9").unwrap_err();
+    let error = resolve_release_commit(&empty, Path::new("."), &semver::Version::new(9, 9, 9)).unwrap_err();
     assert!(
         matches!(&error, GraphError::InitWorkflowVersionUnresolved { version } if version == "9.9.9"),
         "{error}"
@@ -1267,7 +1355,7 @@ fn resolve_release_commit_errors_when_the_tag_is_not_found() {
         exit_code: Some(128),
     };
     assert!(matches!(
-        resolve_release_commit(&failed, Path::new("."), "0.8.0").unwrap_err(),
+        resolve_release_commit(&failed, Path::new("."), &v0_8_0()).unwrap_err(),
         GraphError::InitWorkflowVersionUnresolved { .. }
     ));
 }
@@ -1285,7 +1373,7 @@ impl CommandRunner for NoGit {
 // cause via GraphError::Command, rather than being discarded.
 #[test]
 fn resolve_release_commit_preserves_a_transport_failures_real_cause() {
-    let error = resolve_release_commit(&NoGit, Path::new("."), "0.8.0").unwrap_err();
+    let error = resolve_release_commit(&NoGit, Path::new("."), &v0_8_0()).unwrap_err();
     assert!(
         matches!(&error, GraphError::Command(CommandError::NotFound { .. })),
         "{error}"
