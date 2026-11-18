@@ -791,7 +791,7 @@ pub enum GraphError {
     )]
     PublishTargetNotImplemented {
         package: callisto_model::ReleasePackageId,
-        target: &'static str,
+        target: String,
     },
 
     #[error("`{}` already exists; this workspace is already initialized", .path.display())]
@@ -1258,7 +1258,7 @@ pub enum ConfigError {
     #[error("`{path}`: `{location}` is `{value}`, which is not a publish target")]
     #[diagnostic(
         code(E330),
-        help("Set `{location}` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release` or `none` in callisto.toml.")
+        help("Set `{location}` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release`, `none` or the name of a `kind = \"cargo\"` registry in `[registries]`, in callisto.toml.")
     )]
     InvalidPublishTarget {
         path: PathBuf,

@@ -170,6 +170,9 @@ pub enum DiagnosticCode {
     /// line, or entries present with an empty summary. The file stays on disk unconsumed;
     /// `status` reports one of these per unparseable file instead of aborting.
     ChangesetParseFailed,
+    /// `status --since <ref>` found files of a package changed since that ref, and no pending changeset names the
+    /// package and no commit inference releases it.
+    ChangedWithoutChangeset,
     /// Release derivation selected a `[release].product` artifact's owner package without
     /// selecting the product package itself, so the owner's declared asset has no release to
     /// upload into.
