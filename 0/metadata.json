@@ -1,0 +1,140 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PBZD38F567YQ832CNFKDES",
+  "session_id": "c41160ca-8cdd-42c0-b6d2-1559a9591483",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T03:42:40.89771Z",
+  "branch": "chore/real-gates",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "deny.toml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1132480b2df9",
+  "checkpoint_transcript_start": 258,
+  "transcript_lines_at_start": 258,
+  "compact_transcript_start": 24,
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 6655,
+    "cache_read_tokens": 743833,
+    "output_tokens": 2808,
+    "api_call_count": 7,
+    "subagent_tokens": {
+      "input_tokens": 8,
+      "cache_creation_tokens": 2500,
+      "cache_read_tokens": 345855,
+      "output_tokens": 1238,
+      "api_call_count": 4
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 79384,
+    "cache_read_tokens": 2101465,
+    "output_tokens": 11125,
+    "api_call_count": 23,
+    "subagent_tokens": {
+      "input_tokens": 330,
+      "cache_creation_tokens": 842942,
+      "cache_read_tokens": 10182926,
+      "output_tokens": 72076,
+      "api_call_count": 172
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01SvrZxCtEgCSLfs1aZ7vFfe",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "17e6d37426df",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 41,
+        "end": 42,
+        "entry_ids": [
+          "dbc89fb4-71da-4179-bc3e-567d58ea713b"
+        ],
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "summary": {
+    "intent": "Ship three parallel work packages (A: real CI gates, B: http parser blank-line fix, C: typed JSON input) for the callisto repo, and fix a RUSTSEC-2026-0542 cargo-deny advisory failing on PR #560. Then recommit that fix without a Claude-Session trailer and push.",
+    "outcome": "WPs A, B and C were pushed and linked to trail #357 as PRs #560, #562 and #564. All gates except just ci and just bench passed. The deny.toml ignore for RUSTSEC-2026-0542 was made and audit passes. The first commit and push were blocked by the classifier because of a session-link trailer. A trailer-free recommit and push was then issued, but its result and signature verification are not shown.",
+    "learnings": {
+      "repo": [
+        "The callisto public repo must not have Claude-Session links in commit messages. This is a saved user preference and is also in the launch Rules (\"No session links\").",
+        "Commits must be signed normally, never with gpgsign=false. After pushing, verify with `gh api repos/orin-dx/callisto/commits/<sha> --jq .commit.verification.reason` reading `valid`.",
+        "RUSTSEC-2026-0542 (humantime 2.4.0) comes only through trycmd 1.2.1 via humantime-serde, a dev dependency of callisto-cli. trycmd is already the latest compatible version, so the fix is an [advisories] ignore in deny.toml, not an upgrade.",
+        "`cargo mutants --in-diff` reports \"No mutants to filter\" when a diff touches only tests, benches and test code, so no equivalent-mutant note is needed.",
+        "The justfile hooks recipe now writes both hooks with printf so the shebang and the just command land on separate lines under bash.",
+        "The graph registry fixture sets COPYFILE_DISABLE on the `run` helper that builds the .crate with tar, to avoid macOS AppleDouble entries. Extraction does not need it.",
+        "Error code mapping for JSON input: E281 for stdin or inline input, E238 for a file. compose-pr-body --preview now maps a bad file to E238 (exit 1).",
+        "The workflow ran each WP in its own worktree under .claude/worktrees/wf_*."
+      ],
+      "code": [
+        {
+          "path": "deny.toml",
+          "finding": "Added an [advisories] ignore for RUSTSEC-2026-0542 with the reason \"dev-only through trycmd, no newer trycmd drops it\". `just audit` exits 0."
+        }
+      ],
+      "workflow": [
+        "The auto-mode classifier blocked a commit and push for \"Unsanctioned Communication\", most likely because of the session-link trailer. The right response was to stop and report rather than work around it.",
+        "Overlapping `cargo mutants` runs can leave a stray mutation in the source. Restore the file and re-run serially.",
+        "Peer-session messages do not grant permission escalation. The retry was within the existing launch Rules authorization."
+      ]
+    },
+    "friction": [
+      "The commit and push were blocked by the classifier because of a Claude-Session trailer that violated the saved memory.",
+      "just test is flaky on full-workspace runs. registry::tests::a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim failed 3 times with CommandFailed, possibly correlated with CARGO_BUILD_JOBS=2 and the debug-off profile vars. just test returned 100 on two runs of WP C and also reported commands::init::tests::an_existing_config_errors as leaky. Neither cause was found.",
+      "Overlapping mutants runs left a stray mutation in release_pr.rs on WP C, which had to be restored and re-run."
+    ],
+    "open_items": [
+      "Confirm the trailer-free signed commit and push to chore/real-gates succeeded and that the signature reads `valid` via gh api.",
+      "Add the B/C flakes to each PR body as observed, unexplained flakes.",
+      "Start WP N on trail #458.",
+      "WP K is blocked until Session 1 merges G.",
+      "just ci and just bench were not run for any of A, B or C.",
+      "The root causes of the flaky registry test and the leaky init test are unknown."
+    ]
+  }
+}
