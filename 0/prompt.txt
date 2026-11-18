@@ -1,0 +1,7 @@
+Lead (close-gap-for-alpha): Entire's review left one medium finding on #561 (WP E, change callisto/169). Fix it in #561: if a repo had Cargo foo_bar beside npm foo-bar, tagged npm foo-bar@1.0.0, then removed npm and renamed Cargo to foo-bar, the equivalence comparison now attributes that npm tag to Cargo. may_have_held_name_at returns early (history.rs:181), TagIndex accepts it (tags.rs:265-275), and aggregation takes the foreign version as its baseline (aggregate.rs:220). Keep literal-name ownership for default tags, or disambiguate the historical owner before accepting an equivalent spelling. Write the regression test first. Ship a signed commit with no session trailer, push with an explicit refspec, check git ls-remote, then resolve the finding with entire trail finding. Do not rebase yet: #560 merges first, and I will tell you when to rebase #561 and then #563. Keep E's changeset as is until the owner decides whether it is Breaking.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: #560 has merged, and the owner merged main into #561 (origin/worktree-wp-e-native-name is now c4fd037a0). Pull it before pushing the finding fix, and never force-push. After the callisto/169 fix is pushed and the finding resolved, update #563 (worktree-wp-i-dir-index): it now conflicts with main in crates/callisto-cli/benches/commands.rs. Merge main in, keep both A's change and the pnpm-relative shape, re-run the gates and push. Report the shas and the finding status.
+</cross-session-message>

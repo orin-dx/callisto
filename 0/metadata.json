@@ -1,0 +1,116 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PEPB2SJZKKFX19F39NTN6R",
+  "session_id": "549c97be-5582-4c2b-9d30-47c0a30a5eda",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T04:30:17.884381Z",
+  "branch": "worktree-wp-e-native-name",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/history.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "6823fdb4dde2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 274,
+    "cache_creation_tokens": 215305,
+    "cache_read_tokens": 21386070,
+    "output_tokens": 60534,
+    "api_call_count": 134
+  },
+  "session_token_usage": {
+    "input_tokens": 274,
+    "cache_creation_tokens": 215305,
+    "cache_read_tokens": 21386070,
+    "output_tokens": 60534,
+    "api_call_count": 134
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 4,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Execute Session 5 of the v1-alpha launch plan: WP E (a NativeName type so registry-equivalent package names are one identity) and WP I (a directory index for relative `workspace:` npm dependencies). Then address a review finding on #561 about Cargo/npm historical tag ownership.",
+    "outcome": "Pushed PR #561 (E) and PR #563 (I), both with signed commits, green gates and trail #357 links. For the review finding, wrote a regression test, restored literal-name history ownership for non-PyPI ecosystems and committed it locally. The explicit-refspec push, ls-remote check and `entire trail finding` resolve were not yet done in the transcript.",
+    "learnings": {
+      "repo": [
+        "Package-name equivalence was enforced nowhere for Cargo; `package_id.rs` ~189 is `check_cargo_name`, which only checks characters. The plan's 'Cargo foo-bar/foo_bar is E100' decision had no code behind it, so WP E introduced it.",
+        "`ReleasePackageId.name` must stay a `String`: keying on NativeName would reorder serialized rosters and let a stored decision match a renamed package with differently spelled tags.",
+        "Default tags carry the literal package spelling (`{name}@`), so history/tag ownership must compare literal names for non-PyPI ecosystems. Registry equivalence is only correct for selectors, config rules and load-time duplicate detection.",
+        "Cross-ecosystem fallback and bare selectors intentionally match on exact spelling; only qualified selectors apply registry equivalence.",
+        "Callisto gates are `just pre-push`, `just lint`, `just doc-check` and `just test`. AGENTS.md also wants `just ci` before a PR is marked ready. Mutation testing runs via cargo-mutants on the diff.",
+        "Changesets are added with `callisto add --package <pkg>:patch --summary ...`. Summaries follow a bold-lead, Why-it-matters, **Action:** and **Limits:** format.",
+        "Commits must be signed (check `git log --format=%G?`). Trail linking uses `entire trail link <n> --base main` and `entire trail ci-pr`.",
+        "Equivalent-name workspaces that loaded before will now fail with E100, so the E changeset may need `**Breaking:**`. The owner has not decided."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/history.rs",
+          "line": 181,
+          "finding": "`may_have_held_name_at` returns early on a name match. With NativeName equivalence it wrongly attributed an npm `foo-bar` tag to a Cargo package renamed from `foo_bar`. The fix restored a local `names_equal` that uses PEP 503 for PyPI and literal comparison elsewhere."
+        },
+        {
+          "path": "crates/callisto-graph/src/tags.rs",
+          "line": 265,
+          "end_line": 275,
+          "finding": "TagIndex accepts a historical tag owner from the history check, so loosening history name comparison leaks foreign tags into the index."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 220,
+          "finding": "Aggregation takes the version from the accepted historical tag as its baseline, so a wrongly attributed tag becomes a foreign baseline version."
+        },
+        {
+          "path": "crates/callisto-graph/src/identity.rs",
+          "line": 405,
+          "finding": "`resolve_id` and `native_in_ecosystem` now do a single NativeName `get`. This fixes the E102 for `pypi/my-pkg` against `My_Pkg` and removes the PyPI ambiguity error arms."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 268,
+          "finding": "`native_owner` is keyed on NativeName, which is the duplicate-detection fix that makes E100 fire for equivalent names."
+        }
+      ],
+      "workflow": [
+        "Writing the regression test first and watching it fail before applying the fix worked as the lead asked.",
+        "BSD sed on macOS lacks GNU behaviors and needs `-i ''`, so multi-line edits went through python or perl scripts.",
+        "Python script edits bypass the worktree guard on the Edit tool. Editing a different worktree needs a proper EnterWorktree.",
+        "The first mutation run used a bad diff path filter and found only 3 mutants. Verify the mutant count against the diff scope before trusting a clean result.",
+        "Amending a pushed commit needed `--force-with-lease`. The lead's later instruction was explicit-refspec pushes and no rebase until #560 merges.",
+        "Delete `target/` in worktrees after use to free disk space."
+      ]
+    },
+    "friction": [
+      "Fetching from GitHub required `github.com` to be allowed in the sandbox.",
+      "The first mutation-test run scoped the diff wrongly, giving a false sense of coverage. The re-run found 17 missed mutants.",
+      "Mechanical tuple-to-NativeName rewrites via regex needed several iterations to get the test code compiling.",
+      "Clippy flagged a duplicate `use super::*;` after test insertion, which forced an amend and force-push of #561.",
+      "A subagent design claimed some plan items were false or unneeded, such as the ReleasePackageId and release_decision changes. The plan and code needed cross-checking.",
+      "The final step merged `origin/worktree-wp-e-native-name` into the local branch after committing, which suggests divergence from the amend and force-push. The result was not shown."
+    ],
+    "open_items": [
+      "Push the history fix on #561 with an explicit refspec, verify with `git ls-remote`, then resolve the review finding with `entire trail finding`.",
+      "Rebase #561 and then #563 only after the lead says #560 has merged. Resolve the `crates/callisto-cli/benches/commands.rs` conflict, keeping both A's change and the pnpm shape, then re-run the gates.",
+      "The owner must decide whether E's changeset counts as `**Breaking:**`. It stays unchanged for now.",
+      "Glob patterns like `pypi/my-*` still match the manifest spelling rather than the canonical name. This needs a code comment or a follow-up.",
+      "The one missed mutant (empty `Hash::hash` for NativeName) is equivalent and needs a line in the PR body.",
+      "#561's audit failure (RUSTSEC-2026-0542) is fixed by #560's `deny.toml` change, so no ignore was added.",
+      "`just ci` was not run on either PR.",
+      "Both worktrees remain on disk and should be deleted after merge.",
+      "The owner should confirm that Cargo `foo-bar`/`foo_bar` should be E100.",
+      "Confirm the local branch state after the final `git merge origin/worktree-wp-e-native-name`, then re-run the E gates on the final commit."
+    ]
+  }
+}
