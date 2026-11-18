@@ -1,0 +1,106 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PFPX4ZM6C2MKJSDX0DN6W1",
+  "session_id": "5f37ee92-5d61-4e9c-9e13-bfc92f07dc83",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T04:48:02.263025Z",
+  "branch": "worktree-wp-e-native-name",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/history.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "af6559cc62ed",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 342,
+    "cache_creation_tokens": 252054,
+    "cache_read_tokens": 30242327,
+    "output_tokens": 70673,
+    "api_call_count": 168
+  },
+  "session_token_usage": {
+    "input_tokens": 342,
+    "cache_creation_tokens": 252054,
+    "cache_read_tokens": 30242327,
+    "output_tokens": 70673,
+    "api_call_count": 168
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 4,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Run Session 5 of the v1-alpha launch plan: implement WP E (NativeName registry-equivalent package identity) and WP I (relative workspace: directory index), then address lead follow-ups on PR #561: a review finding about historical tag ownership and a sibling PyPI check.",
+    "outcome": "WP E (#561) and WP I (#563) were pushed with signed commits and green gates. Cargo, then PyPI, historical default-tag ownership was reverted to a single literal-name comparison via regression tests. The final fix commit was being created and not yet pushed, with mutation re-run and shas report pending.",
+    "learnings": {
+      "repo": [
+        "Package identity: NativeName (callisto-model identity.rs) is keyed on PEP 503 for PyPI and lowercase plus -/_ for Cargo, exact elsewhere. Used for E100 duplicate detection, selectors and [[package]] rules, but not for historical tag ownership.",
+        "Default tags carry the literal declared spelling (`name@version`), so history ownership (may_have_held_name_at, TagIndex, aggregate baseline) must compare literal names in every ecosystem, otherwise a foreign ecosystem's tag gets credited after rename/removal.",
+        "The plan's claims were partly wrong: ReleasePackageId.name need not key on NativeName (it would reorder stored rosters), release_decision.rs needs no edit, and no Cargo equivalence code existed before E.",
+        "Repo gates are just pre-push, just lint, just doc-check and just test. AGENTS.md also requires just ci before marking ready, which was not run. Commits must be signed with GitHub verification reason valid; local sig can show E.",
+        "Changesets are added via `callisto add --package cargo/callisto-cli:patch --summary ...`.",
+        "Mutation testing uses cargo mutants --in-place --in-diff; the diff filter must cover crates while excluding tests, or only a few mutants are found. An empty Hash::hash is an equivalent mutant.",
+        "Glob patterns (PackagePattern::matches_native, pattern.rs:72) still match manifest spelling, not equivalence."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/history.rs",
+          "line": 181,
+          "finding": "may_have_held_name_at returned early on equivalent-name match, letting a foreign-ecosystem tag be attributed to a renamed package. Fixed by literal comparison."
+        },
+        {
+          "path": "crates/callisto-graph/src/tags.rs",
+          "line": 265,
+          "end_line": 275,
+          "finding": "TagIndex accepts a tag when history ownership says the name was held, so it inherits the history equivalence bug."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 220,
+          "finding": "Aggregation takes the foreign tag's version as baseline, which is where the mis-attribution surfaces."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 268,
+          "finding": "native_owner map keyed on NativeName is the duplicate-detection fix."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm.rs",
+          "finding": "Duplicate relative workspace: resolution removed in favor of the graph's single NpmDirIndex, with a lazy once-built index."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "The first mutation run on E covered only 3 mutants because of a bad path filter, and re-runs took about 15 minutes each.",
+      "Fixes interacted: review-driven changes left a duplicate `use super::*;` and unused-parameter lint failures that needed extra gate loops.",
+      "A script edit hit the wrong worktree and removed the wrong `use super::*;`.",
+      "BSD sed and the compound-command guard slowed down scripted edits.",
+      "#561's audit fails on RUSTSEC-2026-0542, fixed only by #560, so no ignore was added.",
+      "The original Cargo equivalence in history was an over-reach that the review caught late."
+    ],
+    "open_items": [
+      "Commit for the PyPI literal-name fix is made but not yet pushed, and gates, mutation run (--in-diff on d69bd794e plus the new commit) and sha report are pending.",
+      "Need zero missed mutants or one-line equivalent-mutant notes in the PR body, including the empty Hash::hash one.",
+      "Add to the PR body why or how the PyPI sibling reproduced.",
+      "Rebase #561 then #563 after #560 merges, resolving the benches/commands.rs conflict if it recurs.",
+      "Owner must decide whether E's changeset should be marked **Breaking:**, since workspaces with equivalent names now fail with E100.",
+      "Glob patterns like pypi/my-* still match manifest spelling.",
+      "Owner should confirm that Cargo foo-bar/foo_bar is E100 as a settled decision.",
+      "Run just ci before marking PRs ready.",
+      "Delete the wp-e and wp-i worktrees after merge."
+    ]
+  }
+}
