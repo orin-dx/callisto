@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01SGtTVs8dh6HfpyiXMvfpMY",
+  "agent_id": "ae502384931b1ffee",
+  "subagent_type": "general-purpose",
+  "task_description": "Review M diff",
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 83748,
+    "cache_read_tokens": 1218140,
+    "output_tokens": 9146,
+    "api_call_count": 18
+  },
+  "started_at": "2026-11-17T20:19:48.372577-08:00",
+  "completed_at": "2026-11-17T20:22:05.856691-08:00"
+}

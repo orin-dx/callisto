@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01Aa8dDewH2CV7cudxXPYbfE",
+  "agent_id": "af7cb84c9f4e68d10",
+  "subagent_type": "general-purpose",
+  "task_description": "Review H diff",
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 93396,
+    "cache_read_tokens": 1128551,
+    "output_tokens": 9635,
+    "api_call_count": 16
+  },
+  "started_at": "2026-11-17T20:19:48.202615-08:00",
+  "completed_at": "2026-11-17T20:21:44.885546-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
