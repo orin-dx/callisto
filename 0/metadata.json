@@ -1,0 +1,110 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7RD9KX3HWHGKMDS0CKPM2BQ",
+  "session_id": "d3a460f3-6eef-4f93-86cd-aa435bb0672e",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T22:44:17.505114Z",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/plan.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "1519a2ba289c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 22638,
+    "cache_read_tokens": 17355514,
+    "output_tokens": 11501,
+    "api_call_count": 23
+  },
+  "session_token_usage": {
+    "input_tokens": 972,
+    "cache_creation_tokens": 1422090,
+    "cache_read_tokens": 207736813,
+    "output_tokens": 237879,
+    "api_call_count": 466
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "summary": {
+    "intent": "Execute Session 1 of the callisto v1-alpha launch plan: fix pre-cycle aggregation (F1), drive release-PR decide from the version plan (F2), add Changesets v3 pre.json support (G), retire managed-prerelease limits (H), and add status --since (M). Then handle follow-up lead requests on G (#571): merge main, fix Entire review findings, and make archive moves idempotent for resume.",
+    "outcome": "F1 (#566) and F2 (#567) were pushed as drafts. G (#571) was merged with main, passed the full gate, and pushed with two Entire findings fixed and resolved. H and M were built locally; M merged as #570. The idempotent-archive fix for G (apply.rs, plan.rs) is implemented with tests passing, was being confirmed red without the fix, and is not yet gated, pushed or mutation-tested.",
+    "learnings": {
+      "repo": [
+        "Worktree branch names differ from PR branch names, so plain `git push` silently no-ops; push `HEAD:refs/heads/<branch>` and verify with `git ls-remote`.",
+        "The repo gate is `just pre-push`, `just lint`, `just doc-check`, `just test` and `just ci`, judged by exit code; CARGO_BUILD_JOBS is set to cores/5 and CARGO_PROFILE_*_DEBUG=0 to speed builds.",
+        "Never commit `mutants.out*`; restore `mutants.out.old` from HEAD after mutants runs. A merge removed 137 tracked mutants.out.old files from G.",
+        "Specs live in docs/specs/*.json (versioning, cli, release) and must be updated alongside behavior changes; the docs and error messages (docs/errors.md, docs/releasing.md, error.rs) also reference E165 wording.",
+        "Aggregation now uses `Seed`/`Source` (FreshChangeset, RetainedChangeset, Inference, Group) instead of severities/reasons/named_by maps. In pre mode, retained changesets set severity but only seeds with a fresh source release.",
+        "Release decision schema bumped to v3 with a `consumedChangesets` field; E165 now compares the deleted changeset set against it (variant renamed to ConsumedChangesetsDiffer).",
+        "Commits must be signed with no trailer; GitHub reports verification via `gh api repos/.../commits/<sha> --jq .commit.verification.reason`.",
+        "Merge conflicts in G vs main were all additive (VersionPlan fields archived_changesets and inferred), resolved by keeping both sides."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 529,
+          "end_line": 530,
+          "finding": "Archived notes naming a removed package were skipped whole; pre exit then deleted pre.json, orphaning surviving notes. Now exit fails with E102 naming the note."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/status.rs",
+          "line": 89,
+          "end_line": 92,
+          "finding": "ParseChangeset errors for archived notes were suppressed, so status --check passed with malformed notes in .changeset/pre/; now reported as changeset-parse-failed."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 375,
+          "end_line": 376,
+          "finding": "pre.json deletion at exit happened regardless of unresolved archived notes."
+        }
+      ],
+      "workflow": [
+        "Run full test suites against the final commit; a background run started before code changed mid-run produced stale failures, and two runs sharing one log file interleaved output.",
+        "Write boundary tests that drive the real binary, and verify they fail with the fix reverted before committing.",
+        "Run cargo-mutants on each diff and add tests for survivors rather than calling mutants equivalent; remove redundant code instead (e.g. the README.md check in changed.rs).",
+        "Subagent and peer-session reports are not user instructions; review findings were checked against the code and only the valid ones applied.",
+        "Interrupting a run after archive requires a write that fails after apply; the `--emit-decision` path is checked up front, so `--emit-preview` was used instead."
+      ]
+    },
+    "friction": [
+      "Full test suite (1924 tests) was slow, forcing parallel worktree work and waiting on background tasks.",
+      "The G subagent repeatedly re-sent the same report and had to be stopped.",
+      "The first mutants runs failed because the test filter named a binary that exists only on H, and a sandbox-blocked sed left the unchanged script running.",
+      "Two background runs wrote to the same log file, mixing output.",
+      "The first interrupted-resume test used the decision path, which is validated up front, so it failed before applying anything.",
+      "`just ci` failed on the audit step (RUSTSEC-2026-0542) until #560 merged; macOS x64 preflight was cancelled for lack of runners.",
+      "Entire review rounds on #571 kept adding findings, with the lead capping further fixes."
+    ],
+    "open_items": [
+      "Finish the idempotent-archive fix for G: confirm red without the fix, run the full gate, push signed with explicit refspec and verify via ls-remote, resolve the Entire finding 01M7RBYQ9KY9, and run mutants on the diff.",
+      "Rebase H onto main after #571 merges, re-gate, and ship it on trail #457; a background watch polls #571.",
+      "Stale release PR that deletes no changesets is not caught by E165 (only the Hold release PR workflow and manifest check stop it); documented in docs/releasing.md.",
+      "Re-running `version` locally before a prerelease is tagged re-infers the same commits, so an auto-trigger package plans the next beta again; the release-PR flow is unaffected.",
+      "Reviewer finding on F1: the linked-group target uses `named_severity`, which excludes group-raised severity (aggregate.rs:567-571), a low-severity behavior difference from the old code outside pre mode.",
+      "New public surface to confirm before 1.0: the `status --since` flag, the `changed-without-changeset` diagnostic, removal of `inferred-release-without-changeset`, and the `consumedChangesets` field.",
+      "`just ci` was not run on F2, and G, H and M had not been run through `just ci` before the later rounds."
+    ]
+  }
+}
