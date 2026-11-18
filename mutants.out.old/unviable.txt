@@ -1,4 +1,0 @@
-crates/callisto-graph/src/plan.rs:107:9: replace VersionPlan::pending_release -> Option<callisto_model::PendingRelease> with Some(Default::default())
-crates/callisto-graph/src/commands/release_decision.rs:54:5: replace derive_release_decision -> Result<ReleaseDecisionV1, GraphError> with Ok(Default::default())
-crates/callisto-graph/src/commands/release_decision.rs:412:5: replace derive_release_commit_decision -> Result<ReleaseDecisionV1, GraphError> with Ok(Default::default())
-crates/callisto-graph/src/commands/release_decision.rs:979:5: replace reason_from_bump -> Result<ReleaseInclusionReason, GraphError> with Ok(Default::default())
