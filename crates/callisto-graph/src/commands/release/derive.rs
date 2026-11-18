@@ -501,7 +501,6 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
     // Replace each publish leaf with prerequisites from selected dependency
     // packages, ordered by the shared publish edge filter.
     for (id, (package, _)) in selected {
-        let own_ids = package_ids.get(&package.id).map(Vec::as_slice).unwrap_or_default();
         let mut prerequisites = BTreeSet::new();
         for edge in workspace.graph.dependencies_of(&package.id) {
             if !publish_edges.allows(&package.id, &edge.to, edge.kind) {
@@ -511,9 +510,8 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
             // dependent waits for the dependency's crate, not for its npm package. No such distribution means the
             // edge was resolved some other way, so it waits for all of them.
             let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
-            // Likewise only the dependent's distribution in that ecosystem waits; an owner with none there has the
-            // edge on every output.
-            if id.ecosystem() != ecosystem && own_ids.iter().any(|own| own.ecosystem() == ecosystem) {
+            // Likewise only the dependent's own distribution in that ecosystem waits.
+            if id.ecosystem() != ecosystem {
                 continue;
             }
             let dependency_ids = package_ids.get(&edge.to).map(Vec::as_slice).unwrap_or_default();
