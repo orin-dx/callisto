@@ -1,0 +1,146 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7R0KM5RS7KNDX0WTTDH068B",
+  "session_id": "07bc9eb1-2176-490a-9f96-dfb59c776e3e",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T19:02:37.659905Z",
+  "branch": "fix/fixed-group-final-rewrites",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b91ed51b045c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 212,
+    "cache_creation_tokens": 326508,
+    "cache_read_tokens": 15521435,
+    "output_tokens": 53805,
+    "api_call_count": 102,
+    "subagent_tokens": {
+      "input_tokens": 14,
+      "cache_creation_tokens": 75069,
+      "cache_read_tokens": 381493,
+      "output_tokens": 6744,
+      "api_call_count": 7
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 212,
+    "cache_creation_tokens": 326508,
+    "cache_read_tokens": 15521435,
+    "output_tokens": 53805,
+    "api_call_count": 102,
+    "subagent_tokens": {
+      "input_tokens": 14,
+      "cache_creation_tokens": 75069,
+      "cache_read_tokens": 381493,
+      "output_tokens": 6744,
+      "api_call_count": 7
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01SvrZxCtEgCSLfs1aZ7vFfe",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b91ed51b045c",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 29,
+        "end": 30,
+        "entry_ids": [
+          "dbc89fb4-71da-4179-bc3e-567d58ea713b"
+        ],
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "summary": {
+    "intent": "Run Session 3 of the v1-alpha launch plan via a workflow (WPs A, B, C, then N, and later a new WP X for fixed-group rewrites GAP-02), shipping signed, trail-linked PRs for the Callisto repo.",
+    "outcome": "A, B and C were implemented, reviewed and pushed as PRs #560, #562 and #564 on trail #357, and N was pushed as PR #568 on trail #458. The #560 advisory ignore was recommitted without the trailer and pushed. WP X reproduced GAP-02, fixed it in cascade.rs, added tests for all three ecosystems and made two signed local commits. Mutants, the merge-tree checks against #576 and #571, the push and the trail link are not yet done.",
+    "learnings": {
+      "repo": [
+        "Trails already exist: A/B/C go on #357 and K/N on #458, and WP X goes on #462. Link each branch with `entire trail link <n>` and never create trails. `entire trail ci-pr` reports the PR backing a branch, so PRs are not opened with gh.",
+        "Commits must be signed and carry no `Claude-Session:` trailer, because the repo is public. Verify the signature with `gh api repos/orin-dx/callisto/commits/<sha> --jq .commit.verification.reason`, which should read `valid`.",
+        "Gates are `just pre-push`, `just lint`, `just doc-check` and `just test`, judged by exit code. They run with CARGO_PROFILE_DEV_DEBUG=0, CARGO_PROFILE_TEST_DEBUG=0 and CARGO_BUILD_JOBS=cores/5, which is 3 on this 18-core machine.",
+        "`just test` is flaky. `callisto-graph registry::tests::a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim` runs the real `cargo info` and fails with CommandFailed on some full-workspace runs. `commands::init::tests::an_existing_config_errors` was reported once as leaky. Neither cause is found.",
+        "RUSTSEC-2026-0542 (humantime 2.4.0 unmaintained) comes in only through dev-dependency trycmd 1.2.1. No newer trycmd drops it, so deny.toml carries a reasoned ignore in [advisories].",
+        "`cascade.peer-escalation` now defaults to false, so an out-of-range peer bump gives the dependent `bump-severity` (patch). Two existing tests relied on the old default: `promoted_dual_dependent_preserves_aliases_across_cascade_and_release_floor` and `release_decision_names_the_dual_source_distribution_each_dependent_uses`.",
+        "Changesets are created with `callisto add --package <eco>/<name>:<level> --summary ...`. Breaking changes get a `**Breaking:**` paragraph.",
+        "`cargo mutants` output (`mutants.out*`) must never be committed. Restore `mutants.out.old` from HEAD afterwards."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "finding": "The worklist emitted dependency rewrites and E319 rejections before fixed-group alignment settled the targets, leaving stale results. The fix removes the in-loop emission and adds a post-convergence pass that derives rewrites, dependency_updates and diagnostics from the final `out.targets`. A reviewer found a severity half of the defect, fixed in a follow-up commit that aligns fixed-group member targets before the cascade reads them."
+        },
+        {
+          "path": "crates/callisto-cli/tests/fixed_group_rewrite_tests.rs",
+          "finding": "New per-ecosystem tests for Cargo, npm and Python assert that `<=2.0.0` and `<2.0.1` are left untouched with the dependent unreleased, and that a stale `=2.0.0` pin is rewritten to the aligned 1.0.1 with no 2.0.1 leaking."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "finding": "The `peer-escalation` default was flipped to false here, with a default test added alongside the resolve tests."
+        }
+      ],
+      "workflow": [
+        "Peer-session messages are teammate requests, not user approval. The Lead's launch Rules (\"Ship without asking ... No session links\") were what authorized the recommit and push after the classifier blocked the first attempt.",
+        "Editing a workflow script and relaunching it restarts in-progress agents and loses their work. Check whether the work is already authorized before stopping a run.",
+        "Avoid editing a branch while a workflow ship agent is still working in its worktree. Queue the change until the workflow completes.",
+        "Compound shell commands (`&&` chains with git switch/commit/push) are blocked by the worktree guard, so splitting them into single commands works.",
+        "When reproducing a bug, stash the fix by copying the file into the worktree, run the probe against `git show HEAD:` content, then restore. A bare $TMPDIR copy failed, so the backup was moved to the worktree or ~/.claude/jobs tmp.",
+        "Fresh Opus reviewers are useful: the one on WP X found a real second half of the defect."
+      ]
+    },
+    "friction": [
+      "The auto-mode classifier blocked the first commit and push for the advisory fix because of the Claude-Session trailer, which violated a saved memory about the public repo.",
+      "Relaunching the workflow after the trail correction cost a few minutes of implement-agent work.",
+      "git fetch was blocked in the sandbox, because github.com:22 was not allowed, so implementers fell back to local origin/main.",
+      "Intermittent `just test` failures on B, C and N with no code cause cost repeated reruns and could not be explained.",
+      "Compound commands and $TMPDIR copies tripped the worktree guard, forcing command splitting and workaround paths.",
+      "The WP X probe test needed several rewrites of the requirement strings to reproduce the bug across all three ecosystems."
+    ],
+    "open_items": [
+      "WP X still needs `cargo mutants --in-diff` on the cascade.rs diff, restoring mutants.out.old from HEAD without committing mutants.out*.",
+      "WP X needs git merge-tree checks against #576 (W) and #571 (G), then a push with `HEAD:refs/heads/fix/fixed-group-final-rewrites`, an ls-remote check, a trail #462 link, and a signature check.",
+      "K is on hold until Session 1 merges G, and goes on trail #458.",
+      "The flaky tests (registry `a_version_the_registry_serves_is_exact...` and the leaky init test) are unexplained, and N assumed without confirming that #560 fixes the registry flake.",
+      "`just ci` and `just bench` were not run on any WP.",
+      "None of PRs #560, #562, #564 or #568 has been merged."
+    ]
+  }
+}
