@@ -577,39 +577,6 @@ mod tests {
         );
     }
 
-    /// The release pull request reads changesets only, so `status` warns about an inferred release with none.
-    #[test]
-    fn status_warns_about_an_inferred_release_that_has_no_changeset() {
-        use crate::runner::CliCommandRunner;
-        use callisto_graph::locate::IgnoreWalkLocator;
-        use callisto_model::DiagnosticCode;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        auto_package_with_a_feat_commit(root);
-        let status_codes = |root: &std::path::Path| {
-            let locator = IgnoreWalkLocator::new(root);
-            let runner = CliCommandRunner;
-            let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
-            let inference = crate::workspace::select_inference();
-            callisto_graph::commands::status(&ws, &inference, &callisto_graph::commands::StatusOptions::default())
-                .unwrap()
-                .diagnostics
-                .into_iter()
-                .map(|d| d.code)
-                .collect::<Vec<_>>()
-        };
-        assert!(status_codes(root).contains(&DiagnosticCode::InferredReleaseWithoutChangeset));
-
-        std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/new-feature.md"),
-            "---\ncargo/pkg-alpha: minor\n---\n\nA new feature.\n",
-        )
-        .unwrap();
-        assert!(!status_codes(root).contains(&DiagnosticCode::InferredReleaseWithoutChangeset));
-    }
-
     /// `callisto version --dry-run --format text` must print the `[DRY-RUN]`
     /// marker and not modify any manifest on disk.
     #[test]

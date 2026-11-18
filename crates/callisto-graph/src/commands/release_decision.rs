@@ -82,7 +82,12 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
             });
         }
     }
-    ReleaseDecisionV1::new(entries).map_err(GraphError::from)
+    let consumed = plan
+        .consumed_changesets
+        .iter()
+        .map(|path| normalized_git_path(path))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ReleaseDecisionV1::new(entries)?.consuming(consumed))
 }
 
 /// Derives a durable decision for explicit, exact release identities.
@@ -408,6 +413,7 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     let decision_path_str = normalized_git_path(decision_path)?;
     require_version_commit_shape(workspace, release_commit, &changed, &decision_path_str)?;
     let decision = read_committed_decision(workspace, release_commit, decision_path, &decision_path_str)?;
+    require_recorded_changesets_consumed(workspace, release_commit, &changed, &decision)?;
     require_manifests_match_decision(workspace, release_commit, &parent, &changed, &decision)?;
     Ok(decision)
 }
@@ -459,8 +465,8 @@ fn commit_delta<R: CommandRunner, D: DependencyResolver>(
     Ok((parent, changed))
 }
 
-/// The commit has the shape of a version commit: it wrote the decision, consumed a changeset, and touched only the
-/// paths a version commit may touch.
+/// The commit has the shape of a version commit: it wrote the decision and touched only the paths a version commit may
+/// touch.
 fn require_version_commit_shape<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     release_commit: &CommitSha,
@@ -480,17 +486,6 @@ fn require_version_commit_shape<R: CommandRunner, D: DependencyResolver>(
         });
     }
 
-    // Sanity check that a changeset was consumed; the decision's own entries stay the authority.
-    let consumed_a_changeset = changed
-        .iter()
-        .any(|(status, path)| status == "D" && is_changeset_path(path, &changeset_dir));
-    if !consumed_a_changeset {
-        return Err(GraphError::ReleaseCommitVerificationFailed {
-            commit: release_commit.clone(),
-            reason: CommitVerificationFailure::NoChangesetConsumed,
-        });
-    }
-
     // A version commit changes versions and what records them, nothing else. Any other path (build scripts, source,
     // a package manager's `.npmrc` or `.cargo/config.toml`, `callisto.toml`, an action) could change what is published
     // or where, under the cover of a bot-authored diff.
@@ -507,6 +502,33 @@ fn require_version_commit_shape<R: CommandRunner, D: DependencyResolver>(
                 reason: CommitVerificationFailure::UnexpectedPath { path: path.clone() },
             });
         }
+    }
+    Ok(())
+}
+
+/// The commit deletes exactly the changesets the decision recorded. A decision from before that record must delete at
+/// least one, since every release then started from a changeset.
+fn require_recorded_changesets_consumed<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    release_commit: &CommitSha,
+    changed: &[(String, String)],
+    decision: &ReleaseDecisionV1,
+) -> Result<(), GraphError> {
+    let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
+    let deleted: std::collections::BTreeSet<&str> = changed
+        .iter()
+        .filter(|(status, path)| status == "D" && is_changeset_path(path, &changeset_dir))
+        .map(|(_, path)| path.as_str())
+        .collect();
+    let consumed_as_recorded = match &decision.consumed_changesets {
+        Some(recorded) => recorded.iter().map(String::as_str).eq(deleted.iter().copied()),
+        None => !deleted.is_empty(),
+    };
+    if !consumed_as_recorded {
+        return Err(GraphError::ReleaseCommitVerificationFailed {
+            commit: release_commit.clone(),
+            reason: CommitVerificationFailure::ConsumedChangesetsDiffer,
+        });
     }
     Ok(())
 }
@@ -955,7 +977,11 @@ fn reason_from_bump<D: DependencyResolver>(
     package_ids: &std::collections::BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
 ) -> Result<ReleaseInclusionReason, GraphError> {
     match reason {
-        Some(BumpReason::Changeset { .. }) | None => Ok(ReleaseInclusionReason::Changeset),
+        Some(BumpReason::Changeset { .. }) => Ok(ReleaseInclusionReason::Changeset),
+        // Every planned bump comes from a seed or a cascade step, both of which carry a reason.
+        None => Err(GraphError::ReleaseInvariant {
+            detail: format!("planned bump for `{}` has no reason", dependent.display_name()),
+        }),
         Some(BumpReason::Inference { .. }) => Ok(ReleaseInclusionReason::Inference),
         Some(BumpReason::LinkedGroupUnion { group }) => Ok(ReleaseInclusionReason::LinkedGroup {
             group_id: group.to_string(),

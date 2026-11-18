@@ -197,6 +197,24 @@ pub enum ReleasePrActionV2 {
     },
 }
 
+/// The packages a release PR would version, each with its target version; never empty.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingRelease {
+    packages: std::collections::BTreeMap<crate::PackageId, crate::Version>,
+}
+
+impl PendingRelease {
+    /// `None` when nothing would be versioned.
+    pub fn new(packages: impl IntoIterator<Item = (crate::PackageId, crate::Version)>) -> Option<Self> {
+        let packages: std::collections::BTreeMap<_, _> = packages.into_iter().collect();
+        (!packages.is_empty()).then_some(Self { packages })
+    }
+
+    pub fn packages(&self) -> impl Iterator<Item = (&crate::PackageId, &crate::Version)> {
+        self.packages.iter()
+    }
+}
+
 /// Why a release-PR run is intentionally mutation-free.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
@@ -218,12 +236,32 @@ pub struct ReleasePrDecisionV2 {
 impl ReleasePrDecisionV2 {
     pub const SCHEMA_VERSION: u8 = 2;
 
-    /// Derives the only permitted action from fresh workspace and forge facts.
+    /// Derives the only permitted action from fresh workspace and forge facts; with nothing pending it is a no-op.
     pub fn derive(
-        has_pending_changesets: bool,
+        pending: Option<&PendingRelease>,
         config: &ReleasePrConfigV1,
         snapshot: &ReleasePrSnapshotV2,
     ) -> Result<Self, ReleasePrDecisionError> {
+        let release = Self::release_action(config, snapshot)?;
+        let action = match pending {
+            Some(_) => release,
+            None => ReleasePrActionV2::Noop {
+                reason: ReleasePrNoopReasonV1::NoPendingChangesets,
+            },
+        };
+        Ok(Self {
+            schema_version: Self::SCHEMA_VERSION,
+            config: config.clone(),
+            snapshot: snapshot.clone(),
+            action,
+        })
+    }
+
+    /// The create or update a pending release takes against this snapshot.
+    fn release_action(
+        config: &ReleasePrConfigV1,
+        snapshot: &ReleasePrSnapshotV2,
+    ) -> Result<ReleasePrActionV2, ReleasePrDecisionError> {
         if snapshot.repository != config.repository || snapshot.base_branch != config.base_branch {
             return Err(ReleasePrDecisionError::SnapshotIdentityMismatch);
         }
@@ -249,28 +287,17 @@ impl ReleasePrDecisionV2 {
             return Err(ReleasePrDecisionError::AmbiguousManagedPullRequests { count: eligible.len() });
         }
 
-        let action = if !has_pending_changesets {
-            ReleasePrActionV2::Noop {
-                reason: ReleasePrNoopReasonV1::NoPendingChangesets,
-            }
-        } else if let Some(pr) = eligible.first() {
-            ReleasePrActionV2::Update {
+        Ok(match eligible.first() {
+            Some(pr) => ReleasePrActionV2::Update {
                 pull_request_number: pr.number,
                 branch: pr.head_branch.clone(),
                 expected_head_commit: pr.head_commit.clone(),
-                staging_branch: staging_branch.clone(),
-            }
-        } else {
-            ReleasePrActionV2::Create {
+                staging_branch,
+            },
+            None => ReleasePrActionV2::Create {
                 branch: config.release_branch.clone(),
                 staging_branch,
-            }
-        };
-        Ok(Self {
-            schema_version: Self::SCHEMA_VERSION,
-            config: config.clone(),
-            snapshot: snapshot.clone(),
-            action,
+            },
         })
     }
 
@@ -294,7 +321,7 @@ impl ReleasePrDecisionV2 {
         else {
             return Err(ReleasePrDecisionError::SnapshotChanged);
         };
-        if Self::derive(true, &self.config, &self.snapshot)?.action != self.action {
+        if Self::release_action(&self.config, &self.snapshot)? != self.action {
             return Err(ReleasePrDecisionError::SnapshotChanged);
         }
         let mut expected = self.clone();
@@ -776,6 +803,19 @@ mod tests {
         GitHubRepository::parse("orin-dx/callisto").unwrap()
     }
 
+    fn pending() -> PendingRelease {
+        PendingRelease::new([(
+            crate::PackageId::parse("cargo/pkg").unwrap(),
+            crate::Version::semver(1, 0, 1),
+        )])
+        .unwrap()
+    }
+
+    #[test]
+    fn pending_release_is_never_empty() {
+        assert_eq!(PendingRelease::new([]), None);
+    }
+
     fn config() -> ReleasePrConfigV1 {
         ReleasePrConfigV1::new(
             repository(),
@@ -800,7 +840,7 @@ mod tests {
 
     #[test]
     fn derives_create_when_no_managed_pr_exists() {
-        let decision = ReleasePrDecisionV2::derive(true, &config(), &snapshot(vec![])).unwrap();
+        let decision = ReleasePrDecisionV2::derive(Some(&pending()), &config(), &snapshot(vec![])).unwrap();
         assert_eq!(
             decision.action,
             ReleasePrActionV2::Create {
@@ -817,7 +857,8 @@ mod tests {
             "callisto/version-packages",
             "callisto/version-packages--0123456789abcdef0123456789abcdef01234567",
         ] {
-            let decision = ReleasePrDecisionV2::derive(true, &config(), &snapshot(vec![pr(42, branch)])).unwrap();
+            let decision =
+                ReleasePrDecisionV2::derive(Some(&pending()), &config(), &snapshot(vec![pr(42, branch)])).unwrap();
             assert_eq!(
                 decision.action,
                 ReleasePrActionV2::Update {
@@ -834,7 +875,7 @@ mod tests {
     fn derive_rejects_pull_request_on_staging_branch() {
         let staging_pr = pr(7, "callisto/version-packages--staging");
         assert!(matches!(
-            ReleasePrDecisionV2::derive(true, &config(), &snapshot(vec![staging_pr])),
+            ReleasePrDecisionV2::derive(Some(&pending()), &config(), &snapshot(vec![staging_pr])),
             Err(ReleasePrDecisionError::StagingBranchPullRequest { number: 7 })
         ));
     }
@@ -866,8 +907,7 @@ mod tests {
     #[test]
     fn no_pending_changesets_is_noop_after_snapshot_validation() {
         let decision =
-            ReleasePrDecisionV2::derive(false, &config(), &snapshot(vec![pr(42, "callisto/version-packages")]))
-                .unwrap();
+            ReleasePrDecisionV2::derive(None, &config(), &snapshot(vec![pr(42, "callisto/version-packages")])).unwrap();
         assert_eq!(
             decision.action,
             ReleasePrActionV2::Noop {
@@ -883,20 +923,20 @@ mod tests {
             pr(2, "callisto/version-packages--0123456789abcdef0123456789abcdef01234567"),
         ]);
         assert!(matches!(
-            ReleasePrDecisionV2::derive(true, &config(), &ambiguous),
+            ReleasePrDecisionV2::derive(Some(&pending()), &config(), &ambiguous),
             Err(ReleasePrDecisionError::AmbiguousManagedPullRequests { .. })
         ));
 
         let mut foreign = pr(1, "callisto/version-packages");
         foreign.head_repository = GitHubRepository::parse("fork/callisto").unwrap();
         assert!(matches!(
-            ReleasePrDecisionV2::derive(true, &config(), &snapshot(vec![foreign])),
+            ReleasePrDecisionV2::derive(Some(&pending()), &config(), &snapshot(vec![foreign])),
             Err(ReleasePrDecisionError::ForeignManagedPullRequest { .. })
         ));
 
         assert!(matches!(
             ReleasePrDecisionV2::derive(
-                true,
+                Some(&pending()),
                 &config(),
                 &snapshot(vec![pr(1, "callisto/version-packages--bad")])
             ),
@@ -989,8 +1029,12 @@ mod tests {
 
     #[test]
     fn snapshot_recheck_is_order_independent_but_rejects_a_moved_head_or_race() {
-        let decision =
-            ReleasePrDecisionV2::derive(true, &config(), &snapshot(vec![pr(42, "callisto/version-packages")])).unwrap();
+        let decision = ReleasePrDecisionV2::derive(
+            Some(&pending()),
+            &config(),
+            &snapshot(vec![pr(42, "callisto/version-packages")]),
+        )
+        .unwrap();
         let same = snapshot(vec![pr(42, "callisto/version-packages")]);
         assert!(decision.verify_snapshot(&same).is_ok());
 
@@ -1012,7 +1056,7 @@ mod tests {
     #[test]
     fn snapshot_after_update_accepts_only_the_applied_head_transition() {
         let original = snapshot(vec![pr(42, "callisto/version-packages"), pr(99, "other-work")]);
-        let decision = ReleasePrDecisionV2::derive(true, &config(), &original).unwrap();
+        let decision = ReleasePrDecisionV2::derive(Some(&pending()), &config(), &original).unwrap();
         let mut applied = original.clone();
         applied.open_pull_requests[0].head_commit = sha();
         assert!(decision.verify_snapshot_after_update(&applied, &sha()).is_ok());
@@ -1050,13 +1094,13 @@ mod tests {
 
     #[test]
     fn snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions() {
-        for has_changesets in [false, true] {
+        for pending in [None, Some(pending())] {
             let original = snapshot(vec![]);
-            let decision = ReleasePrDecisionV2::derive(has_changesets, &config(), &original).unwrap();
+            let decision = ReleasePrDecisionV2::derive(pending.as_ref(), &config(), &original).unwrap();
             assert!(decision.verify_snapshot_after_update(&original, &sha()).is_err());
         }
         let original = snapshot(vec![pr(42, "callisto/version-packages")]);
-        let mut decision = ReleasePrDecisionV2::derive(true, &config(), &original).unwrap();
+        let mut decision = ReleasePrDecisionV2::derive(Some(&pending()), &config(), &original).unwrap();
         if let ReleasePrActionV2::Update {
             pull_request_number, ..
         } = &mut decision.action

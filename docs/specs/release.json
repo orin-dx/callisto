@@ -365,7 +365,7 @@
     },
     {
       "id": "REL-PR-01",
-      "criterion": "`release-pr decide` returns `noop` when there are no pending changesets. It returns `update` when one open PR from the same repository has head `<release-branch>` or `<release-branch>--<40 lowercase hex>`, and `create` otherwise."
+      "criterion": "`release-pr decide` plans what `version` would apply and returns `noop` when that plan versions no package: no pending changeset names a package and no package with `release-trigger = \"auto\"` has a bump inferred from commits. A changeset that cannot be parsed fails it with the error `version` reports, so a malformed note never reads as nothing to release. It returns `update` when one open PR from the same repository has head `<release-branch>` or `<release-branch>--<40 lowercase hex>`, and `create` otherwise."
     },
     {
       "id": "REL-PR-02",

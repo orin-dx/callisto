@@ -18,9 +18,10 @@ Status: Accepted (implemented in #54)
 ## Consequences
 
 - The released roster and versions are exactly those committed in the release PR.
-- The decision file is a wire contract. Its schema is versioned: `ReleaseDecisionV1::SCHEMA_VERSION` is 2, and the reader accepts 1 and 2 so an older release PR still plans (commit 7027bbfb0).
+- The decision file is a wire contract. Its schema is versioned: `ReleaseDecisionV1::SCHEMA_VERSION` is 3, and the reader accepts 1 to 3 so an older release PR still plans. Schema 3 records `consumedChangesets`, the changeset files the version commit deletes, inside the digest.
 - A decision whose entries do not match its own digest fails to decode (E166) before the diff cross-check. The digest is an unkeyed SHA-256, not a signature, so an edit with a recomputed digest that still passes the decoder's roster checks is caught only by the diff cross-check.
-- A release commit that does not add or modify the decision file, consumes no changeset, whose manifest versions disagree with the decision, or that leaves a claimed package's changelog untouched is refused (E165). Nothing checks that the decision file was produced by `callisto version --emit-decision`.
+- A release commit that does not add or modify the decision file, deletes other changesets than its decision records (for a schema 1 or 2 decision: deletes none), whose manifest versions disagree with the decision, or that leaves a claimed package's changelog untouched is refused (E165). Nothing checks that the decision file was produced by `callisto version --emit-decision`.
+- A release PR opens for any plan that versions a package, including one inferred from commits alone for a package with `release-trigger = "auto"`; its decision then records no consumed changesets.
 - `--emit-decision` derives and validates the decision before writes, then writes its file only after apply succeeds (`crates/callisto-cli/src/commands/version.rs`). A failed apply can leave earlier manifest writes without a decision; interrupted-command recovery is tracked separately.
 
 ## Enforcement

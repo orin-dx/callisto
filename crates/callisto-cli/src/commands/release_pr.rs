@@ -6,7 +6,7 @@
 
 use std::process::ExitCode;
 
-use callisto_graph::commands::{status, StatusOptions};
+use callisto_graph::commands::{plan_version, VersionOptions};
 use callisto_graph::resolver::ManifestWalkResolver;
 use callisto_graph::{GraphError, Workspace};
 use callisto_model::format::{parse_pre_json, PreMode};
@@ -109,8 +109,13 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let workspace = load_workspace(global, &runner)?;
     reject_pre_mode(&workspace)?;
     let inference = crate::workspace::select_inference();
-    let status = status(&workspace, &inference, &StatusOptions::default())?;
-    let decision = ReleasePrDecisionV2::derive(status.has_changesets, &config, &snapshot)?;
+    // The plan `version` would apply, so an unparseable changeset fails here instead of looking like nothing pending.
+    let options = VersionOptions {
+        strict: false,
+        allow_empty_changesets: true,
+    };
+    let plan = plan_version(&workspace, &inference, &options)?;
+    let decision = ReleasePrDecisionV2::derive(plan.pending_release().as_ref(), &config, &snapshot)?;
 
     match global.format {
         OutputFormat::Json => emit_report(

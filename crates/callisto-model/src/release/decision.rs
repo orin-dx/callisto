@@ -86,6 +86,9 @@ fn check_decision_schema_version<E: serde::de::Error>(found: u8, type_name: &str
 pub struct ReleaseDecisionV1 {
     pub schema_version: u8,
     pub entries: Vec<ReleaseDecisionEntry>,
+    /// Workspace-relative, `/`-separated changeset paths the version commit deletes, sorted; absent before schema 3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consumed_changesets: Option<Vec<String>>,
     pub digest: DecisionDigest,
 }
 
@@ -94,6 +97,8 @@ pub struct ReleaseDecisionV1 {
 struct ReleaseDecisionV1Wire {
     schema_version: u8,
     entries: Vec<ReleaseDecisionEntry>,
+    #[serde(default)]
+    consumed_changesets: Option<Vec<String>>,
     digest: DecisionDigest,
 }
 
@@ -104,7 +109,22 @@ impl<'de> Deserialize<'de> for ReleaseDecisionV1 {
     {
         let wire = ReleaseDecisionV1Wire::deserialize(deserializer)?;
         check_decision_schema_version::<D::Error>(wire.schema_version, "release decision")?;
-        let decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;
+        let mut decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;
+        match (wire.schema_version >= 3, wire.consumed_changesets) {
+            (true, Some(consumed)) => decision = decision.consuming(consumed),
+            (false, None) => {
+                decision.schema_version = wire.schema_version;
+                decision.consumed_changesets = None;
+                decision.digest = decision_digest(&decision.entries, None);
+            }
+            (true, None) => return Err(serde::de::Error::missing_field("consumedChangesets")),
+            (false, Some(_)) => {
+                return Err(serde::de::Error::custom(format!(
+                    "release decision schema version {} has no `consumedChangesets`",
+                    wire.schema_version
+                )))
+            }
+        }
         if decision.digest != wire.digest {
             return Err(serde::de::Error::custom(
                 "release decision digest does not match canonical content",
@@ -115,9 +135,19 @@ impl<'de> Deserialize<'de> for ReleaseDecisionV1 {
 }
 
 impl ReleaseDecisionV1 {
-    pub const SCHEMA_VERSION: u8 = 2;
-    /// Version 1 differs only in lacking `unreleasedVersion`, so a committed v1 decision still reads.
-    pub const READABLE_SCHEMA_VERSIONS: [u8; 2] = [1, 2];
+    pub const SCHEMA_VERSION: u8 = 3;
+    /// Version 1 lacks `unreleasedVersion` and versions 1 and 2 lack `consumedChangesets`; both still read.
+    pub const READABLE_SCHEMA_VERSIONS: [u8; 3] = [1, 2, 3];
+
+    /// Records the changesets the version commit deletes, which release verification compares against the commit.
+    pub fn consuming(mut self, changesets: impl IntoIterator<Item = String>) -> Self {
+        let mut changesets: Vec<String> = changesets.into_iter().collect();
+        changesets.sort();
+        changesets.dedup();
+        self.digest = decision_digest(&self.entries, Some(&changesets));
+        self.consumed_changesets = Some(changesets);
+        self
+    }
 
     /// Creates a canonical decision or rejects an ambiguous release roster.
     #[allow(clippy::result_large_err)]
@@ -165,17 +195,21 @@ impl ReleaseDecisionV1 {
             }
         }
 
-        let digest = decision_digest(&entries);
+        let digest = decision_digest(&entries, Some(&[]));
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
             entries,
+            consumed_changesets: Some(Vec::new()),
             digest,
         })
     }
 }
 
-pub(super) fn decision_digest(entries: &[ReleaseDecisionEntry]) -> DecisionDigest {
+pub(super) fn decision_digest(entries: &[ReleaseDecisionEntry], consumed: Option<&[String]>) -> DecisionDigest {
     let mut transcript = CanonicalTranscript::decision_v1();
+    for path in consumed.into_iter().flatten() {
+        transcript.push_str("consumed-changeset", path);
+    }
     for entry in entries {
         transcript.push_str("package", &entry.package.to_string());
         transcript.push_str("target-version", entry.target_version.render());
@@ -271,9 +305,12 @@ mod tests {
             for schema in ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS {
                 let mut wire = serialized.clone();
                 wire["schemaVersion"] = serde_json::json!(schema);
-                let decoded: ReleaseDecisionV1 = serde_json::from_value(wire).unwrap();
-                assert_eq!(decoded, decision);
-                assert_eq!(serde_json::to_value(decoded).unwrap(), serialized);
+                if schema < 3 {
+                    wire.as_object_mut().unwrap().remove("consumedChangesets");
+                }
+                let decoded: ReleaseDecisionV1 = serde_json::from_value(wire.clone()).unwrap();
+                assert_eq!(decoded.entries, decision.entries);
+                assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
             }
         }
     }
@@ -382,10 +419,11 @@ mod tests {
         // Hand-compute a digest matching this exact (invalid) entry set, so
         // the failure below is provably the group-divergence check and not
         // just the pre-existing digest-mismatch guard.
-        let digest = decision_digest(&entries);
+        let digest = decision_digest(&entries, Some(&[]));
         let wire = serde_json::json!({
             "schemaVersion": ReleaseDecisionV1::SCHEMA_VERSION,
             "entries": entries,
+            "consumedChangesets": [],
             "digest": digest,
         });
         let result: Result<ReleaseDecisionV1, _> = serde_json::from_value(wire);
@@ -396,8 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn unreleased_version_reason_is_decision_schema_two() {
-        assert_eq!(ReleaseDecisionV1::SCHEMA_VERSION, 2);
+    fn decision_schema_four_is_unsupported() {
         assert_eq!(
             serde_json::to_value(ReleaseInclusionReason::UnreleasedVersion).unwrap(),
             serde_json::json!({ "kind": "unreleasedVersion" })
@@ -413,24 +450,52 @@ mod tests {
             serde_json::from_value::<ReleaseDecisionV1>(wire.clone()).unwrap(),
             decision
         );
-        wire["schemaVersion"] = serde_json::json!(3);
+        wire["schemaVersion"] = serde_json::json!(4);
         let error = serde_json::from_value::<ReleaseDecisionV1>(wire)
             .unwrap_err()
             .to_string();
         assert!(
-            error.contains("unsupported release decision schema version 3"),
+            error.contains("unsupported release decision schema version 4"),
             "{error}"
         );
     }
 
     #[test]
-    fn committed_v1_decision_file_still_reads_and_writes_as_v2() {
+    fn consumed_changesets_are_sorted_and_part_of_the_digest() {
+        let decision = ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
+            package: ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap(),
+            target_version: Version::semver(1, 0, 0),
+            reasons: vec![ReleaseInclusionReason::Changeset],
+        }])
+        .unwrap();
+        let consumed = decision
+            .clone()
+            .consuming([".changeset/b.md".to_string(), ".changeset/a.md".to_string()]);
+        assert_eq!(
+            consumed.consumed_changesets.as_deref(),
+            Some(&[".changeset/a.md".to_string(), ".changeset/b.md".to_string()][..])
+        );
+        assert_ne!(consumed.digest, decision.digest);
+        let mut wire = serde_json::to_value(&consumed).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ReleaseDecisionV1>(wire.clone()).unwrap(),
+            consumed
+        );
+        wire["consumedChangesets"] = serde_json::json!([".changeset/a.md"]);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(wire.clone()).is_err());
+        wire.as_object_mut().unwrap().remove("consumedChangesets");
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(wire).is_err());
+    }
+
+    #[test]
+    fn committed_v1_decision_file_still_reads_and_writes_as_v1() {
         let raw = include_str!("../../tests/fixtures/release-decision-v1-0.8.0.json");
         let value: serde_json::Value = serde_json::from_str(raw).unwrap();
         assert_eq!(value["schemaVersion"], 1);
         let decision: ReleaseDecisionV1 = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(decision.entries.len(), value["entries"].as_array().unwrap().len());
         assert_eq!(decision.digest.to_string(), value["digest"].as_str().unwrap());
-        assert_eq!(serde_json::to_value(&decision).unwrap()["schemaVersion"], 2);
+        assert_eq!(serde_json::to_value(&decision).unwrap(), value);
+        assert_eq!(decision.consumed_changesets, None);
     }
 }

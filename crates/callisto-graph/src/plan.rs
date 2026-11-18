@@ -102,6 +102,11 @@ pub struct ChangelogWrite {
 }
 
 impl VersionPlan {
+    /// What a release PR made from this plan would version, after cascade and groups; `None` when nothing would.
+    pub fn pending_release(&self) -> Option<callisto_model::PendingRelease> {
+        callisto_model::PendingRelease::new(self.bumps.iter().map(|bump| (bump.package.clone(), bump.to.clone())))
+    }
+
     pub fn to_report(&self, ids: &ReportIds, lockfiles: Option<Vec<LockfileRefreshResult>>) -> VersionReport {
         let mut bumps = Vec::new();
         for b in &self.bumps {
