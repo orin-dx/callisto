@@ -75,7 +75,7 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
                 code: DiagnosticCode::UnknownPackage,
                 severity: DiagnosticSeverity::Warning,
                 message: format!(
-                    "`[[release.artifact]]` package `{}` (asset `{}`) is not a cargo package in this workspace; it has no matrix entry",
+                    "release artifact package `{}` (asset `{}`) is not a cargo package in this workspace; it has no matrix entry",
                     artifact.package, artifact.asset_name
                 ),
                 package: Some(artifact.package.clone()),

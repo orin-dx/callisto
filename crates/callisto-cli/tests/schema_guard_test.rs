@@ -533,6 +533,7 @@ fn diagnostic_code_enum_variants_match_expected_set() {
         "package-rule-matched-nothing",
         "product-artifact-owner-without-product",
         "tag-owned-by-another-package",
+        "artifact-without-forge-destination",
     ]);
 
     assert_eq!(

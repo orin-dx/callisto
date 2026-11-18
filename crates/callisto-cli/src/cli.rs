@@ -277,9 +277,6 @@ pub struct InitArgs {
     /// The package whose binaries ship, when several packages produce one.
     #[arg(long, value_name = "PACKAGE")]
     pub product_package: Option<String>,
-    /// The GitHub repository (`owner/repo`) binaries are released to.
-    #[arg(long, value_name = "OWNER/REPO")]
-    pub forge_repository: Option<String>,
     /// Generate `.github/workflows/callisto-release.yml`.
     #[arg(long)]
     pub workflow: bool,
