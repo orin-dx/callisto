@@ -62,8 +62,8 @@ fn split_head(raw: &str) -> Option<(&str, &str)> {
 }
 
 /// Parses a raw `gh api --include` response, header block first: the first blank line ends the headers and
-/// everything after it is the body, blank lines included. An interim `1xx` or a header-less proxy preamble
-/// followed by another status line is skipped, so it cannot be mistaken for the real status.
+/// everything after it is the body, blank lines included. Any block whose body is another status line (an interim
+/// `1xx` or a proxy CONNECT reply) is skipped, so it cannot be mistaken for the real status.
 pub(crate) fn parse_http_response(raw: &str) -> Result<HttpResponse, String> {
     let mut rest = raw;
     loop {
@@ -84,7 +84,7 @@ pub(crate) fn parse_http_response(raw: &str) -> Result<HttpResponse, String> {
             .filter_map(|line| line.split_once(':'))
             .map(|(name, value)| (name.trim().to_owned(), value.trim().to_owned()))
             .collect();
-        if (status < 200 || headers.is_empty()) && body.starts_with("HTTP/") {
+        if body.starts_with("HTTP/") {
             rest = body;
             continue;
         }
@@ -156,7 +156,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_response_is_split_at_the_last_header_block_and_keeps_its_headers() {
+    fn a_response_keeps_its_status_headers_and_body() {
         let parsed = parse_http_response(
             "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 7\r\nX-RateLimit-Remaining: 0\r\n\r\nslow down",
         )
@@ -184,6 +184,16 @@ mod tests {
                 .unwrap();
         assert_eq!(parsed.status, 201);
         assert_eq!(parsed.body, "ok\r\n\r\nmore");
+    }
+
+    #[test]
+    fn a_proxy_connect_preamble_with_headers_is_skipped() {
+        let parsed = parse_http_response(
+            "HTTP/1.1 200 Connection established\r\nProxy-agent: Squid\r\n\r\nHTTP/2 404\r\nx-a: b\r\n\r\nnope",
+        )
+        .unwrap();
+        assert_eq!(parsed.status, 404);
+        assert_eq!(parsed.body, "nope");
     }
 
     #[test]
