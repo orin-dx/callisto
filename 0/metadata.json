@@ -1,0 +1,119 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QW7PQSDSBT8WYRRMNQHQTN",
+  "session_id": "c7fe30ed-4fb1-4a4c-b3bb-43900cbb93ae",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T17:46:07.874905Z",
+  "branch": "worktree-wp-q-verify-real",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/actions/install-registry-test-tools/action.yml",
+    "AGENTS.md",
+    "crates/callisto-cli/tests/common/local_registries.rs",
+    "crates/callisto-cli/tests/release_real_registry_e2e_tests.rs",
+    "crates/callisto-cli/tests/release_verify_real.rs",
+    "docs/architecture/release.md",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b8c2608dabcd",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 204,
+    "cache_creation_tokens": 203143,
+    "cache_read_tokens": 15559778,
+    "output_tokens": 76110,
+    "api_call_count": 101,
+    "subagent_tokens": {
+      "input_tokens": 68,
+      "cache_creation_tokens": 199844,
+      "cache_read_tokens": 2579833,
+      "output_tokens": 32876,
+      "api_call_count": 34
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 204,
+    "cache_creation_tokens": 203143,
+    "cache_read_tokens": 15559778,
+    "output_tokens": 76110,
+    "api_call_count": 101,
+    "subagent_tokens": {
+      "input_tokens": 68,
+      "cache_creation_tokens": 199844,
+      "cache_read_tokens": 2579833,
+      "output_tokens": 32876,
+      "api_call_count": 34
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 4,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Execute Session 4 (work package Q, `just verify-real`) from the launch plan: build a local-registry rehearsal harness for release recovery scenarios, then commit and push with an explicit refspec, verify via git ls-remote, and add no session trailers.",
+    "outcome": "Built a TLS-based local-registry harness (Verdaccio, pypiserver, JSON simple index) with 5 passing `just verify-real` tests for npm partial-publish adoption and PyPI delayed/never-visible index, conflicting tag, and missing-artifact cases. Committed signed with no trailer and pushed HEAD:refs/heads/worktree-wp-q-verify-real, but the transcript ends before the ls-remote output is seen, and Cargo is not rehearsed.",
+    "learnings": {
+      "repo": [
+        "Callisto never opens sockets itself; all registry traffic goes through child processes (npm, curl, twine, cargo) that inherit the environment, so CA variables (NODE_EXTRA_CA_CERTS, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE) can trust a self-signed loopback cert without production changes.",
+        "The https-only registry rule accepts https on loopback, so local TLS registries bind through the real production binding and the http rejection test stays intact.",
+        "Production observation of PyPI requires the PEP 691 JSON simple index, which pypiserver cannot serve; a small stdlib Python JSON index server was needed for the index side.",
+        "pypiserver redirects unknown packages to a fallback with 303; the TLS variant needs `disable_fallback=True`.",
+        "Source replacement in cargo config does not redirect `cargo publish`; callisto always publishes with `--registry crates-io`, so a local cargo registry cannot be rehearsed and the real crates.io was contacted during a spike.",
+        "Tool pins live in .github/actions/install-registry-test-tools/action.yml; provisioning now goes through a `verify-real-tools` just recipe into target/verify-real/ so pins stay in one place.",
+        "Shared registry helpers were moved from release_real_registry_e2e_tests.rs into tests/common/local_registries.rs, which now also hosts the npm fixture builders."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/registry_endpoint.rs",
+          "line": 124,
+          "end_line": 148,
+          "finding": "The http-rejected-even-on-loopback test and the https-loopback-accepted test define the boundary that the harness relies on."
+        },
+        {
+          "path": "crates/callisto-cli/tests/common/release_harness.rs",
+          "line": 574,
+          "end_line": 608,
+          "finding": "`execute` injects fake cargo credentials; a real-registry variant must omit them and set CA/TWINE/CARGO_HOME variables instead."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+          "line": 194,
+          "end_line": 205,
+          "finding": "PyPI observation shells out to curl, so CURL_CA_BUNDLE controls TLS trust."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Network was unavailable in the sandbox for git fetch, so it had to be retried unsandboxed.",
+      "The pip venv step failed and was redone with uv venv; later `--seed` had to be added.",
+      "pypiserver lacked JSON simple index support, forcing a custom index server.",
+      "Cargo spike hit real crates.io with a fake token before discovering publish ignores source replacement.",
+      "The gates failed once because earlier greedy replacements broke the old e2e test file's compile.",
+      "Delayed-visibility test had timing and partial-copy races, fixed with atomic rename, a 500ms poll, and distinct ports."
+    ],
+    "open_items": [
+      "Cargo recovery scenario is not rehearsed because callisto hard-codes `--registry crates-io`; the dead cargo test code was dropped.",
+      "Optional: delete the superseded argv-level PyPI/cargo tests in release_real_registry_e2e_tests.rs and run `just verify-real` in the Linux CI job.",
+      "Confirm the git ls-remote result matches HEAD after the push.",
+      "Confirm the conflicting-tag test's registry-untouched assertion depends on tag-versus-effect ordering in the code, which was to be read at implementation."
+    ]
+  }
+}

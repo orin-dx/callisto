@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QW7PQSDSBT8WYRRMNQHQTN",
+  "strategy": "manual-commit",
+  "branch": "worktree-wp-q-verify-real",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/actions/install-registry-test-tools/action.yml",
+    "AGENTS.md",
+    "crates/callisto-cli/tests/common/local_registries.rs",
+    "crates/callisto-cli/tests/release_real_registry_e2e_tests.rs",
+    "crates/callisto-cli/tests/release_verify_real.rs",
+    "docs/architecture/release.md",
+    "justfile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 204,
+    "cache_creation_tokens": 203143,
+    "cache_read_tokens": 15559778,
+    "output_tokens": 76110,
+    "api_call_count": 101,
+    "subagent_tokens": {
+      "input_tokens": 68,
+      "cache_creation_tokens": 199844,
+      "cache_read_tokens": 2579833,
+      "output_tokens": 32876,
+      "api_call_count": 34
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 4,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
