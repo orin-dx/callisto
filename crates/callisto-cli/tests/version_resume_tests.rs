@@ -364,6 +364,30 @@ fn a_symlinked_a_binary_and_a_read_only_file_come_through_a_resume_unchanged() {
 }
 
 #[test]
+fn a_workspace_named_with_leading_spaces_resumes_itself_not_its_sibling() {
+    // The sibling has the same crates at the same versions and a different changeset, so resuming it would pass the
+    // input checks and write its bump, notes and changelog into this workspace.
+    assert_resume_matches(
+        "space-prefixed workspace",
+        cargo_cascade,
+        "  release-work",
+        "cargo",
+        None,
+        |repo| {
+            let sibling = repo.root.join("release-work");
+            cargo_cascade(&sibling);
+            write(
+                &sibling,
+                ".changeset/one.md",
+                "---\n\"a\": major\n---\n\nSibling break\n",
+            );
+            git(&repo.root, &["add", "-A"]);
+            git(&repo.root, &["commit", "-qm", "sibling"]);
+        },
+    );
+}
+
+#[test]
 fn a_checkout_with_crlf_line_endings_still_resumes() {
     let (_, resumed) = assert_resume_matches("crlf", cargo_cascade, "", "cargo", None, |repo| {
         write(&repo.workspace, ".gitattributes", "*.md text eol=crlf\n");

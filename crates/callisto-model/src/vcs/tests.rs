@@ -600,13 +600,29 @@ fn commits_since_keeps_a_body_holding_framing_characters() {
 }
 
 #[test]
+fn commits_since_reads_a_commit_with_an_empty_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    std::fs::write(root.join("a.txt"), "x\n").unwrap();
+    git(root, &["add", "a.txt"]);
+    git(root, &["commit", "-q", "--allow-empty-message", "-m", ""]);
+
+    let commits = GitAccess::new(root, &SystemGit).commits_since(None, &[]).unwrap();
+
+    assert_eq!(commits.len(), 1);
+    assert_eq!(commits[0].summary, "");
+    assert_eq!(commits[0].body, None);
+}
+
+#[test]
 fn a_workspace_prefix_keeps_its_leading_and_trailing_spaces() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init_repo(root);
     commit_file(root, "  release-work /a.txt", b"1\n", "feat: first");
 
-    let prefix = GitAccess::new(&root.join("  release-work "), &SystemGit)
+    let prefix = GitAccess::new(root.join("  release-work "), &SystemGit)
         .root_prefix()
         .unwrap();
 

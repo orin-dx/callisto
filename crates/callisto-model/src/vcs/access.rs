@@ -904,13 +904,11 @@ fn parse_git_log_output(stdout: &str, cwd: &Path) -> Result<Vec<GitCommit>, VcsE
     let mut commits = Vec::new();
 
     for record in stdout.split(RECORD_SEP) {
-        // `--format=` output without a `format:`/`tformat:` prefix ends each entry with a newline;
-        // strip it, not the message's own content.
-        let record = record.trim_end_matches('\n');
         if record.is_empty() {
             continue;
         }
 
+        // Split before trimming: an empty message leaves `<sha>\n`, which is a commit, not a malformed record.
         let Some((sha_str, message)) = record.split_once('\n') else {
             return Err(VcsError::MalformedLogOutput {
                 detail: format!(
@@ -925,7 +923,7 @@ fn parse_git_log_output(stdout: &str, cwd: &Path) -> Result<Vec<GitCommit>, VcsE
             message: e.to_string(),
         })?;
 
-        let message = message.replace("\r\n", "\n");
+        let message = message.trim_end_matches('\n').replace("\r\n", "\n");
         let (summary, body) = match message.split_once("\n\n") {
             Some((title, rest)) => (title.trim_end().to_string(), Some(rest.to_string())),
             None => (message.trim_end().to_string(), None),
