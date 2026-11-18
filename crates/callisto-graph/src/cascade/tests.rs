@@ -1,4 +1,5 @@
 use super::*;
+use callisto_model::NativeName;
 use callisto_model::{GroupKind, GroupName, Package, ReleaseTrigger, VersionGrammar};
 
 use crate::config::{CascadeBumpSeverity, GroupDef, GroupMember};
@@ -352,10 +353,11 @@ fn test_dual_identity_rewrite_key_preserves_declared_name() {
     let mut identity = IdentityIndex::default();
     identity
         .native
-        .insert((Ecosystem::Cargo, "my-native-lib".to_string()), dep_target.clone());
-    identity
-        .native
-        .insert((Ecosystem::Npm, "@scope/my-native-lib".to_string()), dep_target.clone());
+        .insert(NativeName::new(Ecosystem::Cargo, "my-native-lib"), dep_target.clone());
+    identity.native.insert(
+        NativeName::new(Ecosystem::Npm, "@scope/my-native-lib"),
+        dep_target.clone(),
+    );
 
     let input = CascadeInput {
         graph: &graph,

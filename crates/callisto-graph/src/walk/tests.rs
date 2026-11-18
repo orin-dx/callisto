@@ -42,7 +42,7 @@ fn fixed_group_member_resolves_via_prefixed_unpromoted_cargo_package() {
         .graph
         .identity()
         .native
-        .get(&(Ecosystem::Cargo, "foo".to_string()))
+        .get(&callisto_model::NativeName::new(Ecosystem::Cargo, "foo"))
         .expect("native entry must exist");
     let prefixed = ws
         .graph
@@ -451,8 +451,8 @@ fn claiming_ecosystems_is_name_scoped_not_full_path_ecosystem_set() {
     assert_eq!(
         native_keys,
         vec![
-            (Ecosystem::Cargo, "native-core".to_string()),
-            (Ecosystem::Npm, "@myorg/native-core-linux-x64-gnu".to_string()),
+            callisto_model::NativeName::new(Ecosystem::Cargo, "native-core"),
+            callisto_model::NativeName::new(Ecosystem::Npm, "@myorg/native-core-linux-x64-gnu"),
         ],
         "path_native_keys must retain the COMPLETE unfiltered key set, unlike claiming_ecosystems"
     );
@@ -551,6 +551,36 @@ fn same_ecosystem_collision_still_errors_unchanged() {
             assert_eq!(paths.len(), 2);
         }
         other => panic!("expected DuplicatePackage, got {other:?}"),
+    }
+}
+
+#[test]
+fn equivalent_pypi_names_in_two_directories_are_one_duplicate() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_pkg(root, "a", Ecosystem::Pypi, "My_Pkg");
+    write_pkg(root, "b", Ecosystem::Pypi, "my-pkg");
+    let locator = crate::locate::IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+    match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+        Err(GraphError::DuplicatePackage { paths, .. }) => assert_eq!(paths.len(), 2),
+        Err(other) => panic!("expected DuplicatePackage, got {other:?}"),
+        Ok(_) => panic!("expected DuplicatePackage error, got Ok"),
+    }
+}
+
+#[test]
+fn equivalent_cargo_names_in_two_directories_are_one_duplicate() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_pkg(root, "crates/a", Ecosystem::Cargo, "foo-bar");
+    write_pkg(root, "crates/b", Ecosystem::Cargo, "foo_bar");
+    let locator = crate::locate::IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+    match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+        Err(GraphError::DuplicatePackage { paths, .. }) => assert_eq!(paths.len(), 2),
+        Err(other) => panic!("expected DuplicatePackage, got {other:?}"),
+        Ok(_) => panic!("expected DuplicatePackage error, got Ok"),
     }
 }
 
@@ -709,13 +739,13 @@ fn promoted_native_values_point_to_prefixed_ids() {
         .graph
         .identity()
         .native
-        .get(&(Ecosystem::Cargo, "native-core".to_string()))
+        .get(&callisto_model::NativeName::new(Ecosystem::Cargo, "native-core"))
         .expect("Cargo native entry must exist");
     let npm_native = ws
         .graph
         .identity()
         .native
-        .get(&(Ecosystem::Npm, "native-core".to_string()))
+        .get(&callisto_model::NativeName::new(Ecosystem::Npm, "native-core"))
         .expect("Npm native entry must exist");
 
     assert_eq!(

@@ -14,6 +14,7 @@ use std::path::Path;
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::DependencyResolver;
 use callisto_graph::Workspace;
+use callisto_model::NativeName;
 use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner, Ecosystem, PackageId};
 
 struct NoopRunner;
@@ -138,7 +139,7 @@ fn assert_python_normalized_dependency(native_name: &str, declared_name: &str, d
     assert!(ws
         .identity
         .native
-        .contains_key(&(Ecosystem::Pypi, native_name.to_string())));
+        .contains_key(&NativeName::new(Ecosystem::Pypi, native_name)));
     assert!(ws.graph.diagnostics().is_empty());
 
     let app_package = ws.graph.packages().find(|package| package.id == app).unwrap();
@@ -323,7 +324,7 @@ fn resolve_native_falls_back_across_ecosystem_boundary() {
     let mut index = IdentityIndex::default();
     index
         .native
-        .insert((Ecosystem::Cargo, "rust-addon".to_string()), cargo_id.clone());
+        .insert(NativeName::new(Ecosystem::Cargo, "rust-addon"), cargo_id.clone());
 
     // Same-ecosystem lookup still works
     assert_eq!(
@@ -360,10 +361,10 @@ fn resolve_native_deduplicates_same_bare_name_across_ecosystems() {
     let mut index = IdentityIndex::default();
     index
         .native
-        .insert((Ecosystem::Cargo, "shared-name".to_string()), shared_id.clone());
+        .insert(NativeName::new(Ecosystem::Cargo, "shared-name"), shared_id.clone());
     index
         .native
-        .insert((Ecosystem::Pypi, "shared-name".to_string()), shared_id.clone());
+        .insert(NativeName::new(Ecosystem::Pypi, "shared-name"), shared_id.clone());
 
     // Npm lookup: both Cargo and Pypi entries resolve to the same PackageId,
     // so dedup collapses them and returns that single ID.
@@ -394,7 +395,7 @@ fn workspace_load_populates_identity_field_from_graph_identity() {
 
     use callisto_model::Ecosystem;
     assert_eq!(
-        ws.identity.native.get(&(Ecosystem::Cargo, "solo-crate".to_string())),
+        ws.identity.native.get(&NativeName::new(Ecosystem::Cargo, "solo-crate")),
         Some(&PackageId::parse("solo-crate").unwrap()),
         "Workspace.identity must be populated from graph.identity() at load time"
     );

@@ -221,6 +221,66 @@ impl TryFrom<String> for PackageId {
     }
 }
 
+/// A manifest-declared package name. Names a registry treats as one project are equal: PyPI per PEP 503, Cargo
+/// ignoring case and `-`/`_`, every other ecosystem exact. Keeps the spelling the manifest used.
+#[derive(Clone, Debug)]
+pub struct NativeName {
+    ecosystem: Ecosystem,
+    spelling: String,
+    key: String,
+}
+
+impl NativeName {
+    pub fn new(ecosystem: Ecosystem, name: &str) -> Self {
+        let key = match ecosystem {
+            Ecosystem::Pypi => crate::normalize_pypi_project_name(name),
+            Ecosystem::Cargo => name.to_lowercase().replace('_', "-"),
+            _ => name.to_owned(),
+        };
+        NativeName {
+            ecosystem,
+            spelling: name.to_owned(),
+            key,
+        }
+    }
+
+    pub fn ecosystem(&self) -> Ecosystem {
+        self.ecosystem
+    }
+
+    /// The spelling the manifest declared.
+    pub fn as_str(&self) -> &str {
+        &self.spelling
+    }
+}
+
+impl PartialEq for NativeName {
+    fn eq(&self, other: &Self) -> bool {
+        self.ecosystem == other.ecosystem && self.key == other.key
+    }
+}
+
+impl Eq for NativeName {}
+
+impl std::hash::Hash for NativeName {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ecosystem.hash(state);
+        self.key.hash(state);
+    }
+}
+
+impl PartialOrd for NativeName {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for NativeName {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.ecosystem, &self.key).cmp(&(other.ecosystem, &other.key))
+    }
+}
+
 /// Errors produced by [`PackageId::parse`].
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]

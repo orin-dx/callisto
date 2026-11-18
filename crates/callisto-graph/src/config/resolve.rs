@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use callisto_model::release::is_safe_artifact_component;
 use callisto_model::{
-    ConfigKey, Ecosystem, GitHubRepository, PackageId, PublishTarget, RegistryKey, ReleaseTrigger, Severity,
-    TagTemplate,
+    ConfigKey, Ecosystem, GitHubRepository, NativeName, PackageId, PublishTarget, RegistryKey, ReleaseTrigger,
+    Severity, TagTemplate,
 };
 
 use crate::changelog::ChangelogLayout;
@@ -265,7 +265,7 @@ pub(crate) fn rule_applies(rule_id: &PackageId, native_names: &[(Ecosystem, &str
     rule_id.ecosystem().is_some_and(|eco| {
         native_names
             .iter()
-            .any(|(ecosystem, name)| *ecosystem == eco && *name == rule_id.name())
+            .any(|(ecosystem, name)| NativeName::new(*ecosystem, name) == NativeName::new(eco, rule_id.name()))
     })
 }
 
@@ -1212,6 +1212,14 @@ mod tests {
         );
         assert!(!rule_applies(&rule("cargo/@orin-dx/michi"), &names));
         assert!(!rule_applies(&rule("pypi/michi-node"), &names));
+    }
+
+    #[test]
+    fn a_qualified_rule_matches_names_the_registry_treats_as_equal() {
+        let rule = |text: &str| PackageId::parse(text).unwrap();
+        assert!(rule_applies(&rule("pypi/my-pkg"), &[(Ecosystem::Pypi, "My_Pkg")]));
+        assert!(rule_applies(&rule("cargo/foo-bar"), &[(Ecosystem::Cargo, "Foo_Bar")]));
+        assert!(!rule_applies(&rule("npm/foo-bar"), &[(Ecosystem::Npm, "foo_bar")]));
     }
 
     /// Pass 1 returns the first matching Prefixed entry in Vec (TOML declaration) order.

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use callisto_manifests::read_identity;
 use callisto_model::vcs::GitAccess;
-use callisto_model::{normalize_pypi_project_name, Ecosystem, ManifestFormat, Package};
+use callisto_model::{Ecosystem, ManifestFormat, NativeName, Package};
 
 use crate::commands::git_batch::{batch_blobs, BatchBlob};
 use crate::error::GraphError;
@@ -98,18 +98,11 @@ fn declares(
         let declared = read_identity(format, &text, &path)
             .ok()
             .and_then(|identity| identity.name);
-        if declared.is_some_and(|declared| names_equal(ecosystem, &declared, name)) {
+        if declared.is_some_and(|declared| NativeName::new(ecosystem, &declared) == NativeName::new(ecosystem, name)) {
             return Ok(true);
         }
     }
     Ok(false)
-}
-
-fn names_equal(ecosystem: Ecosystem, left: &str, right: &str) -> bool {
-    match ecosystem {
-        Ecosystem::Pypi => normalize_pypi_project_name(left) == normalize_pypi_project_name(right),
-        _ => left == right,
-    }
 }
 
 /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.
@@ -131,7 +124,9 @@ fn first_manifest_declares_at(
     let declared = read_identity(manifest.format, &text, path)
         .ok()
         .and_then(|identity| identity.name);
-    Ok(declared.is_some_and(|declared| names_equal(manifest.ecosystem(), &declared, name)))
+    Ok(declared.is_some_and(|declared| {
+        NativeName::new(manifest.ecosystem(), &declared) == NativeName::new(manifest.ecosystem(), name)
+    }))
 }
 
 /// The one package among `candidates` that owned the bare name `name` at `rev`, if exactly one did.
@@ -164,7 +159,7 @@ pub(crate) fn sole_owner_at<'p>(
         declaring.iter().any(|ecosystem| {
             identity
                 .native_name(&pkg.id, *ecosystem)
-                .is_some_and(|native| names_equal(*ecosystem, native, name))
+                .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))
         })
     });
     let first = holders.next();
@@ -193,6 +188,6 @@ pub(crate) fn may_have_held_name_at(
     Ok(declaring.iter().any(|ecosystem| {
         identity
             .native_name(&pkg.id, *ecosystem)
-            .is_some_and(|native| names_equal(*ecosystem, native, name))
+            .is_some_and(|native| NativeName::new(*ecosystem, native) == NativeName::new(*ecosystem, name))
     }))
 }

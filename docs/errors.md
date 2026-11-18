@@ -174,7 +174,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E058 | `<path>` is not inside a Git repository | Callisto needs a Git repository: run `git init` in the workspace root. |
 | E209 | Failed to parse manifest `<path>`: <message> | Fix the manifest's syntax; a workspace member's manifest is never skipped. |
 | E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | Fix the changeset file's frontmatter, or delete it and write a new one. |
-| E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
+| E100 | Package ID is defined at more than one manifest path, or two paths declare names one registry treats as the same project (PyPI names equal under PEP 503, Cargo names equal under case and `-`/`_`) | Rename one package so its name is unique across the workspace. |
 | E101 | A package's explicit `tag-template` equals another package's default tags | Change that `tag-template`, or remove it so the package uses its default. |
 | E102 | Named package was not found in the workspace. When up to three workspace packages have a similar name, a second line reads ``did you mean `cargo/lib`?`` (comparison ignores case and the ecosystem prefix). | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers.<hint> |
 | E103 | A bare name matches more than one package; the message lists their qualified ids | Write the qualified id instead of `<name>`, e.g. in a changeset `cargo/<name>: minor`. |
