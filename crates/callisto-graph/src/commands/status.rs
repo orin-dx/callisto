@@ -74,7 +74,10 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     let mut packages = Vec::new();
     let ids = ws.report_ids();
     let base_versions = ws.base_versions()?;
-    let (loaded_changesets, changeset_load_failures) = crate::load_changesets_permissive(&ws.root, &ws.config)?;
+    let (loaded_changesets, mut changeset_load_failures) = crate::load_changesets_permissive(&ws.root, &ws.config)?;
+    // An unparseable archived note fails the cycle's exit just as a root one fails `version`.
+    let (_, archive_failures) = crate::aggregate::load_archived_changesets_permissive(&ws.root, &ws.config)?;
+    changeset_load_failures.extend(archive_failures);
     let tags = ws.tags()?;
 
     let all_packages: Vec<&Package> = ws.graph.packages().collect();

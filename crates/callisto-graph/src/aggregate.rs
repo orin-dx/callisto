@@ -282,6 +282,14 @@ pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedCh
 /// Prefixes the id of a changeset loaded from a v3 pre cycle's archive.
 pub(crate) const ARCHIVED_ID_PREFIX: &str = "pre/";
 
+/// [`load_archived_changesets`] with each unparseable archived note returned beside the parsed ones.
+pub(crate) fn load_archived_changesets_permissive(
+    root: &Path,
+    cfg: &ResolvedConfig,
+) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
+    load_changesets_in(root, &cfg.pre_archive_dir())
+}
+
 pub fn load_archived_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
     let mut archived = strict(load_changesets_in(root, &cfg.pre_archive_dir())?)?;
     // A new note may reuse an archived note's name; the two are distinct changes.
@@ -474,6 +482,7 @@ where
     let is_pre_mode = pre
         .map(|s| s.mode == callisto_model::format::PreMode::Pre)
         .unwrap_or(false);
+    let is_exiting = pre.is_some_and(|s| s.mode == callisto_model::format::PreMode::Exit);
     // Ids already recorded in pre.json still resolve for severity, but are not re-added to the changelog.
     let already_recorded: std::collections::HashSet<&str> = pre
         .and_then(|s| s.changesets())
@@ -505,6 +514,16 @@ where
                     Some(target_pkg) => {
                         resolved.push((entry, target_pkg));
                         continue;
+                    }
+                    // Exit deletes pre.json, so an archived note skipped here would never be released.
+                    None if is_exiting && archived_paths.contains(&cs.path) => {
+                        return Err(GraphError::UnknownPackage {
+                            id,
+                            hint: format!(
+                                "\nThe archived changeset `{}` names it; remove that entry or restore the package, then run `version` again.",
+                                cs.path.display()
+                            ),
+                        });
                     }
                     None => Some("references a package that is not in the workspace:"),
                 },

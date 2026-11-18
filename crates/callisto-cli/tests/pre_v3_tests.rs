@@ -312,3 +312,93 @@ fn a_v3_pre_cycle_archives_applied_changesets_and_releases_them_at_exit() {
     assert_eq!(markdown_in(&root.join(".changeset/pre")), Vec::<String>::new());
     assert!(!root.join(".changeset/pre.json").exists());
 }
+
+/// An unparseable archived note fails `status --check`, as an unparseable new one does.
+#[test]
+fn status_check_reports_an_unparseable_archived_note() {
+    let dir = v3_cycle();
+    let root = dir.path();
+    fs::create_dir_all(root.join(".changeset/pre")).unwrap();
+    fs::write(
+        root.join(".changeset/pre/broken.md"),
+        "---\ncargo/pkg-alpha: sideways\n---\n\nBroken.\n",
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "broken archive"]);
+
+    let status = callisto(root, &["--format", "json", "status", "--check"]);
+    assert_eq!(
+        status.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    let failures: Vec<&str> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["code"] == "changeset-parse-failed")
+        .map(|d| d["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(failures, [".changeset/pre/broken.md"]);
+}
+
+/// `pre exit` releases the archive and deletes pre.json, so it refuses while an archived note names a removed package.
+#[test]
+fn exit_refuses_while_an_archived_note_names_a_removed_package() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"a\", \"b\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    for name in ["a", "b"] {
+        fs::create_dir_all(root.join(name).join("src")).unwrap();
+        fs::write(
+            root.join(name).join("Cargo.toml"),
+            format!("[package]\nname = \"pkg-{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n"),
+        )
+        .unwrap();
+        fs::write(root.join(name).join("src/lib.rs"), "pub fn f() {}\n").unwrap();
+    }
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/pre.json"),
+        "{\"mode\":\"pre\",\"tag\":\"beta\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".changeset/both.md"),
+        "---\ncargo/pkg-a: minor\ncargo/pkg-b: minor\n---\n\nBoth.\n",
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "enter pre"]);
+    version(root);
+    assert_eq!(markdown_in(&root.join(".changeset/pre")), ["both.md"]);
+
+    fs::remove_dir_all(root.join("b")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"a\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    let exit = callisto(root, &["pre", "exit"]);
+    assert!(exit.status.success(), "{}", String::from_utf8_lossy(&exit.stderr));
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "drop b and exit"]);
+
+    let run = callisto(root, &["version", "--no-refresh-lockfiles"]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(!run.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("E102") && stderr.contains("pkg-b") && stderr.contains("both.md"),
+        "{stderr}"
+    );
+    assert!(root.join(".changeset/pre.json").exists());
+    assert_eq!(markdown_in(&root.join(".changeset/pre")), ["both.md"]);
+}
