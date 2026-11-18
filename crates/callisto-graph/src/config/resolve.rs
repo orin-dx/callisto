@@ -155,34 +155,82 @@ fn parse_qualified_package(value: &str, key: &str) -> Result<PackageId, ConfigEr
     })
 }
 
+/// A `[release] asset-name` template. `{target}` is its only placeholder: one archive holds every binary of the
+/// package, and a version in the name would break stable download URLs.
+struct AssetNameTemplate(String);
+
+impl AssetNameTemplate {
+    fn parse(raw: &str) -> Result<Self, ConfigError> {
+        let without_target = raw.replace("{target}", "");
+        if without_target.contains(['{', '}']) {
+            return Err(ConfigError::InvalidProductRelease {
+                detail: format!("asset-name `{raw}` may only use the placeholder {{target}}"),
+            });
+        }
+        Ok(AssetNameTemplate(raw.to_owned()))
+    }
+
+    fn expand(&self, target: &str) -> String {
+        self.0.replace("{target}", target)
+    }
+}
+
 fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleaseConfig, ConfigError> {
     let package = parse_qualified_package(&raw.product_package, "product-package")?;
-    if raw.artifact.is_empty() {
-        return Err(ConfigError::InvalidProductRelease {
-            detail: "a [release] section must declare at least one [[release.artifact]]".to_owned(),
-        });
+    let mut declared: Vec<(PackageId, String, String)> = Vec::new();
+    let mut templated = BTreeSet::new();
+    match (raw.targets.is_empty(), raw.asset_name.as_deref()) {
+        (false, Some(template)) => {
+            let template = AssetNameTemplate::parse(template)?;
+            for target in &raw.targets {
+                templated.insert((package.clone(), target.clone()));
+                declared.push((package.clone(), target.clone(), template.expand(target)));
+            }
+        }
+        (true, None) => {}
+        (_, _) => {
+            return Err(ConfigError::InvalidProductRelease {
+                detail: "[release] targets and asset-name must be declared together".to_owned(),
+            });
+        }
     }
-    let mut artifacts = Vec::with_capacity(raw.artifact.len());
-    let mut seen_assets = BTreeSet::new();
     for entry in &raw.artifact {
-        let package = parse_qualified_package(&entry.package, "[[release.artifact]] package")?;
-        if !is_safe_artifact_component(&entry.target) || !is_safe_artifact_component(&entry.asset_name) {
+        let owner = parse_qualified_package(&entry.package, "[[release.artifact]] package")?;
+        if templated.contains(&(owner.clone(), entry.target.clone())) {
             return Err(ConfigError::InvalidProductRelease {
                 detail: format!(
-                    "artifact target `{}` and asset-name `{}` must each be a single safe path component",
-                    entry.target, entry.asset_name
+                    "target `{}` of `{owner}` is named by [release] targets and by a [[release.artifact]]; declare it once",
+                    entry.target
                 ),
             });
         }
-        if !seen_assets.insert(entry.asset_name.clone()) {
+        declared.push((owner, entry.target.clone(), entry.asset_name.clone()));
+    }
+    if declared.is_empty() {
+        return Err(ConfigError::InvalidProductRelease {
+            detail: "a [release] section must declare at least one [[release.artifact]] or [release] targets"
+                .to_owned(),
+        });
+    }
+    let mut artifacts = Vec::with_capacity(declared.len());
+    let mut seen_assets = BTreeSet::new();
+    for (package, target, asset_name) in declared {
+        if !is_safe_artifact_component(&target) || !is_safe_artifact_component(&asset_name) {
             return Err(ConfigError::InvalidProductRelease {
-                detail: format!("asset-name `{}` is declared more than once", entry.asset_name),
+                detail: format!(
+                    "artifact target `{target}` and asset-name `{asset_name}` must each be a single safe path component"
+                ),
+            });
+        }
+        if !seen_assets.insert(asset_name.clone()) {
+            return Err(ConfigError::InvalidProductRelease {
+                detail: format!("asset-name `{asset_name}` is declared more than once"),
             });
         }
         artifacts.push(ProductArtifactConfig {
             package,
-            target: entry.target.clone(),
-            asset_name: entry.asset_name.clone(),
+            target,
+            asset_name,
         });
     }
     let forge_repository = raw
@@ -1507,6 +1555,60 @@ mod tests {
     fn resolve_str(body: &str) -> Result<ResolvedConfig, ConfigError> {
         let raw = toml::from_str::<RawConfig>(&format!("{RELEASE_HEAD}{body}{ARTIFACT}")).expect("parse");
         resolve(Path::new("/workspace"), raw)
+    }
+
+    const TARGET_LIST: &str =
+        "targets = [\"x86_64-unknown-linux-gnu\", \"aarch64-apple-darwin\", \"x86_64-apple-darwin\"]\n";
+
+    fn product_release(body: &str) -> Result<ResolvedConfig, ConfigError> {
+        let raw = toml::from_str::<RawConfig>(&format!("{RELEASE_HEAD}{body}")).expect("parse");
+        resolve(Path::new("/workspace"), raw)
+    }
+
+    fn explicit_blocks() -> String {
+        ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-apple-darwin"]
+            .iter()
+            .map(|target| {
+                format!(
+                    "\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"{target}\"\nasset-name = \"demo-{target}.tar.gz\"\n"
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn targets_and_an_asset_name_template_resolve_to_the_explicit_artifacts() {
+        let templated =
+            product_release(&format!("{TARGET_LIST}asset-name = \"demo-{{target}}.tar.gz\"\n")).expect("templated");
+        let explicit = product_release(&explicit_blocks()).expect("explicit");
+        assert_eq!(templated.product_release, explicit.product_release);
+    }
+
+    #[test]
+    fn an_explicit_artifact_for_a_templated_target_is_an_error() {
+        let body = format!(
+            "{TARGET_LIST}asset-name = \"demo-{{target}}.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"other.zip\"\n"
+        );
+        assert!(detail(product_release(&body)).contains("aarch64-apple-darwin"));
+    }
+
+    #[test]
+    fn an_explicit_artifact_for_a_target_the_template_omits_is_allowed() {
+        let body = "targets = [\"x86_64-unknown-linux-gnu\"]\nasset-name = \"demo-{target}.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-pc-windows-msvc\"\nasset-name = \"demo-windows.zip\"\n";
+        let config = product_release(body).expect("resolves");
+        assert_eq!(config.product_release.expect("release").artifacts.len(), 2);
+    }
+
+    #[test]
+    fn only_the_target_placeholder_is_allowed_in_an_asset_name() {
+        let body = format!("{TARGET_LIST}asset-name = \"demo-{{version}}-{{target}}.tar.gz\"\n");
+        assert!(detail(product_release(&body)).contains("{target}"));
+    }
+
+    #[test]
+    fn targets_and_asset_name_come_together() {
+        assert!(detail(product_release(TARGET_LIST)).contains("together"));
+        assert!(detail(product_release("asset-name = \"demo-{target}.tar.gz\"\n")).contains("together"));
     }
 
     fn forge(config: &ResolvedConfig) -> Option<String> {
