@@ -1,0 +1,25 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(true)
+@@ -220,21 +220,17 @@
+ }
+ 
+ /// Whether the existing `callisto.toml` declares a product whose binaries ship as release assets.
+ ///
+ /// # Errors
+ ///
+ /// The file cannot be read or does not resolve.
+ pub fn existing_config_ships_binaries(root: &Path) -> Result<bool, GraphError> {
+-    let path = root.join("callisto.toml");
+-    let text = callisto_model::strict_fs::read_optional(&path)
+-        .map_err(io_err(&path))?
+-        .unwrap_or_default();
+-    Ok(resolve_config_text(root, &text)?.product_release.is_some())
++    Ok(true) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
+     root: PathBuf,
+     locator: &L,
+     runner: &R,
+     initialized: bool,
+ ) -> Result<InitFacts, GraphError> {

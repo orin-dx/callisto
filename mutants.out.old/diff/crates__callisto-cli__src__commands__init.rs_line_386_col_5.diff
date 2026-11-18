@@ -1,0 +1,27 @@
+--- crates/callisto-cli/src/commands/init.rs
++++ replace build_workflow -> Result<(String, BranchName), CliError> with Ok((String::new(), Default::default()))
+@@ -378,23 +378,17 @@
+ 
+ /// The workflow text and the default branch it triggers on.
+ fn build_workflow<R: CommandRunner>(
+     facts: &InitFacts,
+     shape: scaffold::WorkflowShape,
+     runner: &R,
+     human: &mut dyn Write,
+ ) -> Result<(String, BranchName), CliError> {
+-    scaffold::ensure_workflow_absent(&facts.root)?;
+-    let branch = scaffold::default_branch(runner, &facts.root);
+-    writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
+-    let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package versions are semver");
+-    let commit = scaffold::resolve_release_commit(runner, &facts.root, &version)?;
+-    let content = scaffold::render_workflow(facts, shape, &branch.name, &commit, &version);
+-    Ok((content, branch.name))
++    Ok((String::new(), Default::default())) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Printed, and recorded as a warning diagnostic, when no `origin` remote is configured.
+ const ORIGIN_MISSING_NOTE: &str = "No `origin` remote is configured: skipping the release workflow and \
+ shipping-binaries questions; `callisto release` will refuse until one is added.";
+ 
+ /// Rejects flag combinations invalid regardless of workspace facts.
+ fn validate_flags(args: &InitArgs) -> Result<(), CliError> {

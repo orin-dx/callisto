@@ -1,0 +1,1634 @@
+[
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace run -> Result<ExitCode, CliError> with Ok(Default::default())\n@@ -104,204 +104,17 @@\n     args: InitArgs,\n     global: &GlobalArgs,\n     interactive: bool,\n     prompter: &mut dyn Prompter,\n     out: &mut dyn Write,\n     err: &mut dyn Write,\n     runner: &R,\n ) -> Result<ExitCode, CliError> {\n-    validate_flags(&args)?;\n-    // A repository whose manifests all sit in subdirectories has no root yet: init makes the Git toplevel one.\n-    let (root, no_root) = match workspace_root(global, runner) {\n-        Ok(root) => (root, None),\n-        Err(CliError::Locate(LocateError::WorkspaceRootNotFound { start, toplevel })) => (\n-            toplevel.clone(),\n-            Some(LocateError::WorkspaceRootNotFound { start, toplevel }),\n-        ),\n-        Err(error) => return Err(error),\n-    };\n-    let locator = IgnoreWalkLocator::new(&root);\n-    if args.workflow && scaffold::is_initialized(&root)? {\n-        // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.\n-        if args.versioning.is_some()\n-            || !args.artifact_targets.is_empty()\n-            || args.forge_repository.is_some()\n-            || args.product_package.is_some()\n-        {\n-            return Err(GraphError::InitAlreadyInitialized {\n-                path: root.join(\"callisto.toml\"),\n-            }\n-            .into());\n-        }\n-        return run_workflow_only(&root, &locator, global, out, err, runner);\n-    }\n-    let facts = scaffold::detect(&root, &locator, runner)?;\n-    if let Some(error) = no_root.filter(|_| facts.packages.is_empty()) {\n-        return Err(error.into());\n-    }\n-    let json = global.format == OutputFormat::Json;\n-    // JSON keeps stdout for the report.\n-    let human: &mut dyn Write = if json { &mut *err } else { &mut *out };\n-    write_facts(&facts, human)?;\n-\n-    if facts.origin.is_none() {\n-        if args.workflow {\n-            return Err(CliError::InitFlagRequiresOrigin { flag: \"workflow\" });\n-        }\n-        if !args.artifact_targets.is_empty() {\n-            return Err(CliError::InitFlagRequiresOrigin {\n-                flag: \"artifact-target\",\n-            });\n-        }\n-    }\n-    if !interactive && !args.yes {\n-        let mut missing = vec![\"--yes\"];\n-        missing.extend(missing_flags(&args, &facts));\n-        return Err(CliError::InitRequiresYes { missing });\n-    }\n-    if args.yes {\n-        let missing = missing_flags(&args, &facts);\n-        if !missing.is_empty() {\n-            return Err(CliError::InitMissingFlags { missing });\n-        }\n-    }\n-    let prompting = interactive && !args.yes;\n-    let answers = collect_answers(&args, &facts, prompting, prompter)?;\n-\n-    let mut diagnostics = scaffold::changesets_config_diagnostics(&facts.root);\n-    if facts.origin.is_none() {\n-        writeln!(human, \"{ORIGIN_MISSING_NOTE}\")?;\n-        diagnostics.push(callisto_model::Diagnostic {\n-            code: callisto_model::DiagnosticCode::InitOriginMissing,\n-            severity: callisto_model::DiagnosticSeverity::Warning,\n-            message: ORIGIN_MISSING_NOTE.to_owned(),\n-            package: None,\n-            path: None,\n-            escalated_by: None,\n-            governed_by: None,\n-        });\n-    }\n-    let shape = match scaffold::workflow_shape(&facts, answers.binaries.is_some()) {\n-        Err(reason) if args.workflow => {\n-            return Err(GraphError::InitWorkflowUnsupported {\n-                reason: reason.to_string(),\n-            }\n-            .into());\n-        }\n-        Err(reason) => {\n-            let note = workflow_unsupported_note(reason);\n-            writeln!(human, \"{note}\")?;\n-            diagnostics.push(callisto_model::Diagnostic {\n-                code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,\n-                severity: callisto_model::DiagnosticSeverity::Warning,\n-                message: note,\n-                package: None,\n-                path: None,\n-                escalated_by: None,\n-                governed_by: None,\n-            });\n-            None\n-        }\n-        Ok(shape) => Some(shape),\n-    };\n-    let want_workflow = match shape {\n-        None => false,\n-        Some(_) if args.workflow => true,\n-        Some(_) if args.no_workflow => false,\n-        Some(_) if prompting && facts.origin.is_some() => prompter.confirm(WORKFLOW_PROMPT, true)?,\n-        // The workflow is GitHub Actions, so only a GitHub origin gets it unasked.\n-        Some(_) => facts.origin_repository.is_some(),\n-    };\n-    // A workflow nobody asked for (the default) never fails `init`: if it cannot be built, say why and go on.\n-    let asked_for_workflow = args.workflow || prompting;\n-    let workflow = match shape.filter(|_| want_workflow) {\n-        Some(shape) => match build_workflow(&facts, shape, runner, human) {\n-            Ok(built) => Some(built),\n-            Err(error) if !asked_for_workflow => {\n-                let note =\n-                    format!(\"Skipping the GitHub Actions workflow: {error}. Run `callisto init --workflow` to retry.\");\n-                writeln!(human, \"{note}\")?;\n-                diagnostics.push(callisto_model::Diagnostic {\n-                    code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,\n-                    severity: callisto_model::DiagnosticSeverity::Warning,\n-                    message: note,\n-                    package: None,\n-                    path: None,\n-                    escalated_by: None,\n-                    governed_by: None,\n-                });\n-                None\n-            }\n-            Err(error) => return Err(error),\n-        },\n-        None => None,\n-    };\n-\n-    let config = scaffold::render_config(&facts, &answers);\n-    let plan = if facts.has_commit {\n-        Some(scaffold::preview(&facts, &config, &locator, runner)?)\n-    } else {\n-        None\n-    };\n-    if config\n-        .lines()\n-        .all(|line| line.trim().is_empty() || line.trim_start().starts_with('#'))\n-    {\n-        writeln!(human, \"\\ncallisto.toml: no settings needed, the defaults apply.\")?;\n-    } else {\n-        writeln!(human, \"\\ncallisto.toml:\\n{config}\")?;\n-    }\n-    match plan {\n-        Some(plan) => {\n-            writeln!(human, \"First release preview (`callisto release --dry-run`):\")?;\n-            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human)?;\n-        }\n-        None => writeln!(human, \"{NO_COMMITS}\")?,\n-    }\n-    if let Some((workflow, _)) = &workflow {\n-        writeln!(\n-            human,\n-            \"\\n{}:\\n{workflow}\",\n-            scaffold::workflow_path(&facts.root).display()\n-        )?;\n-    }\n-\n-    // Computed before any write, so the `.changeset/README.md` existence check sees disk state as-is.\n-    let files = scaffold::init_files(&facts.root, workflow.is_some())?;\n-    let mut report = if global.dry_run {\n-        InitReport {\n-            schema_version: SCHEMA_VERSION,\n-            initialized: false,\n-            config_path: facts.root.join(\"callisto.toml\"),\n-            config,\n-            files,\n-            diagnostics: Vec::new(),\n-        }\n-    } else {\n-        if prompting && !prompter.confirm(WRITE_PROMPT, true)? {\n-            writeln!(human, \"Initialization cancelled; nothing was written.\")?;\n-            return Ok(ExitCode::SUCCESS);\n-        }\n-        let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect(\"non-dry-run permits writes\");\n-        let mut report = scaffold::write(&facts.root, &config, &permit)?;\n-        if let Some((workflow, branch)) = &workflow {\n-            scaffold::write_workflow(&facts.root, workflow, &permit)?;\n-            diagnostics.push(announce_workflow(human, &facts, branch)?);\n-        }\n-        report.files = files;\n-        report\n-    };\n-    report.diagnostics.extend(diagnostics);\n-    if json {\n-        emit_report(&mut &mut *out, &report, global.dry_run)?;\n-    } else {\n-        render::render_init(&report, &mut &mut *out)?;\n-    }\n-    Ok(ExitCode::SUCCESS)\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Prints what a written workflow means and what to do next; the same text is recorded as a diagnostic.\n fn announce_workflow(\n     human: &mut dyn Write,\n     facts: &InitFacts,\n     branch: &BranchName,\n ) -> Result<callisto_model::Diagnostic, CliError> {\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 300
+        },
+        "start": {
+          "column": 1,
+          "line": 102
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-cli/src/commands/init.rs:112:5: replace run -> Result<ExitCode, CliError> with Ok(Default::default())",
+    "package": "callisto-cli",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 299
+      },
+      "start": {
+        "column": 5,
+        "line": 112
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace && with || in run\n@@ -115,17 +115,17 @@\n         Ok(root) => (root, None),\n         Err(CliError::Locate(LocateError::WorkspaceRootNotFound { start, toplevel })) => (\n             toplevel.clone(),\n             Some(LocateError::WorkspaceRootNotFound { start, toplevel }),\n         ),\n         Err(error) => return Err(error),\n     };\n     let locator = IgnoreWalkLocator::new(&root);\n-    if args.workflow && scaffold::is_initialized(&root)? {\n+    if args.workflow || /* ~ changed by cargo-mutants ~ */ scaffold::is_initialized(&root)? {\n         // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.\n         if args.versioning.is_some()\n             || !args.artifact_targets.is_empty()\n             || args.forge_repository.is_some()\n             || args.product_package.is_some()\n         {\n             return Err(GraphError::InitAlreadyInitialized {\n                 path: root.join(\"callisto.toml\"),\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 300
+        },
+        "start": {
+          "column": 1,
+          "line": 102
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-cli/src/commands/init.rs:123:22: replace && with || in run",
+    "package": "callisto-cli",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 123
+      },
+      "start": {
+        "column": 22,
+        "line": 123
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace || with && in run\n@@ -120,17 +120,17 @@\n         Err(error) => return Err(error),\n     };\n     let locator = IgnoreWalkLocator::new(&root);\n     if args.workflow && scaffold::is_initialized(&root)? {\n         // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.\n         if args.versioning.is_some()\n             || !args.artifact_targets.is_empty()\n             || args.forge_repository.is_some()\n-            || args.product_package.is_some()\n+            && /* ~ changed by cargo-mutants ~ */ args.product_package.is_some()\n         {\n             return Err(GraphError::InitAlreadyInitialized {\n                 path: root.join(\"callisto.toml\"),\n             }\n             .into());\n         }\n         return run_workflow_only(&root, &locator, global, out, err, runner);\n     }\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 300
+        },
+        "start": {
+          "column": 1,
+          "line": 102
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-cli/src/commands/init.rs:128:13: replace || with && in run",
+    "package": "callisto-cli",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 128
+      },
+      "start": {
+        "column": 13,
+        "line": 128
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace || with && in run\n@@ -119,17 +119,17 @@\n         ),\n         Err(error) => return Err(error),\n     };\n     let locator = IgnoreWalkLocator::new(&root);\n     if args.workflow && scaffold::is_initialized(&root)? {\n         // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.\n         if args.versioning.is_some()\n             || !args.artifact_targets.is_empty()\n-            || args.forge_repository.is_some()\n+            && /* ~ changed by cargo-mutants ~ */ args.forge_repository.is_some()\n             || args.product_package.is_some()\n         {\n             return Err(GraphError::InitAlreadyInitialized {\n                 path: root.join(\"callisto.toml\"),\n             }\n             .into());\n         }\n         return run_workflow_only(&root, &locator, global, out, err, runner);\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 300
+        },
+        "start": {
+          "column": 1,
+          "line": 102
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-cli/src/commands/init.rs:127:13: replace || with && in run",
+    "package": "callisto-cli",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 127
+      },
+      "start": {
+        "column": 13,
+        "line": 127
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace || with && in run\n@@ -118,17 +118,17 @@\n             Some(LocateError::WorkspaceRootNotFound { start, toplevel }),\n         ),\n         Err(error) => return Err(error),\n     };\n     let locator = IgnoreWalkLocator::new(&root);\n     if args.workflow && scaffold::is_initialized(&root)? {\n         // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.\n         if args.versioning.is_some()\n-            || !args.artifact_targets.is_empty()\n+            && /* ~ changed by cargo-mutants ~ */ !args.artifact_targets.is_empty()\n             || args.forge_repository.is_some()\n             || args.product_package.is_some()\n         {\n             return Err(GraphError::InitAlreadyInitialized {\n                 path: root.join(\"callisto.toml\"),\n             }\n             .into());\n         }\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 300
+        },
+        "start": {
+          "column": 1,
+          "line": 102
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-cli/src/commands/init.rs:126:13: replace || with && in run",
+    "package": "callisto-cli",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 126
+      },
+      "start": {
+        "column": 13,
+        "line": 126
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ delete ! in run\n@@ -118,17 +118,17 @@\n             Some(LocateError::WorkspaceRootNotFound { start, toplevel }),\n         ),\n         Err(error) => return Err(error),\n     };\n     let locator = IgnoreWalkLocator::new(&root);\n     if args.workflow && scaffold::is_initialized(&root)? {\n         // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.\n         if args.versioning.is_some()\n-            || !args.artifact_targets.is_empty()\n+            ||  /* ~ changed by cargo-mutants ~ */args.artifact_targets.is_empty()\n             || args.forge_repository.is_some()\n             || args.product_package.is_some()\n         {\n             return Err(GraphError::InitAlreadyInitialized {\n                 path: root.join(\"callisto.toml\"),\n             }\n             .into());\n         }\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 300
+        },
+        "start": {
+          "column": 1,
+          "line": 102
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "crates/callisto-cli/src/commands/init.rs:126:16: delete ! in run",
+    "package": "callisto-cli",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 17,
+        "line": 126
+      },
+      "start": {
+        "column": 16,
+        "line": 126
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace announce_workflow -> Result<callisto_model::Diagnostic, CliError> with Ok(Default::default())\n@@ -300,28 +300,17 @@\n }\n \n /// Prints what a written workflow means and what to do next; the same text is recorded as a diagnostic.\n fn announce_workflow(\n     human: &mut dyn Write,\n     facts: &InitFacts,\n     branch: &BranchName,\n ) -> Result<callisto_model::Diagnostic, CliError> {\n-    let note = merge_publishes_note(branch);\n-    writeln!(human, \"{note}\")?;\n-    writeln!(human, \"{}\", next_steps_note(&scaffold::registry_secret_names(facts)))?;\n-    Ok(callisto_model::Diagnostic {\n-        code: callisto_model::DiagnosticCode::WorkflowMergePublishes,\n-        severity: callisto_model::DiagnosticSeverity::Info,\n-        message: note,\n-        package: None,\n-        path: None,\n-        escalated_by: None,\n-        governed_by: None,\n-    })\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// `init --workflow` in a workspace that already has `callisto.toml`: writes only the workflow.\n fn run_workflow_only<R: CommandRunner>(\n     root: &std::path::Path,\n     locator: &IgnoreWalkLocator,\n     global: &GlobalArgs,\n     out: &mut dyn Write,\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "announce_workflow",
+      "return_type": "-> Result<callisto_model::Diagnostic, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 320
+        },
+        "start": {
+          "column": 1,
+          "line": 302
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-cli/src/commands/init.rs:308:5: replace announce_workflow -> Result<callisto_model::Diagnostic, CliError> with Ok(Default::default())",
+    "package": "callisto-cli",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 319
+      },
+      "start": {
+        "column": 5,
+        "line": 308
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace run_workflow_only -> Result<ExitCode, CliError> with Ok(Default::default())\n@@ -323,62 +323,17 @@\n fn run_workflow_only<R: CommandRunner>(\n     root: &std::path::Path,\n     locator: &IgnoreWalkLocator,\n     global: &GlobalArgs,\n     out: &mut dyn Write,\n     err: &mut dyn Write,\n     runner: &R,\n ) -> Result<ExitCode, CliError> {\n-    let facts = scaffold::detect_initialized(root, locator, runner)?;\n-    let json = global.format == OutputFormat::Json;\n-    let human: &mut dyn Write = if json { &mut *err } else { &mut *out };\n-    write_facts(&facts, human)?;\n-    if facts.origin.is_none() {\n-        return Err(CliError::InitFlagRequiresOrigin { flag: \"workflow\" });\n-    }\n-    let shape =\n-        scaffold::workflow_shape(&facts, scaffold::existing_config_ships_binaries(&facts.root)?).map_err(|reason| {\n-            GraphError::InitWorkflowUnsupported {\n-                reason: reason.to_string(),\n-            }\n-        })?;\n-    let (workflow, branch) = build_workflow(&facts, shape, runner, human)?;\n-    writeln!(\n-        human,\n-        \"\\n{}:\\n{workflow}\",\n-        scaffold::workflow_path(&facts.root).display()\n-    )?;\n-    let mut diagnostics = Vec::new();\n-    if !global.dry_run {\n-        let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect(\"non-dry-run permits writes\");\n-        scaffold::write_workflow(&facts.root, &workflow, &permit)?;\n-        diagnostics.push(announce_workflow(human, &facts, &branch)?);\n-    }\n-    let config_path = facts.root.join(\"callisto.toml\");\n-    let config = callisto_model::strict_fs::read_optional(&config_path)\n-        .map_err(|error| GraphError::InitIo {\n-            path: config_path.clone(),\n-            message: error.to_string(),\n-        })?\n-        .unwrap_or_default();\n-    let report = InitReport {\n-        schema_version: SCHEMA_VERSION,\n-        initialized: !global.dry_run,\n-        config_path,\n-        config,\n-        files: vec![scaffold::workflow_path(&facts.root)],\n-        diagnostics,\n-    };\n-    if json {\n-        emit_report(&mut &mut *out, &report, global.dry_run)?;\n-    } else {\n-        render::render_init(&report, &mut &mut *out)?;\n-    }\n-    Ok(ExitCode::SUCCESS)\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The workflow text and the default branch it triggers on.\n fn build_workflow<R: CommandRunner>(\n     facts: &InitFacts,\n     shape: scaffold::WorkflowShape,\n     runner: &R,\n     human: &mut dyn Write,\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run_workflow_only",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 377
+        },
+        "start": {
+          "column": 1,
+          "line": 322
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-cli/src/commands/init.rs:331:5: replace run_workflow_only -> Result<ExitCode, CliError> with Ok(Default::default())",
+    "package": "callisto-cli",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 376
+      },
+      "start": {
+        "column": 5,
+        "line": 331
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace == with != in run_workflow_only\n@@ -324,17 +324,17 @@\n     root: &std::path::Path,\n     locator: &IgnoreWalkLocator,\n     global: &GlobalArgs,\n     out: &mut dyn Write,\n     err: &mut dyn Write,\n     runner: &R,\n ) -> Result<ExitCode, CliError> {\n     let facts = scaffold::detect_initialized(root, locator, runner)?;\n-    let json = global.format == OutputFormat::Json;\n+    let json = global.format != /* ~ changed by cargo-mutants ~ */ OutputFormat::Json;\n     let human: &mut dyn Write = if json { &mut *err } else { &mut *out };\n     write_facts(&facts, human)?;\n     if facts.origin.is_none() {\n         return Err(CliError::InitFlagRequiresOrigin { flag: \"workflow\" });\n     }\n     let shape =\n         scaffold::workflow_shape(&facts, scaffold::existing_config_ships_binaries(&facts.root)?).map_err(|reason| {\n             GraphError::InitWorkflowUnsupported {\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run_workflow_only",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 377
+        },
+        "start": {
+          "column": 1,
+          "line": 322
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-cli/src/commands/init.rs:332:30: replace == with != in run_workflow_only",
+    "package": "callisto-cli",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 332
+      },
+      "start": {
+        "column": 30,
+        "line": 332
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ delete ! in run_workflow_only\n@@ -343,17 +343,17 @@\n         })?;\n     let (workflow, branch) = build_workflow(&facts, shape, runner, human)?;\n     writeln!(\n         human,\n         \"\\n{}:\\n{workflow}\",\n         scaffold::workflow_path(&facts.root).display()\n     )?;\n     let mut diagnostics = Vec::new();\n-    if !global.dry_run {\n+    if  /* ~ changed by cargo-mutants ~ */global.dry_run {\n         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect(\"non-dry-run permits writes\");\n         scaffold::write_workflow(&facts.root, &workflow, &permit)?;\n         diagnostics.push(announce_workflow(human, &facts, &branch)?);\n     }\n     let config_path = facts.root.join(\"callisto.toml\");\n     let config = callisto_model::strict_fs::read_optional(&config_path)\n         .map_err(|error| GraphError::InitIo {\n             path: config_path.clone(),\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run_workflow_only",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 377
+        },
+        "start": {
+          "column": 1,
+          "line": 322
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "crates/callisto-cli/src/commands/init.rs:351:8: delete ! in run_workflow_only",
+    "package": "callisto-cli",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 9,
+        "line": 351
+      },
+      "start": {
+        "column": 8,
+        "line": 351
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ delete ! in run_workflow_only\n@@ -357,17 +357,17 @@\n     let config = callisto_model::strict_fs::read_optional(&config_path)\n         .map_err(|error| GraphError::InitIo {\n             path: config_path.clone(),\n             message: error.to_string(),\n         })?\n         .unwrap_or_default();\n     let report = InitReport {\n         schema_version: SCHEMA_VERSION,\n-        initialized: !global.dry_run,\n+        initialized:  /* ~ changed by cargo-mutants ~ */global.dry_run,\n         config_path,\n         config,\n         files: vec![scaffold::workflow_path(&facts.root)],\n         diagnostics,\n     };\n     if json {\n         emit_report(&mut &mut *out, &report, global.dry_run)?;\n     } else {\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "run_workflow_only",
+      "return_type": "-> Result<ExitCode, CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 377
+        },
+        "start": {
+          "column": 1,
+          "line": 322
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "crates/callisto-cli/src/commands/init.rs:365:22: delete ! in run_workflow_only",
+    "package": "callisto-cli",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 365
+      },
+      "start": {
+        "column": 22,
+        "line": 365
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace build_workflow -> Result<(String, BranchName), CliError> with Ok((String::new(), Default::default()))\n@@ -378,23 +378,17 @@\n \n /// The workflow text and the default branch it triggers on.\n fn build_workflow<R: CommandRunner>(\n     facts: &InitFacts,\n     shape: scaffold::WorkflowShape,\n     runner: &R,\n     human: &mut dyn Write,\n ) -> Result<(String, BranchName), CliError> {\n-    scaffold::ensure_workflow_absent(&facts.root)?;\n-    let branch = scaffold::default_branch(runner, &facts.root);\n-    writeln!(human, \"  default branch: {} (from {})\", branch.name, branch.source)?;\n-    let version = semver::Version::parse(env!(\"CARGO_PKG_VERSION\")).expect(\"Cargo package versions are semver\");\n-    let commit = scaffold::resolve_release_commit(runner, &facts.root, &version)?;\n-    let content = scaffold::render_workflow(facts, shape, &branch.name, &commit, &version);\n-    Ok((content, branch.name))\n+    Ok((String::new(), Default::default())) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Printed, and recorded as a warning diagnostic, when no `origin` remote is configured.\n const ORIGIN_MISSING_NOTE: &str = \"No `origin` remote is configured: skipping the release workflow and \\\n shipping-binaries questions; `callisto release` will refuse until one is added.\";\n \n /// Rejects flag combinations invalid regardless of workspace facts.\n fn validate_flags(args: &InitArgs) -> Result<(), CliError> {\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "build_workflow",
+      "return_type": "-> Result<(String, BranchName), CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 393
+        },
+        "start": {
+          "column": 1,
+          "line": 379
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-cli/src/commands/init.rs:386:5: replace build_workflow -> Result<(String, BranchName), CliError> with Ok((String::new(), Default::default()))",
+    "package": "callisto-cli",
+    "replacement": "Ok((String::new(), Default::default()))",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 392
+      },
+      "start": {
+        "column": 5,
+        "line": 386
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-cli/src/commands/init.rs\n+++ replace build_workflow -> Result<(String, BranchName), CliError> with Ok((\"xyzzy\".into(), Default::default()))\n@@ -378,23 +378,17 @@\n \n /// The workflow text and the default branch it triggers on.\n fn build_workflow<R: CommandRunner>(\n     facts: &InitFacts,\n     shape: scaffold::WorkflowShape,\n     runner: &R,\n     human: &mut dyn Write,\n ) -> Result<(String, BranchName), CliError> {\n-    scaffold::ensure_workflow_absent(&facts.root)?;\n-    let branch = scaffold::default_branch(runner, &facts.root);\n-    writeln!(human, \"  default branch: {} (from {})\", branch.name, branch.source)?;\n-    let version = semver::Version::parse(env!(\"CARGO_PKG_VERSION\")).expect(\"Cargo package versions are semver\");\n-    let commit = scaffold::resolve_release_commit(runner, &facts.root, &version)?;\n-    let content = scaffold::render_workflow(facts, shape, &branch.name, &commit, &version);\n-    Ok((content, branch.name))\n+    Ok((\"xyzzy\".into(), Default::default())) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Printed, and recorded as a warning diagnostic, when no `origin` remote is configured.\n const ORIGIN_MISSING_NOTE: &str = \"No `origin` remote is configured: skipping the release workflow and \\\n shipping-binaries questions; `callisto release` will refuse until one is added.\";\n \n /// Rejects flag combinations invalid regardless of workspace facts.\n fn validate_flags(args: &InitArgs) -> Result<(), CliError> {\n",
+    "file": "crates/callisto-cli/src/commands/init.rs",
+    "function": {
+      "function_name": "build_workflow",
+      "return_type": "-> Result<(String, BranchName), CliError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 393
+        },
+        "start": {
+          "column": 1,
+          "line": 379
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-cli/src/commands/init.rs:386:5: replace build_workflow -> Result<(String, BranchName), CliError> with Ok((\"xyzzy\".into(), Default::default()))",
+    "package": "callisto-cli",
+    "replacement": "Ok((\"xyzzy\".into(), Default::default()))",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 392
+      },
+      "start": {
+        "column": 5,
+        "line": 386
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace detect -> Result<InitFacts, GraphError> with Ok(Default::default())\n@@ -186,19 +186,17 @@\n ///\n /// An existing `callisto.toml`, no Git repository, no usable `origin`, or an\n /// ambiguous tag convention.\n pub fn detect<L: ProjectLocator, R: CommandRunner>(\n     root: &Path,\n     locator: &L,\n     runner: &R,\n ) -> Result<InitFacts, GraphError> {\n-    let root = canonical_root(root)?;\n-    ensure_uninitialized(&root)?;\n-    detect_facts(root, locator, runner, false)\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// [`detect`] for a workspace that already has a `callisto.toml`, which is left as it is.\n ///\n /// # Errors\n ///\n /// No Git repository, or no usable `origin`. The workspace loads through the existing config.\n pub fn detect_initialized<L: ProjectLocator, R: CommandRunner>(\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "detect",
+      "return_type": "-> Result<InitFacts, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 197
+        },
+        "start": {
+          "column": 1,
+          "line": 183
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:194:5: replace detect -> Result<InitFacts, GraphError> with Ok(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 196
+      },
+      "start": {
+        "column": 5,
+        "line": 194
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace detect_initialized -> Result<InitFacts, GraphError> with Ok(Default::default())\n@@ -201,17 +201,17 @@\n /// # Errors\n ///\n /// No Git repository, or no usable `origin`. The workspace loads through the existing config.\n pub fn detect_initialized<L: ProjectLocator, R: CommandRunner>(\n     root: &Path,\n     locator: &L,\n     runner: &R,\n ) -> Result<InitFacts, GraphError> {\n-    detect_facts(canonical_root(root)?, locator, runner, true)\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Whether `root` already has a `callisto.toml`.\n ///\n /// # Errors\n ///\n /// The path cannot be inspected.\n pub fn is_initialized(root: &Path) -> Result<bool, GraphError> {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "detect_initialized",
+      "return_type": "-> Result<InitFacts, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 210
+        },
+        "start": {
+          "column": 1,
+          "line": 199
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:209:5: replace detect_initialized -> Result<InitFacts, GraphError> with Ok(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 63,
+        "line": 209
+      },
+      "start": {
+        "column": 5,
+        "line": 209
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace is_initialized -> Result<bool, GraphError> with Ok(true)\n@@ -210,18 +210,17 @@\n }\n \n /// Whether `root` already has a `callisto.toml`.\n ///\n /// # Errors\n ///\n /// The path cannot be inspected.\n pub fn is_initialized(root: &Path) -> Result<bool, GraphError> {\n-    let path = root.join(\"callisto.toml\");\n-    callisto_model::strict_fs::exists(&path).map_err(io_err(&path))\n+    Ok(true) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Whether the existing `callisto.toml` declares a product whose binaries ship as release assets.\n ///\n /// # Errors\n ///\n /// The file cannot be read or does not resolve.\n pub fn existing_config_ships_binaries(root: &Path) -> Result<bool, GraphError> {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "is_initialized",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 220
+        },
+        "start": {
+          "column": 1,
+          "line": 212
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:218:5: replace is_initialized -> Result<bool, GraphError> with Ok(true)",
+    "package": "callisto-graph",
+    "replacement": "Ok(true)",
+    "span": {
+      "end": {
+        "column": 68,
+        "line": 219
+      },
+      "start": {
+        "column": 5,
+        "line": 218
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace is_initialized -> Result<bool, GraphError> with Ok(false)\n@@ -210,18 +210,17 @@\n }\n \n /// Whether `root` already has a `callisto.toml`.\n ///\n /// # Errors\n ///\n /// The path cannot be inspected.\n pub fn is_initialized(root: &Path) -> Result<bool, GraphError> {\n-    let path = root.join(\"callisto.toml\");\n-    callisto_model::strict_fs::exists(&path).map_err(io_err(&path))\n+    Ok(false) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Whether the existing `callisto.toml` declares a product whose binaries ship as release assets.\n ///\n /// # Errors\n ///\n /// The file cannot be read or does not resolve.\n pub fn existing_config_ships_binaries(root: &Path) -> Result<bool, GraphError> {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "is_initialized",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 220
+        },
+        "start": {
+          "column": 1,
+          "line": 212
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:218:5: replace is_initialized -> Result<bool, GraphError> with Ok(false)",
+    "package": "callisto-graph",
+    "replacement": "Ok(false)",
+    "span": {
+      "end": {
+        "column": 68,
+        "line": 219
+      },
+      "start": {
+        "column": 5,
+        "line": 218
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(true)\n@@ -220,21 +220,17 @@\n }\n \n /// Whether the existing `callisto.toml` declares a product whose binaries ship as release assets.\n ///\n /// # Errors\n ///\n /// The file cannot be read or does not resolve.\n pub fn existing_config_ships_binaries(root: &Path) -> Result<bool, GraphError> {\n-    let path = root.join(\"callisto.toml\");\n-    let text = callisto_model::strict_fs::read_optional(&path)\n-        .map_err(io_err(&path))?\n-        .unwrap_or_default();\n-    Ok(resolve_config_text(root, &text)?.product_release.is_some())\n+    Ok(true) /* ~ changed by cargo-mutants ~ */\n }\n \n fn detect_facts<L: ProjectLocator, R: CommandRunner>(\n     root: PathBuf,\n     locator: &L,\n     runner: &R,\n     initialized: bool,\n ) -> Result<InitFacts, GraphError> {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "existing_config_ships_binaries",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 233
+        },
+        "start": {
+          "column": 1,
+          "line": 222
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:228:5: replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(true)",
+    "package": "callisto-graph",
+    "replacement": "Ok(true)",
+    "span": {
+      "end": {
+        "column": 68,
+        "line": 232
+      },
+      "start": {
+        "column": 5,
+        "line": 228
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(false)\n@@ -220,21 +220,17 @@\n }\n \n /// Whether the existing `callisto.toml` declares a product whose binaries ship as release assets.\n ///\n /// # Errors\n ///\n /// The file cannot be read or does not resolve.\n pub fn existing_config_ships_binaries(root: &Path) -> Result<bool, GraphError> {\n-    let path = root.join(\"callisto.toml\");\n-    let text = callisto_model::strict_fs::read_optional(&path)\n-        .map_err(io_err(&path))?\n-        .unwrap_or_default();\n-    Ok(resolve_config_text(root, &text)?.product_release.is_some())\n+    Ok(false) /* ~ changed by cargo-mutants ~ */\n }\n \n fn detect_facts<L: ProjectLocator, R: CommandRunner>(\n     root: PathBuf,\n     locator: &L,\n     runner: &R,\n     initialized: bool,\n ) -> Result<InitFacts, GraphError> {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "existing_config_ships_binaries",
+      "return_type": "-> Result<bool, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 233
+        },
+        "start": {
+          "column": 1,
+          "line": 222
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:228:5: replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(false)",
+    "package": "callisto-graph",
+    "replacement": "Ok(false)",
+    "span": {
+      "end": {
+        "column": 68,
+        "line": 232
+      },
+      "start": {
+        "column": 5,
+        "line": 228
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace detect_facts -> Result<InitFacts, GraphError> with Ok(Default::default())\n@@ -233,122 +233,17 @@\n }\n \n fn detect_facts<L: ProjectLocator, R: CommandRunner>(\n     root: PathBuf,\n     locator: &L,\n     runner: &R,\n     initialized: bool,\n ) -> Result<InitFacts, GraphError> {\n-    let git_dir = runner.run_with_timeout(programs::GIT, &[\"rev-parse\", \"--git-dir\"], &root, timeouts::LOCAL_GIT)?;\n-    if git_dir.exit_code != Some(0) {\n-        return Err(GraphError::InitNotGitRepository { root });\n-    }\n-    let origin = optional_git_remote(&root, runner)?;\n-    let head = runner.run_with_timeout(\n-        programs::GIT,\n-        &[\"rev-parse\", \"--verify\", \"--quiet\", \"HEAD\"],\n-        &root,\n-        timeouts::LOCAL_GIT,\n-    )?;\n-\n-    let discovered = Workspace::load(root.clone(), locator, runner)?;\n-    // An existing config already decides tag conventions; synthesizing one would second-guess it.\n-    let tag_templates = if initialized {\n-        BTreeMap::new()\n-    } else {\n-        detect_tag_templates(&discovered)?\n-    };\n-    let templates_only = InitFacts {\n-        root: root.clone(),\n-        ecosystems: BTreeSet::new(),\n-        packages: Vec::new(),\n-        origin: origin.as_ref().map(|remote| remote.endpoint.clone()),\n-        origin_repository: origin.as_ref().and_then(|remote| remote.github_repository.clone()),\n-        tag_templates,\n-        has_commit: head.exit_code == Some(0),\n-        has_platform_packages: false,\n-        has_napi_targets: false,\n-        has_maturin_targets: false,\n-    };\n-    let workspace = if initialized {\n-        discovered\n-    } else {\n-        let config = resolve_config_text(\n-            &root,\n-            &render_config(\n-                &templates_only,\n-                &InitAnswers {\n-                    versioning: Versioning::Independent,\n-                    binaries: None,\n-                },\n-            ),\n-        )?;\n-        Workspace::load_with_config(root.clone(), config, locator, runner)?\n-    };\n-    let tags = workspace.tags()?;\n-    let versions = workspace.base_versions()?;\n-    let ctx = callisto_manifests::OpenContext::for_workspace_root(&workspace.root)?;\n-\n-    let mut packages = Vec::new();\n-    for package in workspace.graph.packages() {\n-        let mut bin_names = Vec::new();\n-        let mut cargo_bin_names = Vec::new();\n-        let mut unsupported_bin_ecosystems = BTreeSet::new();\n-        for decl in package.canonical_manifests() {\n-            let manifest = crate::manifest_cache::open_cached(&workspace.manifest_cache, decl, &ctx)?;\n-            let names = manifest.bin_names()?;\n-            if manifest.ecosystem() == Ecosystem::Cargo {\n-                cargo_bin_names.extend(names.iter().cloned());\n-            } else if !names.is_empty() {\n-                unsupported_bin_ecosystems.insert(manifest.ecosystem().prefix().to_owned());\n-            }\n-            bin_names.extend(names);\n-        }\n-        packages.push(InitPackage {\n-            id: qualified_id(package),\n-            version: versions[&package.id].clone(),\n-            bin_names,\n-            cargo_bin_names,\n-            unsupported_bin_ecosystems: unsupported_bin_ecosystems.into_iter().collect(),\n-            last_tag: tags.last_tag(&package.id).map(|tag| tag.name.clone()),\n-            publish_to: package\n-                .publish_to\n-                .iter()\n-                .map(|target| target.config_str().to_owned())\n-                .filter(|target| target != PublishTarget::None.config_str())\n-                .collect(),\n-            platform: is_platform_package(package),\n-        });\n-    }\n-    packages.sort_by(|a, b| a.id.cmp(&b.id));\n-    let ecosystems = workspace\n-        .graph\n-        .packages()\n-        .flat_map(|package| package.canonical_manifests())\n-        .map(|manifest| manifest.ecosystem())\n-        .collect();\n-    // Counts attached platform packages too: they never get their own `packages` entry,\n-    // so scanning canonical manifests alone finds only co-located ones.\n-    let has_platform_packages = workspace\n-        .graph\n-        .packages()\n-        .any(|package| is_platform_package(package) || workspace.identity.platforms_of(&package.id).next().is_some());\n-\n-    let matrix = crate::commands::matrix::matrix(&workspace, &crate::commands::matrix::MatrixOptions::default())?;\n-    let has_kind = |kind| matrix.platform_targets.values().any(|group| group.kind == kind);\n-\n-    Ok(InitFacts {\n-        ecosystems,\n-        packages,\n-        has_platform_packages,\n-        has_napi_targets: has_kind(callisto_model::PlatformTargetKind::Napi),\n-        has_maturin_targets: has_kind(callisto_model::PlatformTargetKind::Maturin),\n-        ..templates_only\n-    })\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// One tag convention a package's existing tags follow.\n struct TagMatch {\n     convention: &'static str,\n     template: String,\n     tags: Vec<String>,\n }\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "detect_facts",
+      "return_type": "-> Result<InitFacts, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 347
+        },
+        "start": {
+          "column": 1,
+          "line": 235
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:241:5: replace detect_facts -> Result<InitFacts, GraphError> with Ok(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 346
+      },
+      "start": {
+        "column": 5,
+        "line": 241
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace workflow_shape -> Result<WorkflowShape, WorkflowUnsupported> with Ok(Default::default())\n@@ -710,25 +710,17 @@\n }\n \n /// The workflow shape `init` generates for this workspace and answers.\n ///\n /// # Errors\n ///\n /// The workspace has a shape no generated workflow covers.\n pub fn workflow_shape(facts: &InitFacts, ships_binaries: bool) -> Result<WorkflowShape, WorkflowUnsupported> {\n-    if facts.has_maturin_targets {\n-        Err(WorkflowUnsupported::Maturin)\n-    } else if facts.has_platform_packages && !facts.has_napi_targets {\n-        Err(WorkflowUnsupported::PlatformPackagesWithoutNapiTargets)\n-    } else if ships_binaries || facts.has_platform_packages {\n-        Ok(WorkflowShape::BuildMatrix)\n-    } else {\n-        Ok(WorkflowShape::Simple)\n-    }\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Where [`default_branch`]'s branch name came from.\n #[derive(Clone, Copy, Debug, PartialEq, Eq)]\n pub enum DefaultBranchSource {\n     /// The local `refs/remotes/origin/HEAD` ref, set by `git clone` or `git remote set-head`.\n     OriginHead,\n     /// `git ls-remote --symref origin HEAD`, queried when the local ref above is unset.\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "workflow_shape",
+      "return_type": "-> Result<WorkflowShape, WorkflowUnsupported>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 727
+        },
+        "start": {
+          "column": 1,
+          "line": 712
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:718:5: replace workflow_shape -> Result<WorkflowShape, WorkflowUnsupported> with Ok(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 726
+      },
+      "start": {
+        "column": 5,
+        "line": 718
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace || with && in workflow_shape\n@@ -714,17 +714,17 @@\n /// # Errors\n ///\n /// The workspace has a shape no generated workflow covers.\n pub fn workflow_shape(facts: &InitFacts, ships_binaries: bool) -> Result<WorkflowShape, WorkflowUnsupported> {\n     if facts.has_maturin_targets {\n         Err(WorkflowUnsupported::Maturin)\n     } else if facts.has_platform_packages && !facts.has_napi_targets {\n         Err(WorkflowUnsupported::PlatformPackagesWithoutNapiTargets)\n-    } else if ships_binaries || facts.has_platform_packages {\n+    } else if ships_binaries && /* ~ changed by cargo-mutants ~ */ facts.has_platform_packages {\n         Ok(WorkflowShape::BuildMatrix)\n     } else {\n         Ok(WorkflowShape::Simple)\n     }\n }\n \n /// Where [`default_branch`]'s branch name came from.\n #[derive(Clone, Copy, Debug, PartialEq, Eq)]\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "workflow_shape",
+      "return_type": "-> Result<WorkflowShape, WorkflowUnsupported>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 727
+        },
+        "start": {
+          "column": 1,
+          "line": 712
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/commands/init.rs:722:30: replace || with && in workflow_shape",
+    "package": "callisto-graph",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 722
+      },
+      "start": {
+        "column": 30,
+        "line": 722
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace default_branch -> DefaultBranch with Default::default()\n@@ -755,38 +755,17 @@\n pub struct DefaultBranch {\n     pub name: BranchName,\n     pub source: DefaultBranchSource,\n }\n \n /// The repository's default branch: local `origin/HEAD`, else a live query of `origin`,\n /// else the branch currently checked out, else `main`.\n pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path) -> DefaultBranch {\n-    if let Some(name) = local_origin_head(runner, root) {\n-        return DefaultBranch {\n-            name,\n-            source: DefaultBranchSource::OriginHead,\n-        };\n-    }\n-    if let Some(name) = remote_origin_head(runner, root) {\n-        return DefaultBranch {\n-            name,\n-            source: DefaultBranchSource::RemoteHead,\n-        };\n-    }\n-    if let Some(name) = current_branch(runner, root) {\n-        return DefaultBranch {\n-            name,\n-            source: DefaultBranchSource::CurrentBranch,\n-        };\n-    }\n-    DefaultBranch {\n-        name: BranchName::fallback(),\n-        source: DefaultBranchSource::Fallback,\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n // A repository with no `origin/HEAD` (a fresh clone, or one built by hand, as in tests)\n // fails this on the common path, not just exceptionally.\n fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n     let output = runner\n         .run_quiet(\n             programs::GIT,\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "default_branch",
+      "return_type": "-> DefaultBranch",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 785
+        },
+        "start": {
+          "column": 1,
+          "line": 760
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:763:5: replace default_branch -> DefaultBranch with Default::default()",
+    "package": "callisto-graph",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 784
+      },
+      "start": {
+        "column": 5,
+        "line": 763
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace local_origin_head -> Option<BranchName> with None\n@@ -782,28 +782,17 @@\n         name: BranchName::fallback(),\n         source: DefaultBranchSource::Fallback,\n     }\n }\n \n // A repository with no `origin/HEAD` (a fresh clone, or one built by hand, as in tests)\n // fails this on the common path, not just exceptionally.\n fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n-    let output = runner\n-        .run_quiet(\n-            programs::GIT,\n-            &[\"symbolic-ref\", \"refs/remotes/origin/HEAD\"],\n-            root,\n-            timeouts::LOCAL_GIT,\n-        )\n-        .ok()?;\n-    if output.exit_code != Some(0) {\n-        return None;\n-    }\n-    BranchName::from_remote_ref(&output.stdout, \"origin\")\n+    None /* ~ changed by cargo-mutants ~ */\n }\n \n // A shallow or hand-built clone (or one `remote set-head` never ran on) has no local\n // `origin/HEAD`; asking the remote directly still resolves it without a fetch.\n fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n     let output = runner\n         .run_quiet(\n             programs::GIT,\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "local_origin_head",
+      "return_type": "-> Option<BranchName>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 802
+        },
+        "start": {
+          "column": 1,
+          "line": 789
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:790:5: replace local_origin_head -> Option<BranchName> with None",
+    "package": "callisto-graph",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 58,
+        "line": 801
+      },
+      "start": {
+        "column": 5,
+        "line": 790
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace local_origin_head -> Option<BranchName> with Some(Default::default())\n@@ -782,28 +782,17 @@\n         name: BranchName::fallback(),\n         source: DefaultBranchSource::Fallback,\n     }\n }\n \n // A repository with no `origin/HEAD` (a fresh clone, or one built by hand, as in tests)\n // fails this on the common path, not just exceptionally.\n fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n-    let output = runner\n-        .run_quiet(\n-            programs::GIT,\n-            &[\"symbolic-ref\", \"refs/remotes/origin/HEAD\"],\n-            root,\n-            timeouts::LOCAL_GIT,\n-        )\n-        .ok()?;\n-    if output.exit_code != Some(0) {\n-        return None;\n-    }\n-    BranchName::from_remote_ref(&output.stdout, \"origin\")\n+    Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n // A shallow or hand-built clone (or one `remote set-head` never ran on) has no local\n // `origin/HEAD`; asking the remote directly still resolves it without a fetch.\n fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n     let output = runner\n         .run_quiet(\n             programs::GIT,\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "local_origin_head",
+      "return_type": "-> Option<BranchName>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 802
+        },
+        "start": {
+          "column": 1,
+          "line": 789
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:790:5: replace local_origin_head -> Option<BranchName> with Some(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 58,
+        "line": 801
+      },
+      "start": {
+        "column": 5,
+        "line": 790
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace remote_origin_head -> Option<BranchName> with None\n@@ -799,32 +799,17 @@\n         return None;\n     }\n     BranchName::from_remote_ref(&output.stdout, \"origin\")\n }\n \n // A shallow or hand-built clone (or one `remote set-head` never ran on) has no local\n // `origin/HEAD`; asking the remote directly still resolves it without a fetch.\n fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n-    let output = runner\n-        .run_quiet(\n-            programs::GIT,\n-            &[\"ls-remote\", \"--symref\", \"origin\", \"HEAD\"],\n-            root,\n-            timeouts::GIT_LS_REMOTE,\n-        )\n-        .ok()?;\n-    if output.exit_code != Some(0) {\n-        return None;\n-    }\n-    // Output line shape: \"ref: refs/heads/<branch>\\tHEAD\".\n-    output.stdout.lines().find_map(|line| {\n-        let (target, name) = line.strip_prefix(\"ref: \")?.split_once('\\t')?;\n-        (name.trim() == \"HEAD\").then(|| BranchName::from_full_ref(target))?\n-    })\n+    None /* ~ changed by cargo-mutants ~ */\n }\n \n // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch\n // actually checked out is a better guess than a hardcoded `main`.\n fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n     let output = runner\n         .run_quiet(programs::GIT, &[\"symbolic-ref\", \"HEAD\"], root, timeouts::LOCAL_GIT)\n         .ok()?;\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "remote_origin_head",
+      "return_type": "-> Option<BranchName>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 823
+        },
+        "start": {
+          "column": 1,
+          "line": 806
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:807:5: replace remote_origin_head -> Option<BranchName> with None",
+    "package": "callisto-graph",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 822
+      },
+      "start": {
+        "column": 5,
+        "line": 807
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace remote_origin_head -> Option<BranchName> with Some(Default::default())\n@@ -799,32 +799,17 @@\n         return None;\n     }\n     BranchName::from_remote_ref(&output.stdout, \"origin\")\n }\n \n // A shallow or hand-built clone (or one `remote set-head` never ran on) has no local\n // `origin/HEAD`; asking the remote directly still resolves it without a fetch.\n fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n-    let output = runner\n-        .run_quiet(\n-            programs::GIT,\n-            &[\"ls-remote\", \"--symref\", \"origin\", \"HEAD\"],\n-            root,\n-            timeouts::GIT_LS_REMOTE,\n-        )\n-        .ok()?;\n-    if output.exit_code != Some(0) {\n-        return None;\n-    }\n-    // Output line shape: \"ref: refs/heads/<branch>\\tHEAD\".\n-    output.stdout.lines().find_map(|line| {\n-        let (target, name) = line.strip_prefix(\"ref: \")?.split_once('\\t')?;\n-        (name.trim() == \"HEAD\").then(|| BranchName::from_full_ref(target))?\n-    })\n+    Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch\n // actually checked out is a better guess than a hardcoded `main`.\n fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n     let output = runner\n         .run_quiet(programs::GIT, &[\"symbolic-ref\", \"HEAD\"], root, timeouts::LOCAL_GIT)\n         .ok()?;\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "remote_origin_head",
+      "return_type": "-> Option<BranchName>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 823
+        },
+        "start": {
+          "column": 1,
+          "line": 806
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:807:5: replace remote_origin_head -> Option<BranchName> with Some(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 822
+      },
+      "start": {
+        "column": 5,
+        "line": 807
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace == with != in remote_origin_head\n@@ -813,17 +813,17 @@\n         )\n         .ok()?;\n     if output.exit_code != Some(0) {\n         return None;\n     }\n     // Output line shape: \"ref: refs/heads/<branch>\\tHEAD\".\n     output.stdout.lines().find_map(|line| {\n         let (target, name) = line.strip_prefix(\"ref: \")?.split_once('\\t')?;\n-        (name.trim() == \"HEAD\").then(|| BranchName::from_full_ref(target))?\n+        (name.trim() != /* ~ changed by cargo-mutants ~ */ \"HEAD\").then(|| BranchName::from_full_ref(target))?\n     })\n }\n \n // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch\n // actually checked out is a better guess than a hardcoded `main`.\n fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n     let output = runner\n         .run_quiet(programs::GIT, &[\"symbolic-ref\", \"HEAD\"], root, timeouts::LOCAL_GIT)\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "remote_origin_head",
+      "return_type": "-> Option<BranchName>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 823
+        },
+        "start": {
+          "column": 1,
+          "line": 806
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/callisto-graph/src/commands/init.rs:821:22: replace == with != in remote_origin_head",
+    "package": "callisto-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 821
+      },
+      "start": {
+        "column": 22,
+        "line": 821
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace current_branch -> Option<BranchName> with None\n@@ -820,23 +820,17 @@\n         let (target, name) = line.strip_prefix(\"ref: \")?.split_once('\\t')?;\n         (name.trim() == \"HEAD\").then(|| BranchName::from_full_ref(target))?\n     })\n }\n \n // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch\n // actually checked out is a better guess than a hardcoded `main`.\n fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n-    let output = runner\n-        .run_quiet(programs::GIT, &[\"symbolic-ref\", \"HEAD\"], root, timeouts::LOCAL_GIT)\n-        .ok()?;\n-    if output.exit_code != Some(0) {\n-        return None;\n-    }\n-    BranchName::from_full_ref(&output.stdout)\n+    None /* ~ changed by cargo-mutants ~ */\n }\n \n // Rendered with `replace`, not `format!`, so `${{ ... }}` needs no escaping; `.tmpl` so it never reads as a workflow.\n const WORKFLOW_TEMPLATE: &str = include_str!(\"../templates/simple_workflow.tmpl\");\n \n const MATRIX_WORKFLOW_TEMPLATE: &str = include_str!(\"../templates/matrix_workflow.tmpl\");\n \n const BUILD_REQUIREMENT: &str = \"build==1.4.4\";\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "current_branch",
+      "return_type": "-> Option<BranchName>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 835
+        },
+        "start": {
+          "column": 1,
+          "line": 827
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:828:5: replace current_branch -> Option<BranchName> with None",
+    "package": "callisto-graph",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 46,
+        "line": 834
+      },
+      "start": {
+        "column": 5,
+        "line": 828
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace current_branch -> Option<BranchName> with Some(Default::default())\n@@ -820,23 +820,17 @@\n         let (target, name) = line.strip_prefix(\"ref: \")?.split_once('\\t')?;\n         (name.trim() == \"HEAD\").then(|| BranchName::from_full_ref(target))?\n     })\n }\n \n // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch\n // actually checked out is a better guess than a hardcoded `main`.\n fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {\n-    let output = runner\n-        .run_quiet(programs::GIT, &[\"symbolic-ref\", \"HEAD\"], root, timeouts::LOCAL_GIT)\n-        .ok()?;\n-    if output.exit_code != Some(0) {\n-        return None;\n-    }\n-    BranchName::from_full_ref(&output.stdout)\n+    Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n // Rendered with `replace`, not `format!`, so `${{ ... }}` needs no escaping; `.tmpl` so it never reads as a workflow.\n const WORKFLOW_TEMPLATE: &str = include_str!(\"../templates/simple_workflow.tmpl\");\n \n const MATRIX_WORKFLOW_TEMPLATE: &str = include_str!(\"../templates/matrix_workflow.tmpl\");\n \n const BUILD_REQUIREMENT: &str = \"build==1.4.4\";\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "current_branch",
+      "return_type": "-> Option<BranchName>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 835
+        },
+        "start": {
+          "column": 1,
+          "line": 827
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:828:5: replace current_branch -> Option<BranchName> with Some(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 46,
+        "line": 834
+      },
+      "start": {
+        "column": 5,
+        "line": 828
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace resolve_release_commit -> Result<CommitSha, GraphError> with Ok(Default::default())\n@@ -865,52 +865,17 @@\n /// # Errors\n ///\n /// The remote is unreachable, or `callisto@<version>` is not a published tag.\n pub fn resolve_release_commit<R: CommandRunner>(\n     runner: &R,\n     root: &Path,\n     version: &semver::Version,\n ) -> Result<CommitSha, GraphError> {\n-    const ENDPOINT: &str = \"https://github.com/orin-dx/callisto.git\";\n-    let reference = format!(\"refs/tags/callisto@{version}\");\n-    // The peeled ref resolves an annotated tag to its commit; a lightweight\n-    // tag has no peeled line, and its own SHA already is the commit.\n-    let peeled = format!(\"{reference}^{{}}\");\n-    // A transport-level failure (git not found, timed out, ...) keeps its\n-    // real cause via `GraphError::Command`; only a clean run that still\n-    // can't find the tag becomes `InitWorkflowVersionUnresolved`.\n-    let output = runner.run_quiet(\n-        programs::GIT,\n-        &[\"ls-remote\", ENDPOINT, &reference, &peeled],\n-        root,\n-        timeouts::GIT_LS_REMOTE,\n-    )?;\n-    let unresolved = || GraphError::InitWorkflowVersionUnresolved {\n-        version: version.to_string(),\n-    };\n-    if output.exit_code != Some(0) {\n-        return Err(unresolved());\n-    }\n-    let mut tag_object = None;\n-    let mut commit = None;\n-    for line in output.stdout.lines() {\n-        let Some((sha, found)) = line.split_once('\\t') else {\n-            continue;\n-        };\n-        match found.trim() {\n-            found if found == peeled => commit = Some(sha.trim().to_owned()),\n-            found if found == reference => tag_object = Some(sha.trim().to_owned()),\n-            _ => {}\n-        }\n-    }\n-    commit\n-        .or(tag_object)\n-        .and_then(|sha| CommitSha::parse(&sha).ok())\n-        .ok_or_else(unresolved)\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The repository secrets the generated workflow reads, one per registry ecosystem the workspace has.\n pub fn registry_secret_names(facts: &InitFacts) -> Vec<&'static str> {\n     [\n         (Ecosystem::Cargo, \"CARGO_REGISTRY_TOKEN\"),\n         (Ecosystem::Npm, \"NPM_TOKEN\"),\n         (Ecosystem::Pypi, \"PYPI_TOKEN\"),\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "resolve_release_commit",
+      "return_type": "-> Result<CommitSha, GraphError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 909
+        },
+        "start": {
+          "column": 1,
+          "line": 854
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:873:5: replace resolve_release_commit -> Result<CommitSha, GraphError> with Ok(Default::default())",
+    "package": "callisto-graph",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 908
+      },
+      "start": {
+        "column": 5,
+        "line": 873
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace WorkflowScalar::quoted -> Self with Default::default()\n@@ -921,20 +921,17 @@\n     .collect()\n }\n \n /// A value encoded for one YAML position of a generated workflow; the only thing [`fill`] accepts.\n struct WorkflowScalar(String);\n \n impl WorkflowScalar {\n     fn quoted(raw: &str) -> Self {\n-        Self(\n-            serde_json::to_string(raw)\n-                .expect(\"a string always serializes to JSON, which is a YAML double-quoted scalar\"),\n-        )\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The branch as an `on.push.branches` filter, where `+` and `!` are pattern syntax Git allows in a name.\n     fn branch_filter(branch: &BranchName) -> Self {\n         Self::quoted(&branch.as_str().replace('+', \"\\\\+\").replace('!', \"\\\\!\"))\n     }\n \n     /// The branch as the literal name the action's `branch` input takes.\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "WorkflowScalar::quoted",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 933
+        },
+        "start": {
+          "column": 5,
+          "line": 928
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:929:9: replace WorkflowScalar::quoted -> Self with Default::default()",
+    "package": "callisto-graph",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 932
+      },
+      "start": {
+        "column": 9,
+        "line": 929
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace WorkflowScalar::branch_filter -> Self with Default::default()\n@@ -929,17 +929,17 @@\n         Self(\n             serde_json::to_string(raw)\n                 .expect(\"a string always serializes to JSON, which is a YAML double-quoted scalar\"),\n         )\n     }\n \n     /// The branch as an `on.push.branches` filter, where `+` and `!` are pattern syntax Git allows in a name.\n     fn branch_filter(branch: &BranchName) -> Self {\n-        Self::quoted(&branch.as_str().replace('+', \"\\\\+\").replace('!', \"\\\\!\"))\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The branch as the literal name the action's `branch` input takes.\n     fn branch(branch: &BranchName) -> Self {\n         Self::quoted(branch.as_str())\n     }\n \n     fn commit(commit: &CommitSha) -> Self {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "WorkflowScalar::branch_filter",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 938
+        },
+        "start": {
+          "column": 5,
+          "line": 935
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:937:9: replace WorkflowScalar::branch_filter -> Self with Default::default()",
+    "package": "callisto-graph",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 79,
+        "line": 937
+      },
+      "start": {
+        "column": 9,
+        "line": 937
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace WorkflowScalar::branch -> Self with Default::default()\n@@ -934,17 +934,17 @@\n \n     /// The branch as an `on.push.branches` filter, where `+` and `!` are pattern syntax Git allows in a name.\n     fn branch_filter(branch: &BranchName) -> Self {\n         Self::quoted(&branch.as_str().replace('+', \"\\\\+\").replace('!', \"\\\\!\"))\n     }\n \n     /// The branch as the literal name the action's `branch` input takes.\n     fn branch(branch: &BranchName) -> Self {\n-        Self::quoted(branch.as_str())\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn commit(commit: &CommitSha) -> Self {\n         Self(commit.as_str().to_owned())\n     }\n \n     fn version(version: &semver::Version) -> Self {\n         Self(version.to_string())\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "WorkflowScalar::branch",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 943
+        },
+        "start": {
+          "column": 5,
+          "line": 940
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:942:9: replace WorkflowScalar::branch -> Self with Default::default()",
+    "package": "callisto-graph",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 942
+      },
+      "start": {
+        "column": 9,
+        "line": 942
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace WorkflowScalar::commit -> Self with Default::default()\n@@ -938,17 +938,17 @@\n     }\n \n     /// The branch as the literal name the action's `branch` input takes.\n     fn branch(branch: &BranchName) -> Self {\n         Self::quoted(branch.as_str())\n     }\n \n     fn commit(commit: &CommitSha) -> Self {\n-        Self(commit.as_str().to_owned())\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn version(version: &semver::Version) -> Self {\n         Self(version.to_string())\n     }\n }\n \n fn fill(template: &str, values: &[(&str, WorkflowScalar)]) -> String {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "WorkflowScalar::commit",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 947
+        },
+        "start": {
+          "column": 5,
+          "line": 945
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:946:9: replace WorkflowScalar::commit -> Self with Default::default()",
+    "package": "callisto-graph",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 946
+      },
+      "start": {
+        "column": 9,
+        "line": 946
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace WorkflowScalar::version -> Self with Default::default()\n@@ -942,17 +942,17 @@\n         Self::quoted(branch.as_str())\n     }\n \n     fn commit(commit: &CommitSha) -> Self {\n         Self(commit.as_str().to_owned())\n     }\n \n     fn version(version: &semver::Version) -> Self {\n-        Self(version.to_string())\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n fn fill(template: &str, values: &[(&str, WorkflowScalar)]) -> String {\n     values.iter().fold(template.to_owned(), |text, (placeholder, scalar)| {\n         text.replace(placeholder, &scalar.0)\n     })\n }\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "WorkflowScalar::version",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 951
+        },
+        "start": {
+          "column": 5,
+          "line": 949
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:950:9: replace WorkflowScalar::version -> Self with Default::default()",
+    "package": "callisto-graph",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 34,
+        "line": 950
+      },
+      "start": {
+        "column": 9,
+        "line": 950
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace fill -> String with String::new()\n@@ -947,19 +947,17 @@\n     }\n \n     fn version(version: &semver::Version) -> Self {\n         Self(version.to_string())\n     }\n }\n \n fn fill(template: &str, values: &[(&str, WorkflowScalar)]) -> String {\n-    values.iter().fold(template.to_owned(), |text, (placeholder, scalar)| {\n-        text.replace(placeholder, &scalar.0)\n-    })\n+    String::new() /* ~ changed by cargo-mutants ~ */\n }\n \n /// Renders the release workflow for `shape`.\n ///\n /// `commit` pins the generated `orin-dx/callisto` action references to the\n /// resolved commit of `callisto@<version>` (see [`resolve_release_commit`]);\n /// `version` names the CLI `setup-callisto` installs and a trailing comment.\n pub fn render_workflow(\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "fill",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 958
+        },
+        "start": {
+          "column": 1,
+          "line": 954
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:955:5: replace fill -> String with String::new()",
+    "package": "callisto-graph",
+    "replacement": "String::new()",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 957
+      },
+      "start": {
+        "column": 5,
+        "line": 955
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace fill -> String with \"xyzzy\".into()\n@@ -947,19 +947,17 @@\n     }\n \n     fn version(version: &semver::Version) -> Self {\n         Self(version.to_string())\n     }\n }\n \n fn fill(template: &str, values: &[(&str, WorkflowScalar)]) -> String {\n-    values.iter().fold(template.to_owned(), |text, (placeholder, scalar)| {\n-        text.replace(placeholder, &scalar.0)\n-    })\n+    \"xyzzy\".into() /* ~ changed by cargo-mutants ~ */\n }\n \n /// Renders the release workflow for `shape`.\n ///\n /// `commit` pins the generated `orin-dx/callisto` action references to the\n /// resolved commit of `callisto@<version>` (see [`resolve_release_commit`]);\n /// `version` names the CLI `setup-callisto` installs and a trailing comment.\n pub fn render_workflow(\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "fill",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 958
+        },
+        "start": {
+          "column": 1,
+          "line": 954
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:955:5: replace fill -> String with \"xyzzy\".into()",
+    "package": "callisto-graph",
+    "replacement": "\"xyzzy\".into()",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 957
+      },
+      "start": {
+        "column": 5,
+        "line": 955
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace render_workflow -> String with String::new()\n@@ -964,51 +964,17 @@\n /// `version` names the CLI `setup-callisto` installs and a trailing comment.\n pub fn render_workflow(\n     facts: &InitFacts,\n     shape: WorkflowShape,\n     branch: &BranchName,\n     commit: &CommitSha,\n     version: &semver::Version,\n ) -> String {\n-    let mut secrets = Vec::new();\n-    for name in registry_secret_names(facts) {\n-        secrets.push(format!(\"{name}: ${{{{ secrets.{name} }}}}\"));\n-        if name == \"NPM_TOKEN\" {\n-            // Uses the job's id-token: write; npm publishes no provenance without it.\n-            secrets.push(\"NPM_CONFIG_PROVENANCE: \\\"true\\\"\".to_owned());\n-        }\n-    }\n-    secrets.push(\"GH_TOKEN: ${{ github.token }}\".to_owned());\n-    let env_lines: Vec<String> = secrets.iter().map(|line| format!(\"          {line}\")).collect();\n-    let release_env = format!(\"env:\\n{}\", env_lines.join(\"\\n\"));\n-\n-    let template = match shape {\n-        WorkflowShape::Simple => WORKFLOW_TEMPLATE,\n-        WorkflowShape::BuildMatrix => MATRIX_WORKFLOW_TEMPLATE,\n-    };\n-    let python_tools = if facts.ecosystems.contains(&Ecosystem::Pypi) {\n-        SIMPLE_PYTHON_TOOLS_STEP\n-    } else {\n-        \"\"\n-    };\n-    let text = template\n-        .replace(\"      __PYTHON_TOOLS__\\n\", python_tools)\n-        .replace(\"__BUILD__\", BUILD_REQUIREMENT)\n-        .replace(\"__TWINE__\", TWINE_REQUIREMENT)\n-        .replace(\"        __RELEASE_ENV__\", &format!(\"        {release_env}\"));\n-    fill(\n-        &text,\n-        &[\n-            (\"__BRANCH_FILTER__\", WorkflowScalar::branch_filter(branch)),\n-            (\"__BRANCH__\", WorkflowScalar::branch(branch)),\n-            (\"__COMMIT__\", WorkflowScalar::commit(commit)),\n-            (\"__VERSION__\", WorkflowScalar::version(version)),\n-        ],\n-    )\n+    String::new() /* ~ changed by cargo-mutants ~ */\n }\n \n /// Errors if a workflow file already exists at [`workflow_path`], without writing.\n ///\n /// # Errors\n ///\n /// A file already exists at that path.\n pub fn ensure_workflow_absent(root: &Path) -> Result<(), GraphError> {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "render_workflow",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 1007
+        },
+        "start": {
+          "column": 1,
+          "line": 960
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:972:5: replace render_workflow -> String with String::new()",
+    "package": "callisto-graph",
+    "replacement": "String::new()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 1006
+      },
+      "start": {
+        "column": 5,
+        "line": 972
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-graph/src/commands/init.rs\n+++ replace render_workflow -> String with \"xyzzy\".into()\n@@ -964,51 +964,17 @@\n /// `version` names the CLI `setup-callisto` installs and a trailing comment.\n pub fn render_workflow(\n     facts: &InitFacts,\n     shape: WorkflowShape,\n     branch: &BranchName,\n     commit: &CommitSha,\n     version: &semver::Version,\n ) -> String {\n-    let mut secrets = Vec::new();\n-    for name in registry_secret_names(facts) {\n-        secrets.push(format!(\"{name}: ${{{{ secrets.{name} }}}}\"));\n-        if name == \"NPM_TOKEN\" {\n-            // Uses the job's id-token: write; npm publishes no provenance without it.\n-            secrets.push(\"NPM_CONFIG_PROVENANCE: \\\"true\\\"\".to_owned());\n-        }\n-    }\n-    secrets.push(\"GH_TOKEN: ${{ github.token }}\".to_owned());\n-    let env_lines: Vec<String> = secrets.iter().map(|line| format!(\"          {line}\")).collect();\n-    let release_env = format!(\"env:\\n{}\", env_lines.join(\"\\n\"));\n-\n-    let template = match shape {\n-        WorkflowShape::Simple => WORKFLOW_TEMPLATE,\n-        WorkflowShape::BuildMatrix => MATRIX_WORKFLOW_TEMPLATE,\n-    };\n-    let python_tools = if facts.ecosystems.contains(&Ecosystem::Pypi) {\n-        SIMPLE_PYTHON_TOOLS_STEP\n-    } else {\n-        \"\"\n-    };\n-    let text = template\n-        .replace(\"      __PYTHON_TOOLS__\\n\", python_tools)\n-        .replace(\"__BUILD__\", BUILD_REQUIREMENT)\n-        .replace(\"__TWINE__\", TWINE_REQUIREMENT)\n-        .replace(\"        __RELEASE_ENV__\", &format!(\"        {release_env}\"));\n-    fill(\n-        &text,\n-        &[\n-            (\"__BRANCH_FILTER__\", WorkflowScalar::branch_filter(branch)),\n-            (\"__BRANCH__\", WorkflowScalar::branch(branch)),\n-            (\"__COMMIT__\", WorkflowScalar::commit(commit)),\n-            (\"__VERSION__\", WorkflowScalar::version(version)),\n-        ],\n-    )\n+    \"xyzzy\".into() /* ~ changed by cargo-mutants ~ */\n }\n \n /// Errors if a workflow file already exists at [`workflow_path`], without writing.\n ///\n /// # Errors\n ///\n /// A file already exists at that path.\n pub fn ensure_workflow_absent(root: &Path) -> Result<(), GraphError> {\n",
+    "file": "crates/callisto-graph/src/commands/init.rs",
+    "function": {
+      "function_name": "render_workflow",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 1007
+        },
+        "start": {
+          "column": 1,
+          "line": 960
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-graph/src/commands/init.rs:972:5: replace render_workflow -> String with \"xyzzy\".into()",
+    "package": "callisto-graph",
+    "replacement": "\"xyzzy\".into()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 1006
+      },
+      "start": {
+        "column": 5,
+        "line": 972
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::from_full_ref -> Option<Self> with None\n@@ -378,17 +378,17 @@\n \n /// A Git branch name, taken whole from a full ref so a slash inside it is never mistaken for a ref separator.\n #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]\n pub struct BranchName(String);\n \n impl BranchName {\n     /// `refs/heads/release/next` -> `release/next`; `None` for any other ref.\n     pub fn from_full_ref(reference: &str) -> Option<Self> {\n-        Self::strip(reference, \"refs/heads/\")\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// `refs/remotes/origin/release/next` -> `release/next` for `remote` `origin`; `None` for any other ref.\n     pub fn from_remote_ref(reference: &str, remote: &str) -> Option<Self> {\n         Self::strip(reference, &format!(\"refs/remotes/{remote}/\"))\n     }\n \n     /// The branch a repository with no other signal defaults to.\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::from_full_ref",
+      "return_type": "-> Option<Self>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 387
+        },
+        "start": {
+          "column": 5,
+          "line": 384
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:386:9: replace BranchName::from_full_ref -> Option<Self> with None",
+    "package": "callisto-model",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 46,
+        "line": 386
+      },
+      "start": {
+        "column": 9,
+        "line": 386
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::from_full_ref -> Option<Self> with Some(Default::default())\n@@ -378,17 +378,17 @@\n \n /// A Git branch name, taken whole from a full ref so a slash inside it is never mistaken for a ref separator.\n #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]\n pub struct BranchName(String);\n \n impl BranchName {\n     /// `refs/heads/release/next` -> `release/next`; `None` for any other ref.\n     pub fn from_full_ref(reference: &str) -> Option<Self> {\n-        Self::strip(reference, \"refs/heads/\")\n+        Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// `refs/remotes/origin/release/next` -> `release/next` for `remote` `origin`; `None` for any other ref.\n     pub fn from_remote_ref(reference: &str, remote: &str) -> Option<Self> {\n         Self::strip(reference, &format!(\"refs/remotes/{remote}/\"))\n     }\n \n     /// The branch a repository with no other signal defaults to.\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::from_full_ref",
+      "return_type": "-> Option<Self>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 387
+        },
+        "start": {
+          "column": 5,
+          "line": 384
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:386:9: replace BranchName::from_full_ref -> Option<Self> with Some(Default::default())",
+    "package": "callisto-model",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 46,
+        "line": 386
+      },
+      "start": {
+        "column": 9,
+        "line": 386
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::from_remote_ref -> Option<Self> with None\n@@ -383,17 +383,17 @@\n impl BranchName {\n     /// `refs/heads/release/next` -> `release/next`; `None` for any other ref.\n     pub fn from_full_ref(reference: &str) -> Option<Self> {\n         Self::strip(reference, \"refs/heads/\")\n     }\n \n     /// `refs/remotes/origin/release/next` -> `release/next` for `remote` `origin`; `None` for any other ref.\n     pub fn from_remote_ref(reference: &str, remote: &str) -> Option<Self> {\n-        Self::strip(reference, &format!(\"refs/remotes/{remote}/\"))\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The branch a repository with no other signal defaults to.\n     pub fn fallback() -> Self {\n         Self(\"main\".to_owned())\n     }\n \n     pub fn as_str(&self) -> &str {\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::from_remote_ref",
+      "return_type": "-> Option<Self>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 392
+        },
+        "start": {
+          "column": 5,
+          "line": 389
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:391:9: replace BranchName::from_remote_ref -> Option<Self> with None",
+    "package": "callisto-model",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 67,
+        "line": 391
+      },
+      "start": {
+        "column": 9,
+        "line": 391
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::from_remote_ref -> Option<Self> with Some(Default::default())\n@@ -383,17 +383,17 @@\n impl BranchName {\n     /// `refs/heads/release/next` -> `release/next`; `None` for any other ref.\n     pub fn from_full_ref(reference: &str) -> Option<Self> {\n         Self::strip(reference, \"refs/heads/\")\n     }\n \n     /// `refs/remotes/origin/release/next` -> `release/next` for `remote` `origin`; `None` for any other ref.\n     pub fn from_remote_ref(reference: &str, remote: &str) -> Option<Self> {\n-        Self::strip(reference, &format!(\"refs/remotes/{remote}/\"))\n+        Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// The branch a repository with no other signal defaults to.\n     pub fn fallback() -> Self {\n         Self(\"main\".to_owned())\n     }\n \n     pub fn as_str(&self) -> &str {\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::from_remote_ref",
+      "return_type": "-> Option<Self>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 392
+        },
+        "start": {
+          "column": 5,
+          "line": 389
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:391:9: replace BranchName::from_remote_ref -> Option<Self> with Some(Default::default())",
+    "package": "callisto-model",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 67,
+        "line": 391
+      },
+      "start": {
+        "column": 9,
+        "line": 391
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::fallback -> Self with Default::default()\n@@ -388,17 +388,17 @@\n \n     /// `refs/remotes/origin/release/next` -> `release/next` for `remote` `origin`; `None` for any other ref.\n     pub fn from_remote_ref(reference: &str, remote: &str) -> Option<Self> {\n         Self::strip(reference, &format!(\"refs/remotes/{remote}/\"))\n     }\n \n     /// The branch a repository with no other signal defaults to.\n     pub fn fallback() -> Self {\n-        Self(\"main\".to_owned())\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn as_str(&self) -> &str {\n         &self.0\n     }\n \n     fn strip(reference: &str, prefix: &str) -> Option<Self> {\n         let branch = reference.trim().strip_prefix(prefix)?;\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::fallback",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 397
+        },
+        "start": {
+          "column": 5,
+          "line": 394
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:396:9: replace BranchName::fallback -> Self with Default::default()",
+    "package": "callisto-model",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 396
+      },
+      "start": {
+        "column": 9,
+        "line": 396
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::as_str -> &str with \"\"\n@@ -392,17 +392,17 @@\n     }\n \n     /// The branch a repository with no other signal defaults to.\n     pub fn fallback() -> Self {\n         Self(\"main\".to_owned())\n     }\n \n     pub fn as_str(&self) -> &str {\n-        &self.0\n+        \"\" /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn strip(reference: &str, prefix: &str) -> Option<Self> {\n         let branch = reference.trim().strip_prefix(prefix)?;\n         (!branch.is_empty()).then(|| Self(branch.to_owned()))\n     }\n }\n \n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::as_str",
+      "return_type": "-> &str",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 401
+        },
+        "start": {
+          "column": 5,
+          "line": 399
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:400:9: replace BranchName::as_str -> &str with \"\"",
+    "package": "callisto-model",
+    "replacement": "\"\"",
+    "span": {
+      "end": {
+        "column": 16,
+        "line": 400
+      },
+      "start": {
+        "column": 9,
+        "line": 400
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::as_str -> &str with \"xyzzy\"\n@@ -392,17 +392,17 @@\n     }\n \n     /// The branch a repository with no other signal defaults to.\n     pub fn fallback() -> Self {\n         Self(\"main\".to_owned())\n     }\n \n     pub fn as_str(&self) -> &str {\n-        &self.0\n+        \"xyzzy\" /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn strip(reference: &str, prefix: &str) -> Option<Self> {\n         let branch = reference.trim().strip_prefix(prefix)?;\n         (!branch.is_empty()).then(|| Self(branch.to_owned()))\n     }\n }\n \n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::as_str",
+      "return_type": "-> &str",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 401
+        },
+        "start": {
+          "column": 5,
+          "line": 399
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:400:9: replace BranchName::as_str -> &str with \"xyzzy\"",
+    "package": "callisto-model",
+    "replacement": "\"xyzzy\"",
+    "span": {
+      "end": {
+        "column": 16,
+        "line": 400
+      },
+      "start": {
+        "column": 9,
+        "line": 400
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::strip -> Option<Self> with None\n@@ -396,18 +396,17 @@\n         Self(\"main\".to_owned())\n     }\n \n     pub fn as_str(&self) -> &str {\n         &self.0\n     }\n \n     fn strip(reference: &str, prefix: &str) -> Option<Self> {\n-        let branch = reference.trim().strip_prefix(prefix)?;\n-        (!branch.is_empty()).then(|| Self(branch.to_owned()))\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl std::fmt::Display for BranchName {\n     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n         formatter.write_str(&self.0)\n     }\n }\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::strip",
+      "return_type": "-> Option<Self>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 406
+        },
+        "start": {
+          "column": 5,
+          "line": 403
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:404:9: replace BranchName::strip -> Option<Self> with None",
+    "package": "callisto-model",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 62,
+        "line": 405
+      },
+      "start": {
+        "column": 9,
+        "line": 404
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace BranchName::strip -> Option<Self> with Some(Default::default())\n@@ -396,18 +396,17 @@\n         Self(\"main\".to_owned())\n     }\n \n     pub fn as_str(&self) -> &str {\n         &self.0\n     }\n \n     fn strip(reference: &str, prefix: &str) -> Option<Self> {\n-        let branch = reference.trim().strip_prefix(prefix)?;\n-        (!branch.is_empty()).then(|| Self(branch.to_owned()))\n+        Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n impl std::fmt::Display for BranchName {\n     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n         formatter.write_str(&self.0)\n     }\n }\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::strip",
+      "return_type": "-> Option<Self>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 406
+        },
+        "start": {
+          "column": 5,
+          "line": 403
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:404:9: replace BranchName::strip -> Option<Self> with Some(Default::default())",
+    "package": "callisto-model",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 62,
+        "line": 405
+      },
+      "start": {
+        "column": 9,
+        "line": 404
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ delete ! in BranchName::strip\n@@ -397,17 +397,17 @@\n     }\n \n     pub fn as_str(&self) -> &str {\n         &self.0\n     }\n \n     fn strip(reference: &str, prefix: &str) -> Option<Self> {\n         let branch = reference.trim().strip_prefix(prefix)?;\n-        (!branch.is_empty()).then(|| Self(branch.to_owned()))\n+        ( /* ~ changed by cargo-mutants ~ */branch.is_empty()).then(|| Self(branch.to_owned()))\n     }\n }\n \n impl std::fmt::Display for BranchName {\n     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n         formatter.write_str(&self.0)\n     }\n }\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "BranchName::strip",
+      "return_type": "-> Option<Self>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 406
+        },
+        "start": {
+          "column": 5,
+          "line": 403
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "crates/callisto-model/src/identity.rs:405:10: delete ! in BranchName::strip",
+    "package": "callisto-model",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 405
+      },
+      "start": {
+        "column": 10,
+        "line": 405
+      }
+    }
+  },
+  {
+    "diff": "--- crates/callisto-model/src/identity.rs\n+++ replace <impl std::fmt::Display for BranchName>::fmt -> std::fmt::Result with Ok(Default::default())\n@@ -403,17 +403,17 @@\n     fn strip(reference: &str, prefix: &str) -> Option<Self> {\n         let branch = reference.trim().strip_prefix(prefix)?;\n         (!branch.is_empty()).then(|| Self(branch.to_owned()))\n     }\n }\n \n impl std::fmt::Display for BranchName {\n     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n-        formatter.write_str(&self.0)\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n #[cfg(test)]\n pub(crate) fn assert_string_wire_schema<T>(value: &T, name: &str, wire: &str)\n where\n     T: JsonSchema + Serialize + serde::de::DeserializeOwned,\n {\n",
+    "file": "crates/callisto-model/src/identity.rs",
+    "function": {
+      "function_name": "<impl std::fmt::Display for BranchName>::fmt",
+      "return_type": "-> std::fmt::Result",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 412
+        },
+        "start": {
+          "column": 5,
+          "line": 410
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/callisto-model/src/identity.rs:411:9: replace <impl std::fmt::Display for BranchName>::fmt -> std::fmt::Result with Ok(Default::default())",
+    "package": "callisto-model",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 37,
+        "line": 411
+      },
+      "start": {
+        "column": 9,
+        "line": 411
+      }
+    }
+  }
+]

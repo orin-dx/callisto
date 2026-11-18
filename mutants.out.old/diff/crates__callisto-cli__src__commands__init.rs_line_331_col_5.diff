@@ -1,0 +1,66 @@
+--- crates/callisto-cli/src/commands/init.rs
++++ replace run_workflow_only -> Result<ExitCode, CliError> with Ok(Default::default())
+@@ -323,62 +323,17 @@
+ fn run_workflow_only<R: CommandRunner>(
+     root: &std::path::Path,
+     locator: &IgnoreWalkLocator,
+     global: &GlobalArgs,
+     out: &mut dyn Write,
+     err: &mut dyn Write,
+     runner: &R,
+ ) -> Result<ExitCode, CliError> {
+-    let facts = scaffold::detect_initialized(root, locator, runner)?;
+-    let json = global.format == OutputFormat::Json;
+-    let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
+-    write_facts(&facts, human)?;
+-    if facts.origin.is_none() {
+-        return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+-    }
+-    let shape =
+-        scaffold::workflow_shape(&facts, scaffold::existing_config_ships_binaries(&facts.root)?).map_err(|reason| {
+-            GraphError::InitWorkflowUnsupported {
+-                reason: reason.to_string(),
+-            }
+-        })?;
+-    let (workflow, branch) = build_workflow(&facts, shape, runner, human)?;
+-    writeln!(
+-        human,
+-        "\n{}:\n{workflow}",
+-        scaffold::workflow_path(&facts.root).display()
+-    )?;
+-    let mut diagnostics = Vec::new();
+-    if !global.dry_run {
+-        let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
+-        scaffold::write_workflow(&facts.root, &workflow, &permit)?;
+-        diagnostics.push(announce_workflow(human, &facts, &branch)?);
+-    }
+-    let config_path = facts.root.join("callisto.toml");
+-    let config = callisto_model::strict_fs::read_optional(&config_path)
+-        .map_err(|error| GraphError::InitIo {
+-            path: config_path.clone(),
+-            message: error.to_string(),
+-        })?
+-        .unwrap_or_default();
+-    let report = InitReport {
+-        schema_version: SCHEMA_VERSION,
+-        initialized: !global.dry_run,
+-        config_path,
+-        config,
+-        files: vec![scaffold::workflow_path(&facts.root)],
+-        diagnostics,
+-    };
+-    if json {
+-        emit_report(&mut &mut *out, &report, global.dry_run)?;
+-    } else {
+-        render::render_init(&report, &mut &mut *out)?;
+-    }
+-    Ok(ExitCode::SUCCESS)
++    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// The workflow text and the default branch it triggers on.
+ fn build_workflow<R: CommandRunner>(
+     facts: &InitFacts,
+     shape: scaffold::WorkflowShape,
+     runner: &R,
+     human: &mut dyn Write,

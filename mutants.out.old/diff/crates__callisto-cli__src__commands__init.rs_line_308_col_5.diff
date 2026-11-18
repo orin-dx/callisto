@@ -1,0 +1,32 @@
+--- crates/callisto-cli/src/commands/init.rs
++++ replace announce_workflow -> Result<callisto_model::Diagnostic, CliError> with Ok(Default::default())
+@@ -300,28 +300,17 @@
+ }
+ 
+ /// Prints what a written workflow means and what to do next; the same text is recorded as a diagnostic.
+ fn announce_workflow(
+     human: &mut dyn Write,
+     facts: &InitFacts,
+     branch: &BranchName,
+ ) -> Result<callisto_model::Diagnostic, CliError> {
+-    let note = merge_publishes_note(branch);
+-    writeln!(human, "{note}")?;
+-    writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(facts)))?;
+-    Ok(callisto_model::Diagnostic {
+-        code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
+-        severity: callisto_model::DiagnosticSeverity::Info,
+-        message: note,
+-        package: None,
+-        path: None,
+-        escalated_by: None,
+-        governed_by: None,
+-    })
++    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// `init --workflow` in a workspace that already has `callisto.toml`: writes only the workflow.
+ fn run_workflow_only<R: CommandRunner>(
+     root: &std::path::Path,
+     locator: &IgnoreWalkLocator,
+     global: &GlobalArgs,
+     out: &mut dyn Write,

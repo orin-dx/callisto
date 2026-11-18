@@ -1,0 +1,21 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace detect_initialized -> Result<InitFacts, GraphError> with Ok(Default::default())
+@@ -201,17 +201,17 @@
+ /// # Errors
+ ///
+ /// No Git repository, or no usable `origin`. The workspace loads through the existing config.
+ pub fn detect_initialized<L: ProjectLocator, R: CommandRunner>(
+     root: &Path,
+     locator: &L,
+     runner: &R,
+ ) -> Result<InitFacts, GraphError> {
+-    detect_facts(canonical_root(root)?, locator, runner, true)
++    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Whether `root` already has a `callisto.toml`.
+ ///
+ /// # Errors
+ ///
+ /// The path cannot be inspected.
+ pub fn is_initialized(root: &Path) -> Result<bool, GraphError> {

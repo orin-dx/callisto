@@ -1,0 +1,27 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace current_branch -> Option<BranchName> with Some(Default::default())
+@@ -820,23 +820,17 @@
+         let (target, name) = line.strip_prefix("ref: ")?.split_once('\t')?;
+         (name.trim() == "HEAD").then(|| BranchName::from_full_ref(target))?
+     })
+ }
+ 
+ // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch
+ // actually checked out is a better guess than a hardcoded `main`.
+ fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
+-    let output = runner
+-        .run_quiet(programs::GIT, &["symbolic-ref", "HEAD"], root, timeouts::LOCAL_GIT)
+-        .ok()?;
+-    if output.exit_code != Some(0) {
+-        return None;
+-    }
+-    BranchName::from_full_ref(&output.stdout)
++    Some(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // Rendered with `replace`, not `format!`, so `${{ ... }}` needs no escaping; `.tmpl` so it never reads as a workflow.
+ const WORKFLOW_TEMPLATE: &str = include_str!("../templates/simple_workflow.tmpl");
+ 
+ const MATRIX_WORKFLOW_TEMPLATE: &str = include_str!("../templates/matrix_workflow.tmpl");
+ 
+ const BUILD_REQUIREMENT: &str = "build==1.4.4";

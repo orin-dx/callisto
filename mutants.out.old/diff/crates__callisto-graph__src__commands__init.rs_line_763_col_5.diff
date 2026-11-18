@@ -1,0 +1,42 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace default_branch -> DefaultBranch with Default::default()
+@@ -755,38 +755,17 @@
+ pub struct DefaultBranch {
+     pub name: BranchName,
+     pub source: DefaultBranchSource,
+ }
+ 
+ /// The repository's default branch: local `origin/HEAD`, else a live query of `origin`,
+ /// else the branch currently checked out, else `main`.
+ pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path) -> DefaultBranch {
+-    if let Some(name) = local_origin_head(runner, root) {
+-        return DefaultBranch {
+-            name,
+-            source: DefaultBranchSource::OriginHead,
+-        };
+-    }
+-    if let Some(name) = remote_origin_head(runner, root) {
+-        return DefaultBranch {
+-            name,
+-            source: DefaultBranchSource::RemoteHead,
+-        };
+-    }
+-    if let Some(name) = current_branch(runner, root) {
+-        return DefaultBranch {
+-            name,
+-            source: DefaultBranchSource::CurrentBranch,
+-        };
+-    }
+-    DefaultBranch {
+-        name: BranchName::fallback(),
+-        source: DefaultBranchSource::Fallback,
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // A repository with no `origin/HEAD` (a fresh clone, or one built by hand, as in tests)
+ // fails this on the common path, not just exceptionally.
+ fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
+     let output = runner
+         .run_quiet(
+             programs::GIT,

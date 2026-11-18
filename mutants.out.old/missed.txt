@@ -1,0 +1,2 @@
+crates/callisto-cli/src/commands/init.rs:128:13: replace || with && in run
+crates/callisto-cli/src/commands/init.rs:127:13: replace || with && in run

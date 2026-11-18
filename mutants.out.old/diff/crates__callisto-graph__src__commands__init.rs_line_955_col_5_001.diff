@@ -1,0 +1,23 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace fill -> String with "xyzzy".into()
+@@ -947,19 +947,17 @@
+     }
+ 
+     fn version(version: &semver::Version) -> Self {
+         Self(version.to_string())
+     }
+ }
+ 
+ fn fill(template: &str, values: &[(&str, WorkflowScalar)]) -> String {
+-    values.iter().fold(template.to_owned(), |text, (placeholder, scalar)| {
+-        text.replace(placeholder, &scalar.0)
+-    })
++    "xyzzy".into() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Renders the release workflow for `shape`.
+ ///
+ /// `commit` pins the generated `orin-dx/callisto` action references to the
+ /// resolved commit of `callisto@<version>` (see [`resolve_release_commit`]);
+ /// `version` names the CLI `setup-callisto` installs and a trailing comment.
+ pub fn render_workflow(

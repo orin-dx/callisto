@@ -122,11 +122,8 @@ pub fn run<R: CommandRunner>(
     let locator = IgnoreWalkLocator::new(&root);
     if args.workflow && scaffold::is_initialized(&root)? {
         // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.
-        if args.versioning.is_some()
-            || !args.artifact_targets.is_empty()
-            || args.forge_repository.is_some()
-            || args.product_package.is_some()
-        {
+        // The forge and product flags already require an artifact target.
+        if args.versioning.is_some() || !args.artifact_targets.is_empty() {
             return Err(GraphError::InitAlreadyInitialized {
                 path: root.join("callisto.toml"),
             }

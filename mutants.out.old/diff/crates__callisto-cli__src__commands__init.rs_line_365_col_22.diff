@@ -1,0 +1,21 @@
+--- crates/callisto-cli/src/commands/init.rs
++++ delete ! in run_workflow_only
+@@ -357,17 +357,17 @@
+     let config = callisto_model::strict_fs::read_optional(&config_path)
+         .map_err(|error| GraphError::InitIo {
+             path: config_path.clone(),
+             message: error.to_string(),
+         })?
+         .unwrap_or_default();
+     let report = InitReport {
+         schema_version: SCHEMA_VERSION,
+-        initialized: !global.dry_run,
++        initialized:  /* ~ changed by cargo-mutants ~ */global.dry_run,
+         config_path,
+         config,
+         files: vec![scaffold::workflow_path(&facts.root)],
+         diagnostics,
+     };
+     if json {
+         emit_report(&mut &mut *out, &report, global.dry_run)?;
+     } else {

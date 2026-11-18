@@ -1,0 +1,21 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace == with != in remote_origin_head
+@@ -813,17 +813,17 @@
+         )
+         .ok()?;
+     if output.exit_code != Some(0) {
+         return None;
+     }
+     // Output line shape: "ref: refs/heads/<branch>\tHEAD".
+     output.stdout.lines().find_map(|line| {
+         let (target, name) = line.strip_prefix("ref: ")?.split_once('\t')?;
+-        (name.trim() == "HEAD").then(|| BranchName::from_full_ref(target))?
++        (name.trim() != /* ~ changed by cargo-mutants ~ */ "HEAD").then(|| BranchName::from_full_ref(target))?
+     })
+ }
+ 
+ // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch
+ // actually checked out is a better guess than a hardcoded `main`.
+ fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
+     let output = runner
+         .run_quiet(programs::GIT, &["symbolic-ref", "HEAD"], root, timeouts::LOCAL_GIT)

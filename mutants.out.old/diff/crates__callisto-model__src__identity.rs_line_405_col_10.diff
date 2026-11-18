@@ -1,0 +1,21 @@
+--- crates/callisto-model/src/identity.rs
++++ delete ! in BranchName::strip
+@@ -397,17 +397,17 @@
+     }
+ 
+     pub fn as_str(&self) -> &str {
+         &self.0
+     }
+ 
+     fn strip(reference: &str, prefix: &str) -> Option<Self> {
+         let branch = reference.trim().strip_prefix(prefix)?;
+-        (!branch.is_empty()).then(|| Self(branch.to_owned()))
++        ( /* ~ changed by cargo-mutants ~ */branch.is_empty()).then(|| Self(branch.to_owned()))
+     }
+ }
+ 
+ impl std::fmt::Display for BranchName {
+     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+         formatter.write_str(&self.0)
+     }
+ }

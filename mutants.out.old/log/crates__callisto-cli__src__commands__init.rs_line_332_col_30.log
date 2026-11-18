@@ -1,0 +1,405 @@
+
+*** crates/callisto-cli/src/commands/init.rs:332:30: replace == with != in run_workflow_only
+
+*** mutation diff:
+--- crates/callisto-cli/src/commands/init.rs
++++ replace == with != in run_workflow_only
+@@ -324,17 +324,17 @@
+     root: &std::path::Path,
+     locator: &IgnoreWalkLocator,
+     global: &GlobalArgs,
+     out: &mut dyn Write,
+     err: &mut dyn Write,
+     runner: &R,
+ ) -> Result<ExitCode, CliError> {
+     let facts = scaffold::detect_initialized(root, locator, runner)?;
+-    let json = global.format == OutputFormat::Json;
++    let json = global.format != /* ~ changed by cargo-mutants ~ */ OutputFormat::Json;
+     let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
+     write_facts(&facts, human)?;
+     if facts.origin.is_none() {
+         return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+     }
+     let shape =
+         scaffold::workflow_shape(&facts, scaffold::existing_config_ships_binaries(&facts.root)?).map_err(|reason| {
+             GraphError::InitWorkflowUnsupported {
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --no-run --verbose --package=callisto-cli@0.21.1
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling callisto-cli v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/crates/callisto-cli)
+    Finished `test` profile [unoptimized] target(s) in 4.17s
+
+*** result: Success
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --verbose --package=callisto-cli@0.21.1
+    Finished `test` profile [unoptimized] target(s) in 0.31s
+────────────
+ Nextest run ID 3836217d-ad20-4ea1-bc57-4ae6770c6dbf with nextest profile: default
+    Starting 655 tests across 54 binaries (1 test skipped)
+       START [         ] (  1/655) callisto-cli cli::tests::help_lists_exactly_eight_commands_with_plain_help_text
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::help_lists_exactly_eight_commands_with_plain_help_text --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::bare_release_accepts_packages_and_rejects_release_commit
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::bare_release_accepts_packages_and_rejects_release_commit --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::artifact_target_flag_splits_on_comma
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::artifact_target_flag_splits_on_comma --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::command_name_matches_every_clap_subcommand_name
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::command_name_matches_every_clap_subcommand_name --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::init_artifact_targets_drop_the_space_after_a_comma
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::init_artifact_targets_drop_the_space_after_a_comma --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::help_subcommand_parses_and_flag_help_still_works
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::help_subcommand_parses_and_flag_help_still_works --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::plumbing_subcommands_are_hidden_but_callable
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::plumbing_subcommands_are_hidden_but_callable --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::legacy_publish_commands_are_unrecognized
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::legacy_publish_commands_are_unrecognized --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::release_plan_requires_exactly_one_authority_mode
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::release_plan_requires_exactly_one_authority_mode --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::release_artifact_manifest_requires_all_explicit_paths
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::release_artifact_manifest_requires_all_explicit_paths --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::schema_type_accepts_pre_state
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::schema_type_accepts_pre_state --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::report_name_includes_the_subcommand_where_its_report_does
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::report_name_includes_the_subcommand_where_its_report_does --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::status_strict_and_check_help_text_is_exact
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::status_strict_and_check_help_text_is_exact --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::schema_type_rejects_unknown_value_as_a_usage_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::schema_type_rejects_unknown_value_as_a_usage_error --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::test_cli_parse_matrix_command_with_package
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::test_cli_parse_matrix_command_with_package --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::test_cli_parse_matrix_command_bare
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::test_cli_parse_matrix_command_bare --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::version_and_snapshot_strict_help_text_is_exact
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::version_and_snapshot_strict_help_text_is_exact --nocapture
+       START [         ] (  1/655) callisto-cli cli::tests::validate_subcommand_fails_to_parse
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact cli::tests::validate_subcommand_fails_to_parse --nocapture
+        PASS [   0.017s] (  1/655) callisto-cli cli::tests::schema_type_accepts_pre_state
+       START [         ] (  2/655) callisto-cli color::tests::clicolor_force_forces_color_on
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact color::tests::clicolor_force_forces_color_on --nocapture
+        PASS [   0.019s] (  2/655) callisto-cli cli::tests::bare_release_accepts_packages_and_rejects_release_commit
+       START [         ] (  3/655) callisto-cli color::tests::enabled_matches_resolve_not_never
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact color::tests::enabled_matches_resolve_not_never --nocapture
+        PASS [   0.019s] (  3/655) callisto-cli cli::tests::command_name_matches_every_clap_subcommand_name
+       START [         ] (  4/655) callisto-cli color::tests::force_color_forces_color_on
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact color::tests::force_color_forces_color_on --nocapture
+        PASS [   0.020s] (  4/655) callisto-cli cli::tests::help_lists_exactly_eight_commands_with_plain_help_text
+       START [         ] (  5/655) callisto-cli color::tests::no_color_empty_does_not_suppress_clicolor_force
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact color::tests::no_color_empty_does_not_suppress_clicolor_force --nocapture
+        PASS [   0.019s] (  5/655) callisto-cli cli::tests::report_name_includes_the_subcommand_where_its_report_does
+        PASS [   0.020s] (  6/655) callisto-cli cli::tests::artifact_target_flag_splits_on_comma
+       START [         ] (  7/655) callisto-cli color::tests::no_env_signal_falls_back_to_concrete_auto_detection
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact color::tests::no_env_signal_falls_back_to_concrete_auto_detection --nocapture
+       START [         ] (  7/655) callisto-cli color::tests::no_color_non_empty_wins_over_force_vars
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact color::tests::no_color_non_empty_wins_over_force_vars --nocapture
+        PASS [   0.021s] (  7/655) callisto-cli cli::tests::validate_subcommand_fails_to_parse
+       START [         ] (  8/655) callisto-cli commands::add::tests::a_changesets_directory_that_does_not_exist_yet_gives_a_filename
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::a_changesets_directory_that_does_not_exist_yet_gives_a_filename --nocapture
+        PASS [   0.022s] (  8/655) callisto-cli cli::tests::legacy_publish_commands_are_unrecognized
+       START [         ] (  9/655) callisto-cli commands::add::tests::a_directory_with_every_slug_taken_is_an_error_not_an_overwrite
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::a_directory_with_every_slug_taken_is_an_error_not_an_overwrite --nocapture
+        PASS [   0.022s] (  9/655) callisto-cli cli::tests::plumbing_subcommands_are_hidden_but_callable
+       START [         ] ( 10/655) callisto-cli commands::add::tests::a_name_taken_after_it_was_chosen_is_skipped_and_the_other_changeset_survives
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::a_name_taken_after_it_was_chosen_is_skipped_and_the_other_changeset_survives --nocapture
+        PASS [   0.022s] ( 10/655) callisto-cli cli::tests::test_cli_parse_matrix_command_with_package
+       START [         ] ( 11/655) callisto-cli commands::add::tests::a_summary_given_on_the_command_line_is_not_asked_for_again
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::a_summary_given_on_the_command_line_is_not_asked_for_again --nocapture
+        PASS [   0.023s] ( 11/655) callisto-cli cli::tests::help_subcommand_parses_and_flag_help_still_works
+        PASS [   0.022s] ( 12/655) callisto-cli cli::tests::release_artifact_manifest_requires_all_explicit_paths
+       START [         ] ( 13/655) callisto-cli commands::add::tests::an_existing_changeset_is_never_chosen_as_the_new_filename
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::an_existing_changeset_is_never_chosen_as_the_new_filename --nocapture
+       START [         ] ( 13/655) callisto-cli commands::add::tests::a_workspace_with_no_packages_and_a_selection_of_none_are_errors_with_their_own_message
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::a_workspace_with_no_packages_and_a_selection_of_none_are_errors_with_their_own_message --nocapture
+        PASS [   0.026s] ( 13/655) callisto-cli cli::tests::init_artifact_targets_drop_the_space_after_a_comma
+       START [         ] ( 14/655) callisto-cli commands::add::tests::declining_the_preview_cancels_without_a_changeset
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::declining_the_preview_cancels_without_a_changeset --nocapture
+        PASS [   0.025s] ( 14/655) callisto-cli cli::tests::version_and_snapshot_strict_help_text_is_exact
+       START [         ] ( 15/655) callisto-cli commands::add::tests::non_interactive_add_entry_preserves_ecosystem_qualifier
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::non_interactive_add_entry_preserves_ecosystem_qualifier --nocapture
+        PASS [   0.026s] ( 15/655) callisto-cli cli::tests::test_cli_parse_matrix_command_bare
+       START [         ] ( 16/655) callisto-cli commands::add::tests::non_interactive_empty_summary_is_rejected
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::non_interactive_empty_summary_is_rejected --nocapture
+        PASS [   0.027s] ( 16/655) callisto-cli cli::tests::release_plan_requires_exactly_one_authority_mode
+       START [         ] ( 17/655) callisto-cli commands::add::tests::non_interactive_nonempty_summary_is_accepted
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::non_interactive_nonempty_summary_is_accepted --nocapture
+        PASS [   0.030s] ( 17/655) callisto-cli cli::tests::schema_type_rejects_unknown_value_as_a_usage_error
+       START [         ] ( 18/655) callisto-cli commands::add::tests::non_interactive_whitespace_summary_is_rejected
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::non_interactive_whitespace_summary_is_rejected --nocapture
+        PASS [   0.033s] ( 18/655) callisto-cli cli::tests::status_strict_and_check_help_text_is_exact
+       START [         ] ( 19/655) callisto-cli commands::add::tests::parse_severity_accepts_none
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::parse_severity_accepts_none --nocapture
+        PASS [   0.041s] ( 19/655) callisto-cli color::tests::clicolor_force_forces_color_on
+       START [         ] ( 20/655) callisto-cli commands::add::tests::parse_severity_rejects_invalid_value_with_accurate_message
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::parse_severity_rejects_invalid_value_with_accurate_message --nocapture
+        PASS [   0.040s] ( 20/655) callisto-cli commands::add::tests::a_workspace_with_no_packages_and_a_selection_of_none_are_errors_with_their_own_message
+       START [         ] ( 21/655) callisto-cli commands::add::tests::polyglot_package_selection_names_are_distinct
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::polyglot_package_selection_names_are_distinct --nocapture
+        PASS [   0.041s] ( 21/655) callisto-cli commands::add::tests::a_summary_given_on_the_command_line_is_not_asked_for_again
+       START [         ] ( 22/655) callisto-cli commands::add::tests::test_generate_human_slug_consecutive_calls_differ
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::test_generate_human_slug_consecutive_calls_differ --nocapture
+        PASS [   0.046s] ( 22/655) callisto-cli color::tests::enabled_matches_resolve_not_never
+       START [         ] ( 23/655) callisto-cli commands::add::tests::the_wizard_gives_majors_then_minors_and_defaults_the_rest_to_patch
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::the_wizard_gives_majors_then_minors_and_defaults_the_rest_to_patch --nocapture
+        PASS [   0.046s] ( 23/655) callisto-cli color::tests::no_color_non_empty_wins_over_force_vars
+       START [         ] ( 24/655) callisto-cli commands::add::tests::the_wizard_only_offers_the_packages_that_were_selected_for_the_bump_questions
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::the_wizard_only_offers_the_packages_that_were_selected_for_the_bump_questions --nocapture
+        PASS [   0.040s] ( 24/655) callisto-cli commands::add::tests::non_interactive_nonempty_summary_is_accepted
+       START [         ] ( 25/655) callisto-cli commands::add::tests::validate_summary_trims_leading_and_trailing_whitespace
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::validate_summary_trims_leading_and_trailing_whitespace --nocapture
+        PASS [   0.042s] ( 25/655) callisto-cli commands::add::tests::non_interactive_empty_summary_is_rejected
+       START [         ] ( 26/655) callisto-cli commands::add::tests::when_every_package_is_major_there_is_no_minor_question
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::add::tests::when_every_package_is_major_there_is_no_minor_question --nocapture
+        PASS [   0.042s] ( 26/655) callisto-cli commands::add::tests::non_interactive_add_entry_preserves_ecosystem_qualifier
+       START [         ] ( 27/655) callisto-cli commands::completions::tests::completions_offer_no_help_subcommand_at_any_depth
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::completions::tests::completions_offer_no_help_subcommand_at_any_depth --nocapture
+        PASS [   0.051s] ( 27/655) callisto-cli commands::add::tests::declining_the_preview_cancels_without_a_changeset
+       START [         ] ( 28/655) callisto-cli commands::completions::tests::completions_omit_hidden_subcommands_at_every_depth
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::completions::tests::completions_omit_hidden_subcommands_at_every_depth --nocapture
+        PASS [   0.046s] ( 28/655) callisto-cli commands::add::tests::non_interactive_whitespace_summary_is_rejected
+       START [         ] ( 29/655) callisto-cli commands::completions::tests::handle_generates_the_binary_name_into_the_completion_script
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::completions::tests::handle_generates_the_binary_name_into_the_completion_script --nocapture
+        PASS [   0.056s] ( 29/655) callisto-cli commands::add::tests::a_changesets_directory_that_does_not_exist_yet_gives_a_filename
+       START [         ] ( 30/655) callisto-cli commands::completions::tests::handle_succeeds_for_every_supported_shell
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::completions::tests::handle_succeeds_for_every_supported_shell --nocapture
+        PASS [   0.059s] ( 30/655) callisto-cli color::tests::force_color_forces_color_on
+       START [         ] ( 31/655) callisto-cli commands::compose_pr_body::tests::handle_json_format_succeeds_with_a_pending_changeset
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::compose_pr_body::tests::handle_json_format_succeeds_with_a_pending_changeset --nocapture
+        PASS [   0.021s] ( 31/655) callisto-cli commands::add::tests::test_generate_human_slug_consecutive_calls_differ
+       START [         ] ( 32/655) callisto-cli commands::help::tests::handle_names_unknown_subcommand
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::help::tests::handle_names_unknown_subcommand --nocapture
+        PASS [   0.027s] ( 32/655) callisto-cli commands::add::tests::parse_severity_rejects_invalid_value_with_accurate_message
+       START [         ] ( 33/655) callisto-cli commands::help::tests::handle_prints_nested_subcommand_help
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::help::tests::handle_prints_nested_subcommand_help --nocapture
+        PASS [   0.051s] ( 33/655) callisto-cli commands::add::tests::parse_severity_accepts_none
+       START [         ] ( 34/655) callisto-cli commands::help::tests::handle_prints_root_help_with_no_command
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::help::tests::handle_prints_root_help_with_no_command --nocapture
+        PASS [   0.021s] ( 34/655) callisto-cli commands::add::tests::validate_summary_trims_leading_and_trailing_whitespace
+       START [         ] ( 35/655) callisto-cli commands::help::tests::handle_prints_subcommand_help
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::help::tests::handle_prints_subcommand_help --nocapture
+        PASS [   0.025s] ( 35/655) callisto-cli commands::add::tests::polyglot_package_selection_names_are_distinct
+       START [         ] ( 36/655) callisto-cli commands::init::tests::a_non_github_origin_gets_no_unrequested_workflow
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::a_non_github_origin_gets_no_unrequested_workflow --nocapture
+        PASS [   0.020s] ( 36/655) callisto-cli commands::add::tests::when_every_package_is_major_there_is_no_minor_question
+       START [         ] ( 37/655) callisto-cli commands::init::tests::a_supplied_flag_skips_its_question
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::a_supplied_flag_skips_its_question --nocapture
+        PASS [   0.022s] ( 37/655) callisto-cli commands::completions::tests::completions_offer_no_help_subcommand_at_any_depth
+       START [         ] ( 38/655) callisto-cli commands::init::tests::an_existing_config_errors
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::an_existing_config_errors --nocapture
+        PASS [   0.027s] ( 38/655) callisto-cli commands::add::tests::the_wizard_gives_majors_then_minors_and_defaults_the_rest_to_patch
+       START [         ] ( 39/655) callisto-cli commands::init::tests::an_init_with_no_settings_says_the_defaults_apply_instead_of_printing_an_empty_file
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::an_init_with_no_settings_says_the_defaults_apply_instead_of_printing_an_empty_file --nocapture
+        PASS [   0.014s] ( 39/655) callisto-cli commands::completions::tests::handle_generates_the_binary_name_into_the_completion_script
+       START [         ] ( 40/655) callisto-cli commands::init::tests::an_initialized_workspace_without_the_workflow_flag_is_refused
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::an_initialized_workspace_without_the_workflow_flag_is_refused --nocapture
+        PASS [   0.014s] ( 40/655) callisto-cli commands::completions::tests::completions_omit_hidden_subcommands_at_every_depth
+       START [         ] ( 41/655) callisto-cli commands::init::tests::an_unrequested_workflow_that_cannot_be_built_is_skipped_not_fatal
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::an_unrequested_workflow_that_cannot_be_built_is_skipped_not_fatal --nocapture
+        PASS [   0.079s] ( 41/655) callisto-cli color::tests::no_color_empty_does_not_suppress_clicolor_force
+       START [         ] ( 42/655) callisto-cli commands::init::tests::declining_the_preview_writes_nothing
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::declining_the_preview_writes_nothing --nocapture
+        PASS [   0.027s] ( 42/655) callisto-cli commands::completions::tests::handle_succeeds_for_every_supported_shell
+       START [         ] ( 43/655) callisto-cli commands::init::tests::declining_to_ship_binaries_writes_no_release
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::declining_to_ship_binaries_writes_no_release --nocapture
+        PASS [   0.017s] ( 43/655) callisto-cli commands::help::tests::handle_prints_subcommand_help
+        PASS [   0.016s] ( 44/655) callisto-cli commands::help::tests::handle_prints_nested_subcommand_help
+       START [         ] ( 45/655) callisto-cli commands::init::tests::dry_run_with_workflow_lists_every_file
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::dry_run_with_workflow_lists_every_file --nocapture
+       START [         ] ( 45/655) callisto-cli commands::init::tests::dry_run_previews_and_writes_nothing
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::dry_run_previews_and_writes_nothing --nocapture
+        PASS [   0.049s] ( 45/655) callisto-cli commands::add::tests::the_wizard_only_offers_the_packages_that_were_selected_for_the_bump_questions
+       START [         ] ( 46/655) callisto-cli commands::init::tests::existing_workflow_file_errors_before_the_preview_and_writes_nothing
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::existing_workflow_file_errors_before_the_preview_and_writes_nothing --nocapture
+        PASS [   0.095s] ( 46/655) callisto-cli color::tests::no_env_signal_falls_back_to_concrete_auto_detection
+       START [         ] ( 47/655) callisto-cli commands::init::tests::explicit_workflow_flag_errors_for_an_unsupported_workspace
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::explicit_workflow_flag_errors_for_an_unsupported_workspace --nocapture
+        PASS [   0.026s] ( 47/655) callisto-cli commands::help::tests::handle_names_unknown_subcommand
+       START [         ] ( 48/655) callisto-cli commands::init::tests::forge_or_product_without_artifact_target_errors_up_front
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::forge_or_product_without_artifact_target_errors_up_front --nocapture
+        PASS [   0.026s] ( 48/655) callisto-cli commands::help::tests::handle_prints_root_help_with_no_command
+       START [         ] ( 49/655) callisto-cli commands::init::tests::forge_repository_mismatch_and_invalid_error
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::forge_repository_mismatch_and_invalid_error --nocapture
+        PASS [   0.141s] ( 49/655) callisto-cli commands::add::tests::a_name_taken_after_it_was_chosen_is_skipped_and_the_other_changeset_survives
+       START [         ] ( 50/655) callisto-cli commands::init::tests::init_in_a_repository_with_no_packages_still_reports_no_workspace_root
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::init_in_a_repository_with_no_packages_still_reports_no_workspace_root --nocapture
+        PASS [   0.328s] ( 50/655) callisto-cli commands::init::tests::an_initialized_workspace_without_the_workflow_flag_is_refused
+       START [         ] ( 51/655) callisto-cli commands::init::tests::init_makes_the_git_toplevel_the_root_of_a_repository_whose_manifests_are_all_in_subdirectories
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::init_makes_the_git_toplevel_the_root_of_a_repository_whose_manifests_are_all_in_subdirectories --nocapture
+        PASS [   0.383s] ( 51/655) callisto-cli commands::init::tests::an_existing_config_errors
+       START [         ] ( 52/655) callisto-cli commands::init::tests::interactive_run_for_one_package_skips_versioning_and_defaults_the_workflow_to_yes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::interactive_run_for_one_package_skips_versioning_and_defaults_the_workflow_to_yes --nocapture
+        PASS [   0.358s] ( 52/655) callisto-cli commands::init::tests::forge_or_product_without_artifact_target_errors_up_front
+       START [         ] ( 53/655) callisto-cli commands::init::tests::interactive_target_with_empty_entry_errors_without_writing
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::interactive_target_with_empty_entry_errors_without_writing --nocapture
+        PASS [   0.495s] ( 53/655) callisto-cli commands::compose_pr_body::tests::handle_json_format_succeeds_with_a_pending_changeset
+       START [         ] ( 54/655) callisto-cli commands::init::tests::interactive_workflow_confirm_writes_the_generated_file
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::interactive_workflow_confirm_writes_the_generated_file --nocapture
+        PASS [   0.559s] ( 54/655) callisto-cli commands::init::tests::init_in_a_repository_with_no_packages_still_reports_no_workspace_root
+       START [         ] ( 55/655) callisto-cli commands::init::tests::invalid_binary_flags_error_without_writing
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::invalid_binary_flags_error_without_writing --nocapture
+        PASS [   0.752s] ( 55/655) callisto-cli commands::init::tests::explicit_workflow_flag_errors_for_an_unsupported_workspace
+       START [         ] ( 56/655) callisto-cli commands::init::tests::json_reports_on_stdout
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::json_reports_on_stdout --nocapture
+        PASS [   1.041s] ( 56/655) callisto-cli commands::init::tests::a_supplied_flag_skips_its_question
+       START [         ] ( 57/655) callisto-cli commands::init::tests::missing_origin_writes_config_with_warning_and_skips_shipping
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::missing_origin_writes_config_with_warning_and_skips_shipping --nocapture
+        PASS [   1.025s] ( 57/655) callisto-cli commands::init::tests::dry_run_previews_and_writes_nothing
+       START [         ] ( 58/655) callisto-cli commands::init::tests::no_commits_skips_the_preview_and_still_writes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::no_commits_skips_the_preview_and_still_writes --nocapture
+        PASS [   1.161s] ( 58/655) callisto-cli commands::init::tests::an_unrequested_workflow_that_cannot_be_built_is_skipped_not_fatal
+       START [         ] ( 59/655) callisto-cli commands::init::tests::non_interactive_matches_interactive
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::non_interactive_matches_interactive --nocapture
+        PASS [   1.161s] ( 59/655) callisto-cli commands::init::tests::declining_the_preview_writes_nothing
+       START [         ] ( 60/655) callisto-cli commands::init::tests::non_tty_without_yes_names_yes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::non_tty_without_yes_names_yes --nocapture
+        PASS [   0.789s] ( 60/655) callisto-cli commands::init::tests::interactive_target_with_empty_entry_errors_without_writing
+       START [         ] ( 61/655) callisto-cli commands::init::tests::preexisting_changesets_config_json_warns_per_unhonoured_key
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::preexisting_changesets_config_json_warns_per_unhonoured_key --nocapture
+        PASS [   1.160s] ( 61/655) callisto-cli commands::init::tests::declining_to_ship_binaries_writes_no_release
+       START [         ] ( 62/655) callisto-cli commands::init::tests::registry_executable_can_be_initialized_without_artifact_generation
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::registry_executable_can_be_initialized_without_artifact_generation --nocapture
+        PASS [   1.156s] ( 62/655) callisto-cli commands::init::tests::forge_repository_mismatch_and_invalid_error
+       START [         ] ( 63/655) callisto-cli commands::init::tests::repeated_interactive_target_errors
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::repeated_interactive_target_errors --nocapture
+        PASS [   1.204s] ( 63/655) callisto-cli commands::init::tests::a_non_github_origin_gets_no_unrequested_workflow
+       START [         ] ( 64/655) callisto-cli commands::init::tests::shipping_binaries_asks_product_forge_and_targets
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::shipping_binaries_asks_product_forge_and_targets --nocapture
+        PASS [   1.290s] ( 64/655) callisto-cli commands::init::tests::dry_run_with_workflow_lists_every_file
+       START [         ] ( 65/655) callisto-cli commands::init::tests::shipping_binaries_generates_the_build_matrix_workflow
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::shipping_binaries_generates_the_build_matrix_workflow --nocapture
+        PASS [   1.024s] ( 65/655) callisto-cli commands::init::tests::init_makes_the_git_toplevel_the_root_of_a_repository_whose_manifests_are_all_in_subdirectories
+       START [         ] ( 66/655) callisto-cli commands::init::tests::the_advertised_workflow_retry_writes_only_the_workflow
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::the_advertised_workflow_retry_writes_only_the_workflow --nocapture
+        PASS [   1.107s] ( 66/655) callisto-cli commands::init::tests::interactive_run_for_one_package_skips_versioning_and_defaults_the_workflow_to_yes
+       START [         ] ( 67/655) callisto-cli commands::init::tests::unresolvable_version_errors_naming_the_fix
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::unresolvable_version_errors_naming_the_fix --nocapture
+        PASS [   1.631s] ( 67/655) callisto-cli commands::init::tests::existing_workflow_file_errors_before_the_preview_and_writes_nothing
+       START [         ] ( 68/655) callisto-cli commands::init::tests::unsupported_registry_executable_artifact_fails_before_writing
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::unsupported_registry_executable_artifact_fails_before_writing --nocapture
+        PASS [   1.298s] ( 68/655) callisto-cli commands::init::tests::interactive_workflow_confirm_writes_the_generated_file
+       START [         ] ( 69/655) callisto-cli commands::init::tests::unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic --nocapture
+        PASS [   0.781s] ( 69/655) callisto-cli commands::init::tests::repeated_interactive_target_errors
+       START [         ] ( 70/655) callisto-cli commands::init::tests::workflow_and_no_workflow_together_error_without_asking
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::workflow_and_no_workflow_together_error_without_asking --nocapture
+        PASS [   0.813s] ( 70/655) callisto-cli commands::init::tests::non_tty_without_yes_names_yes
+       START [         ] ( 71/655) callisto-cli commands::init::tests::workflow_declined_or_disabled_writes_nothing
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::workflow_declined_or_disabled_writes_nothing --nocapture
+        PASS [   0.448s] ( 71/655) callisto-cli commands::init::tests::workflow_and_no_workflow_together_error_without_asking
+       START [         ] ( 72/655) callisto-cli commands::init::tests::workflow_flag_generates_without_asking
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::workflow_flag_generates_without_asking --nocapture
+        PASS [   0.941s] ( 72/655) callisto-cli commands::init::tests::unresolvable_version_errors_naming_the_fix
+       START [         ] ( 73/655) callisto-cli commands::init::tests::workflow_or_artifact_target_without_origin_errors
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::workflow_or_artifact_target_without_origin_errors --nocapture
+        PASS [   1.264s] ( 73/655) callisto-cli commands::init::tests::preexisting_changesets_config_json_warns_per_unhonoured_key
+       START [         ] ( 74/655) callisto-cli commands::init::tests::workflow_retry_refuses_flags_it_would_drop
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::workflow_retry_refuses_flags_it_would_drop --nocapture
+        PASS [   2.438s] ( 74/655) callisto-cli commands::init::tests::an_init_with_no_settings_says_the_defaults_apply_instead_of_printing_an_empty_file
+       START [         ] ( 75/655) callisto-cli commands::init::tests::workflow_retry_reports_a_write_and_honours_dry_run
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::workflow_retry_reports_a_write_and_honours_dry_run --nocapture
+        PASS [   1.247s] ( 75/655) callisto-cli commands::init::tests::shipping_binaries_asks_product_forge_and_targets
+       START [         ] ( 76/655) callisto-cli commands::init::tests::written_workflow_notes_that_merging_publishes
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::written_workflow_notes_that_merging_publishes --nocapture
+        PASS [   0.795s] ( 76/655) callisto-cli commands::init::tests::unsupported_registry_executable_artifact_fails_before_writing
+       START [         ] ( 77/655) callisto-cli commands::init::tests::yes_alone_versions_independently_and_writes_the_workflow
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::yes_alone_versions_independently_and_writes_the_workflow --nocapture
+        PASS [   1.312s] ( 77/655) callisto-cli commands::init::tests::shipping_binaries_generates_the_build_matrix_workflow
+       START [         ] ( 78/655) callisto-cli commands::init::tests::yes_with_targets_requires_forge_and_product
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::yes_with_targets_requires_forge_and_product --nocapture
+        PASS [   0.402s] ( 78/655) callisto-cli commands::init::tests::workflow_retry_refuses_flags_it_would_drop
+       START [         ] ( 79/655) callisto-cli commands::init::tests::yes_without_targets_ships_nothing
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::init::tests::yes_without_targets_ships_nothing --nocapture
+        PASS [   1.136s] ( 79/655) callisto-cli commands::init::tests::unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic
+       START [         ] ( 80/655) callisto-cli commands::matrix::tests::handle_empty_workspace_succeeds
+             command: /Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/target/debug/deps/callisto_cli-18cdf8e70b6075c3 --exact commands::matrix::tests::handle_empty_workspace_succeeds --nocapture
+        FAIL [   1.628s] ( 80/655) callisto-cli commands::init::tests::the_advertised_workflow_retry_writes_only_the_workflow
+  stdout ───
+
+    running 1 test
+    test commands::init::tests::the_advertised_workflow_retry_writes_only_the_workflow ... FAILED
+
+    failures:
+
+    failures:
+        commands::init::tests::the_advertised_workflow_retry_writes_only_the_workflow
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 206 filtered out; finished in 1.61s
+
+  stderr ───
+
+    thread 'commands::init::tests::the_advertised_workflow_retry_writes_only_the_workflow' (40341655) panicked at crates/callisto-cli/src/commands/init/tests.rs:355:5:
+    {
+      "schemaVersion": 1,
+      "initialized": true,
+      "configPath": "/private/var/folders/q1/qkn6792j1c3cxt6vjd88tlc00000gn/T/.tmpj8at69/callisto.toml",
+      "config": "# callisto configuration\n",
+      "files": [
+        "/private/var/folders/q1/qkn6792j1c3cxt6vjd88tlc00000gn/T/.tmpj8at69/.github/workflows/callisto-release.yml"
+      ],
+      "diagnostics": [
+        {
+          "code": "workflow-merge-publishes",
+          "severity": "info",
+          "message": "Merging to `main` publishes: require pull requests and reviews on `main` (GitHub → Settings → Rules)."
+        }
+      ],
+      "command": "init",
+      "dryRun": false
+    }
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 17 tests still running
+        PASS [   0.208s] ( 81/655) callisto-cli commands::matrix::tests::handle_empty_workspace_succeeds
+        FAIL [   0.705s] ( 82/655) callisto-cli commands::init::tests::workflow_retry_reports_a_write_and_honours_dry_run
+  stdout ───
+
+    running 1 test
+    test commands::init::tests::workflow_retry_reports_a_write_and_honours_dry_run ... FAILED
+
+    failures:
+
+    failures:
+        commands::init::tests::workflow_retry_reports_a_write_and_honours_dry_run
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 206 filtered out; finished in 0.69s
+
+  stderr ───
+
+    thread 'commands::init::tests::workflow_retry_reports_a_write_and_honours_dry_run' (40347695) panicked at crates/callisto-cli/src/commands/init/tests.rs:1437:5:
+    {
+      "schemaVersion": 1,
+      "initialized": false,
+      "configPath": "/private/var/folders/q1/qkn6792j1c3cxt6vjd88tlc00000gn/T/.tmp9Gzs7h/callisto.toml",
+      "config": "# existing\n",
+      "files": [
+        "/private/var/folders/q1/qkn6792j1c3cxt6vjd88tlc00000gn/T/.tmp9Gzs7h/.github/workflows/callisto-release.yml"
+      ],
+      "command": "init",
+      "dryRun": true
+    }
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   2.325s] ( 83/655) callisto-cli commands::init::tests::no_commits_skips_the_preview_and_still_writes
+        PASS [   0.753s] ( 84/655) callisto-cli commands::init::tests::yes_with_targets_requires_forge_and_product
+        PASS [   1.105s] ( 85/655) callisto-cli commands::init::tests::workflow_flag_generates_without_asking
+        PASS [   2.486s] ( 86/655) callisto-cli commands::init::tests::missing_origin_writes_config_with_warning_and_skips_shipping
+        PASS [   1.101s] ( 87/655) callisto-cli commands::init::tests::yes_alone_versions_independently_and_writes_the_workflow
+        PASS [   2.790s] ( 88/655) callisto-cli commands::init::tests::json_reports_on_stdout
+        PASS [   2.939s] ( 89/655) callisto-cli commands::init::tests::invalid_binary_flags_error_without_writing
+        PASS [   2.402s] ( 90/655) callisto-cli commands::init::tests::non_interactive_matches_interactive
+        PASS [   1.259s] ( 91/655) callisto-cli commands::init::tests::workflow_or_artifact_target_without_origin_errors
+        PASS [   2.843s] ( 92/655) callisto-cli commands::init::tests::registry_executable_can_be_initialized_without_artifact_generation
+        PASS [   2.053s] ( 93/655) callisto-cli commands::init::tests::workflow_declined_or_disabled_writes_nothing
+        PASS [   1.929s] ( 94/655) callisto-cli commands::init::tests::yes_without_targets_ships_nothing
+        PASS [   2.783s] ( 95/655) callisto-cli commands::init::tests::written_workflow_notes_that_merging_publishes
+        PASS [   5.434s] ( 96/655) callisto-cli commands::add::tests::an_existing_changeset_is_never_chosen_as_the_new_filename
+        PASS [   7.444s] ( 97/655) callisto-cli commands::add::tests::a_directory_with_every_slug_taken_is_an_error_not_an_overwrite
+────────────
+     Summary [   7.467s] 97/655 tests run: 95 passed, 2 failed, 1 skipped
+        FAIL [   1.628s] ( 80/655) callisto-cli commands::init::tests::the_advertised_workflow_retry_writes_only_the_workflow
+        FAIL [   0.705s] ( 82/655) callisto-cli commands::init::tests::workflow_retry_reports_a_write_and_honours_dry_run
+warning: 558/655 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
+error: test run failed
+
+*** result: Failure(100)

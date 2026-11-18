@@ -1410,16 +1410,24 @@ fn explicit_workflow_flag_errors_for_an_unsupported_workspace() {
 fn workflow_retry_refuses_flags_it_would_drop() {
     let dir = workspace(0);
     std::fs::write(dir.path().join("callisto.toml"), "# existing\n").unwrap();
-    let args = InitArgs {
-        workflow: true,
-        versioning: Some(InitVersioning::Fixed),
-        ..Default::default()
-    };
-    let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
-    assert!(
-        matches!(error, CliError::Graph(GraphError::InitAlreadyInitialized { .. })),
-        "{error}"
-    );
+    let dropped = [
+        InitArgs {
+            versioning: Some(InitVersioning::Fixed),
+            ..Default::default()
+        },
+        InitArgs {
+            artifact_targets: vec!["x86_64-unknown-linux-gnu".to_owned()],
+            ..Default::default()
+        },
+    ];
+    for args in dropped {
+        let args = InitArgs { workflow: true, ..args };
+        let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
+        assert!(
+            matches!(error, CliError::Graph(GraphError::InitAlreadyInitialized { .. })),
+            "{error}"
+        );
+    }
 }
 
 // A real workflow-only write is reported as a write, and --dry-run writes nothing.

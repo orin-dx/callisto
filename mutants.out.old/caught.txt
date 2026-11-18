@@ -1,0 +1,28 @@
+crates/callisto-cli/src/commands/init.rs:112:5: replace run -> Result<ExitCode, CliError> with Ok(Default::default())
+crates/callisto-cli/src/commands/init.rs:123:22: replace && with || in run
+crates/callisto-cli/src/commands/init.rs:126:13: replace || with && in run
+crates/callisto-cli/src/commands/init.rs:126:16: delete ! in run
+crates/callisto-cli/src/commands/init.rs:331:5: replace run_workflow_only -> Result<ExitCode, CliError> with Ok(Default::default())
+crates/callisto-cli/src/commands/init.rs:332:30: replace == with != in run_workflow_only
+crates/callisto-cli/src/commands/init.rs:351:8: delete ! in run_workflow_only
+crates/callisto-cli/src/commands/init.rs:365:22: delete ! in run_workflow_only
+crates/callisto-graph/src/commands/init.rs:218:5: replace is_initialized -> Result<bool, GraphError> with Ok(true)
+crates/callisto-graph/src/commands/init.rs:218:5: replace is_initialized -> Result<bool, GraphError> with Ok(false)
+crates/callisto-graph/src/commands/init.rs:228:5: replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(true)
+crates/callisto-graph/src/commands/init.rs:228:5: replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(false)
+crates/callisto-graph/src/commands/init.rs:722:30: replace || with && in workflow_shape
+crates/callisto-graph/src/commands/init.rs:790:5: replace local_origin_head -> Option<BranchName> with None
+crates/callisto-graph/src/commands/init.rs:807:5: replace remote_origin_head -> Option<BranchName> with None
+crates/callisto-graph/src/commands/init.rs:821:22: replace == with != in remote_origin_head
+crates/callisto-graph/src/commands/init.rs:828:5: replace current_branch -> Option<BranchName> with None
+crates/callisto-graph/src/commands/init.rs:955:5: replace fill -> String with String::new()
+crates/callisto-graph/src/commands/init.rs:955:5: replace fill -> String with "xyzzy".into()
+crates/callisto-graph/src/commands/init.rs:972:5: replace render_workflow -> String with String::new()
+crates/callisto-graph/src/commands/init.rs:972:5: replace render_workflow -> String with "xyzzy".into()
+crates/callisto-model/src/identity.rs:386:9: replace BranchName::from_full_ref -> Option<Self> with None
+crates/callisto-model/src/identity.rs:391:9: replace BranchName::from_remote_ref -> Option<Self> with None
+crates/callisto-model/src/identity.rs:400:9: replace BranchName::as_str -> &str with ""
+crates/callisto-model/src/identity.rs:400:9: replace BranchName::as_str -> &str with "xyzzy"
+crates/callisto-model/src/identity.rs:404:9: replace BranchName::strip -> Option<Self> with None
+crates/callisto-model/src/identity.rs:405:10: delete ! in BranchName::strip
+crates/callisto-model/src/identity.rs:411:9: replace <impl std::fmt::Display for BranchName>::fmt -> std::fmt::Result with Ok(Default::default())

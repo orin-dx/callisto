@@ -1,0 +1,67 @@
+
+*** crates/callisto-graph/src/commands/init.rs:807:5: replace remote_origin_head -> Option<BranchName> with Some(Default::default())
+
+*** mutation diff:
+--- crates/callisto-graph/src/commands/init.rs
++++ replace remote_origin_head -> Option<BranchName> with Some(Default::default())
+@@ -799,32 +799,17 @@
+         return None;
+     }
+     BranchName::from_remote_ref(&output.stdout, "origin")
+ }
+ 
+ // A shallow or hand-built clone (or one `remote set-head` never ran on) has no local
+ // `origin/HEAD`; asking the remote directly still resolves it without a fetch.
+ fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
+-    let output = runner
+-        .run_quiet(
+-            programs::GIT,
+-            &["ls-remote", "--symref", "origin", "HEAD"],
+-            root,
+-            timeouts::GIT_LS_REMOTE,
+-        )
+-        .ok()?;
+-    if output.exit_code != Some(0) {
+-        return None;
+-    }
+-    // Output line shape: "ref: refs/heads/<branch>\tHEAD".
+-    output.stdout.lines().find_map(|line| {
+-        let (target, name) = line.strip_prefix("ref: ")?.split_once('\t')?;
+-        (name.trim() == "HEAD").then(|| BranchName::from_full_ref(target))?
+-    })
++    Some(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch
+ // actually checked out is a better guess than a hardcoded `main`.
+ fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
+     let output = runner
+         .run_quiet(programs::GIT, &["symbolic-ref", "HEAD"], root, timeouts::LOCAL_GIT)
+         .ok()?;
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --no-run --verbose --package=callisto-graph@0.21.1
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling callisto-graph v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/crates/callisto-graph)
+error[E0277]: the trait bound `BranchName: Default` is not satisfied
+   --> crates/callisto-graph/src/commands/init.rs:807:10
+    |
+807 |     Some(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |          ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `BranchName`
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `callisto-graph` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error[E0277]: the trait bound `callisto_model::BranchName: Default` is not satisfied
+   --> crates/callisto-graph/src/commands/init.rs:807:10
+    |
+807 |     Some(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |          ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `callisto_model::BranchName`
+
+error: could not compile `callisto-graph` (lib test) due to 1 previous error
+error: command `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --no-run --message-format json-render-diagnostics --package callisto-graph@0.21.1` exited with code 101
+
+*** result: Failure(101)

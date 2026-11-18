@@ -1,0 +1,21 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace WorkflowScalar::branch_filter -> Self with Default::default()
+@@ -929,17 +929,17 @@
+         Self(
+             serde_json::to_string(raw)
+                 .expect("a string always serializes to JSON, which is a YAML double-quoted scalar"),
+         )
+     }
+ 
+     /// The branch as an `on.push.branches` filter, where `+` and `!` are pattern syntax Git allows in a name.
+     fn branch_filter(branch: &BranchName) -> Self {
+-        Self::quoted(&branch.as_str().replace('+', "\\+").replace('!', "\\!"))
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// The branch as the literal name the action's `branch` input takes.
+     fn branch(branch: &BranchName) -> Self {
+         Self::quoted(branch.as_str())
+     }
+ 
+     fn commit(commit: &CommitSha) -> Self {

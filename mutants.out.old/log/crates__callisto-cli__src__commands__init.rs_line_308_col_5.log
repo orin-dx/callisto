@@ -1,0 +1,53 @@
+
+*** crates/callisto-cli/src/commands/init.rs:308:5: replace announce_workflow -> Result<callisto_model::Diagnostic, CliError> with Ok(Default::default())
+
+*** mutation diff:
+--- crates/callisto-cli/src/commands/init.rs
++++ replace announce_workflow -> Result<callisto_model::Diagnostic, CliError> with Ok(Default::default())
+@@ -300,28 +300,17 @@
+ }
+ 
+ /// Prints what a written workflow means and what to do next; the same text is recorded as a diagnostic.
+ fn announce_workflow(
+     human: &mut dyn Write,
+     facts: &InitFacts,
+     branch: &BranchName,
+ ) -> Result<callisto_model::Diagnostic, CliError> {
+-    let note = merge_publishes_note(branch);
+-    writeln!(human, "{note}")?;
+-    writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(facts)))?;
+-    Ok(callisto_model::Diagnostic {
+-        code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
+-        severity: callisto_model::DiagnosticSeverity::Info,
+-        message: note,
+-        package: None,
+-        path: None,
+-        escalated_by: None,
+-        governed_by: None,
+-    })
++    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// `init --workflow` in a workspace that already has `callisto.toml`: writes only the workflow.
+ fn run_workflow_only<R: CommandRunner>(
+     root: &std::path::Path,
+     locator: &IgnoreWalkLocator,
+     global: &GlobalArgs,
+     out: &mut dyn Write,
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --no-run --verbose --package=callisto-cli@0.21.1
+   Compiling callisto-cli v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/crates/callisto-cli)
+error[E0277]: the trait bound `callisto_model::Diagnostic: std::default::Default` is not satisfied
+   --> crates/callisto-cli/src/commands/init.rs:308:8
+    |
+308 |     Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |        ^^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `callisto_model::Diagnostic`
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `callisto-cli` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `callisto-cli` (lib test) due to 1 previous error
+error: command `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --no-run --message-format json-render-diagnostics --package callisto-cli@0.21.1` exited with code 101
+
+*** result: Failure(101)

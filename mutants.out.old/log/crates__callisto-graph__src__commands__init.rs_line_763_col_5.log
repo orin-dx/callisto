@@ -1,0 +1,69 @@
+
+*** crates/callisto-graph/src/commands/init.rs:763:5: replace default_branch -> DefaultBranch with Default::default()
+
+*** mutation diff:
+--- crates/callisto-graph/src/commands/init.rs
++++ replace default_branch -> DefaultBranch with Default::default()
+@@ -755,38 +755,17 @@
+ pub struct DefaultBranch {
+     pub name: BranchName,
+     pub source: DefaultBranchSource,
+ }
+ 
+ /// The repository's default branch: local `origin/HEAD`, else a live query of `origin`,
+ /// else the branch currently checked out, else `main`.
+ pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path) -> DefaultBranch {
+-    if let Some(name) = local_origin_head(runner, root) {
+-        return DefaultBranch {
+-            name,
+-            source: DefaultBranchSource::OriginHead,
+-        };
+-    }
+-    if let Some(name) = remote_origin_head(runner, root) {
+-        return DefaultBranch {
+-            name,
+-            source: DefaultBranchSource::RemoteHead,
+-        };
+-    }
+-    if let Some(name) = current_branch(runner, root) {
+-        return DefaultBranch {
+-            name,
+-            source: DefaultBranchSource::CurrentBranch,
+-        };
+-    }
+-    DefaultBranch {
+-        name: BranchName::fallback(),
+-        source: DefaultBranchSource::Fallback,
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // A repository with no `origin/HEAD` (a fresh clone, or one built by hand, as in tests)
+ // fails this on the common path, not just exceptionally.
+ fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
+     let output = runner
+         .run_quiet(
+             programs::GIT,
+
+
+*** /Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo nextest run --no-run --verbose --package=callisto-graph@0.21.1
+   Compiling callisto-graph v0.21.1 (/Users/gabe/Projects/callisto/.claude/worktrees/wp-d-init-boundary/crates/callisto-graph)
+error[E0277]: the trait bound `DefaultBranch: Default` is not satisfied
+   --> crates/callisto-graph/src/commands/init.rs:763:5
+    |
+763 |     Default::default() /* ~ changed by cargo-mutants ~ */
+    |     ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Default` is not implemented for `DefaultBranch`
+   --> crates/callisto-graph/src/commands/init.rs:755:1
+    |
+755 | pub struct DefaultBranch {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `callisto-graph` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `callisto-graph` (lib test) due to 1 previous error
+error: command `/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo test --no-run --message-format json-render-diagnostics --package callisto-graph@0.21.1` exited with code 101
+
+*** result: Failure(101)

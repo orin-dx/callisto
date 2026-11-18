@@ -1,0 +1,3211 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 14.799333417,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1",
+            "--package=callisto-graph@0.21.1",
+            "--package=callisto-model@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 113.756678875,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1",
+            "--package=callisto-graph@0.21.1",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:112:5: replace run -> Result<ExitCode, CliError> with Ok(Default::default())",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 102,
+                "column": 1
+              },
+              "end": {
+                "line": 300,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 112,
+              "column": 5
+            },
+            "end": {
+              "line": 299,
+              "column": 26
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_112_col_5.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_112_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 24.095076042,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 10.315792334,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:123:22: replace && with || in run",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 102,
+                "column": 1
+              },
+              "end": {
+                "line": 300,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 123,
+              "column": 22
+            },
+            "end": {
+              "line": 123,
+              "column": 24
+            }
+          },
+          "replacement": "||",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_123_col_22.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_123_col_22.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 24.868382583,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 34.651761291,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:128:13: replace || with && in run",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 102,
+                "column": 1
+              },
+              "end": {
+                "line": 300,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 128,
+              "column": 13
+            },
+            "end": {
+              "line": 128,
+              "column": 15
+            }
+          },
+          "replacement": "&&",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_128_col_13.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_128_col_13.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 17.558539333,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 176.954937584,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:127:13: replace || with && in run",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 102,
+                "column": 1
+              },
+              "end": {
+                "line": 300,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 127,
+              "column": 13
+            },
+            "end": {
+              "line": 127,
+              "column": 15
+            }
+          },
+          "replacement": "&&",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_127_col_13.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_127_col_13.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 8.707467041,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 132.332464458,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:126:13: replace || with && in run",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 102,
+                "column": 1
+              },
+              "end": {
+                "line": 300,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 126,
+              "column": 13
+            },
+            "end": {
+              "line": 126,
+              "column": 15
+            }
+          },
+          "replacement": "&&",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_126_col_13.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_126_col_13.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 10.905101792,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 9.21097225,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:126:16: delete ! in run",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 102,
+                "column": 1
+              },
+              "end": {
+                "line": 300,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 126,
+              "column": 16
+            },
+            "end": {
+              "line": 126,
+              "column": 17
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_126_col_16.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_126_col_16.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 11.509198583,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 15.911332875,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:308:5: replace announce_workflow -> Result<callisto_model::Diagnostic, CliError> with Ok(Default::default())",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "announce_workflow",
+            "return_type": "-> Result<callisto_model::Diagnostic, CliError>",
+            "span": {
+              "start": {
+                "line": 302,
+                "column": 1
+              },
+              "end": {
+                "line": 320,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 308,
+              "column": 5
+            },
+            "end": {
+              "line": 319,
+              "column": 7
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_308_col_5.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_308_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.710358041,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:331:5: replace run_workflow_only -> Result<ExitCode, CliError> with Ok(Default::default())",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run_workflow_only",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 322,
+                "column": 1
+              },
+              "end": {
+                "line": 377,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 331,
+              "column": 5
+            },
+            "end": {
+              "line": 376,
+              "column": 26
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_331_col_5.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_331_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 15.707785208,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.127241333,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:332:30: replace == with != in run_workflow_only",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run_workflow_only",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 322,
+                "column": 1
+              },
+              "end": {
+                "line": 377,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 332,
+              "column": 30
+            },
+            "end": {
+              "line": 332,
+              "column": 32
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_332_col_30.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_332_col_30.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 5.565613916,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 8.628085042,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:351:8: delete ! in run_workflow_only",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run_workflow_only",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 322,
+                "column": 1
+              },
+              "end": {
+                "line": 377,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 351,
+              "column": 8
+            },
+            "end": {
+              "line": 351,
+              "column": 9
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_351_col_8.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_351_col_8.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.05595275,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 10.224039083,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:365:22: delete ! in run_workflow_only",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "run_workflow_only",
+            "return_type": "-> Result<ExitCode, CliError>",
+            "span": {
+              "start": {
+                "line": 322,
+                "column": 1
+              },
+              "end": {
+                "line": 377,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 365,
+              "column": 22
+            },
+            "end": {
+              "line": 365,
+              "column": 23
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_365_col_22.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_365_col_22.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 15.083518583,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 9.597385458,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:386:5: replace build_workflow -> Result<(String, BranchName), CliError> with Ok((String::new(), Default::default()))",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "build_workflow",
+            "return_type": "-> Result<(String, BranchName), CliError>",
+            "span": {
+              "start": {
+                "line": 379,
+                "column": 1
+              },
+              "end": {
+                "line": 393,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 386,
+              "column": 5
+            },
+            "end": {
+              "line": 392,
+              "column": 31
+            }
+          },
+          "replacement": "Ok((String::new(), Default::default()))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_386_col_5.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_386_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.88334875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-cli/src/commands/init.rs:386:5: replace build_workflow -> Result<(String, BranchName), CliError> with Ok((\"xyzzy\".into(), Default::default()))",
+          "package": "callisto-cli",
+          "file": "crates/callisto-cli/src/commands/init.rs",
+          "function": {
+            "function_name": "build_workflow",
+            "return_type": "-> Result<(String, BranchName), CliError>",
+            "span": {
+              "start": {
+                "line": 379,
+                "column": 1
+              },
+              "end": {
+                "line": 393,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 386,
+              "column": 5
+            },
+            "end": {
+              "line": 392,
+              "column": 31
+            }
+          },
+          "replacement": "Ok((\"xyzzy\".into(), Default::default()))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-cli__src__commands__init.rs_line_386_col_5_001.log",
+      "diff_path": "diff/crates__callisto-cli__src__commands__init.rs_line_386_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.2284285,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-cli@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:194:5: replace detect -> Result<InitFacts, GraphError> with Ok(Default::default())",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "detect",
+            "return_type": "-> Result<InitFacts, GraphError>",
+            "span": {
+              "start": {
+                "line": 183,
+                "column": 1
+              },
+              "end": {
+                "line": 197,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 194,
+              "column": 5
+            },
+            "end": {
+              "line": 196,
+              "column": 47
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_194_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_194_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.277025875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:209:5: replace detect_initialized -> Result<InitFacts, GraphError> with Ok(Default::default())",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "detect_initialized",
+            "return_type": "-> Result<InitFacts, GraphError>",
+            "span": {
+              "start": {
+                "line": 199,
+                "column": 1
+              },
+              "end": {
+                "line": 210,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 209,
+              "column": 5
+            },
+            "end": {
+              "line": 209,
+              "column": 63
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_209_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_209_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.228606417,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:218:5: replace is_initialized -> Result<bool, GraphError> with Ok(true)",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "is_initialized",
+            "return_type": "-> Result<bool, GraphError>",
+            "span": {
+              "start": {
+                "line": 212,
+                "column": 1
+              },
+              "end": {
+                "line": 220,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 218,
+              "column": 5
+            },
+            "end": {
+              "line": 219,
+              "column": 68
+            }
+          },
+          "replacement": "Ok(true)",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_218_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_218_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 14.238784583,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 9.329348292,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:218:5: replace is_initialized -> Result<bool, GraphError> with Ok(false)",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "is_initialized",
+            "return_type": "-> Result<bool, GraphError>",
+            "span": {
+              "start": {
+                "line": 212,
+                "column": 1
+              },
+              "end": {
+                "line": 220,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 218,
+              "column": 5
+            },
+            "end": {
+              "line": 219,
+              "column": 68
+            }
+          },
+          "replacement": "Ok(false)",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_218_col_5_001.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_218_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 7.765878958,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.568309583,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:228:5: replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(true)",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "existing_config_ships_binaries",
+            "return_type": "-> Result<bool, GraphError>",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 1
+              },
+              "end": {
+                "line": 233,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 228,
+              "column": 5
+            },
+            "end": {
+              "line": 232,
+              "column": 68
+            }
+          },
+          "replacement": "Ok(true)",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_228_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_228_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.589957833,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.806546917,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:228:5: replace existing_config_ships_binaries -> Result<bool, GraphError> with Ok(false)",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "existing_config_ships_binaries",
+            "return_type": "-> Result<bool, GraphError>",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 1
+              },
+              "end": {
+                "line": 233,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 228,
+              "column": 5
+            },
+            "end": {
+              "line": 232,
+              "column": 68
+            }
+          },
+          "replacement": "Ok(false)",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_228_col_5_001.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_228_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.58178775,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.15638425,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:241:5: replace detect_facts -> Result<InitFacts, GraphError> with Ok(Default::default())",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "detect_facts",
+            "return_type": "-> Result<InitFacts, GraphError>",
+            "span": {
+              "start": {
+                "line": 235,
+                "column": 1
+              },
+              "end": {
+                "line": 347,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 241,
+              "column": 5
+            },
+            "end": {
+              "line": 346,
+              "column": 7
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_241_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_241_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.146801708,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:718:5: replace workflow_shape -> Result<WorkflowShape, WorkflowUnsupported> with Ok(Default::default())",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "workflow_shape",
+            "return_type": "-> Result<WorkflowShape, WorkflowUnsupported>",
+            "span": {
+              "start": {
+                "line": 712,
+                "column": 1
+              },
+              "end": {
+                "line": 727,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 718,
+              "column": 5
+            },
+            "end": {
+              "line": 726,
+              "column": 6
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_718_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_718_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.860385334,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:722:30: replace || with && in workflow_shape",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "workflow_shape",
+            "return_type": "-> Result<WorkflowShape, WorkflowUnsupported>",
+            "span": {
+              "start": {
+                "line": 712,
+                "column": 1
+              },
+              "end": {
+                "line": 727,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 722,
+              "column": 30
+            },
+            "end": {
+              "line": 722,
+              "column": 32
+            }
+          },
+          "replacement": "&&",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_722_col_30.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_722_col_30.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.851657167,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.512479916,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:763:5: replace default_branch -> DefaultBranch with Default::default()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "default_branch",
+            "return_type": "-> DefaultBranch",
+            "span": {
+              "start": {
+                "line": 760,
+                "column": 1
+              },
+              "end": {
+                "line": 785,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 763,
+              "column": 5
+            },
+            "end": {
+              "line": 784,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_763_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_763_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.542010333,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:790:5: replace local_origin_head -> Option<BranchName> with None",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "local_origin_head",
+            "return_type": "-> Option<BranchName>",
+            "span": {
+              "start": {
+                "line": 789,
+                "column": 1
+              },
+              "end": {
+                "line": 802,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 790,
+              "column": 5
+            },
+            "end": {
+              "line": 801,
+              "column": 58
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_790_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_790_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 8.52696175,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.266265125,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:790:5: replace local_origin_head -> Option<BranchName> with Some(Default::default())",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "local_origin_head",
+            "return_type": "-> Option<BranchName>",
+            "span": {
+              "start": {
+                "line": 789,
+                "column": 1
+              },
+              "end": {
+                "line": 802,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 790,
+              "column": 5
+            },
+            "end": {
+              "line": 801,
+              "column": 58
+            }
+          },
+          "replacement": "Some(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_790_col_5_001.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_790_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.383914625,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:807:5: replace remote_origin_head -> Option<BranchName> with None",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "remote_origin_head",
+            "return_type": "-> Option<BranchName>",
+            "span": {
+              "start": {
+                "line": 806,
+                "column": 1
+              },
+              "end": {
+                "line": 823,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 807,
+              "column": 5
+            },
+            "end": {
+              "line": 822,
+              "column": 7
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_807_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_807_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 11.27110525,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.445677708,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:807:5: replace remote_origin_head -> Option<BranchName> with Some(Default::default())",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "remote_origin_head",
+            "return_type": "-> Option<BranchName>",
+            "span": {
+              "start": {
+                "line": 806,
+                "column": 1
+              },
+              "end": {
+                "line": 823,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 807,
+              "column": 5
+            },
+            "end": {
+              "line": 822,
+              "column": 7
+            }
+          },
+          "replacement": "Some(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_807_col_5_001.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_807_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.3669850000000001,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:821:22: replace == with != in remote_origin_head",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "remote_origin_head",
+            "return_type": "-> Option<BranchName>",
+            "span": {
+              "start": {
+                "line": 806,
+                "column": 1
+              },
+              "end": {
+                "line": 823,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 821,
+              "column": 22
+            },
+            "end": {
+              "line": 821,
+              "column": 24
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_821_col_22.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_821_col_22.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.597900666,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.345748375,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:828:5: replace current_branch -> Option<BranchName> with None",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "current_branch",
+            "return_type": "-> Option<BranchName>",
+            "span": {
+              "start": {
+                "line": 827,
+                "column": 1
+              },
+              "end": {
+                "line": 835,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 828,
+              "column": 5
+            },
+            "end": {
+              "line": 834,
+              "column": 46
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_828_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_828_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 8.874302333,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 8.596565625,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:828:5: replace current_branch -> Option<BranchName> with Some(Default::default())",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "current_branch",
+            "return_type": "-> Option<BranchName>",
+            "span": {
+              "start": {
+                "line": 827,
+                "column": 1
+              },
+              "end": {
+                "line": 835,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 828,
+              "column": 5
+            },
+            "end": {
+              "line": 834,
+              "column": 46
+            }
+          },
+          "replacement": "Some(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_828_col_5_001.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_828_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.646328375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:873:5: replace resolve_release_commit -> Result<CommitSha, GraphError> with Ok(Default::default())",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "resolve_release_commit",
+            "return_type": "-> Result<CommitSha, GraphError>",
+            "span": {
+              "start": {
+                "line": 854,
+                "column": 1
+              },
+              "end": {
+                "line": 909,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 873,
+              "column": 5
+            },
+            "end": {
+              "line": 908,
+              "column": 32
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_873_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_873_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.884609625,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:929:9: replace WorkflowScalar::quoted -> Self with Default::default()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "WorkflowScalar::quoted",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 928,
+                "column": 5
+              },
+              "end": {
+                "line": 933,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 929,
+              "column": 9
+            },
+            "end": {
+              "line": 932,
+              "column": 10
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_929_col_9.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_929_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.063266417,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:937:9: replace WorkflowScalar::branch_filter -> Self with Default::default()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "WorkflowScalar::branch_filter",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 935,
+                "column": 5
+              },
+              "end": {
+                "line": 938,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 937,
+              "column": 9
+            },
+            "end": {
+              "line": 937,
+              "column": 79
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_937_col_9.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_937_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.427744916,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:942:9: replace WorkflowScalar::branch -> Self with Default::default()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "WorkflowScalar::branch",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 940,
+                "column": 5
+              },
+              "end": {
+                "line": 943,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 942,
+              "column": 9
+            },
+            "end": {
+              "line": 942,
+              "column": 38
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_942_col_9.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_942_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.489489416,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:946:9: replace WorkflowScalar::commit -> Self with Default::default()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "WorkflowScalar::commit",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 945,
+                "column": 5
+              },
+              "end": {
+                "line": 947,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 946,
+              "column": 9
+            },
+            "end": {
+              "line": 946,
+              "column": 41
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_946_col_9.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_946_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.598219041,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:950:9: replace WorkflowScalar::version -> Self with Default::default()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "WorkflowScalar::version",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 949,
+                "column": 5
+              },
+              "end": {
+                "line": 951,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 950,
+              "column": 9
+            },
+            "end": {
+              "line": 950,
+              "column": 34
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_950_col_9.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_950_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.317915916,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:955:5: replace fill -> String with String::new()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "fill",
+            "return_type": "-> String",
+            "span": {
+              "start": {
+                "line": 954,
+                "column": 1
+              },
+              "end": {
+                "line": 958,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 955,
+              "column": 5
+            },
+            "end": {
+              "line": 957,
+              "column": 7
+            }
+          },
+          "replacement": "String::new()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_955_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_955_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 10.595845042,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 3.700831792,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:955:5: replace fill -> String with \"xyzzy\".into()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "fill",
+            "return_type": "-> String",
+            "span": {
+              "start": {
+                "line": 954,
+                "column": 1
+              },
+              "end": {
+                "line": 958,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 955,
+              "column": 5
+            },
+            "end": {
+              "line": 957,
+              "column": 7
+            }
+          },
+          "replacement": "\"xyzzy\".into()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_955_col_5_001.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_955_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.45077825,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 11.367447084,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:972:5: replace render_workflow -> String with String::new()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "render_workflow",
+            "return_type": "-> String",
+            "span": {
+              "start": {
+                "line": 960,
+                "column": 1
+              },
+              "end": {
+                "line": 1007,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 972,
+              "column": 5
+            },
+            "end": {
+              "line": 1006,
+              "column": 6
+            }
+          },
+          "replacement": "String::new()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_972_col_5.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_972_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 11.802204375,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 7.557136041,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-graph/src/commands/init.rs:972:5: replace render_workflow -> String with \"xyzzy\".into()",
+          "package": "callisto-graph",
+          "file": "crates/callisto-graph/src/commands/init.rs",
+          "function": {
+            "function_name": "render_workflow",
+            "return_type": "-> String",
+            "span": {
+              "start": {
+                "line": 960,
+                "column": 1
+              },
+              "end": {
+                "line": 1007,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 972,
+              "column": 5
+            },
+            "end": {
+              "line": 1006,
+              "column": 6
+            }
+          },
+          "replacement": "\"xyzzy\".into()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-graph__src__commands__init.rs_line_972_col_5_001.log",
+      "diff_path": "diff/crates__callisto-graph__src__commands__init.rs_line_972_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 7.638697833,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 7.808034917,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-graph@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:386:9: replace BranchName::from_full_ref -> Option<Self> with None",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::from_full_ref",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 384,
+                "column": 5
+              },
+              "end": {
+                "line": 387,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 386,
+              "column": 9
+            },
+            "end": {
+              "line": 386,
+              "column": 46
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_386_col_9.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_386_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.327819708,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.219942125,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:386:9: replace BranchName::from_full_ref -> Option<Self> with Some(Default::default())",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::from_full_ref",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 384,
+                "column": 5
+              },
+              "end": {
+                "line": 387,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 386,
+              "column": 9
+            },
+            "end": {
+              "line": 386,
+              "column": 46
+            }
+          },
+          "replacement": "Some(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_386_col_9_001.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_386_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.053787584,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:391:9: replace BranchName::from_remote_ref -> Option<Self> with None",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::from_remote_ref",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 389,
+                "column": 5
+              },
+              "end": {
+                "line": 392,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 391,
+              "column": 9
+            },
+            "end": {
+              "line": 391,
+              "column": 67
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_391_col_9.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_391_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.544801583,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.662352958,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:391:9: replace BranchName::from_remote_ref -> Option<Self> with Some(Default::default())",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::from_remote_ref",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 389,
+                "column": 5
+              },
+              "end": {
+                "line": 392,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 391,
+              "column": 9
+            },
+            "end": {
+              "line": 391,
+              "column": 67
+            }
+          },
+          "replacement": "Some(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_391_col_9_001.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_391_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.354895666,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:396:9: replace BranchName::fallback -> Self with Default::default()",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::fallback",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 394,
+                "column": 5
+              },
+              "end": {
+                "line": 397,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 396,
+              "column": 9
+            },
+            "end": {
+              "line": 396,
+              "column": 32
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_396_col_9.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_396_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.5845797080000001,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:400:9: replace BranchName::as_str -> &str with \"\"",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::as_str",
+            "return_type": "-> &str",
+            "span": {
+              "start": {
+                "line": 399,
+                "column": 5
+              },
+              "end": {
+                "line": 401,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 400,
+              "column": 9
+            },
+            "end": {
+              "line": 400,
+              "column": 16
+            }
+          },
+          "replacement": "\"\"",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_400_col_9.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_400_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.450121,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.667806417,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:400:9: replace BranchName::as_str -> &str with \"xyzzy\"",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::as_str",
+            "return_type": "-> &str",
+            "span": {
+              "start": {
+                "line": 399,
+                "column": 5
+              },
+              "end": {
+                "line": 401,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 400,
+              "column": 9
+            },
+            "end": {
+              "line": 400,
+              "column": 16
+            }
+          },
+          "replacement": "\"xyzzy\"",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_400_col_9_001.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_400_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.6571015,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.607552042,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:404:9: replace BranchName::strip -> Option<Self> with None",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::strip",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 403,
+                "column": 5
+              },
+              "end": {
+                "line": 406,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 404,
+              "column": 9
+            },
+            "end": {
+              "line": 405,
+              "column": 62
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_404_col_9.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_404_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.327810542,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.713307417,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:404:9: replace BranchName::strip -> Option<Self> with Some(Default::default())",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::strip",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 403,
+                "column": 5
+              },
+              "end": {
+                "line": 406,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 404,
+              "column": 9
+            },
+            "end": {
+              "line": 405,
+              "column": 62
+            }
+          },
+          "replacement": "Some(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_404_col_9_001.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_404_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.38365,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:405:10: delete ! in BranchName::strip",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "BranchName::strip",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 403,
+                "column": 5
+              },
+              "end": {
+                "line": 406,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 405,
+              "column": 10
+            },
+            "end": {
+              "line": 405,
+              "column": 11
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_405_col_10.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_405_col_10.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 5.636496292,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.812274041,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/callisto-model/src/identity.rs:411:9: replace <impl std::fmt::Display for BranchName>::fmt -> std::fmt::Result with Ok(Default::default())",
+          "package": "callisto-model",
+          "file": "crates/callisto-model/src/identity.rs",
+          "function": {
+            "function_name": "<impl std::fmt::Display for BranchName>::fmt",
+            "return_type": "-> std::fmt::Result",
+            "span": {
+              "start": {
+                "line": 410,
+                "column": 5
+              },
+              "end": {
+                "line": 412,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 411,
+              "column": 9
+            },
+            "end": {
+              "line": 411,
+              "column": 37
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__callisto-model__src__identity.rs_line_411_col_9.log",
+      "diff_path": "diff/crates__callisto-model__src__identity.rs_line_411_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 8.559841833,
+          "process_status": "Success",
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.983092958,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/gabe/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--verbose",
+            "--package=callisto-model@0.21.1"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 51,
+  "missed": 2,
+  "caught": 28,
+  "timeout": 0,
+  "unviable": 21,
+  "success": 0,
+  "start_time": "2026-11-18T03:18:16.984707Z",
+  "end_time": "2026-11-18T03:34:54.987789Z",
+  "cargo_mutants_version": "27.1.0"
+}

@@ -1,0 +1,24 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace WorkflowScalar::quoted -> Self with Default::default()
+@@ -921,20 +921,17 @@
+     .collect()
+ }
+ 
+ /// A value encoded for one YAML position of a generated workflow; the only thing [`fill`] accepts.
+ struct WorkflowScalar(String);
+ 
+ impl WorkflowScalar {
+     fn quoted(raw: &str) -> Self {
+-        Self(
+-            serde_json::to_string(raw)
+-                .expect("a string always serializes to JSON, which is a YAML double-quoted scalar"),
+-        )
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// The branch as an `on.push.branches` filter, where `+` and `!` are pattern syntax Git allows in a name.
+     fn branch_filter(branch: &BranchName) -> Self {
+         Self::quoted(&branch.as_str().replace('+', "\\+").replace('!', "\\!"))
+     }
+ 
+     /// The branch as the literal name the action's `branch` input takes.

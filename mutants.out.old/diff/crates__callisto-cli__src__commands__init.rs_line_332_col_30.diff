@@ -1,0 +1,21 @@
+--- crates/callisto-cli/src/commands/init.rs
++++ replace == with != in run_workflow_only
+@@ -324,17 +324,17 @@
+     root: &std::path::Path,
+     locator: &IgnoreWalkLocator,
+     global: &GlobalArgs,
+     out: &mut dyn Write,
+     err: &mut dyn Write,
+     runner: &R,
+ ) -> Result<ExitCode, CliError> {
+     let facts = scaffold::detect_initialized(root, locator, runner)?;
+-    let json = global.format == OutputFormat::Json;
++    let json = global.format != /* ~ changed by cargo-mutants ~ */ OutputFormat::Json;
+     let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
+     write_facts(&facts, human)?;
+     if facts.origin.is_none() {
+         return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+     }
+     let shape =
+         scaffold::workflow_shape(&facts, scaffold::existing_config_ships_binaries(&facts.root)?).map_err(|reason| {
+             GraphError::InitWorkflowUnsupported {

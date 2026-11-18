@@ -1,0 +1,126 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace detect_facts -> Result<InitFacts, GraphError> with Ok(Default::default())
+@@ -233,122 +233,17 @@
+ }
+ 
+ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
+     root: PathBuf,
+     locator: &L,
+     runner: &R,
+     initialized: bool,
+ ) -> Result<InitFacts, GraphError> {
+-    let git_dir = runner.run_with_timeout(programs::GIT, &["rev-parse", "--git-dir"], &root, timeouts::LOCAL_GIT)?;
+-    if git_dir.exit_code != Some(0) {
+-        return Err(GraphError::InitNotGitRepository { root });
+-    }
+-    let origin = optional_git_remote(&root, runner)?;
+-    let head = runner.run_with_timeout(
+-        programs::GIT,
+-        &["rev-parse", "--verify", "--quiet", "HEAD"],
+-        &root,
+-        timeouts::LOCAL_GIT,
+-    )?;
+-
+-    let discovered = Workspace::load(root.clone(), locator, runner)?;
+-    // An existing config already decides tag conventions; synthesizing one would second-guess it.
+-    let tag_templates = if initialized {
+-        BTreeMap::new()
+-    } else {
+-        detect_tag_templates(&discovered)?
+-    };
+-    let templates_only = InitFacts {
+-        root: root.clone(),
+-        ecosystems: BTreeSet::new(),
+-        packages: Vec::new(),
+-        origin: origin.as_ref().map(|remote| remote.endpoint.clone()),
+-        origin_repository: origin.as_ref().and_then(|remote| remote.github_repository.clone()),
+-        tag_templates,
+-        has_commit: head.exit_code == Some(0),
+-        has_platform_packages: false,
+-        has_napi_targets: false,
+-        has_maturin_targets: false,
+-    };
+-    let workspace = if initialized {
+-        discovered
+-    } else {
+-        let config = resolve_config_text(
+-            &root,
+-            &render_config(
+-                &templates_only,
+-                &InitAnswers {
+-                    versioning: Versioning::Independent,
+-                    binaries: None,
+-                },
+-            ),
+-        )?;
+-        Workspace::load_with_config(root.clone(), config, locator, runner)?
+-    };
+-    let tags = workspace.tags()?;
+-    let versions = workspace.base_versions()?;
+-    let ctx = callisto_manifests::OpenContext::for_workspace_root(&workspace.root)?;
+-
+-    let mut packages = Vec::new();
+-    for package in workspace.graph.packages() {
+-        let mut bin_names = Vec::new();
+-        let mut cargo_bin_names = Vec::new();
+-        let mut unsupported_bin_ecosystems = BTreeSet::new();
+-        for decl in package.canonical_manifests() {
+-            let manifest = crate::manifest_cache::open_cached(&workspace.manifest_cache, decl, &ctx)?;
+-            let names = manifest.bin_names()?;
+-            if manifest.ecosystem() == Ecosystem::Cargo {
+-                cargo_bin_names.extend(names.iter().cloned());
+-            } else if !names.is_empty() {
+-                unsupported_bin_ecosystems.insert(manifest.ecosystem().prefix().to_owned());
+-            }
+-            bin_names.extend(names);
+-        }
+-        packages.push(InitPackage {
+-            id: qualified_id(package),
+-            version: versions[&package.id].clone(),
+-            bin_names,
+-            cargo_bin_names,
+-            unsupported_bin_ecosystems: unsupported_bin_ecosystems.into_iter().collect(),
+-            last_tag: tags.last_tag(&package.id).map(|tag| tag.name.clone()),
+-            publish_to: package
+-                .publish_to
+-                .iter()
+-                .map(|target| target.config_str().to_owned())
+-                .filter(|target| target != PublishTarget::None.config_str())
+-                .collect(),
+-            platform: is_platform_package(package),
+-        });
+-    }
+-    packages.sort_by(|a, b| a.id.cmp(&b.id));
+-    let ecosystems = workspace
+-        .graph
+-        .packages()
+-        .flat_map(|package| package.canonical_manifests())
+-        .map(|manifest| manifest.ecosystem())
+-        .collect();
+-    // Counts attached platform packages too: they never get their own `packages` entry,
+-    // so scanning canonical manifests alone finds only co-located ones.
+-    let has_platform_packages = workspace
+-        .graph
+-        .packages()
+-        .any(|package| is_platform_package(package) || workspace.identity.platforms_of(&package.id).next().is_some());
+-
+-    let matrix = crate::commands::matrix::matrix(&workspace, &crate::commands::matrix::MatrixOptions::default())?;
+-    let has_kind = |kind| matrix.platform_targets.values().any(|group| group.kind == kind);
+-
+-    Ok(InitFacts {
+-        ecosystems,
+-        packages,
+-        has_platform_packages,
+-        has_napi_targets: has_kind(callisto_model::PlatformTargetKind::Napi),
+-        has_maturin_targets: has_kind(callisto_model::PlatformTargetKind::Maturin),
+-        ..templates_only
+-    })
++    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// One tag convention a package's existing tags follow.
+ struct TagMatch {
+     convention: &'static str,
+     template: String,
+     tags: Vec<String>,
+ }

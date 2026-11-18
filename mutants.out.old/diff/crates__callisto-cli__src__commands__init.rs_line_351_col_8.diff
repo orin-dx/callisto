@@ -1,0 +1,21 @@
+--- crates/callisto-cli/src/commands/init.rs
++++ delete ! in run_workflow_only
+@@ -343,17 +343,17 @@
+         })?;
+     let (workflow, branch) = build_workflow(&facts, shape, runner, human)?;
+     writeln!(
+         human,
+         "\n{}:\n{workflow}",
+         scaffold::workflow_path(&facts.root).display()
+     )?;
+     let mut diagnostics = Vec::new();
+-    if !global.dry_run {
++    if  /* ~ changed by cargo-mutants ~ */global.dry_run {
+         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
+         scaffold::write_workflow(&facts.root, &workflow, &permit)?;
+         diagnostics.push(announce_workflow(human, &facts, &branch)?);
+     }
+     let config_path = facts.root.join("callisto.toml");
+     let config = callisto_model::strict_fs::read_optional(&config_path)
+         .map_err(|error| GraphError::InitIo {
+             path: config_path.clone(),

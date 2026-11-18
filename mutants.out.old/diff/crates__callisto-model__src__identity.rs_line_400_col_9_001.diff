@@ -1,0 +1,21 @@
+--- crates/callisto-model/src/identity.rs
++++ replace BranchName::as_str -> &str with "xyzzy"
+@@ -392,17 +392,17 @@
+     }
+ 
+     /// The branch a repository with no other signal defaults to.
+     pub fn fallback() -> Self {
+         Self("main".to_owned())
+     }
+ 
+     pub fn as_str(&self) -> &str {
+-        &self.0
++        "xyzzy" /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     fn strip(reference: &str, prefix: &str) -> Option<Self> {
+         let branch = reference.trim().strip_prefix(prefix)?;
+         (!branch.is_empty()).then(|| Self(branch.to_owned()))
+     }
+ }
+ 

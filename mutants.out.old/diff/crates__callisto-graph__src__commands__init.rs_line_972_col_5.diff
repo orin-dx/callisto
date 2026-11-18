@@ -1,0 +1,55 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace render_workflow -> String with String::new()
+@@ -964,51 +964,17 @@
+ /// `version` names the CLI `setup-callisto` installs and a trailing comment.
+ pub fn render_workflow(
+     facts: &InitFacts,
+     shape: WorkflowShape,
+     branch: &BranchName,
+     commit: &CommitSha,
+     version: &semver::Version,
+ ) -> String {
+-    let mut secrets = Vec::new();
+-    for name in registry_secret_names(facts) {
+-        secrets.push(format!("{name}: ${{{{ secrets.{name} }}}}"));
+-        if name == "NPM_TOKEN" {
+-            // Uses the job's id-token: write; npm publishes no provenance without it.
+-            secrets.push("NPM_CONFIG_PROVENANCE: \"true\"".to_owned());
+-        }
+-    }
+-    secrets.push("GH_TOKEN: ${{ github.token }}".to_owned());
+-    let env_lines: Vec<String> = secrets.iter().map(|line| format!("          {line}")).collect();
+-    let release_env = format!("env:\n{}", env_lines.join("\n"));
+-
+-    let template = match shape {
+-        WorkflowShape::Simple => WORKFLOW_TEMPLATE,
+-        WorkflowShape::BuildMatrix => MATRIX_WORKFLOW_TEMPLATE,
+-    };
+-    let python_tools = if facts.ecosystems.contains(&Ecosystem::Pypi) {
+-        SIMPLE_PYTHON_TOOLS_STEP
+-    } else {
+-        ""
+-    };
+-    let text = template
+-        .replace("      __PYTHON_TOOLS__\n", python_tools)
+-        .replace("__BUILD__", BUILD_REQUIREMENT)
+-        .replace("__TWINE__", TWINE_REQUIREMENT)
+-        .replace("        __RELEASE_ENV__", &format!("        {release_env}"));
+-    fill(
+-        &text,
+-        &[
+-            ("__BRANCH_FILTER__", WorkflowScalar::branch_filter(branch)),
+-            ("__BRANCH__", WorkflowScalar::branch(branch)),
+-            ("__COMMIT__", WorkflowScalar::commit(commit)),
+-            ("__VERSION__", WorkflowScalar::version(version)),
+-        ],
+-    )
++    String::new() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Errors if a workflow file already exists at [`workflow_path`], without writing.
+ ///
+ /// # Errors
+ ///
+ /// A file already exists at that path.
+ pub fn ensure_workflow_absent(root: &Path) -> Result<(), GraphError> {

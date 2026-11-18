@@ -1,0 +1,21 @@
+--- crates/callisto-graph/src/commands/init.rs
++++ replace WorkflowScalar::commit -> Self with Default::default()
+@@ -938,17 +938,17 @@
+     }
+ 
+     /// The branch as the literal name the action's `branch` input takes.
+     fn branch(branch: &BranchName) -> Self {
+         Self::quoted(branch.as_str())
+     }
+ 
+     fn commit(commit: &CommitSha) -> Self {
+-        Self(commit.as_str().to_owned())
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     fn version(version: &semver::Version) -> Self {
+         Self(version.to_string())
+     }
+ }
+ 
+ fn fill(template: &str, values: &[(&str, WorkflowScalar)]) -> String {
