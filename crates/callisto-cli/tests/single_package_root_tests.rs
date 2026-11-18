@@ -68,6 +68,7 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
     let status = StatusArgs {
         strict: false,
         check: false,
+        since: None,
     };
     assert_eq!(
         commands::status::handle(status, &global(&root.join("src"), false)).unwrap(),
