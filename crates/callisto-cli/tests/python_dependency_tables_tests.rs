@@ -186,3 +186,26 @@ fn a_direct_url_requirement_with_extras_keeps_its_url_intact() {
     let after = app_pyproject(dir.path());
     assert!(after.contains("\"lib-py[x] @ https://example.com/lib.whl\""), "{after}");
 }
+
+#[test]
+fn a_requirement_on_an_epoch_version_keeps_its_epoch_when_the_dependency_is_released() {
+    let dir = python_workspace(
+        "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\ndependencies = [\"lib-py>=2!0.4.8,<2!1\"]\n\n[project.optional-dependencies]\nfast = [\"lib-py==2!0.4.8\"]\n",
+    );
+    let root = dir.path();
+    fs::write(
+        root.join("packages/lib/pyproject.toml"),
+        "[project]\nname = \"lib-py\"\nversion = \"2!0.4.8\"\n",
+    )
+    .unwrap();
+    git(root, &["commit", "-q", "-am", "epoch version"]);
+    let out = callisto(root, &["add", "--package", "pypi/lib-py:patch", "--summary", "change"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "changeset"]);
+    let out = callisto(root, &["version"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let after = app_pyproject(root);
+    assert!(after.contains("lib-py>=2!0.4.9, <2!1"), "{after}");
+    assert!(after.contains("fast = [\"lib-py==2!0.4.9\"]"), "{after}");
+}
