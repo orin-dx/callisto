@@ -75,6 +75,31 @@ fn an_exact_pin_is_rewritten_in_place_and_its_dependent_released() {
 }
 
 #[test]
+fn a_dev_dependency_range_is_rewritten_without_releasing_the_dependent() {
+    let dir = cargo_workspace("{ version = \"=0.1.0\", path = \"../lib\" }");
+    let root = dir.path();
+    fs::write(
+        root.join("crates/app/Cargo.toml"),
+        "[package]\nname = \"app-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+         [dev-dependencies]\nlib-crate = { version = \"=0.1.0\", path = \"../lib\" }\n",
+    )
+    .unwrap();
+    git(root, &["commit", "-q", "-am", "dev dependency only"]);
+    add_changeset(root, "cargo/lib-crate", "minor");
+    let out = callisto(root, &["version"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let app = read(root, "crates/app/Cargo.toml");
+    assert!(
+        app.contains("version = \"=0.2.0\""),
+        "the dev range follows the dependency:\n{app}"
+    );
+    assert!(
+        app.contains("name = \"app-crate\"\nversion = \"0.1.0\""),
+        "the dependent is not released:\n{app}"
+    );
+}
+
+#[test]
 fn a_range_the_bump_leaves_behind_and_cannot_be_rewritten_stops_the_run_before_any_write() {
     let dir = cargo_workspace("{ version = \">=0.1.0, <0.2.0\", path = \"../lib\" }");
     let root = dir.path();

@@ -307,7 +307,7 @@ fn release_decision_names_the_dual_source_distribution_each_dependent_uses() {
         (id(Ecosystem::Cargo, "dual-app"), &cargo_source, "Runtime"),
         (id(Ecosystem::Npm, "@scope/dual-app"), &npm_source, "Runtime"),
         (id(Ecosystem::Npm, "npm-app"), &npm_source, "Runtime"),
-        (id(Ecosystem::Npm, "peer-app"), &npm_source, "peer"),
+        (id(Ecosystem::Npm, "peer-app"), &npm_source, "Peer"),
     ] {
         let entry = decision
             .entries

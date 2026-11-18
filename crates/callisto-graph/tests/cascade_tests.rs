@@ -75,10 +75,7 @@ fn promoted_dual_dependent_preserves_aliases_across_cascade_and_release_floor() 
 
         let target = if co_release { "1.1.0" } else { "2.0.0" };
         assert_eq!(outcome.targets[&core].render(), target);
-        assert_eq!(
-            outcome.severities[&app],
-            if co_release { Severity::Patch } else { Severity::Major }
-        );
+        assert_eq!(outcome.severities[&app], Severity::Patch);
         assert!(
             !outcome.targets.contains_key(&tools),
             "a dev-only consumer must not be bumped"

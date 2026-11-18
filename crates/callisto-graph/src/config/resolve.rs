@@ -443,7 +443,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         }
     };
 
-    let peer_escalation = cascade_raw.peer_escalation.unwrap_or(true);
+    let peer_escalation = cascade_raw.peer_escalation.unwrap_or(false);
     if cascade_raw.peer_escalation.is_some() {
         provenance.insert(ConfigKey::CASCADE_PEER_ESCALATION, ConfigProvenance::Explicit);
     }
@@ -681,6 +681,17 @@ mod tests {
             return;
         };
         assert!(matches!(load(&ws), Err(ConfigError::Read { .. })));
+    }
+
+    #[test]
+    fn a_peer_dependent_gets_the_cascade_severity_unless_escalation_is_opted_into() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(root.join("callisto.toml"), "").expect("write callisto.toml");
+        assert!(!load(root).unwrap().cascade.peer_escalation);
+
+        fs::write(root.join("callisto.toml"), "[cascade]\npeer-escalation = true\n").expect("write callisto.toml");
+        assert!(load(root).unwrap().cascade.peer_escalation);
     }
 
     #[test]
