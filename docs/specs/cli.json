@@ -188,7 +188,7 @@
     },
     {
       "id": "CLI-STATUS-07",
-      "criterion": "`status --since <ref>` reports a `changed-without-changeset` error for each package with a file changed between where `<ref>` and `HEAD` diverged and the working tree, outside the changesets directory, that no pending changeset names (a `none` entry counts) and no commit inference releases. A file belongs to the package whose directory holds it most closely. `--since` with an unknown ref fails. It runs two git processes whatever the workspace size.",
+      "criterion": "`status --since <ref>` reports a `changed-without-changeset` error for each package with a file changed between where `<ref>` and `HEAD` diverged and the working tree (untracked files included), outside the changesets directory, that no changeset added or changed in that span names (a `none` entry counts) and no bump inferred from commits releases; a changeset already on `<ref>` does not count. A file belongs to the package whose directory holds it most closely. `--since` with an unknown ref fails. It runs three git processes whatever the workspace size.",
       "is_error_case": true
     },
     {

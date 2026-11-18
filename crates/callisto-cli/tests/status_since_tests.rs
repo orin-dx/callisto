@@ -59,6 +59,13 @@ fn a_branch_change_without_a_changeset_fails_status_since() {
         .unwrap();
         fs::write(root.join(name).join("src/lib.rs"), "pub fn f() {}\n").unwrap();
     }
+    // A changeset already on main belongs to an earlier change; it does not cover this branch's.
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/earlier.md"),
+        "---\ncargo/pkg-a: patch\n---\n\nAn earlier fix.\n",
+    )
+    .unwrap();
     commit(root, "initial");
     run_git(root, &["checkout", "-q", "-b", "feature"]);
 
