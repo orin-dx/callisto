@@ -1,0 +1,106 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PEEPV7X0XAZGJVTXME86ZQ",
+  "session_id": "25ffa14c-7bd0-4ef5-b7b2-3d26828c91ba",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T04:26:05.67225Z",
+  "branch": "worktree-wp-d-init-boundary",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "0d510214a917",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 262,
+    "cache_creation_tokens": 190547,
+    "cache_read_tokens": 18755645,
+    "output_tokens": 55336,
+    "api_call_count": 128
+  },
+  "session_token_usage": {
+    "input_tokens": 262,
+    "cache_creation_tokens": 190547,
+    "cache_read_tokens": 18755645,
+    "output_tokens": 55336,
+    "api_call_count": 128
+  },
+  "redaction": {
+    "replacements": 11,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 9,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Run Session 2 of the v1-alpha launch plan in the callisto repo: implement WP D (init boundary fixes for branch names and workflow-only retry), then continue with WPs J and L. Mid-session the lead added follow-ups on PR #565: untrack mutants.out.old, fix placeholder rescanning in render_workflow, and reject unsupported artifact owners in the workflow-only path.",
+    "outcome": "WP D was implemented, reviewed, mutation-tested, gated green and pushed as PR #565 linked to trail #357. The lead's follow-up (a) was committed (untrack mutants.out.old, ignore mutants.out*/); (b) and (c) were only just being investigated, and J and L were not started.",
+    "learnings": {
+      "repo": [
+        "BranchName was added to callisto-model identity.rs and is re-exported via glob, so it is public automatically. It replaces the last_ref_segment helper that truncated refs like release/next to next.",
+        "callisto-model has its own Version type, so callisto-cli does not need a semver dependency.",
+        "Generated workflow branch values are now always JSON-double-quoted, so test assertions and snapshots changed from `branch: main` to `branch: \"main\"`.",
+        "`init --workflow` on an initialized workspace now runs a workflow-only retry path that leaves callisto.toml alone; previously it exited with E190 (InitAlreadyInitialized).",
+        "Repo gate is `just pre-push`, `just lint`, `just doc-check` and `just test`; there is an architecture test (apply_permits_are_never_granted_from_a_literal) that failed on a literal in cli init.rs until it was fixed.",
+        "Mutation testing runs with `cargo mutants --in-place --in-diff <diff> --test-tool nextest`; it uses the worktree, so no edits can happen while it runs.",
+        "Docs/specs (docs/specs/cli.json, docs/errors.md) must be updated alongside behavior changes.",
+        "The adversarial audit report with findings F04/F05/F09 lives in /tmp/callisto-adversarial-audit-2026-11-17/report.md; docs/research JSONs are untracked in the main checkout, not in worktrees.",
+        "Changesets are created with the repo's own `callisto add --package cargo/callisto-cli:patch --summary ...`.",
+        "Commits must be signed and checked with `git log --show-signature`; the lead requires no session trailer and an explicit refspec push verified with `git ls-remote`.",
+        "Per the lead, worktrees should be created with EnterWorktree name=<wp-name>, never path=, to avoid the relocation prompt."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "finding": "run_workflow_only originally built InitReport with initialized:false, so a real write printed '[DRY-RUN] Would write'. It also ignored the existing callisto.toml and silently dropped flags like --versioning and --artifact-target. All three were fixed after review."
+        },
+        {
+          "path": "crates/callisto-cli/src/render/mod.rs",
+          "line": 131,
+          "end_line": 136,
+          "finding": "render_init prints the DRY-RUN message whenever report.initialized is false, which is what caused the workflow-only mislabel."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 240,
+          "end_line": 275,
+          "finding": "detect_initialized/detect_facts re-ran tag-template detection and built the workspace from a freshly rendered config rather than the user's file. Existing configs could therefore hit E193/E194 despite already declaring a tag-template."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/matrix.rs",
+          "line": 58,
+          "finding": "The matrix command drops artifacts whose owner is not supported (e.g. npm), so the workflow-only init path can write a workflow that fails with 'callisto matrix has no entry for artifact slot'. This is lead follow-up (c)."
+        }
+      ],
+      "workflow": [
+        "The Opus reviewer subagent worked from source only without building, yet found four real defects the author's own tests missed.",
+        "A background mutation run holds the worktree, so edits had to wait for it; run it only after the gate is green and use targeted -F filters to re-check specific missed mutants.",
+        "Heredoc Python edit scripts run with `python3 -I` worked for multi-line replacements, whereas BSD sed on macOS failed on escaped quotes, so the Edit tool was used instead.",
+        "Build output in worktrees is removed (rm -rf target) after the push to save disk, and CARGO_BUILD_JOBS is capped to a quarter of the CPUs.",
+        "Subagent hand-backs arrive as messages and carry no user authority; they are treated as review input."
+      ]
+    },
+    "friction": [
+      "BSD sed on macOS mishandled escaped-quote replacements in the test files, forcing a switch to python scripts or the Edit tool.",
+      "Several bash commands were issued twice or repeated because of cwd confusion between the main checkout and the worktree.",
+      "The session was stopped at a worktree-entry prompt (path= relocation) and had to be resumed by the lead in the WP D worktree.",
+      "The mutation run holds the worktree for a long time, blocking edits while the reviewer's findings were waiting.",
+      "The first mutation run left missed mutants, and a second run was still needed for flag-refusal logic (the `||` vs `&&` mutant)."
+    ],
+    "open_items": [
+      "Lead follow-up (b): make render_workflow substitute placeholders in a single pass that never rescans inserted values (WorkflowScalar), with a boundary test using a branch literally named __BRANCH__.",
+      "Lead follow-up (c): reject unsupported artifact owners (e.g. npm) in the workflow-only init path before writing the workflow. Use an existing error code if one fits; ask the lead before adding a new one.",
+      "Push #565 with an explicit refspec, verify with git ls-remote, re-run pre-push/lint/doc-check/test by exit code, then resolve both Entire findings (callisto/173) with `entire trail finding`.",
+      "Start WP J (twine env, linked to #459) and WP L in worktrees created with EnterWorktree name=<wp-name>.",
+      "The changeset wording must say every `+` and `!` is escaped, not only a leading one; this was planned during the review fixes.",
+      "The local commit untracking mutants.out.old has not yet been pushed."
+    ]
+  }
+}
