@@ -412,8 +412,9 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
 /// derived from (the manifests the loader opened, `callisto.toml`, the changesets) and every file it writes must then be
 /// on disk either as the checkpoint recorded it or as that expected tree has it, compared through Git's filters; a file
 /// the expected tree lacks counts as the run's deletion only when the index lacks it too, so a changeset the user
-/// deleted by hand is a change. `HEAD`, the tags and the Callisto version must match as well. `permit` writes only into
-/// `scratch`.
+/// deleted by hand is a change. `HEAD`, the tags and the Callisto version must match as well, and `scratch` must hold this
+/// workspace's tree in the checkpoint, so a plan made in another directory is never applied here. `permit` writes only
+/// into `scratch`.
 pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     scratch: &Workspace<'_, R, D>,
@@ -444,15 +445,25 @@ pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
         ));
     }
 
+    let git = ws.git_access();
+    let expected = scratch.git_access();
+    let rev = checkpoint.commit.as_str();
+
+    // Names can be lost on the way to the scratch checkout; the plan is this workspace's only when it was made from this
+    // workspace's own tree in the checkpoint.
+    let root = std::path::Path::new("");
+    if git.blob_hash_at(rev, root)? != expected.blob_hash_at(rev, root)? {
+        changes.push(format!(
+            "the plan was made in another directory of the checkpoint (`{}`), not this workspace",
+            scratch.root.display()
+        ));
+    }
+
     let apply_opts = crate::apply::ApplyOptions {
         refresh_lockfiles: false,
         transient: false,
     };
     crate::apply::apply_version_plan(&scratch.root, plan, runner, &apply_opts, permit)?;
-
-    let git = ws.git_access();
-    let expected = scratch.git_access();
-    let rev = checkpoint.commit.as_str();
 
     let mut inputs: BTreeSet<std::path::PathBuf> = ws.manifest_cache.borrow().keys().cloned().collect();
     inputs.insert(std::path::PathBuf::from("callisto.toml"));
