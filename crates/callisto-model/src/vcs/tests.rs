@@ -600,6 +600,30 @@ fn commits_since_keeps_a_body_holding_framing_characters() {
 }
 
 #[test]
+fn checkpoint_listings_name_files_by_their_own_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "say \"hi\"/Cargo.toml", b"1\n", "feat: quoted");
+    commit_file(root, ".changeset/tab\there.md", b"1\n", "feat: changeset");
+    std::fs::write(root.join("untracked \"x\".txt"), "x\n").unwrap();
+    let git = GitAccess::new(root, &SystemGit);
+
+    assert_eq!(
+        git.files_at("HEAD", Path::new(".changeset")).unwrap(),
+        [PathBuf::from(".changeset/tab\there.md")]
+    );
+    let named = git.files_named("HEAD", &["Cargo.toml", "untracked \"x\".txt"]).unwrap();
+    assert_eq!(
+        named.into_iter().collect::<Vec<_>>(),
+        [
+            PathBuf::from("say \"hi\"/Cargo.toml"),
+            PathBuf::from("untracked \"x\".txt")
+        ]
+    );
+}
+
+#[test]
 fn commits_since_reads_a_commit_with_an_empty_message() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
