@@ -150,7 +150,7 @@ fn failed_pre_state_deletion_is_finished_by_a_retry() {
 printf '%s\n' "$*" >> "$CALLISTO_TEST_GIT_TRACE"
 if [ "$1" = "rm" ] && [ "$2" = "--cached" ]; then
   for path do
-    if [ "$path" = ".changeset/pre.json" ]; then
+    if [ "$path" = ":(literal).changeset/pre.json" ]; then
       printf 'forced pre-state staging failure\n' >&2
       exit 1
     fi

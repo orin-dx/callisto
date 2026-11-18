@@ -211,11 +211,10 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     remote: GitRemoteRequirement,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
-    if workspace
-        .config
-        .product_release
-        .as_ref()
-        .is_some_and(|release| release.forge_repository.is_none())
+    // A preview needs no destination: `origin` is optional for it.
+    if workspace.config.product_release.is_some()
+        && remote == GitRemoteRequirement::Required
+        && workspace.forge_repository()?.is_none()
     {
         return Err(GraphError::ReleaseForgeRepositoryMissing);
     }
@@ -510,6 +509,10 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
             // dependent waits for the dependency's crate, not for its npm package. No such distribution means the
             // edge was resolved some other way, so it waits for all of them.
             let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
+            // Likewise only the dependent's own distribution in that ecosystem waits.
+            if id.ecosystem() != ecosystem {
+                continue;
+            }
             let dependency_ids = package_ids.get(&edge.to).map(Vec::as_slice).unwrap_or_default();
             let touched: Vec<&ReleasePackageId> = dependency_ids
                 .iter()
@@ -694,7 +697,7 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
     } = ops;
 
     let mut artifact_slots = Vec::new();
-    if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
+    if let Some(product) = &workspace.config.product_release {
         require_product_package_publishes_to_forge(workspace, &product.package)?;
         // Resolved through IdentityIndex, not `PackageId::matches`: a Bare
         // package id is not an ecosystem wildcard here -- a same-name
@@ -743,6 +746,11 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
                         asset: artifact.asset_name.clone(),
                         package: artifact.package.to_string(),
                     })?;
+                // A preview with no destination keeps the owner checks above but binds no slot.
+                let Some(policy) = artifact_policy else {
+                    diagnostics.push(unbound_product_artifact_diagnostic(&product.package, artifact));
+                    continue;
+                };
                 let slot = ArtifactSlotId::new(
                     owner_id.clone(),
                     owner_version.clone(),
@@ -923,6 +931,24 @@ fn unreleased_product_artifact_diagnostic(
             artifact.asset_name
         ),
         package: callisto_model::PackageId::parse(&owner.to_string()).ok(),
+        path: None,
+        escalated_by: None,
+        governed_by: None,
+    }
+}
+
+fn unbound_product_artifact_diagnostic(
+    product: &callisto_model::PackageId,
+    artifact: &crate::config::resolve::ProductArtifactConfig,
+) -> Diagnostic {
+    Diagnostic {
+        code: DiagnosticCode::ArtifactWithoutForgeDestination,
+        severity: DiagnosticSeverity::Warning,
+        message: format!(
+            "no forge destination (set `[release] forge-repository` or point origin at GitHub): the `{}` asset of product `{product}` is not bound and will not be uploaded",
+            artifact.asset_name
+        ),
+        package: Some(product.clone()),
         path: None,
         escalated_by: None,
         governed_by: None,
@@ -1122,9 +1148,9 @@ mod tests {
         assert_eq!(before_operations, after_operations);
     }
 
-    /// A `[release]` without a forge destination cannot plan.
+    /// A `[release]` with neither `forge-repository` nor a GitHub `origin` cannot plan.
     #[test]
-    fn a_release_section_without_forge_repository_cannot_derive() {
+    fn a_release_section_without_a_forge_destination_cannot_derive() {
         let (dir, runner) = super::super::tests::fixture();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
@@ -1135,22 +1161,30 @@ mod tests {
             super::super::capability::ReleaseCheckout::Detached,
         )
         .unwrap();
+        let set_url = std::process::Command::new("git")
+            .args(["remote", "set-url", "origin", "https://example.com/o/not-github.git"])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(set_url.status.success());
         std::fs::write(
             root.join("callisto.toml"),
             "[release]\nproduct-package = \"cargo/release-fixture\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"t\"\nasset-name = \"a.tar.gz\"\n",
         )
         .unwrap();
         let workspace = Workspace::load(root, &locator, &runner).unwrap();
-        assert!(matches!(
-            derive_release_inputs(
-                &workspace,
-                &super::super::tests::decision(),
-                source,
-                None,
-                &mut Vec::new()
-            ),
-            Err(GraphError::ReleaseForgeRepositoryMissing)
-        ));
+        let result = derive_release_inputs(
+            &workspace,
+            &super::super::tests::decision(),
+            source,
+            None,
+            &mut Vec::new(),
+        );
+        assert!(
+            matches!(result, Err(GraphError::ReleaseForgeRepositoryMissing)),
+            "{:?}",
+            result.map(|_| ())
+        );
     }
 
     use callisto_model::{Ecosystem, NpmAccess, ReleaseDecisionEntry, ReleaseInclusionReason, VersionGrammar};
@@ -2106,6 +2140,74 @@ mod tests {
             [(Ecosystem::Cargo, "dual".to_string())]
         );
         assert_eq!(waits_for(Ecosystem::Npm, "web"), [(Ecosystem::Npm, "dual".to_string())]);
+    }
+
+    /// A dual dependent's native dependency orders only its distribution in that ecosystem: a Cargo-only edge holds the
+    /// crate, never the npm package, and an npm-only edge the reverse.
+    #[test]
+    fn a_dual_dependents_native_edge_orders_only_its_own_distribution() {
+        use callisto_model::ReleaseOperationRole::RegistryPublish;
+
+        let dir = repo(&[
+            ("Cargo.toml", "[workspace]\nmembers = [\"lib\", \"rsdep\", \"jsdep\"]\nresolver = \"2\"\n"),
+            ("package.json", r#"{"name":"root","private":true,"workspaces":["lib","rsdep","jsdep"]}"#),
+            (
+                "lib/Cargo.toml",
+                "[package]\nname = \"lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            ("lib/package.json", r#"{"name":"lib","version":"1.0.0"}"#),
+            (
+                "rsdep/Cargo.toml",
+                "[package]\nname = \"rsdep\"\nversion = \"1.0.0\"\nedition = \"2021\"\n[dependencies]\nlib = { path = \"../lib\", version = \"1.0.0\" }\n",
+            ),
+            ("rsdep/package.json", r#"{"name":"rsdep","version":"1.0.0"}"#),
+            (
+                "jsdep/Cargo.toml",
+                "[package]\nname = \"jsdep\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "jsdep/package.json",
+                r#"{"name":"jsdep","version":"1.0.0","dependencies":{"lib":"^1.0.0"}}"#,
+            ),
+            (
+                "callisto.toml",
+                "[[package]]\nmatch = \"cargo/*\"\npublish-to = [\"crates-io\", \"npm\"]\n",
+            ),
+        ]);
+        let decision = release(&[
+            (Ecosystem::Cargo, "lib", "1.0.0"),
+            (Ecosystem::Npm, "lib", "1.0.0"),
+            (Ecosystem::Cargo, "rsdep", "1.0.0"),
+            (Ecosystem::Npm, "rsdep", "1.0.0"),
+            (Ecosystem::Cargo, "jsdep", "1.0.0"),
+            (Ecosystem::Npm, "jsdep", "1.0.0"),
+        ]);
+        let (_, operations, _, _, _) = derive(&dir, &decision).unwrap();
+        let waits_for = |ecosystem, name: &str| -> Vec<(Ecosystem, String)> {
+            operations
+                .iter()
+                .find(|operation| {
+                    matches!(operation.id().role, RegistryPublish { .. })
+                        && operation.id().package.ecosystem() == ecosystem
+                        && operation.id().package.name() == name
+                })
+                .unwrap_or_else(|| panic!("no {ecosystem:?} publish of {name}"))
+                .prerequisites()
+                .iter()
+                .map(|id| (id.package.ecosystem(), id.package.name().to_string()))
+                .collect()
+        };
+
+        assert_eq!(
+            waits_for(Ecosystem::Cargo, "rsdep"),
+            [(Ecosystem::Cargo, "lib".to_string())]
+        );
+        assert_eq!(waits_for(Ecosystem::Npm, "rsdep"), []);
+        assert_eq!(
+            waits_for(Ecosystem::Npm, "jsdep"),
+            [(Ecosystem::Npm, "lib".to_string())]
+        );
+        assert_eq!(waits_for(Ecosystem::Cargo, "jsdep"), []);
     }
 
     /// The owner's one physical tag and GitHub release must wait for every registry publish of the package, not

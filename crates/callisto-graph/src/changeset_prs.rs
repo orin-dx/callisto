@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use callisto_model::vcs::{GitAccess, VcsError};
+use callisto_model::vcs::{literal_pathspec, GitAccess, VcsError};
 
 use crate::error::GraphError;
 
@@ -15,9 +15,9 @@ pub fn changeset_pull_requests(
     git: &GitAccess<'_>,
     changesets_dir: &Path,
 ) -> Result<BTreeMap<String, u64>, GraphError> {
-    let dir = changesets_dir.to_string_lossy();
+    let dir = literal_pathspec(changesets_dir);
     // A Changesets v3 pre cycle's archive gains notes in version commits; their pull request is not the author's.
-    let archive = format!(":(exclude){}", changesets_dir.join("pre").to_string_lossy());
+    let archive = format!(":(exclude,literal){}", changesets_dir.join("pre").to_string_lossy());
     let args = [
         "log",
         "--first-parent",
@@ -26,7 +26,7 @@ pub fn changeset_pull_requests(
         "--name-only",
         "--format=%x01%s",
         "--",
-        dir.as_ref(),
+        dir.as_str(),
         archive.as_str(),
     ];
     let output = git.runner().run("git", &args, git.root()).map_err(VcsError::from)?;

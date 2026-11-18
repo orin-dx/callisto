@@ -439,8 +439,8 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
     refuse_a_published_version_left_behind(workspace, &decision, &resumable, &source, profile, mode, observation)?;
     // A local run is its own orchestration: slots bind to the source commit.
     let artifact_policy = match (&workspace.config.product_release, &source) {
-        (Some(release), SourceIdentity::GitCommit { sha }) if !release.artifacts.is_empty() => {
-            release.forge_repository.clone().map(|repository| ArtifactBuildPolicy {
+        (Some(_), SourceIdentity::GitCommit { sha }) => {
+            workspace.forge_repository()?.map(|repository| ArtifactBuildPolicy {
                 repository,
                 workflow_path: callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH.to_owned(),
                 workflow_commit: sha.clone(),
