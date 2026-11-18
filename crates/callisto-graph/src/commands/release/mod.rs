@@ -283,7 +283,7 @@ pub(crate) mod tests {
                 to: Version::parse("1.3.0", VersionGrammar::SemVer).unwrap(),
                 severity: callisto_model::Severity::Minor,
                 governed_by: None,
-                reason: None,
+                reason: Some(callisto_model::BumpReason::Changeset { changesets: vec![] }),
                 writes: vec![],
             }],
             ..Default::default()

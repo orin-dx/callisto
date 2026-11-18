@@ -293,7 +293,11 @@ fn legacy_publish_commands_fail_to_parse() {
 /// Rewrites the release commit's committed decision to `schema_version` and returns the new commit.
 fn release_commit_with_decision_schema(root: &Path, schema_version: u8) -> String {
     let path = root.join(DECISION_PATH);
-    let mut decision: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let decision: callisto_model::ReleaseDecisionV1 = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut decision = match schema_version {
+        1 | 2 => serde_json::to_value(decision.older_schema(schema_version)).unwrap(),
+        _ => serde_json::to_value(decision).unwrap(),
+    };
     decision["schemaVersion"] = serde_json::json!(schema_version);
     fs::write(&path, serde_json::to_string_pretty(&decision).unwrap() + "\n").unwrap();
     git(root, &["add", DECISION_PATH]);
@@ -311,7 +315,10 @@ fn a_committed_v1_decision_still_plans_and_executes() {
 
     let intent = plan_intent(root, rig.external.path(), &release_commit);
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&intent).unwrap()).unwrap();
-    assert_eq!(value["decision"]["schemaVersion"], 2, "writers emit the current schema");
+    assert_eq!(
+        value["decision"]["schemaVersion"], 1,
+        "the decision keeps the schema it was committed with"
+    );
 
     let receipt = rig.external.path().join("receipt.json");
     let out = execute(
@@ -334,7 +341,7 @@ fn a_committed_v1_decision_still_plans_and_executes() {
 fn an_unknown_decision_schema_is_rejected_by_version() {
     let (dir, _) = release_commit_fixture();
     let root = dir.path();
-    let release_commit = release_commit_with_decision_schema(root, 3);
+    let release_commit = release_commit_with_decision_schema(root, 4);
     let external = tempfile::tempdir().unwrap();
     let out = callisto(
         root,
@@ -350,7 +357,7 @@ fn an_unknown_decision_schema_is_rejected_by_version() {
         ],
     );
     assert!(!out.status.success());
-    assert!(stderr(&out).contains("schema version 3"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("schema version 4"), "{}", stderr(&out));
     assert!(!external.path().join("intent.json").exists());
 }
 

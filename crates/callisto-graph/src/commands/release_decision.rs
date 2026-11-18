@@ -1390,7 +1390,9 @@ mod tests {
                 reasons: vec![ReleaseInclusionReason::Changeset],
             });
         }
-        let decision = ReleaseDecisionV1::new(entries).unwrap();
+        let decision = ReleaseDecisionV1::new(entries)
+            .unwrap()
+            .consuming([".changeset/multi-pkg-minor.md".to_string()]);
         let decision_json = serde_json::to_string(&decision).unwrap();
 
         let name_status = [
@@ -1448,7 +1450,8 @@ mod tests {
             target_version: Version::parse("1.1.0", Ecosystem::Cargo.version_grammar()).unwrap(),
             reasons: vec![ReleaseInclusionReason::Changeset],
         }])
-        .unwrap();
+        .unwrap()
+        .consuming([".changeset/a-minor.md".to_string()]);
         let name_status = [
             "A\t.callisto/release-decision.json",
             "D\t.changeset/a-minor.md",
@@ -1615,7 +1618,9 @@ mod tests {
                 reasons: vec![ReleaseInclusionReason::Changeset],
             },
         ];
-        let decision = ReleaseDecisionV1::new(entries).unwrap();
+        let decision = ReleaseDecisionV1::new(entries)
+            .unwrap()
+            .consuming([".changeset/multi-pkg-minor.md".to_string()]);
         let decision_json = serde_json::to_string(&decision).unwrap();
 
         let name_status = [
