@@ -266,6 +266,7 @@ dependencies = [
  "miette",
  "rstest",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
  "similar 3.2.1",

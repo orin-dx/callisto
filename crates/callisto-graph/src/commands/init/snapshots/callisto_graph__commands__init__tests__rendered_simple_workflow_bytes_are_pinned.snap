@@ -1,10 +1,10 @@
 ---
 source: crates/callisto-graph/src/commands/init/tests.rs
-expression: "render_workflow_0_8_0(&facts, \"trunk\")"
+expression: workflow
 ---
 name: Release
 
-on: {push: {branches: [trunk]}}
+on: {push: {branches: ["trunk"]}}
 
 permissions: {}
 
@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {fetch-depth: 0, persist-credentials: false}
       - uses: orin-dx/callisto/.github/actions/callisto-action@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # callisto@0.8.0
-        with: {mode: version-pr, branch: trunk}
+        with: {mode: version-pr, branch: "trunk"}
         env:
           GH_TOKEN: ${{ github.token }}
 

@@ -8,7 +8,7 @@ use callisto_graph::commands::init::{
 };
 use callisto_graph::locate::{IgnoreWalkLocator, LocateError};
 use callisto_graph::GraphError;
-use callisto_model::{ApplyPermit, CommandRunner, InitReport, SCHEMA_VERSION};
+use callisto_model::{ApplyPermit, BranchName, CommandRunner, InitReport, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, Select};
 
 use crate::cli::{GlobalArgs, InitArgs, InitVersioning, OutputFormat};
@@ -34,7 +34,7 @@ fn workflow_unsupported_note(reason: scaffold::WorkflowUnsupported) -> String {
     format!("Skipping GitHub Actions workflow generation: {reason}.")
 }
 /// Printed once a generated workflow is written: a merge to `branch` is the release approval.
-fn merge_publishes_note(branch: &str) -> String {
+fn merge_publishes_note(branch: &BranchName) -> String {
     format!(
         "Merging to `{branch}` publishes: require pull requests and reviews on `{branch}` (GitHub → Settings → Rules)."
     )
@@ -120,6 +120,17 @@ pub fn run<R: CommandRunner>(
         Err(error) => return Err(error),
     };
     let locator = IgnoreWalkLocator::new(&root);
+    if args.workflow && scaffold::is_initialized(&root)? {
+        // Answers feed callisto.toml, which stays as it is: refuse them rather than drop them.
+        // The forge and product flags already require an artifact target.
+        if args.versioning.is_some() || !args.artifact_targets.is_empty() {
+            return Err(GraphError::InitAlreadyInitialized {
+                path: root.join("callisto.toml"),
+            }
+            .into());
+        }
+        return run_workflow_only(&root, &locator, global, out, err, runner);
+    }
     let facts = scaffold::detect(&root, &locator, runner)?;
     if let Some(error) = no_root.filter(|_| facts.packages.is_empty()) {
         return Err(error.into());
@@ -166,7 +177,7 @@ pub fn run<R: CommandRunner>(
             governed_by: None,
         });
     }
-    let shape = match scaffold::workflow_shape(&facts, &answers) {
+    let shape = match scaffold::workflow_shape(&facts, answers.binaries.is_some()) {
         Err(reason) if args.workflow => {
             return Err(GraphError::InitWorkflowUnsupported {
                 reason: reason.to_string(),
@@ -271,23 +282,89 @@ pub fn run<R: CommandRunner>(
         let mut report = scaffold::write(&facts.root, &config, &permit)?;
         if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
-            let note = merge_publishes_note(branch);
-            writeln!(human, "{note}")?;
-            writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(&facts)))?;
-            diagnostics.push(callisto_model::Diagnostic {
-                code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
-                severity: callisto_model::DiagnosticSeverity::Info,
-                message: note,
-                package: None,
-                path: None,
-                escalated_by: None,
-                governed_by: None,
-            });
+            diagnostics.push(announce_workflow(human, &facts, branch)?);
         }
         report.files = files;
         report
     };
     report.diagnostics.extend(diagnostics);
+    if json {
+        emit_report(&mut &mut *out, &report, global.dry_run)?;
+    } else {
+        render::render_init(&report, &mut &mut *out)?;
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Prints what a written workflow means and what to do next; the same text is recorded as a diagnostic.
+fn announce_workflow(
+    human: &mut dyn Write,
+    facts: &InitFacts,
+    branch: &BranchName,
+) -> Result<callisto_model::Diagnostic, CliError> {
+    let note = merge_publishes_note(branch);
+    writeln!(human, "{note}")?;
+    writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(facts)))?;
+    Ok(callisto_model::Diagnostic {
+        code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
+        severity: callisto_model::DiagnosticSeverity::Info,
+        message: note,
+        package: None,
+        path: None,
+        escalated_by: None,
+        governed_by: None,
+    })
+}
+
+/// `init --workflow` in a workspace that already has `callisto.toml`: writes only the workflow.
+fn run_workflow_only<R: CommandRunner>(
+    root: &std::path::Path,
+    locator: &IgnoreWalkLocator,
+    global: &GlobalArgs,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+    runner: &R,
+) -> Result<ExitCode, CliError> {
+    let facts = scaffold::detect_initialized(root, locator, runner)?;
+    let json = global.format == OutputFormat::Json;
+    let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
+    write_facts(&facts, human)?;
+    if facts.origin.is_none() {
+        return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+    }
+    let shape =
+        scaffold::workflow_shape(&facts, scaffold::existing_config_ships_binaries(&facts.root)?).map_err(|reason| {
+            GraphError::InitWorkflowUnsupported {
+                reason: reason.to_string(),
+            }
+        })?;
+    let (workflow, branch) = build_workflow(&facts, shape, runner, human)?;
+    writeln!(
+        human,
+        "\n{}:\n{workflow}",
+        scaffold::workflow_path(&facts.root).display()
+    )?;
+    let mut diagnostics = Vec::new();
+    if !global.dry_run {
+        let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
+        scaffold::write_workflow(&facts.root, &workflow, &permit)?;
+        diagnostics.push(announce_workflow(human, &facts, &branch)?);
+    }
+    let config_path = facts.root.join("callisto.toml");
+    let config = callisto_model::strict_fs::read_optional(&config_path)
+        .map_err(|error| GraphError::InitIo {
+            path: config_path.clone(),
+            message: error.to_string(),
+        })?
+        .unwrap_or_default();
+    let report = InitReport {
+        schema_version: SCHEMA_VERSION,
+        initialized: !global.dry_run,
+        config_path,
+        config,
+        files: vec![scaffold::workflow_path(&facts.root)],
+        diagnostics,
+    };
     if json {
         emit_report(&mut &mut *out, &report, global.dry_run)?;
     } else {
@@ -302,13 +379,13 @@ fn build_workflow<R: CommandRunner>(
     shape: scaffold::WorkflowShape,
     runner: &R,
     human: &mut dyn Write,
-) -> Result<(String, String), CliError> {
+) -> Result<(String, BranchName), CliError> {
     scaffold::ensure_workflow_absent(&facts.root)?;
     let branch = scaffold::default_branch(runner, &facts.root);
     writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
-    let version = env!("CARGO_PKG_VERSION");
-    let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
-    let content = scaffold::render_workflow(facts, shape, &branch.name, &commit, version);
+    let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package versions are semver");
+    let commit = scaffold::resolve_release_commit(runner, &facts.root, &version)?;
+    let content = scaffold::render_workflow(facts, shape, &branch.name, &commit, &version);
     Ok((content, branch.name))
 }
 

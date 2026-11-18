@@ -232,9 +232,9 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254,
 | E187 | Configured forge repository doesn't match the origin remote | The release plan requires [release].forge-repository to be origin's GitHub repository. Use that `owner/repo`, or point origin at the repository binaries release to. |
 | E188 | No package produces a binary artifact; nothing to ship | Remove --artifact-target, or add a binary target ([[bin]], an npm `bin`, or [project.scripts]). |
 | E189 | `--product-package` value is invalid | Name one of the binary-producing packages: <candidates>. |
-| E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. |
+| E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. `callisto init --workflow` adds the release workflow to an initialized workspace. |
 | E191 | Workspace root is not a Git repository | Run `git init` in the workspace root, then re-run `callisto init`. |
-| E278 | `callisto init` failed to write a file it needed to write | Check file permissions and that the path still exists, then re-run `callisto init`. |
+| E278 | `callisto init` failed to write a file it needed to write | Check file permissions and that the path still exists, then re-run `callisto init` (or `callisto init --workflow` if `callisto.toml` was already written). |
 | E193 | Package matches more than one tag naming convention | Write a [[package]] entry for it with `tag-template` set to the current convention and `previous-tag-templates` listing the older ones. |
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
 | E195 | `--forge-repository` value is invalid | Use the GitHub `owner/repo` the product releases to. |

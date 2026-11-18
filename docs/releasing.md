@@ -34,7 +34,7 @@ If a local release tags a version but fails before pushing the tag or completing
 
 ## Generated workflows
 
-`callisto init --workflow` (or answering yes to its prompt) writes `.github/workflows/callisto-release.yml`. Keep that filename for generated artifact releases.
+`callisto init --workflow` (or answering yes to its prompt) writes `.github/workflows/callisto-release.yml`; in a workspace that already has `callisto.toml` it writes only the workflow. Keep that filename for generated artifact releases.
 
 Init never overwrites an existing file. This repo's [release workflow](../.github/workflows/callisto-release.yml) is a worked example.
 
