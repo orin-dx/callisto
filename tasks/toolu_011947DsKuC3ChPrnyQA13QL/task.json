@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_011947DsKuC3ChPrnyQA13QL",
+  "agent_id": "a9682ef0774ea303e",
+  "subagent_type": "general-purpose",
+  "task_description": "Review PR1 config diff",
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 107802,
+    "cache_read_tokens": 1328048,
+    "output_tokens": 12150,
+    "api_call_count": 16
+  },
+  "started_at": "2026-11-18T11:20:27.61585-08:00",
+  "completed_at": "2026-11-18T11:22:47.934025-08:00"
+}
