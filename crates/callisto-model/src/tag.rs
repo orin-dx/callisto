@@ -220,13 +220,20 @@ pub struct LastTagSelection {
     pub skipped: Vec<Diagnostic>,
 }
 
-/// Pure tag selection algorithm.
-pub fn select_last_tag<'a>(
+/// Every candidate that parses, newest first, with a warning for each that does not.
+#[derive(Clone, Debug, Default)]
+pub struct RankedTags {
+    pub ordered: Vec<LastTag>,
+    pub skipped: Vec<Diagnostic>,
+}
+
+/// Parses each candidate once and orders the versions newest first; equal versions put the greater tag name first.
+pub fn rank_tags<'a>(
     template: &TagTemplate,
     grammar: VersionGrammar,
     candidates: impl IntoIterator<Item = &'a str>,
-) -> Result<LastTagSelection, VersionParseError> {
-    let mut chosen: Option<LastTag> = None;
+) -> Result<RankedTags, VersionParseError> {
+    let mut ordered = Vec::new();
     let mut skipped = Vec::new();
 
     for candidate in candidates {
@@ -235,33 +242,12 @@ pub fn select_last_tag<'a>(
         };
 
         match Version::parse(extracted, grammar) {
-            Ok(ver) => {
-                let tag = LastTag {
-                    // Unchecked: `candidate` matched the validated prefix/suffix around a parsed
-                    // version (see `TagTemplate::render`).
-                    name: TagName::new_unchecked(candidate.to_string()),
-                    version: ver,
-                };
-                match &chosen {
-                    None => chosen = Some(tag),
-                    Some(prev) => {
-                        let ord = tag.version.compare(&prev.version).map_err(|_err| VersionParseError {
-                            raw: extracted.to_string(),
-                            grammar,
-                            message: "grammar mismatch during candidate selection".to_string(),
-                        })?;
-                        match ord {
-                            std::cmp::Ordering::Greater => chosen = Some(tag),
-                            std::cmp::Ordering::Equal => {
-                                if tag.name.as_str() > prev.name.as_str() {
-                                    chosen = Some(tag);
-                                }
-                            }
-                            std::cmp::Ordering::Less => {}
-                        }
-                    }
-                }
-            }
+            // Unchecked: `candidate` matched the validated prefix/suffix around a parsed version (see
+            // `TagTemplate::render`).
+            Ok(version) => ordered.push(LastTag {
+                name: TagName::new_unchecked(candidate.to_string()),
+                version,
+            }),
             Err(_) => {
                 skipped.push(Diagnostic {
                     code: DiagnosticCode::TagGlobNonVersionMatch,
@@ -278,7 +264,35 @@ pub fn select_last_tag<'a>(
         }
     }
 
-    Ok(LastTagSelection { chosen, skipped })
+    let mut mismatch = None;
+    ordered.sort_by(|left, right| match right.version.compare(&left.version) {
+        Ok(order) => order.then_with(|| right.name.as_str().cmp(left.name.as_str())),
+        Err(_) => {
+            mismatch.get_or_insert_with(|| VersionParseError {
+                raw: right.version.render().to_string(),
+                grammar,
+                message: "grammar mismatch during candidate selection".to_string(),
+            });
+            std::cmp::Ordering::Equal
+        }
+    });
+    match mismatch {
+        Some(error) => Err(error),
+        None => Ok(RankedTags { ordered, skipped }),
+    }
+}
+
+/// Pure tag selection algorithm: the newest of [`rank_tags`].
+pub fn select_last_tag<'a>(
+    template: &TagTemplate,
+    grammar: VersionGrammar,
+    candidates: impl IntoIterator<Item = &'a str>,
+) -> Result<LastTagSelection, VersionParseError> {
+    let ranked = rank_tags(template, grammar, candidates)?;
+    Ok(LastTagSelection {
+        chosen: ranked.ordered.into_iter().next(),
+        skipped: ranked.skipped,
+    })
 }
 
 #[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
