@@ -115,7 +115,11 @@ fn main() {
 
     println!("| workspace | command | median ms | git ms | git processes | result |");
     println!("| ---: | --- | ---: | ---: | ---: | --- |");
-    let kinds = [(PackageKind::Cargo, "cargo"), (PackageKind::PnpmRelative, "pnpm")];
+    let kinds = [
+        (PackageKind::Cargo, "cargo"),
+        (PackageKind::PnpmRelative, "pnpm"),
+        (PackageKind::ForeignTags, "foreign tags"),
+    ];
     let mut failed = false;
     for (packages, (kind, kind_label)) in sizes.iter().flat_map(|packages| kinds.map(|kind| (*packages, kind))) {
         let dir = tempfile::tempdir().unwrap();
