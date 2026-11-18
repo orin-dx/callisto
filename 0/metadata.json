@@ -1,0 +1,103 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7R58E6KNNGBE9MSQXZYYR5T",
+  "session_id": "25b5d2e3-801a-4c94-9d8b-527c66878712",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T20:23:48.387191Z",
+  "branch": "fix/version-resume-plan-binding",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/tests/version_resume_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "b1871d26863f",
+  "checkpoint_transcript_start": 2923,
+  "transcript_lines_at_start": 2923,
+  "compact_transcript_start": 243,
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 25541,
+    "cache_read_tokens": 10285627,
+    "output_tokens": 14907,
+    "api_call_count": 28
+  },
+  "session_token_usage": {
+    "input_tokens": 504,
+    "cache_creation_tokens": 351135,
+    "cache_read_tokens": 56885729,
+    "output_tokens": 119187,
+    "api_call_count": 239,
+    "subagent_tokens": {
+      "input_tokens": 112,
+      "cache_creation_tokens": 278232,
+      "cache_read_tokens": 3968624,
+      "output_tokens": 37468,
+      "api_call_count": 56
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 13
+  },
+  "summary": {
+    "intent": "Land three fix PRs (S #577, T #579, V #581) on trail #462 for callisto: get local gates, mutation tests, and CI green, mark them ready, and address a new review finding on T about emitted output paths escaping the workspace on resume.",
+    "outcome": "S, T and V were pushed as signed draft PRs; `just ci` passed for T and V and both were marked ready, while S stays draft awaiting #571 (G) to merge. A fix for finding 01M7R3DR5QX6 on T (escaping `--emit-preview` path) was written test-first and committed, with gate, ci and mutants started but results not yet reported.",
+    "learnings": {
+      "repo": [
+        "Merge order for the trail is #571 (G), then #577 (S), #579 (T), #581 (V); #577 conflicts with #571, so once G merges, main must be merged into #577 (no rebase, no force-push) and gates re-run.",
+        "Local gate is `just pre-push && just lint && just doc-check && just test`; `just ci` is a separate, longer run that is required before marking a PR ready; PRs stay draft until it passes.",
+        "Workflow per fix: write test first (confirm red), fix, run gate plus `just ci` plus `cargo mutants` on the diff, push, verify with `git ls-remote`, check commits are signed.",
+        "Each work package uses its own worktree under .claude/worktrees/ with its own target/ directory, which is removed once the PR is green.",
+        "Release intents planned before the V change for affected dual packages are rejected as stale and need `release plan` rerun.",
+        "Release Artifact Preflight (macos-arm64) CI job can sit queued with no runner and be cancelled after ~51 minutes; this is infrastructure, fixed by rerunning the failed job."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/version.rs",
+          "finding": "GAP-04 emitted-output simulation used lexical strip_prefix, so `<ws>/../../x` passed the workspace check and escaped the scratch tree, letting write_emitted overwrite unrelated files via atomic_write before E340 validation. Fix reuses the existing workspace containment helper (workspace_decision_path) and skips simulating outputs outside the workspace."
+        },
+        {
+          "path": "crates/callisto-cli/tests/version_resume_tests.rs",
+          "finding": "The first escape test passed without the fix; it only went red after adjusting it to match how resolve_file_arg builds the path, so the test must use the real path construction to reproduce the escape."
+        }
+      ],
+      "workflow": [
+        "Peer-session messages are treated as teammate requests; the lead session's request to dismiss a finding was initially blocked because it didn't come from the user, and was later done by the lead itself.",
+        "A test written first must be verified red against unfixed code; the initial test passed spuriously and had to be corrected.",
+        "Verify push results with `git ls-remote` rather than trusting push output.",
+        "When a plan file can't be written from a worktree, relay backlog items to the lead session to record."
+      ]
+    },
+    "friction": [
+      "Auto mode blocked dismissing finding 01M7DXM36RN2 because the request came from the lead session, not the user.",
+      "Release Artifact Preflight (macos-arm64) on #577 was cancelled after 51 minutes with no runner assigned, requiring a rerun.",
+      "The first version of the escape regression test passed without the fix, costing an extra iteration.",
+      "Couldn't write the plan backlog file from the worktree, so items were sent to the lead instead.",
+      "On S, the last commit went in after the full gate, so it was verified only with targeted tests and clippy."
+    ],
+    "open_items": [
+      "Wait for #571 (G) to merge, then merge main into #577, re-run the full gate plus `just ci`, and mark it ready.",
+      "Results of gate, `just ci`, and mutants on the T escape fix are pending; then push, check ls-remote, and resolve finding 01M7R3DR5QX6.",
+      "Remove each worktree's target/ directory once its PR CI is fully green.",
+      "Backlog: `changeset_prs` can drop a changelog PR link when a commit subject contains U+0001 or a changeset file has a non-ASCII name (needs its own output format).",
+      "Backlog: a dry run that finds a checkpoint skips the resume checks and can report another directory's plan (writes nothing).",
+      "Confirm CI on #577, #579 and #581 completes green; some jobs were still pending."
+    ]
+  }
+}
