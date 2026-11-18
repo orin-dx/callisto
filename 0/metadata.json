@@ -1,0 +1,105 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7R0S20RCFG3MXYJBQX9B9HM",
+  "session_id": "bbcfd2d3-839e-43dc-808d-db9f0fe31bb0",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T19:05:30.221822Z",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/plan.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "4fdfb2db40a4",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 42827,
+    "cache_read_tokens": 24425232,
+    "output_tokens": 22073,
+    "api_call_count": 31
+  },
+  "session_token_usage": {
+    "input_tokens": 1020,
+    "cache_creation_tokens": 1466225,
+    "cache_read_tokens": 223497319,
+    "output_tokens": 259368,
+    "api_call_count": 485
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "summary": {
+    "intent": "Ship the Callisto v1-alpha work packages (F1, F2, then G and M, with H queued) as separate signed PRs. Then address the Entire review findings on #570 and #571, backed by mutation testing, with the lead session directing priorities.",
+    "outcome": "F1 and F2 merged. G (#571) and M (#570) were opened, gated, and had round-1 findings fixed, pushed, resolved and mutation-tested. Round 2 on #571 was in progress: the provenance approach was dropped for the lead's cheaper plan (add skips archived slugs, apply reports duplicates, PR-link lookup keyed by original path), with edits made but the fix not yet committed, gated or pushed.",
+    "learnings": {
+      "repo": [
+        "Seed/Source in aggregate.rs replaced the severities/reasons/named_by maps. A package's severity is the max over all its sources, and packages with no fresh source are dropped in pre mode.",
+        "Gate commands: just pre-push, lint, doc-check, test, and ci. Cargo runs use CARGO_BUILD_JOBS capped at a quarter of the cores and debug info off.",
+        "In these worktrees the local branch names differ from the remote ones, so a plain git push does nothing. Push with explicit refspecs (HEAD:refs/heads/<branch>) and verify with git ls-remote.",
+        "Commits must be signed (verify via gh api .../commits/<sha> --jq .commit.verification.reason), carry no trailers or session links, and must not include mutants.out*. mutants.out.old is tracked on main until #574 merges, so restore it from HEAD after each run.",
+        "Archived pre-cycle notes live in .changeset/pre/; archived changeset IDs are now `pre/<stem>`, and archive clashes are named feature-2.md and so on.",
+        "Entire trails: `entire trail link <n> --branch ... --base main` can race the push (retry with the idempotency key), then `ci-pr`; findings are handled with `entire trail finding resolve <change> <id>`.",
+        "Decision schema is now v3 with a consumedChangesets field, and E165 compares changeset sets (ConsumedChangesetsDiffer). Docs and specs touched: docs/releasing.md, docs/errors.md, docs/specs/*.json, and the ADR 0002."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 202,
+          "end_line": 217,
+          "finding": "The changeset loader reads only direct-child .md files under the changesets dir. status.rs coverage must match this, otherwise nested files such as .changeset/archive/old.md count as coverage."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 177,
+          "end_line": 184,
+          "finding": "A package's reason keeps only the winning source, so inference coverage must be tracked separately (plan.inferred) from the final bump reason."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 567,
+          "end_line": 571,
+          "finding": "Reviewer note: the linked-group target uses named_severity, which excludes Group sources. This differs from the old behavior outside pre mode when a fixed group raises a member in the same pass. The effect is unverified."
+        }
+      ],
+      "workflow": [
+        "Write the regression test first and confirm it fails before the fix. This was done for every review finding.",
+        "A mutants timeout can be the detection mechanism for an infinite-loop mutant, such as `n += 1` -> `n *= 1` in archive_slot. Report it explicitly in the PR body.",
+        "Stop background jobs before resetting a commit, then restore mutants.out.old and remove mutants.out.",
+        "Peer messages from the lead redirected the work mid-task. Cheap, by-design fixes were preferred over new recovery state, and after round 2 further findings go to the lead for triage."
+      ]
+    },
+    "friction": [
+      "The G mutants run first failed with exit 4 because the filter named a nonexistent test binary (release_preview_tests).",
+      "entire trail link raced the branch push and failed with 'branch does not exist' until retried.",
+      "The full test suite is slow (1924 tests), and the G subagent kept re-sending the same report until it was stopped.",
+      "macOS CI jobs on #571 were cancelled for runner capacity and had to be re-run.",
+      "Round-2 provenance work was built and then discarded when the lead changed course, and the mutants/gate run on it was killed."
+    ],
+    "open_items": [
+      "Finish round 2 on #571: verify the add-skips-archive and duplicate-note tests pass, add the PR-link lookup test, then commit, run the gates and cargo mutants on the new diff, push, resolve 01M7QYY5ZCF7, and dismiss 01M7QYY5YJ8W with the lead's stated reason.",
+      "H is blocked until #571 merges. Then rebase it onto main, re-run the gates, and ship it with the known-limits section.",
+      "#577 (S) conflicts with G and will merge main in after G lands.",
+      "Known limits: a stale release PR that deletes no changesets evades E165's changeset check, and re-running version before a prerelease tag re-infers the same commits for auto packages.",
+      "Reviewer finding 1 (linked-group named_severity) and finding 2 (rerun re-inference) are only partly verified or accepted.",
+      "New public surface needing owner sign-off: the status --since flag and the changed-without-changeset diagnostic code."
+    ]
+  }
+}
