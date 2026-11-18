@@ -1,0 +1,70 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PD0ZVB7QHENKF1PKCCT9PN",
+  "strategy": "manual-commit",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "mutants.out.old/caught.txt",
+    "mutants.out.old/debug.log",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_412_col_5.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_476_col_5.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_517_col_5.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_520_col_41.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_520_col_48.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_525_col_17.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_527_col_8.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_54_col_5.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__commands__release_decision.rs_line_979_col_5.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__plan.rs_line_107_col_9.diff",
+    "mutants.out.old/diff/crates__callisto-graph__src__plan.rs_line_107_col_9_001.diff",
+    "mutants.out.old/lock.json",
+    "mutants.out.old/log/baseline.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_412_col_5.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_476_col_5.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_517_col_5.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_520_col_41.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_520_col_48.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_525_col_17.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_527_col_8.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_54_col_5.log",
+    "mutants.out.old/log/crates__callisto-graph__src__commands__release_decision.rs_line_979_col_5.log",
+    "mutants.out.old/log/crates__callisto-graph__src__plan.rs_line_107_col_9.log",
+    "mutants.out.old/log/crates__callisto-graph__src__plan.rs_line_107_col_9_001.log",
+    "mutants.out.old/missed.txt",
+    "mutants.out.old/mutants.json",
+    "mutants.out.old/outcomes.json",
+    "mutants.out.old/timeout.txt",
+    "mutants.out.old/unviable.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 10342,
+    "cache_read_tokens": 2939283,
+    "output_tokens": 1920,
+    "api_call_count": 6
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
