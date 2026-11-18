@@ -1,0 +1,102 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7REFJS6K94R7AB1K0G9RBVT",
+  "session_id": "d3a460f3-6eef-4f93-86cd-aa435bb0672e",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T23:04:59.968713Z",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "4707741da9cb",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 15650,
+    "cache_read_tokens": 12377446,
+    "output_tokens": 6891,
+    "api_call_count": 16
+  },
+  "session_token_usage": {
+    "input_tokens": 1008,
+    "cache_creation_tokens": 1437740,
+    "cache_read_tokens": 220114259,
+    "output_tokens": 244770,
+    "api_call_count": 482
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "summary": {
+    "intent": "Run Session 1 of the v1-alpha launch plan for the callisto repo: fix pre-cycle aggregation (F1), drive release-PR decide from the version plan (F2), and build Changesets v3 pre.json support (G), managed prerelease (H) and status --since (M), then shepherd G (#571) through review rounds.",
+    "outcome": "F1 (#566) and F2 (#567) were pushed as draft PRs, and G, H and M were built and gated locally. G (#571) was merged with main twice and pushed with several Entire review fixes. The final idempotent-archive fix and the archived-note ambiguity status fix were still mid-gate and not yet pushed.",
+    "learnings": {
+      "repo": [
+        "Worktree branch names differ from PR branch names, so a plain `git push` silently no-ops; push `HEAD:refs/heads/<branch>` and verify with `git ls-remote`.",
+        "Never commit `mutants.out*`; restore `mutants.out.old` from HEAD after mutants runs, since the G branch had been tracking 137 such files.",
+        "The gate is `just pre-push`, `lint`, `doc-check`, `test` and `ci`, each judged by exit code. CARGO_BUILD_JOBS is set to cores/5 (earlier cores/4).",
+        "Commits must be signed, with no trailer, and GitHub's verification reason should read `valid`.",
+        "Spec criteria live in docs/specs/*.json and must be updated with behavior changes. Docs such as docs/releasing.md and docs/errors.md also mention E165 wording.",
+        "Release decision schema moved to v3 with a `consumedChangesets` field. E165 now checks the deleted changesets match the recorded set (`ConsumedChangesetsDiffer`).",
+        "Pre-cycle semantics: a package with any fresh input (a new changeset, inference, or a group member) still counts its retained changesets toward severity, while retained-only input releases nothing.",
+        "Mid-cycle package removal or ambiguity in archived `.changeset/pre/` notes must surface in `status` diagnostics, otherwise `status --check` passes while `version` fails."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "finding": "The `Seed`/`Source` types replaced `NamedBy`. `Source::is_fresh` distinguishes retained changesets from fresh input, and `Aggregation.severities()`/`reasons()` are now derived from seeds."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/status.rs",
+          "line": 94,
+          "finding": "Aggregation errors (ParseChangeset, AmbiguousName) were suppressed here, so archived notes had to be added explicitly to the well-formedness diagnostic scan."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "finding": "The archive move deletes its source, so resume failed. The plan now carries the archived note text, and a missing source whose archive copy holds exactly that text counts as done."
+        }
+      ],
+      "workflow": [
+        "Writing tests first and confirming red by reverting the fix (red.sh) gave reliable regression proof.",
+        "Running cargo-mutants on each diff caught real test gaps, such as an unchecked unknown-package warning at exit and a redundant README check.",
+        "Peer sessions can send cross-session instructions mid-run. Merge main (no rebase, no force-push) and re-gate on the merged tree before pushing.",
+        "A gate run in the background must be stopped and restarted when the tree changes, because it would otherwise test a stale tree."
+      ]
+    },
+    "friction": [
+      "The G subagent kept re-sending the same report and had to be stopped.",
+      "The cargo-mutants filters initially named a test binary that existed only on another branch, and the package flags did not apply, so the runs failed and needed rewriting.",
+      "A sandbox-blocked `sed` edit let an unchanged script start again.",
+      "F1's full suite was slow (1924 tests), and the `just ci` audit step failed on RUSTSEC-2026-0542 until #560 merged.",
+      "Several merge conflicts with main arose as sibling PRs (#570, #575, #577) landed ahead of G.",
+      "The first interrupted-run test failed because the decision path is checked before apply, so the test switched to blocking the --emit-preview write instead.",
+      "Review findings kept arriving on #571 over multiple rounds."
+    ],
+    "open_items": [
+      "Finish the archived-note ambiguity fix: run the status test and pre_v3 tests, commit it, then re-gate the merged tree including `just ci`.",
+      "Push the idempotent-archive fix, the main merge and the ambiguity fix in one push with an explicit refspec and `ls-remote`, then resolve the Entire findings 01M7RBYQ9KY9 and 01M7RDA9X3WF.",
+      "Run mutants on the final diff.",
+      "Ship H once #571 merges: rebase onto main, re-gate, push, and open it on trail #457. M (trail #458) still needs a rebase, `just ci` and a PR.",
+      "Stale release PRs that delete no changesets are not caught by E165, so only the Hold workflow and the manifest check stop them.",
+      "Re-running `version` locally before the prerelease is tagged re-infers the same commits for `release-trigger = auto` packages.",
+      "A linked-group target uses `named_severity`, which excludes group-raised severity, a low finding from the F1 review.",
+      "Further Entire findings on #571 go to the lead unfixed unless they break recovery or give wrong results."
+    ]
+  }
+}
