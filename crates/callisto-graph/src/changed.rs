@@ -61,10 +61,10 @@ pub fn changed_since_ref(
     let mut changed = ChangedSince::default();
     for path in &paths {
         if let Ok(inside) = path.strip_prefix(changesets_dir) {
-            if inside.extension().is_some_and(|ext| ext == "md") && inside.file_name() != Some("README.md".as_ref()) {
-                if let Some(id) = inside.file_stem().and_then(|stem| stem.to_str()) {
-                    changed.changesets.insert(id.to_owned());
-                }
+            if inside.extension().is_some_and(|ext| ext == "md")
+                && let Some(id) = inside.file_stem().and_then(|stem| stem.to_str())
+            {
+                changed.changesets.insert(id.to_owned());
             }
             continue;
         }
