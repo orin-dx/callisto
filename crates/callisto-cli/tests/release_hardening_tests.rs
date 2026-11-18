@@ -1031,3 +1031,86 @@ fn execute_resolves_the_same_workspace_root_as_plan_from_a_subdirectory() {
     );
     assert!(e.receipt_path().exists(), "the subdirectory run must issue its receipt");
 }
+
+const CARGO_REGISTRY: &str = "my-reg";
+
+fn cargo_registry_env() -> RigEnv {
+    let (dir, sha) = release_commit_fixture_publishing_to(
+        false,
+        "",
+        CARGO_REGISTRY,
+        &format!("\n[registries.{CARGO_REGISTRY}]\nkind = \"cargo\"\n"),
+    );
+    RigEnv::from_fixture(dir, sha, plan_intent, "core-crate@0.2.0")
+}
+
+/// A `kind = "cargo"` registry named in `publish-to` is where cargo publishes and where it observes: both name it with
+/// `--registry`, and crates.io is never involved.
+#[test]
+fn a_named_cargo_registry_is_where_publish_and_observation_go() {
+    let e = cargo_registry_env();
+    let out = e.run(&[]);
+    assert!(out.status.success(), "{}", stderr(&out));
+
+    let calls = e.rig.cargo_calls();
+    let registry_flag = format!("--registry {CARGO_REGISTRY}");
+    let publish: Vec<_> = calls.iter().filter(|(_, argv)| argv.starts_with("publish ")).collect();
+    let info: Vec<_> = calls
+        .iter()
+        .filter(|(_, argv)| argv.split_whitespace().any(|word| word == "info"))
+        .collect();
+    assert_eq!(publish.len(), 1, "one publish expected, got {calls:?}");
+    assert!(!info.is_empty(), "the registry must be observed, got {calls:?}");
+    for (_, argv) in publish.iter().chain(info.iter()) {
+        assert!(
+            argv.ends_with(&registry_flag),
+            "`cargo {argv}` must target {CARGO_REGISTRY}"
+        );
+        assert!(!argv.contains("crates-io"), "`cargo {argv}` must not name crates.io");
+    }
+    assert!(e.receipt_path().exists());
+}
+
+fn rewrite_config(e: &RigEnv, edit: impl FnOnce(String) -> String) {
+    let path = e.root().join("callisto.toml");
+    fs::write(&path, edit(fs::read_to_string(&path).unwrap())).unwrap();
+}
+
+#[test]
+fn a_url_on_a_cargo_registry_is_still_rejected() {
+    let e = cargo_registry_env();
+    rewrite_config(&e, |config| {
+        config.replace(
+            "kind = \"cargo\"\n",
+            "kind = \"cargo\"\nurl = \"https://registry.example/\"\n",
+        )
+    });
+    let out = callisto(e.root(), &["status"]);
+    assert!(!out.status.success());
+    assert!(diagnostic_codes(&out).contains(&"E336".to_owned()), "{}", stderr(&out));
+}
+
+#[test]
+fn publish_to_must_name_a_cargo_registry() {
+    for (registry_kind, name) in [("npm", CARGO_REGISTRY), ("cargo", "nope"), ("cargo", "cratesIo")] {
+        let e = cargo_registry_env();
+        rewrite_config(&e, |config| {
+            config
+                .replace("kind = \"cargo\"\n", &format!("kind = \"{registry_kind}\"\n"))
+                .replace(
+                    &format!("\"{CARGO_REGISTRY}\", \"github"),
+                    &format!("\"{name}\", \"github"),
+                )
+        });
+        let out = callisto(e.root(), &["status"]);
+        assert!(
+            !out.status.success(),
+            "publish-to = [\"{name}\"] ({registry_kind}) must fail"
+        );
+        assert!(
+            diagnostic_codes(&out).contains(&"E330".to_owned()),
+            "{name}: {}",
+            stderr(&out)
+        );
+    }
+}
