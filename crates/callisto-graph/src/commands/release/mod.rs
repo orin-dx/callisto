@@ -631,6 +631,71 @@ pub(crate) mod tests {
         assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
     }
 
+    /// A yarn workspace publishing `lib` to npm, with `yarnrc` as its `.yarnrc.yml`.
+    fn yarn_registry_fixture(yarnrc: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        write(
+            "package.json",
+            r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
+        );
+        write("yarn.lock", "");
+        write(".yarnrc.yml", yarnrc);
+        write("packages/lib/package.json", r#"{"name":"lib","version":"1.0.0"}"#);
+        write(
+            "callisto.toml",
+            "[[package]]\nmatch = \"npm/lib\"\npublish-to = [\"npm\"]\n",
+        );
+        callisto_fixtures::git::init_repo(dir.path());
+        for args in [
+            ["remote", "add", "origin", "https://github.com/example/lib.git"].as_slice(),
+            ["add", "."].as_slice(),
+            ["commit", "-q", "-m", "fixture"].as_slice(),
+            ["checkout", "--detach", "-q", "HEAD"].as_slice(),
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .unwrap()
+                .success());
+        }
+        dir
+    }
+
+    /// The refusal comes with the intent, before any effect, so a plan and a local release stop on it alike.
+    #[test]
+    fn an_intent_for_a_yarn_workspace_with_a_registry_only_yarn_reads_is_refused() {
+        let decision = ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+            package: ReleasePackageId::new(Ecosystem::Npm, "lib").unwrap(),
+            target_version: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+        }])
+        .unwrap();
+        let build = |yarnrc: &str| {
+            let dir = yarn_registry_fixture(yarnrc);
+            let locator = crate::IgnoreWalkLocator::new(dir.path());
+            build_release_intent(
+                dir.path(),
+                &locator,
+                &RealGitRunner,
+                &decision,
+                ExecutionTrustProfileV1::GitCommit,
+            )
+        };
+        assert!(matches!(
+            build("npmPublishRegistry: \"https://r.example/\"\n"),
+            Err(GraphError::UnsupportedRelease {
+                feature: crate::error::UnsupportedReleaseFeature::NpmRegistryConfig { .. }
+            })
+        ));
+        build("nodeLinker: node-modules\n").unwrap();
+    }
+
     #[test]
     fn fresh_validation_rejects_manifest_change() {
         let (dir, runner) = fixture();

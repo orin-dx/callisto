@@ -59,7 +59,7 @@ GitHub Actions schedules jobs, transports artifacts, and injects credentials. Ca
 
 The generated release action (`mode: release`, or `mode: execute` on a handoff directory) maps credentials; no package script runs during the publish:
 
-- npm: copy existing user config to a mode-0600 temporary file, add an npmjs entry interpolating `NPM_TOKEN`, point `npm` at it, and remove it on exit. The original config is unchanged. `NPM_TOKEN` remains available for `.npmrc` interpolation. Custom registries use native configuration. Only `npm` publishes, whichever package manager packed the tarball, so no pnpm, yarn or bun auth is mapped.
+- npm: copy existing user config to a mode-0600 temporary file, add an npmjs entry interpolating `NPM_TOKEN`, point `npm` at it, and remove it on exit. The original config is unchanged. `NPM_TOKEN` remains available for `.npmrc` interpolation. Custom registries use native configuration. Only `npm` publishes, whichever package manager packed the tarball, so no pnpm, yarn or bun auth is mapped, and a registry set only in a yarn workspace's `.yarnrc.yml` or a bun workspace's `bunfig.toml` is refused (E168) when the intent is derived, because `npm publish <tarball>` would not honor it.
 - PyPI: map `PYPI_TOKEN` to `TWINE_USERNAME=__token__` and `TWINE_PASSWORD` for upload. The build backend receives no registry or forge credentials.
 - Cargo: pass `CARGO_REGISTRY_TOKEN` through to Cargo.
 

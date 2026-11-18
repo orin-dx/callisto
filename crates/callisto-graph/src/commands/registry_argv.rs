@@ -215,6 +215,88 @@ pub fn detect_npm_package_manager(workspace_dir: &Path) -> Result<NpmPackageMana
     })
 }
 
+/// Refuses a registry set where only yarn or bun reads it. The publish is `npm publish <tarball>`, which ignores
+/// `.yarnrc.yml` and `bunfig.toml`, so the tarball would go to a registry the project did not choose.
+///
+/// # Errors
+///
+/// The workspace that owns `package_dir` uses yarn and its `.yarnrc.yml` sets `npmPublishRegistry` or
+/// `npmRegistryServer` (at the top level or under `npmScopes`), or uses bun and its `bunfig.toml` sets a registry; or
+/// one of those files cannot be read.
+pub(crate) fn require_registry_npm_publish_honors(workspace_root: &Path, package_dir: &Path) -> Result<(), GraphError> {
+    let workspace = workspace_root.join(crate::workspace_owner::npm_workspace_dir(workspace_root, package_dir)?);
+    let unsupported = |file: &'static str, key: String| GraphError::UnsupportedRelease {
+        feature: crate::error::UnsupportedReleaseFeature::NpmRegistryConfig { file, key },
+    };
+    let read = |file: &str| -> Result<Option<String>, GraphError> {
+        let path = workspace.join(file);
+        if !callisto_model::strict_fs::exists(&path).map_err(|error| GraphError::ReleaseInputRead {
+            path: path.clone(),
+            message: error.to_string(),
+        })? {
+            return Ok(None);
+        }
+        std::fs::read_to_string(&path)
+            .map(Some)
+            .map_err(|error| GraphError::ReleaseInputRead {
+                path,
+                message: error.to_string(),
+            })
+    };
+    match detect_npm_package_manager(&workspace)? {
+        NpmPackageManager::Yarn => {
+            let Some(text) = read(".yarnrc.yml")? else {
+                return Ok(());
+            };
+            let docs = yaml_rust2::YamlLoader::load_from_str(&text).map_err(|error| GraphError::ReleaseInputRead {
+                path: workspace.join(".yarnrc.yml"),
+                message: error.to_string(),
+            })?;
+            let Some(config) = docs.first() else {
+                return Ok(());
+            };
+            const KEYS: [&str; 2] = ["npmPublishRegistry", "npmRegistryServer"];
+            for key in KEYS {
+                if !config[key].is_badvalue() {
+                    return Err(unsupported(".yarnrc.yml", key.to_owned()));
+                }
+            }
+            if let Some(scopes) = config["npmScopes"].as_hash() {
+                for (scope, settings) in scopes {
+                    for key in KEYS {
+                        if !settings[key].is_badvalue() {
+                            let scope = scope.as_str().unwrap_or_default();
+                            return Err(unsupported(".yarnrc.yml", format!("npmScopes.{scope}.{key}")));
+                        }
+                    }
+                }
+            }
+        }
+        NpmPackageManager::Bun => {
+            let Some(text) = read("bunfig.toml")? else {
+                return Ok(());
+            };
+            let config: toml::Table = toml::from_str(&text).map_err(|error| GraphError::ReleaseInputRead {
+                path: workspace.join("bunfig.toml"),
+                message: error.to_string(),
+            })?;
+            let install = config.get("install").and_then(toml::Value::as_table);
+            if install.is_some_and(|install| install.contains_key("registry")) {
+                return Err(unsupported("bunfig.toml", "install.registry".to_owned()));
+            }
+            if let Some(scope) = install
+                .and_then(|install| install.get("scopes"))
+                .and_then(toml::Value::as_table)
+                .and_then(|scopes| scopes.keys().next())
+            {
+                return Err(unsupported("bunfig.toml", format!("install.scopes.{scope}")));
+            }
+        }
+        NpmPackageManager::Pnpm | NpmPackageManager::Npm => {}
+    }
+    Ok(())
+}
+
 /// Packs the package in `package_dir` into the empty directory `destination` with the tool that owns its workspace, so
 /// `workspace:` and `catalog:` ranges are rewritten into the tarball. Both paths are absolute and the tool runs in
 /// `package_dir`. The package's `prepack` and `prepare` scripts run here, so this runs without credentials.
@@ -934,6 +1016,90 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&published.stderr)
         );
+    }
+
+    /// A workspace of `manager` (marked by its lockfile) with a package `pkg` and the extra files given.
+    fn workspace_with(lockfile: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("pkg")).unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"root","private":true,"workspaces":["pkg"]}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join(lockfile), "").unwrap();
+        std::fs::write(
+            dir.path().join("pkg/package.json"),
+            r#"{"name":"pkg","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        for (name, text) in files {
+            std::fs::write(dir.path().join(name), text).unwrap();
+        }
+        dir
+    }
+
+    fn refusal(dir: &tempfile::TempDir) -> Option<(&'static str, String)> {
+        match require_registry_npm_publish_honors(dir.path(), Path::new("pkg")) {
+            Ok(()) => None,
+            Err(GraphError::UnsupportedRelease {
+                feature: crate::error::UnsupportedReleaseFeature::NpmRegistryConfig { file, key },
+            }) => Some((file, key)),
+            Err(other) => panic!("{other:?}"),
+        }
+    }
+
+    /// `npm publish <tarball>` ignores yarn's and bun's own registry settings, so a registry set only there is refused
+    /// before anything is published.
+    #[test]
+    fn a_registry_set_only_in_yarnrc_or_bunfig_is_refused_naming_the_file_and_key() {
+        for (text, key) in [
+            ("npmPublishRegistry: \"https://r.example/\"\n", "npmPublishRegistry"),
+            ("npmRegistryServer: \"https://r.example/\"\n", "npmRegistryServer"),
+            (
+                "npmScopes:\n  acme:\n    npmPublishRegistry: \"https://r.example/\"\n",
+                "npmScopes.acme.npmPublishRegistry",
+            ),
+            (
+                "npmScopes:\n  acme:\n    npmRegistryServer: \"https://r.example/\"\n",
+                "npmScopes.acme.npmRegistryServer",
+            ),
+        ] {
+            let dir = workspace_with("yarn.lock", &[(".yarnrc.yml", text)]);
+            assert_eq!(refusal(&dir), Some((".yarnrc.yml", key.to_owned())), "{text}");
+        }
+        for (text, key) in [
+            ("[install]\nregistry = \"https://r.example/\"\n", "install.registry"),
+            (
+                "[install.scopes]\nacme = { url = \"https://r.example/\" }\n",
+                "install.scopes.acme",
+            ),
+        ] {
+            let dir = workspace_with("bun.lock", &[("bunfig.toml", text)]);
+            assert_eq!(refusal(&dir), Some(("bunfig.toml", key.to_owned())), "{text}");
+        }
+    }
+
+    /// A registry in `publishConfig.registry` or `.npmrc` is honored by `npm publish`, and settings that are not a
+    /// registry, or a file in a workspace that does not use that manager, are not refused.
+    #[test]
+    fn a_registry_npm_honors_or_no_registry_at_all_is_not_refused() {
+        let publish_config = r#"{"name":"pkg","version":"1.0.0","publishConfig":{"registry":"https://r.example/"}}"#;
+        let dir = workspace_with(
+            "yarn.lock",
+            &[(".yarnrc.yml", "nodeLinker: node-modules\nenableTelemetry: false\n")],
+        );
+        std::fs::write(dir.path().join("pkg/package.json"), publish_config).unwrap();
+        std::fs::write(dir.path().join(".npmrc"), "registry=https://r.example/\n").unwrap();
+        assert_eq!(refusal(&dir), None);
+
+        let bun = workspace_with("bun.lock", &[("bunfig.toml", "[install]\nexact = true\n")]);
+        assert_eq!(refusal(&bun), None);
+        let no_file = workspace_with("yarn.lock", &[]);
+        assert_eq!(refusal(&no_file), None);
+        // Another manager's file is not read: npm publishes this workspace without consulting `.yarnrc.yml`.
+        let npm = workspace_with("package-lock.json", &[(".yarnrc.yml", "npmPublishRegistry: x\n")]);
+        assert_eq!(refusal(&npm), None);
     }
 
     #[test]

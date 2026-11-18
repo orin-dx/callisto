@@ -294,7 +294,7 @@
     },
     {
       "id": "REL-PUB-18",
-      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its destination from `.cargo/config.toml`. An npm registry `url` is passed to the publish as `--registry <url>` whichever package manager packed the tarball."
+      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its destination from `.cargo/config.toml`. An npm registry `url` is passed to the publish as `--registry <url>` whichever package manager packed the tarball. A registry that only yarn or bun reads, `npmPublishRegistry` or `npmRegistryServer` in the owning workspace's `.yarnrc.yml` (at the top level or under `npmScopes`) or a registry in its `bunfig.toml`, fails with E168 naming the file and key when the plan is derived, on the local route too and before any effect, because `npm publish <tarball>` does not read it; `publishConfig.registry` and `.npmrc` are honored."
     },
     {
       "id": "REL-RERUN-01",
