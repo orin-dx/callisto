@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "toolu_01PBy8jjHNPB4Uz4icVSzbxk",
+  "agent_id": "a2e6d85ce1d306f64",
+  "subagent_type": "general-purpose",
+  "task_description": "Review history cache diff",
+  "files": [
+    ".changeset/noble-cobras-surge.md"
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 75815,
+    "cache_read_tokens": 833930,
+    "output_tokens": 10775,
+    "api_call_count": 12
+  },
+  "started_at": "2026-11-18T10:08:25.790395-08:00",
+  "completed_at": "2026-11-18T10:10:27.284032-08:00"
+}

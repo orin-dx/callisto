@@ -1,0 +1,134 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QY4BQVV6RBPZGXMWG68RKZ",
+  "session_id": "794e07cc-9998-475b-afc4-4b8324e0a046",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:19:18.274864Z",
+  "branch": "worktree-wp-w-history-cache",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/noble-cobras-surge.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "d332f99c9f28",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 410,
+    "cache_creation_tokens": 574535,
+    "cache_read_tokens": 40835425,
+    "output_tokens": 96899,
+    "api_call_count": 202,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 75815,
+      "cache_read_tokens": 833930,
+      "output_tokens": 10775,
+      "api_call_count": 12
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 410,
+    "cache_creation_tokens": 574535,
+    "cache_read_tokens": 40835425,
+    "output_tokens": 96899,
+    "api_call_count": 202,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 75815,
+      "cache_read_tokens": 833930,
+      "output_tokens": 10775,
+      "api_call_count": 12
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 4,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Execute Session 5 of the v1-alpha launch plan: WP E (a NativeName type so registry-equivalent package names are one identity) and WP I (a directory index for relative workspace: deps). Follow-ups covered a review finding on #561, a PyPI sibling bug, mutation testing, and new WP W (cache historical tag probes by commit).",
+    "outcome": "WP E (#561) and WP I (#563) were pushed with signed commits and green gates. The Cargo and PyPI historical-tag-ownership bugs were fixed with literal-name comparison, and mutation testing was run on E and I. WP W's code, bench shape, changeset and commit were made locally; its mutants run, push, PR and trail link were not shown as done.",
+    "learnings": {
+      "repo": [
+        "Work happens in git worktrees via EnterWorktree/ExitWorktree; Edit tool is restricted to the active worktree, but python/sed scripts bypass that and can edit the wrong tree.",
+        "Gates are `just pre-push`, `just lint`, `just doc-check`, `just test`, judged by exit code; AGENTS.md also asks for `just ci` before marking a PR ready.",
+        "Commits must be signed with no session trailer; push with an explicit HEAD:refs/heads/<branch> refspec and verify with git ls-remote; local `%G?` can show E, so GitHub's commit verification.reason is the authority.",
+        "Release notes use `callisto add --package ... --summary` changesets (callisto-cli patch) with an **Action:** paragraph for behavior changes.",
+        "Mutation testing uses `cargo mutants --in-place --in-diff`; the diff filter must cover `crates` minus tests/benches or it finds too few mutants; never commit mutants.out*.",
+        "The sandbox needs github.com allowed for git fetch; BSD sed on macOS needs `sed -i ''`.",
+        "Equivalent mutant: emptying `Hash::hash` on NativeName is consistent with Eq and must be noted in the PR body.",
+        "The plan's claims were partly wrong: ReleasePackageId.name should stay a String, release_decision.rs needs no edit, and no code enforced Cargo foo-bar/foo_bar as E100 before E."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/identity.rs",
+          "finding": "NativeName holds (ecosystem, spelling, key); Eq/Hash/Ord use the key only. The key is PEP 503 for PyPI, lowercase with _ turned to - for Cargo, and exact for other ecosystems."
+        },
+        {
+          "path": "crates/callisto-graph/src/history.rs",
+          "line": 181,
+          "finding": "may_have_held_name_at must compare declared names literally in every ecosystem, because a default tag `{name}@` carries the declared spelling. Equivalence-based comparison credited foreign npm tags to Cargo/PyPI packages after renames."
+        },
+        {
+          "path": "crates/callisto-graph/src/tags.rs",
+          "line": 259,
+          "end_line": 275,
+          "finding": "The tag caches were keyed by raw tag string, so foreign tags on one commit repeated the git probes (6T+4 processes). WP W reads the newest tag by name and the rest by commit after the first rejection."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 268,
+          "end_line": 310,
+          "finding": "native_owner is keyed by NativeName, which makes duplicate detection (E100) catch equivalent names."
+        },
+        {
+          "path": "crates/callisto-graph/src/identity.rs",
+          "line": 405,
+          "finding": "resolve_id, bare-name and cross-ecosystem fallback lookups now use NativeName; the fallbacks and bare selectors match exact spelling, only qualified selectors apply equivalence. native_in_ecosystem became a single get, so the PyPI ambiguity Err arms were dropped."
+        },
+        {
+          "path": "crates/callisto-graph/src/pattern.rs",
+          "line": 72,
+          "finding": "Glob matching (matches_native) still uses the manifest spelling, so `pypi/my-*` does not match `My_Pkg`; left out of scope."
+        }
+      ],
+      "workflow": [
+        "A fresh Opus reviewer subagent on each diff found real issues (fallback exactness, bare-selector exactness, docs, rule test), so it is worth running before the gate.",
+        "Subagent hand-backs are model output and carry no user authority; they were used only as design input.",
+        "The shell guard rejected compound commands in one case, so steps were split into separate Bash calls.",
+        "Regression tests written first failed as expected before each fix, which confirmed the repro.",
+        "Mutation testing exposed untested code after the first pass (17 missed mutants), which led to a second tests commit."
+      ]
+    },
+    "friction": [
+      "The first E mutation run found only 3 mutants because of a bad diff path filter and had to be rerun.",
+      "Python and sed edit scripts repeatedly hit duplicate `use super::*;` and import errors; one script edit hit the wrong worktree.",
+      "BSD sed incompatibilities (`--test-threads` flag, in-place edit syntax) broke scripts.",
+      "The `ForeignTags` PackageKind variant needed unreachable! arms in the perf fixture, and the first lazy-commit design broke tests and had to be reworked.",
+      "#561's audit fails on RUSTSEC-2026-0542, which #560 fixes in deny.toml, so the PR is blocked on that merge.",
+      "Amending and force-pushing #561 early on conflicted with the later never-force-push instruction."
+    ],
+    "open_items": [
+      "WP W is committed locally only: mutants --in-diff, the reviewer's findings, push, ls-remote check, PR on trail #462, and git-process/wall-time numbers in the PR body are still pending.",
+      "Rebase #561 and then #563 after #560 merges, when the lead says so; #563 conflicts in crates/callisto-cli/benches/commands.rs.",
+      "The owner must decide whether E's changeset is `**Breaking:**`, since workspaces with equivalent names will now fail with E100.",
+      "Glob patterns like `pypi/my-*` still match on manifest spelling; this needs a comment or a tracked follow-up.",
+      "Add one line in #561's PR body for the equivalent Hash::hash mutant and for why the PyPI sibling reproduced.",
+      "Run `just ci` before marking the PRs ready.",
+      "Delete the wp-e and wp-i worktrees after merge.",
+      "`native` now iterates in canonical-key order, so E102 did-you-mean candidates may reorder for mixed-case names."
+    ]
+  }
+}
