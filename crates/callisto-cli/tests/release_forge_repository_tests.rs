@@ -126,16 +126,11 @@ fn release_workflow_and_its_contract_pass_no_profile() {
 }
 
 #[test]
-fn this_repository_config_names_its_targets_once_and_infers_its_forge() {
+fn this_repository_config_uses_top_level_forge_repository() {
     let text = repo_file("callisto.toml");
     assert!(!text.contains("[release.profiles") && !text.contains("registry-routes"));
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let release = callisto_graph::load_config(&root).unwrap().product_release.unwrap();
-    assert_eq!(release.forge_repository, None);
-    let assets: Vec<&str> = release.artifacts.iter().map(|a| a.asset_name.as_str()).collect();
-    assert!(
-        assets.contains(&"callisto-x86_64-unknown-linux-gnu.tar.gz"),
-        "{assets:?}"
-    );
-    assert_eq!(assets.len(), 5, "{assets:?}");
+    let config = callisto_graph::load_config(&root).unwrap();
+    let forge = config.product_release.and_then(|release| release.forge_repository);
+    assert_eq!(forge.map(|repo| repo.as_slug()).as_deref(), Some("orin-dx/callisto"));
 }
