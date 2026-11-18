@@ -1,0 +1,7 @@
+Run Session 2 in .claude/plans/LAUNCH-v1-alpha-sessions.md.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: trails for Session 2 already exist, so link them and do not create any. D goes on #357 "Callisto fails predictably before 1.0". L and J go on #459 "Publish isolation and trusted publishing" (https://entire.com/gh/orin-dx/-/trails/459). Link each WP branch with `entire trail link` before its PR. The launch file is updated to match.
+</cross-session-message>
