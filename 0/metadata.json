@@ -1,0 +1,97 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7QZNP1XTH08G0WG0FQF8DNH",
+  "session_id": "bbcfd2d3-839e-43dc-808d-db9f0fe31bb0",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T18:46:07.221861Z",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 7,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "e9453df8ae00",
+  "checkpoint_transcript_start": 3385,
+  "transcript_lines_at_start": 3385,
+  "compact_transcript_start": 437,
+  "token_usage": {
+    "input_tokens": 62,
+    "cache_creation_tokens": 26530,
+    "cache_read_tokens": 18883943,
+    "output_tokens": 12225,
+    "api_call_count": 25
+  },
+  "session_token_usage": {
+    "input_tokens": 954,
+    "cache_creation_tokens": 1423398,
+    "cache_read_tokens": 199072087,
+    "output_tokens": 237295,
+    "api_call_count": 454
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "summary": {
+    "intent": "Fix four medium-severity Entire review findings across two PRs (#570 status-since, #571 pre-v3) with regression tests written first, push signed commits, resolve findings, then run mutation testing on the fix commits and report results in PR bodies.",
+    "outcome": "All four findings were fixed with failing-first tests, pushed (signed, valid) and resolved in Entire. Mutation testing on both fix commits showed no missed mutants (G: 15 caught, 1 unviable, 1 timeout; M: 4 caught, 3 unviable, 0 missed), and PR bodies were updated.",
+    "learnings": {
+      "repo": [
+        "Changeset coverage must only count direct-child .md files of the changesets directory, matching the loader; nested paths like .changeset/archive/old.md must not match by stem.",
+        "Archived pre-mode notes now load with id `pre/<stem>` so they stay distinct from fresh root notes with the same name at pre exit.",
+        "Archive naming (`feature.md`, `feature-2.md`, ...) and unfinished-move detection are one walk in archive_slot; an identical note anywhere in the sequence counts as an interrupted move.",
+        "The version plan now carries an `inferred` set of packages with commit-inferred bumps, independent of which source wins the bump reason.",
+        "main still tracks mutants.out.old until #574 merges, so after cargo mutants runs it must be restored from HEAD and mutants.out removed rather than committed.",
+        "Release-preview tests live in the pre_v3_tests binary; there is no release_preview_tests binary.",
+        "Workflow for pushes: explicit refspec push, verify with git ls-remote, confirm signature via gh api commit verification, no trailer, then `entire trail finding resolve <trail> <id>`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 299,
+          "finding": "archive_slot doc now describes returning the first free or already-identical name in the `<stem>.md`, `<stem>-2.md`, ... sequence plus whether it already holds the note."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 404,
+          "finding": "is_v3 is derived from PreState shape near archive_dir setup and decides whether archived notes get the `pre/<stem>` id."
+        },
+        {
+          "path": "crates/callisto-graph/src/plan.rs",
+          "finding": "Plan struct gained an `inferred` field, so every constructor (release_preview, pr_body, snapshot, apply tests, preflight tests) needed `inferred: Default::default()`."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "finding": "Plan is populated with `inferred: agg.inference_commits.keys().cloned().collect()`, and status.rs consumes it."
+        }
+      ],
+      "workflow": [
+        "Writing regression tests first and confirming they fail before the fix worked cleanly for all four findings.",
+        "Running full gates in the background while starting the next PR's work parallelized the two-worktree workflow.",
+        "Mutation test filters must reference existing nextest binaries or the run fails with exit code 4; an in-diff timeout mutant that loops forever counts as detected."
+      ]
+    },
+    "friction": [
+      "The first G mutants run failed because the filter named a nonexistent test binary (release_preview_tests) and had to be rerun.",
+      "The first attempt to edit the PR bodies appears to have needed redoing via separate prbody.sh/prbody.py scripts.",
+      "The first G test run needed an assertion fix after checking the preview JSON shape."
+    ],
+    "open_items": [
+      "H branch must be rebased onto main after #571 merges, re-gated, and shipped with G's known-limits section.",
+      "mutants.out.old remains tracked on main until #574 merges and must keep being restored from HEAD after mutation runs."
+    ]
+  }
+}

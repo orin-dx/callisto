@@ -1,0 +1,102 @@
+Lead (close-gap-for-alpha): #566 (F1), #567 (F2) and every other Wave 0-1 PR are merged. Ship G and M now, as two independent PRs off main: no stacks. For each, rebase onto origin/main, re-run just pre-push, lint, doc-check and test, plus just ci, all by exit code. Push with an explicit refspec, check git ls-remote, link G to trail #457 and M to #458, and open each with entire trail ci-pr. H waits until G merges; then rebase H onto main and ship it the same way. Report each PR number and sha to me. Put the stale-PR gap and the pre-cycle re-inference note in G's and H's PR bodies as known limits.
+
+---
+
+<task-notification>
+<task-id>bwmi5u0be</task-id>
+<tool-use-id>toolu_01X7fJxwYELD3oKkaCFHQPV7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-g-pre-v3/bbcfd2d3-839e-43dc-808d-db9f0fe31bb0/tasks/bwmi5u0be.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /Users/gabe/.claude/jobs/bbcfd2d3/tmp/gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bkx4yscaf</task-id>
+<tool-use-id>toolu_01GkAUyiQPkDdLZXij4f7z9W</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-g-pre-v3/bbcfd2d3-839e-43dc-808d-db9f0fe31bb0/tasks/bkx4yscaf.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /Users/gabe/.claude/jobs/bbcfd2d3/tmp/gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: Entire's review left 2 medium findings on each PR. Fix each with a regression test written first, push (signed, no trailer, explicit refspec, check ls-remote), then resolve it with `entire trail finding resolve`.
+
+#570 (M, change callisto/178):
+- 01M7QVVQW583: coverage compares changeset file stems only. A change to .changeset/archive/old.md makes an untouched pending .changeset/old.md count as coverage. Restrict candidates to the direct-child paths the loader reads (aggregate.rs:202-217 vs status.rs:159-162).
+- 01M7QVVQVHPH: an auto-release package with an inferred patch is flagged when an unchanged changeset from main requests a higher bump, because the reason keeps only the winning source (aggregate.rs:177-184 -> version.rs:264). Track inference coverage independently of the final reason. F1's Seed sources may already carry it.
+
+#571 (G, change callisto/179):
+- 01M7QVWPD9KK: at pre exit, fresh .changeset/feature.md and archived .changeset/pre/feature.md share one changeset ID. release_preview.rs::collect_changes keeps the first summary and drops the archived note, including its Breaking/Action warnings. Give the two distinct identities.
+- 01M7QVWPCSYZ: an archive name clash copies to feature-2.md. If apply fails after the copy but before the source is deleted, recovery checks only feature.md, so a retry bumps the prerelease again, duplicates the changelog entry and makes another copy. Keep the source-to-archive mapping so recovery recognizes suffixed destinations, and test it with an interruption at that point.
+
+H will inherit G's fixes when you rebase it. #571's macOS jobs were cancelled for runner capacity; I re-ran them.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bd1mfaiq0</task-id>
+<tool-use-id>toolu_01UwE6m9ZfdWqAeRLToBCic8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-g-pre-v3/bbcfd2d3-839e-43dc-808d-db9f0fe31bb0/tasks/bd1mfaiq0.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /Users/gabe/.claude/jobs/bbcfd2d3/tmp/gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn1qmkr83</task-id>
+<tool-use-id>toolu_01JnkDy7zxNyVoNQYkKmok1V</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-g-pre-v3/bbcfd2d3-839e-43dc-808d-db9f0fe31bb0/tasks/bn1qmkr83.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /Users/gabe/.claude/jobs/bbcfd2d3/tmp/gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: verified. Both heads match, both are signed valid with no trailer or mutants.out files, and Entire shows 0 open findings on 178 and 179. One gap: run `cargo mutants --in-place --in-diff` on the finding-fix commits of each PR, with zero missed or one line per equivalent mutant in the PR body. Don't commit mutants.out*: main still tracks mutants.out.old until #574 merges, so restore it from HEAD after the run.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bfze56tyv</task-id>
+<tool-use-id>toolu_01CjLer9FRBhKtfc3N9Ktr3r</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-g-pre-v3/bbcfd2d3-839e-43dc-808d-db9f0fe31bb0/tasks/bfze56tyv.output</output-file>
+<status>failed</status>
+<summary>Background command "bash /Users/gabe/.claude/jobs/bbcfd2d3/tmp/mut-fix.sh /Users/gabe/Projects/callisto/.claude/worktrees/wp-g-pre-v3 8bb4318c2 'package(callisto-graph) | binary(pre_v3_tests) | binary(pre_mode_tests) | binary(release_preview_tests)'" failed with exit code 4</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bkniz6ga0</task-id>
+<tool-use-id>toolu_01H4gCHowDtsVvLxsbd4SnMG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-g-pre-v3/bbcfd2d3-839e-43dc-808d-db9f0fe31bb0/tasks/bkniz6ga0.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /Users/gabe/.claude/jobs/bbcfd2d3/tmp/mut-fix.sh /Users/gabe/Projects/callisto/.claude/worktrees/wp-m-changed-without-changeset a0919d344 'package(callisto-graph) | binary(status_since_tests) | binary(status_check_tests)'" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bdrfw6olq</task-id>
+<tool-use-id>toolu_01J6QLh8QJYsRzmSU4u7qcpu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-g-pre-v3/bbcfd2d3-839e-43dc-808d-db9f0fe31bb0/tasks/bdrfw6olq.output</output-file>
+<status>failed</status>
+<summary>Background command "bash /Users/gabe/.claude/jobs/bbcfd2d3/tmp/mut-fix.sh /Users/gabe/Projects/callisto/.claude/worktrees/wp-g-pre-v3 8bb4318c2 'package(callisto-graph) | binary(pre_v3_tests) | binary(pre_mode_tests)'" failed with exit code 3</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: mutation results received, thanks. #570 (M) has no findings left and is waiting only on macOS runners and the owner. Entire's re-review of #571 (G, change callisto/179) found two issues introduced by the fixes. Fix both the same way: test first, push, then `entire trail finding resolve`.
+- 01M7QYY5YJ8W (medium): content equality can't tell a retry from a new note. After a finished prerelease, a newly committed feature.md with identical entries and summary is treated as an interrupted move, so it is aggregated as retained, gets no new prerelease or changelog entry, and apply deletes it. Use durable move provenance instead of content: for example, record in-flight archive moves in the version checkpoint or pre.json and treat a note as a retry only when that record names it. Pick the smallest form the existing checkpoint can carry.
+- 01M7QYY5ZCF7 (low): archived IDs are now `pre/feature`, but changeset_pull_requests returns bare IDs, so archived notes lose their source-PR links in the stable release PR. Keep the PR lookup keyed by the original path while the identity stays distinct.
+Run cargo mutants on the new diff. This is G's second review round, so if Entire raises more after this, report them to me for triage instead of fixing them automatically. Note: #577 (S) conflicts with G and will merge main in after G lands.
+</cross-session-message>
