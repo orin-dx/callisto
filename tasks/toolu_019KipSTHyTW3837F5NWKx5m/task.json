@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_019KipSTHyTW3837F5NWKx5m",
+  "agent_id": "a03c7f1f7a30fbaff",
+  "subagent_type": "Explore",
+  "task_description": "Grep callisto worktree",
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 48954,
+    "cache_read_tokens": 72518,
+    "output_tokens": 7688,
+    "api_call_count": 4
+  },
+  "started_at": "2026-11-17T19:19:04.324099-08:00",
+  "completed_at": "2026-11-17T19:20:08.934176-08:00"
+}

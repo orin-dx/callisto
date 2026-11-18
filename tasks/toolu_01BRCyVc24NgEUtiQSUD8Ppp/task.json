@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01BRCyVc24NgEUtiQSUD8Ppp",
+  "agent_id": "a5ae91aea8abf5c84",
+  "subagent_type": "general-purpose",
+  "task_description": "Review F2 diff",
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 151631,
+    "cache_read_tokens": 3056555,
+    "output_tokens": 14260,
+    "api_call_count": 30
+  },
+  "started_at": "2026-11-17T19:18:06.41388-08:00",
+  "completed_at": "2026-11-17T19:20:56.810055-08:00"
+}

@@ -1,0 +1,124 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7PB4FE8SQJGKCFY8Z86A9KK",
+  "session_id": "b38d2eaf-94d2-40f8-9072-4c207ac00fef",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-18T03:28:06.487954Z",
+  "branch": "worktree-wp-f2-pending-release",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-model/src/release/decision.rs",
+    "docs/architecture/wire-compat.md",
+    "docs/releasing.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "3a55c6d5ed26",
+  "checkpoint_transcript_start": 2075,
+  "transcript_lines_at_start": 2075,
+  "compact_transcript_start": 152,
+  "token_usage": {
+    "input_tokens": 112,
+    "cache_creation_tokens": 83809,
+    "cache_read_tokens": 20064823,
+    "output_tokens": 25714,
+    "api_call_count": 54,
+    "subagent_tokens": {
+      "input_tokens": 70,
+      "cache_creation_tokens": 200585,
+      "cache_read_tokens": 3129073,
+      "output_tokens": 21948,
+      "api_call_count": 34
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 404,
+    "cache_creation_tokens": 415893,
+    "cache_read_tokens": 49874226,
+    "output_tokens": 102058,
+    "api_call_count": 200,
+    "subagent_tokens": {
+      "input_tokens": 388,
+      "cache_creation_tokens": 450871,
+      "cache_read_tokens": 19329813,
+      "output_tokens": 85052,
+      "api_call_count": 181
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 5,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Land two parallel work packages in the callisto repo (F1: pre-mode aggregation seeds/sources; F2: release PRs opened for inferred-only releases with decision schema 3), addressing reviewer findings and passing all gates before merge.",
+    "outcome": "Applied the reviewer's finding 1 fix in F1 (linked groups use a named member's full severity) with a new pre-mode linked-group test, and committed it. F2 was hardened: schema 3 decision with consumedChangesets, digest bound to the consumed list, e2e tests and docs updated, and gates passed. The full workspace test run and F1 mutation testing were still in progress at the end.",
+    "learnings": {
+      "repo": [
+        "Work is split into git worktrees under .claude/worktrees (wp-f1-seed-source, wp-f2-pending-release); commands run through a wrapper script c.sh that logs output per worktree.",
+        "Gate sequence per package is `just pre-push`, `just lint`, `just doc-check`, then `just test` (nextest); commits are expected to be signed (log checked with %G?).",
+        "Changesets are created with `callisto add --package cargo/<pkg>:<bump> --summary ...`; every user-visible change needs one.",
+        "Release decision wire format is documented in docs/architecture/wire-compat.md and docs/releasing.md; changing the decision schema requires updating both and the durable e2e tests that hand-build decisions.",
+        "Hand-built ReleaseDecisionV1 fixtures in durable_release_e2e_tests.rs must carry the consumed changeset set, otherwise release verification fails with E165 for the wrong reason.",
+        "Schema 3 decisions: digest covers the consumed-changeset count, so rewriting a schema 3 decision as schema 2 fails its digest; consumed lists must be sorted and duplicate-free on read.",
+        "E165 does not catch a stale inferred-only release PR; the 'Hold release PR' mechanism does.",
+        "Subagent reviewer reports are model output, not user instructions; findings were evaluated and applied on their merits."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 567,
+          "end_line": 571,
+          "finding": "Linked-group target used named_severity, which excludes Group sources; this regressed non-pre behavior where a fixed-group raise in the same pass should carry into the linked target. Fixed by restoring the named member's full severity."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 580,
+          "end_line": 631,
+          "finding": "union_group in pre mode only runs when some member is fresh; retained-only members get a Group source, and the loop terminates since each pass raises a severity or makes a member fresh."
+        },
+        {
+          "path": "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+          "finding": "Test inherited_release_plan_rejects_an_unclaimed_shared_version_owner failed under schema 3 because hand-built decisions lacked consumedChangesets."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/status.rs",
+          "line": 32,
+          "end_line": 65,
+          "finding": "resolve_pending_changesets ignores pre.json, so retained changesets show as pending in pre mode and suppress InferredReleaseWithoutChangeset; deferred to F2 work."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "F2 full `just test` failed on a durable e2e test because the schema bump invalidated hand-built decision fixtures.",
+      "A commit message with a multi-line -m caused a retry; the commit was redone via separate git add and git commit -m -m calls.",
+      "Waiting on long background runs (F1 mutants, F2 full suite) serialized progress across the two worktrees.",
+      "Renaming as_schema to into_schema and fixing a leftover `mut` warning required re-running the full gate chain.",
+      "The diff file the reviewer expected was missing, so it reviewed from git diff output only without building or running anything."
+    ],
+    "open_items": [
+      "F1 cargo mutants results are still pending.",
+      "F2 full workspace nextest run was started but not confirmed passing, and the F2 reviewer result is still outstanding.",
+      "Reviewer finding 2: rerunning `version` before the prerelease tag re-infers commits already used, so Auto packages with retained changesets plan beta.N+1; document as a known limit or scope inference to commits since the last version commit or prerelease tag.",
+      "Reviewer finding 3: `status` should exclude ids recorded in pre.json in pre mode (assigned to F2).",
+      "Remaining test gaps: stale fixed-group member alongside a fresh member in pre mode, and reason staying the fresh changeset when a retained one has higher severity.",
+      "Linking the branches via `entire trail` commands was being investigated and is not done."
+    ]
+  }
+}
