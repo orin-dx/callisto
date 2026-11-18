@@ -58,14 +58,12 @@ fn promoted_dual_dependent_preserves_aliases_across_cascade_and_release_floor() 
             seed.insert(app.clone(), Severity::Patch);
         }
         let reasons = BTreeMap::new();
-        let named_by = BTreeMap::new();
         let outcome = run_cascade(CascadeInput {
             graph: &ws.graph,
             groups: &ws.config.groups,
             cfg: &ws.config.cascade,
             seed: &seed,
             reasons: &reasons,
-            named_by: &named_by,
             base: &base,
             pre: None,
             tags: ws.tags().unwrap(),
@@ -188,7 +186,6 @@ fn test_blackbox_cascade_propagation() {
     base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
 
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -196,7 +193,6 @@ fn test_blackbox_cascade_propagation() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -283,7 +279,6 @@ fn test_diamond_cascade_convergence() {
     base.insert(pkg_d.clone(), Version::semver(1, 0, 0));
 
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -291,7 +286,6 @@ fn test_diamond_cascade_convergence() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -340,7 +334,6 @@ fn test_peer_dependency_escalation() {
     base.insert(pkg_plugin.clone(), Version::semver(1, 0, 0));
 
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -348,7 +341,6 @@ fn test_peer_dependency_escalation() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -401,7 +393,6 @@ fn test_linked_group_converges_shared_version() {
     base.insert(pkg_b.clone(), Version::semver(2, 0, 0));
 
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -409,7 +400,6 @@ fn test_linked_group_converges_shared_version() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -465,7 +455,6 @@ fn test_linked_group_version_convergence() {
         peer_escalation: true,
         preserve_npm_ranges: false,
     };
-    let named_by = BTreeMap::new();
     let reasons = BTreeMap::new();
 
     let input = CascadeInput {
@@ -474,7 +463,6 @@ fn test_linked_group_version_convergence() {
         cfg: &cfg,
         seed: &initial_severities,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -545,7 +533,6 @@ fn test_pep440_package_bump_succeeds() {
     base.insert(pkg_py.clone(), Version::parse("1.0.0", VersionGrammar::Pep440).unwrap());
 
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -553,7 +540,6 @@ fn test_pep440_package_bump_succeeds() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),

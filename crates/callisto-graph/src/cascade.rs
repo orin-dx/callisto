@@ -134,7 +134,6 @@ pub struct CascadeInput<'a, D: DependencyResolver> {
     pub cfg: &'a CascadeConfig,
     pub seed: &'a BTreeMap<PackageId, Severity>,
     pub reasons: &'a BTreeMap<PackageId, BumpReason>,
-    pub named_by: &'a BTreeMap<PackageId, crate::aggregate::NamedBy>,
     pub base: &'a BTreeMap<PackageId, Version>,
     pub pre: Option<&'a callisto_model::format::PreState>,
     pub tags: &'a TagIndex,

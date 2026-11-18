@@ -1461,10 +1461,10 @@ fn plan_version_nothing_to_release_warns_no_pending_changesets() {
     assert!(empty_changeset_warned(&crate::infer::NoInference));
 }
 
-/// A prerelease rerun drops the bump of a package whose only changeset is already recorded in `pre.json`, even when a
-/// commit inferred a smaller bump first, so nothing is left to release and the empty-changeset warning stays.
+/// A fresh commit in a prerelease cycle releases the next prerelease at the severity its recorded changeset set, rather
+/// than being erased by that changeset.
 #[test]
-fn plan_version_recorded_changeset_overriding_an_inferred_bump_still_warns_nothing_pending() {
+fn plan_version_fresh_inference_in_a_pre_cycle_keeps_the_recorded_severity() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     git_init_with_commit(root);
@@ -1508,8 +1508,12 @@ fn plan_version_recorded_changeset_overriding_an_inferred_bump_still_warns_nothi
     };
     let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
 
-    assert!(plan.bumps.is_empty(), "nothing new to release: {:?}", plan.bumps);
-    assert!(plan
+    let [bump] = plan.bumps.as_slice() else {
+        panic!("one prerelease bump expected: {:?}", plan.bumps);
+    };
+    assert_eq!(bump.to.render(), "2.0.0-alpha.1");
+    assert_eq!(bump.severity, callisto_model::Severity::Major);
+    assert!(!plan
         .diagnostics
         .iter()
         .any(|d| d.code == callisto_model::DiagnosticCode::EmptyChangeset));

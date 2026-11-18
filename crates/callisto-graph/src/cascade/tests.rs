@@ -217,7 +217,6 @@ fn cascade_input_accepts_identity_field() {
     };
     let seed = BTreeMap::new();
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let base = BTreeMap::new();
     let identity = IdentityIndex::default();
 
@@ -227,7 +226,6 @@ fn cascade_input_accepts_identity_field() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -347,7 +345,6 @@ fn test_dual_identity_rewrite_key_preserves_declared_name() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let mut identity = IdentityIndex::default();
     identity
@@ -363,7 +360,6 @@ fn test_dual_identity_rewrite_key_preserves_declared_name() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -410,7 +406,6 @@ fn test_rewrite_retains_declared_name_without_identity_registration() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let identity = IdentityIndex::default();
 
     let input = CascadeInput {
@@ -419,7 +414,6 @@ fn test_rewrite_retains_declared_name_without_identity_registration() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -469,7 +463,6 @@ fn test_bare_target_with_no_registration_falls_back_to_name() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let identity = IdentityIndex::default();
 
     let input = CascadeInput {
@@ -478,7 +471,6 @@ fn test_bare_target_with_no_registration_falls_back_to_name() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -536,7 +528,6 @@ fn test_linked_group_propagates_severity_to_unseeded_member_and_converges() {
     };
 
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -544,7 +535,6 @@ fn test_linked_group_propagates_severity_to_unseeded_member_and_converges() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -616,7 +606,6 @@ fn test_linked_group_converges_target_version_across_divergent_bases() {
     };
 
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -624,7 +613,6 @@ fn test_linked_group_converges_target_version_across_divergent_bases() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -689,7 +677,6 @@ fn test_bump_target_exit_mode_finalizes_to_stable() {
 
     let seed = BTreeMap::new();
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -697,7 +684,6 @@ fn test_bump_target_exit_mode_finalizes_to_stable() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: Some(&pre),
         tags: &TagIndex::empty(),
@@ -773,7 +759,6 @@ fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
     };
     let groups = crate::config::GroupTable::default();
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -781,7 +766,6 @@ fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -890,7 +874,6 @@ fn test_prerelease_cascade_stable_spec_out_of_range_triggers_cascade() {
     };
     let groups = crate::config::GroupTable::default();
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -898,7 +881,6 @@ fn test_prerelease_cascade_stable_spec_out_of_range_triggers_cascade() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: Some(&pre),
         tags: &TagIndex::empty(),
@@ -976,7 +958,6 @@ fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
 
     let seed = BTreeMap::new();
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -984,7 +965,6 @@ fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: Some(&pre),
         tags: &TagIndex::empty(),
@@ -1060,7 +1040,6 @@ fn inherited_cargo_dependency_edge_never_produces_manifest_rewrite_target() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -1068,7 +1047,6 @@ fn inherited_cargo_dependency_edge_never_produces_manifest_rewrite_target() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1168,7 +1146,6 @@ fn test_fixed_group_seeded_siblings_converge_on_shared_target() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -1176,7 +1153,6 @@ fn test_fixed_group_seeded_siblings_converge_on_shared_target() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &tags,
@@ -1249,7 +1225,6 @@ fn test_fixed_group_skips_stale_member_and_emits_diagnostic() {
     };
 
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -1257,7 +1232,6 @@ fn test_fixed_group_skips_stale_member_and_emits_diagnostic() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1381,7 +1355,6 @@ fn test_fixed_group_target_ignores_stale_tagged_member_alignment_base() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -1389,7 +1362,6 @@ fn test_fixed_group_target_ignores_stale_tagged_member_alignment_base() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &tags,
@@ -1503,7 +1475,6 @@ fn run_cascade_always_mode_bumps_in_range_dependent() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let identity = IdentityIndex::default();
 
     let input = CascadeInput {
@@ -1512,7 +1483,6 @@ fn run_cascade_always_mode_bumps_in_range_dependent() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1563,7 +1533,6 @@ fn run_cascade_bump_severity_minor_sets_dependent_severity_to_minor() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let identity = IdentityIndex::default();
 
     let input = CascadeInput {
@@ -1572,7 +1541,6 @@ fn run_cascade_bump_severity_minor_sets_dependent_severity_to_minor() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1622,7 +1590,6 @@ fn run_cascade_dev_dependent_never_bumped_but_spec_rewritten() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let identity = IdentityIndex::default();
 
     let input = CascadeInput {
@@ -1631,7 +1598,6 @@ fn run_cascade_dev_dependent_never_bumped_but_spec_rewritten() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1684,7 +1650,6 @@ fn run_cascade_exceeding_convergence_bound_returns_cascade_not_converged() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let identity = IdentityIndex::default();
 
     let input = CascadeInput {
@@ -1693,7 +1658,6 @@ fn run_cascade_exceeding_convergence_bound_returns_cascade_not_converged() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1749,7 +1713,6 @@ fn test_fixed_group_release_raises_in_range_internal_spec_to_new_version() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
 
     let input = CascadeInput {
         graph: &graph,
@@ -1757,7 +1720,6 @@ fn test_fixed_group_release_raises_in_range_internal_spec_to_new_version() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1811,7 +1773,6 @@ fn an_unrewritable_runtime_range_stops_the_cascade() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let identity = IdentityIndex::default();
 
     let input = CascadeInput {
@@ -1820,7 +1781,6 @@ fn an_unrewritable_runtime_range_stops_the_cascade() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1862,7 +1822,6 @@ fn an_unrewritable_dev_range_warns_once() {
         preserve_npm_ranges: false,
     };
     let reasons = BTreeMap::new();
-    let named_by = BTreeMap::new();
     let identity = IdentityIndex::default();
 
     let input = CascadeInput {
@@ -1871,7 +1830,6 @@ fn an_unrewritable_dev_range_warns_once() {
         cfg: &cfg,
         seed: &seed,
         reasons: &reasons,
-        named_by: &named_by,
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -1918,7 +1876,6 @@ fn two_package_cascade(spec: &str, seed: &[(&PackageId, Severity)]) -> Result<Ca
         cfg: &cfg,
         seed: &seed,
         reasons: &BTreeMap::new(),
-        named_by: &BTreeMap::new(),
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -2011,7 +1968,7 @@ mod properties {
                 preserve_npm_ranges: false,
             };
             let groups = GroupTable::default();
-            let (reasons, named_by) = (BTreeMap::new(), BTreeMap::new());
+            let reasons = BTreeMap::new();
             let identity = IdentityIndex::default();
             let run = || {
                 run_cascade(CascadeInput {
@@ -2020,7 +1977,6 @@ mod properties {
                     cfg: &cfg,
                     seed: &seed,
                     reasons: &reasons,
-                    named_by: &named_by,
                     base: &base,
                     pre: None,
                     tags: &TagIndex::empty(),
@@ -2095,7 +2051,6 @@ fn cascade_pair(
         cfg: &cfg,
         seed: &seed,
         reasons: &BTreeMap::new(),
-        named_by: &BTreeMap::new(),
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
@@ -2184,7 +2139,6 @@ fn a_linked_group_member_that_is_not_in_the_workspace_is_skipped_with_a_warning(
         cfg: &cfg,
         seed: &seed,
         reasons: &BTreeMap::new(),
-        named_by: &BTreeMap::new(),
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
