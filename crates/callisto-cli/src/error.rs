@@ -367,10 +367,7 @@ pub enum CliError {
     InitFlagRequiresOrigin { flag: &'static str },
 
     #[error("workspace is already in pre-release mode")]
-    #[diagnostic(
-        code(E243),
-        help("run `callisto pre exit` first, or delete .changeset/pre.json manually to reset")
-    )]
+    #[diagnostic(code(E243), help("run `callisto pre exit` first"))]
     PreAlreadyActive,
 
     #[error("workspace is not in pre-release mode")]

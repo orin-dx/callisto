@@ -302,15 +302,12 @@ pub enum GraphError {
     #[error("failed to parse .changeset/pre.json: {0}")]
     #[diagnostic(
         code(E114),
-        help("Check that .changeset/pre.json is valid JSON and was not partially written. Delete the file and re-run `callisto pre enter` to recover.")
+        help("Restore .changeset/pre.json from Git or correct it. Callisto reads the shape @changesets/cli 2.x writes (`mode`, `tag`, `initialVersions`, `changesets`) and the one 3.x writes (`mode`, `tag`).")
     )]
     PreJson(callisto_model::format::PreJsonError),
 
     #[error("failed to read {}: {message}", .path.display())]
-    #[diagnostic(
-        code(E115),
-        help("Check that the file named above is readable. Delete it and re-run `callisto pre enter` to recover.")
-    )]
+    #[diagnostic(code(E115), help("Check that the file named above is readable."))]
     PreJsonRead { path: std::path::PathBuf, message: String },
 
     #[error("package `{package}` declares platform targets via both `{napi_source}` and `{maturin_source}`; only one source is allowed")]

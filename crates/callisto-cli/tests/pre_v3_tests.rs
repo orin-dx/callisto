@@ -409,7 +409,8 @@ fn a_run_interrupted_after_archiving_resumes() {
     let dir = v3_cycle();
     let root = dir.path();
     add_changeset(root, "feature", "minor");
-    fs::write(root.join("blocked"), "a file where the preview's directory should be\n").unwrap();
+    // An empty directory is no input a checkpoint records, so removing it leaves the retry's inputs unchanged.
+    fs::create_dir_all(root.join("blocked/preview.json")).unwrap();
     let args = [
         "version",
         "--no-refresh-lockfiles",
@@ -424,13 +425,13 @@ fn a_run_interrupted_after_archiving_resumes() {
     assert_eq!(markdown_in(&root.join(".changeset/pre")), ["feature.md"]);
     assert!(!root.join(".changeset/feature.md").exists());
 
-    fs::remove_file(root.join("blocked")).unwrap();
+    fs::remove_dir(root.join("blocked/preview.json")).unwrap();
     let resumed = callisto(root, &args);
     assert!(resumed.status.success(), "{}", String::from_utf8_lossy(&resumed.stderr));
     assert_eq!(manifest_version(root), "1.1.0-beta.0");
     assert!(root.join(".callisto/release-decision.json").exists());
-    let changelog = fs::read_to_string(root.join("CHANGELOG.md")).unwrap_or_default();
-    assert!(changelog.matches("## 1.1.0-beta.0").count() <= 1, "{changelog}");
+    let changelog = fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    assert_eq!(changelog.matches("## 1.1.0-beta.0").count(), 1, "{changelog}");
 }
 
 /// A new note naming an unknown package stays on disk with a warning at exit; only an archived one blocks it.
