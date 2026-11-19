@@ -1,0 +1,91 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7TKJMJ9VPR8MCT8XJC5NDVK",
+  "session_id": "794e07cc-9998-475b-afc4-4b8324e0a046",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-19T19:12:25.349614Z",
+  "branch": "worktree-wp-e-native-name",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/noble-cobras-surge.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "60b0867828b6",
+  "checkpoint_transcript_start": 1614,
+  "transcript_lines_at_start": 1614,
+  "compact_transcript_start": 218,
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 4650,
+    "cache_read_tokens": 2859466,
+    "output_tokens": 3284,
+    "api_call_count": 8
+  },
+  "session_token_usage": {
+    "input_tokens": 444,
+    "cache_creation_tokens": 585074,
+    "cache_read_tokens": 46508203,
+    "output_tokens": 103948,
+    "api_call_count": 218,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 75815,
+      "cache_read_tokens": 833930,
+      "output_tokens": 10775,
+      "api_call_count": 12
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 6,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Finish work package W: reduce git process spawning in tag history probing for foreign tags in the callisto CLI, then push the branch and open a draft PR linked to trail #462.",
+    "outcome": "Fix implemented and pushed to worktree-wp-w-history-cache (draft PR #576, linked to trail #462). Git processes for `status` with foreign tags fell from 64/304/1,204 to a constant 17, and mutation testing reported 0 missed mutants. `just ci` and real-registry checks were not run.",
+    "learnings": {
+      "repo": [
+        "Tag selection lives in `select_last_tag`, now the first element of the new `rank_tags`, which parses and orders candidates once. Version and tag-name tie-breaking and E's literal-name ownership must stay unchanged.",
+        "`just bench` has a `foreign tags` shape. `CALLISTO_BENCH_SHAPES=1` also lists the git processes spawned.",
+        "A cascade test expects only `tag --list` in workspaces, so any extra git process on the happy path breaks it. Commits must be read only after a tag is rejected.",
+        "Cargo and pnpm workspaces have fixed process counts for `status`, `version --dry-run` and `release --dry-run` (8, 16, 11), which serve as a regression baseline.",
+        "Changes need a changeset; this one is a `callisto-cli` patch in `.changeset/noble-cobras-surge.md`.",
+        "Pre-merge gates are `just pre-push`, `just lint`, `just doc-check` and `just test`. `just ci` is separate and heavier.",
+        "A `mutants.out*` directory can appear after `cargo mutants` and must not be tracked or committed."
+      ],
+      "code": [],
+      "workflow": [
+        "Run `cargo mutants --in-diff` on the changed Rust to find test gaps. Here it exposed that the process-count test did not check that every tag was rejected, which led to a regression test.",
+        "Verify a push with `git ls-remote` against `git rev-parse HEAD`, and check commit signature validity through `gh api ... commit.verification.reason`.",
+        "`entire trail link <n> --base main` links the branch to a trail, and the PR body carries an Entire marker. Append the write-up below the marker and keep the marker intact when editing the body with `gh pr edit --body-file`.",
+        "A fresh-context reviewer subagent (Opus) was used for an independent review before the PR was opened.",
+        "Wall-clock benchmarks on a shared machine are noisy, so report process counts as the primary metric and wall times as single medians."
+      ]
+    },
+    "friction": [
+      "The first version read commits up front, which added one git process to every workspace and broke a cascade test. It was redesigned to read commits lazily after a rejection.",
+      "The first mutation run missed two mutants on `rev_of` because the tests checked counts but not that all tags were rejected.",
+      "The PR body held only Entire's marker, so it needed manual augmentation."
+    ],
+    "open_items": [
+      "`just ci` was not run on the final commit.",
+      "Real-registry checks were not run.",
+      "The PR is still a draft and awaits review and merge.",
+      "Wall-time figures are single medians from a shared machine and may need a cleaner re-measurement."
+    ]
+  }
+}
