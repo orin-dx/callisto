@@ -735,6 +735,8 @@ impl Manifest for PyprojectToml {
 /// - `>=X.Y.Z,<A.B` — two-clause range — is rewritten to `>=NEW,<NEXT_MAJOR`
 ///   where `NEXT_MAJOR` equals `target.major() + 1`.
 ///
+/// A target in a non-zero PEP 440 epoch carries `N!` on every bound written.
+///
 /// A pre-release or dev/local target (e.g. a `snapshot` version) is rendered
 /// in full rather than truncated to `major.minor.patch`, the same precision
 /// rule `cargo::round_trip` applies for SemVer.
@@ -794,9 +796,9 @@ fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec>
     // components it was written with.
     if op == "~="
         && !target.is_prerelease()
-        && parse_version_core(rest.trim()).is_some_and(|(_, minor, patch)| minor.is_some() && patch.is_none())
+        && parse_release_core(rest.trim()).is_some_and(|(_, (_, minor, patch))| minor.is_some() && patch.is_none())
     {
-        rendered_target = format!("{}.{}", target.major()?, target.minor()?);
+        rendered_target = format!("{}{}.{}", epoch_prefix(target), target.major()?, target.minor()?);
     }
     let rendered = format!("{op}{rendered_target}");
     let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
@@ -816,7 +818,7 @@ fn rewrite_poetry_operator(op: &str, core: &str, target: &Version) -> Option<Dep
 }
 
 /// Renders `target` at the precision a rewritten spec should carry, for use after `op`:
-/// `major.minor.patch` for a stable release; the version in full for a pre-release or
+/// `[N!]major.minor.patch` for a stable release; the version in full for a pre-release or
 /// dev target paired with `==`/`!=` (the only operators PEP 440 allows on a local version);
 /// the version with its local segment stripped for every other operator, since PEP 440
 /// forbids `>=`, `<=`, `>`, `<` and `~=` from carrying one.
@@ -828,7 +830,34 @@ fn render_target(op: &str, target: &Version) -> Option<String> {
         }
         return Some(full.split('+').next().unwrap_or(full).to_string());
     }
-    Some(format!("{}.{}.{}", target.major()?, target.minor()?, target.patch()?))
+    Some(format!(
+        "{}{}.{}.{}",
+        epoch_prefix(target),
+        target.major()?,
+        target.minor()?,
+        target.patch()?
+    ))
+}
+
+/// `N!` for a version in epoch `N`, empty for epoch 0. Every bound written for a target needs it: an epoch outranks the
+/// whole release segment, so a bound without it sits in epoch 0 and does not bound the target's epoch.
+fn epoch_prefix(target: &Version) -> String {
+    match target.epoch() {
+        0 => String::new(),
+        epoch => format!("{epoch}!"),
+    }
+}
+
+/// Major, and the minor and patch when written.
+type ReleaseCore = (u64, Option<u64>, Option<u64>);
+
+/// A clause's epoch and release core, to read the precision it was written at.
+fn parse_release_core(s: &str) -> Option<(u64, ReleaseCore)> {
+    let (epoch, release) = match s.split_once('!') {
+        Some((epoch, release)) => (epoch.trim().parse().ok()?, release),
+        None => (0, s),
+    };
+    Some((epoch, parse_version_core(release)?))
 }
 
 /// Rewrites a two-clause `>=X.Y.Z,<A.B` range to `>=NEW,<NEXT_MAJOR`.
@@ -857,22 +886,29 @@ fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
         return None;
     }
 
-    // A window of one minor (`>=0.1.0,<0.2`) stays one minor wide; any other upper bound becomes the next major.
+    // A window of one minor (`>=0.1.0,<0.2`) stays one minor wide; any other upper bound, including one in another
+    // epoch, becomes the next major.
     let lower_core = lower
         .strip_prefix(">=")
-        .and_then(|version| parse_version_core(version.trim()));
+        .and_then(|version| parse_release_core(version.trim()));
     let upper_core = upper
         .strip_prefix('<')
-        .and_then(|version| parse_version_core(version.trim()));
+        .and_then(|version| parse_release_core(version.trim()));
     let one_minor_window = matches!(
         (lower_core, upper_core),
-        (Some((lower_major, Some(lower_minor), _)), Some((upper_major, Some(upper_minor), upper_patch)))
-            if upper_major == lower_major && upper_minor == lower_minor + 1 && upper_patch.unwrap_or(0) == 0
+        (
+            Some((lower_epoch, (lower_major, Some(lower_minor), _))),
+            Some((upper_epoch, (upper_major, Some(upper_minor), upper_patch)))
+        ) if upper_epoch == lower_epoch
+            && upper_major == lower_major
+            && upper_minor == lower_minor + 1
+            && upper_patch.unwrap_or(0) == 0
     );
+    let epoch = epoch_prefix(target);
     let upper_bound = if one_minor_window {
-        format!("{}.{}", target.major()?, target.minor()? + 1)
+        format!("{epoch}{}.{}", target.major()?, target.minor()? + 1)
     } else {
-        (target.major()? + 1).to_string()
+        format!("{epoch}{}", target.major()? + 1)
     };
     let rendered = format!(">={},<{upper_bound}", render_target(">=", target)?);
     let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
