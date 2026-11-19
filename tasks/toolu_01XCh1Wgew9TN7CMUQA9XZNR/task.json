@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01XCh1Wgew9TN7CMUQA9XZNR",
+  "agent_id": "a96865fe5d5e501c8",
+  "subagent_type": "general-purpose",
+  "task_description": "Design WP L publish isolation",
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 208494,
+    "cache_read_tokens": 5986324,
+    "output_tokens": 48105,
+    "api_call_count": 47
+  },
+  "started_at": "2026-11-17T20:39:42.628706-08:00",
+  "completed_at": "2026-11-17T20:49:39.999576-08:00"
+}
