@@ -1,14 +1,16 @@
 use std::path::Path;
 
 use super::{
-    check_partial_run, head_has_pending_changeset, head_object_exists, manifest_blob_at, plan_version, VersionOptions,
+    check_partial_run, head_has_pending_changeset, head_object_exists, manifest_blob_at, plan_version,
+    resume_input_changes, VersionOptions,
 };
 use crate::error::GraphError;
 use crate::infer::NoInference;
 use crate::locate::IgnoreWalkLocator;
 use crate::Workspace;
 use callisto_fixtures::git::GitRunner;
-use callisto_model::{CommandError, CommandOutput, CommandRunner};
+use callisto_model::vcs::VERSION_CHECKPOINT;
+use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner};
 
 struct IndexInspectionFailureRunner {
     failed_args: Vec<String>,
@@ -73,6 +75,60 @@ fn write_pkg_a(root: &Path, version: &str) {
 fn write_changeset(root: &Path, name: &str) {
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
     std::fs::write(root.join(".changeset").join(name), "---\npkg-a: minor\n---\n\nfeat\n").unwrap();
+}
+
+/// A resume plans in a checkout of the checkpoint. A plan made in a sibling directory of that checkout holds the same
+/// packages at the same versions, so every input check passes; only this workspace's own recorded tree tells them apart.
+#[test]
+fn a_resume_refuses_a_plan_made_in_a_sibling_directory_of_the_checkpoint() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git_init_with_commit(&repo);
+    for dir in ["primary", "sibling"] {
+        write_pkg_a(&repo.join(dir), "1.0.0");
+        write_changeset(&repo.join(dir), "a.md");
+    }
+    std::fs::write(
+        repo.join("sibling/.changeset/a.md"),
+        "---\npkg-a: major\n---\n\nbreak\n",
+    )
+    .unwrap();
+    commit_all(&repo, "packages");
+
+    let runner = GitRunner;
+    let root = repo.join("primary");
+    let ws = Workspace::load(root.clone(), &IgnoreWalkLocator::new(&root), &runner).unwrap();
+    let git = ws.git_access();
+    let facts = git.checkpoint_facts("test").unwrap();
+    git.create_checkpoint(VERSION_CHECKPOINT, &facts, "2026-11-18").unwrap();
+    let checkpoint = git.checkpoint(VERSION_CHECKPOINT).unwrap().unwrap();
+    let tree = tmp.path().join("tree");
+    git.add_checkpoint_worktree(VERSION_CHECKPOINT, &tree, &facts.head)
+        .unwrap();
+
+    let changes = |dir: &str| {
+        let scratch_root = tree.join(dir);
+        let scratch = Workspace::load(scratch_root.clone(), &IgnoreWalkLocator::new(&scratch_root), &runner).unwrap();
+        let plan = plan_version(&scratch, &NoInference, &VersionOptions::default()).unwrap();
+        resume_input_changes(
+            &ws,
+            &scratch,
+            &checkpoint,
+            &facts,
+            &plan,
+            &runner,
+            &ApplyPermit::force_for_tests(),
+        )
+        .unwrap()
+    };
+
+    assert_eq!(changes("primary"), Vec::<String>::new());
+    let refused = changes("sibling");
+    assert!(
+        refused.iter().any(|change| change.contains("another directory")),
+        "{refused:?}"
+    );
 }
 
 /// A pending changeset at `HEAD` plus a manifest already bumped past `HEAD` on disk must be refused.

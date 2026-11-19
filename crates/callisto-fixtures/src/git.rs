@@ -13,6 +13,16 @@ pub struct GitRunner;
 
 impl CommandRunner for GitRunner {
     fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+        self.run_with_env(program, args, cwd, &[])
+    }
+
+    fn run_with_env(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        env: &[(&str, &str)],
+    ) -> Result<CommandOutput, CommandError> {
         if program != "git" {
             return Ok(CommandOutput {
                 exit_code: Some(0),
@@ -23,6 +33,7 @@ impl CommandRunner for GitRunner {
         let output = std::process::Command::new(program)
             .args(args)
             .current_dir(cwd)
+            .envs(env.iter().copied())
             .output()
             .map_err(|e| CommandError::Io {
                 program: program.to_string(),
