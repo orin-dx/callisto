@@ -402,12 +402,13 @@ pub enum GraphError {
         waited: std::time::Duration,
     },
 
-    #[error("the Python build for `{package}` {} produced no {missing}", .version.render())]
+    #[error("the {tool} for `{package}` {} produced no {missing}", .version.render())]
     #[diagnostic(
         code(E306),
-        help("Callisto builds an sdist and a wheel with `python -m build --sdist --wheel` and publishes both. Make the build produce both for this version, then re-run the release.")
+        help("A Python release publishes an sdist and a wheel, built with `python -m build --sdist --wheel`. An npm release publishes the one tarball `npm pack` names after the package and version, packed by `callisto release pack-npm` and sealed by `callisto release artifact-manifest --seal-npm` in a job without registry credentials. Make the build produce it for this version, then re-run the release.")
     )]
-    PypiBuildOutputIncomplete {
+    BuildOutputIncomplete {
+        tool: &'static str,
         package: String,
         version: callisto_model::Version,
         missing: &'static str,
@@ -611,7 +612,7 @@ pub enum GraphError {
     #[error("unsupported release {feature}")]
     #[diagnostic(
         code(E168),
-        help("This combination is not implemented for release; adjust the release configuration to use a supported combination.")
+        help("This combination is not implemented for release; adjust the release configuration to use a supported combination. A registry set in `.yarnrc.yml` or `bunfig.toml` is not read by `npm publish <tarball>`: move it to `publishConfig.registry` in package.json or to `.npmrc`.")
     )]
     UnsupportedRelease { feature: UnsupportedReleaseFeature },
 
@@ -960,7 +961,7 @@ pub enum RemoteConflict {
 
 /// A release feature with no implemented dispatch for the given
 /// configuration, carried by [`GraphError::UnsupportedRelease`] (E168).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum UnsupportedReleaseFeature {
     #[error("ecosystem")]
     Ecosystem,
@@ -970,8 +971,8 @@ pub enum UnsupportedReleaseFeature {
     BumpReason,
     #[error("publish target")]
     PublishTarget,
-    #[error("a configured npm registry url with yarn (`yarn npm publish` has no --registry; set `npmPublishRegistry` in .yarnrc.yml)")]
-    YarnRegistryUrl,
+    #[error("registry `{key}` in `{file}`, which `npm publish <tarball>` does not read")]
+    NpmRegistryConfig { file: &'static str, key: String },
 }
 
 /// Why a `--package` release selection is invalid, carried by

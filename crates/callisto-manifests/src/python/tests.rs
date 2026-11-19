@@ -1102,6 +1102,87 @@ fn round_trip_dev_local_target_exact_pin_preserves_the_full_identifier() {
     );
 }
 
+/// The rewritten requirement must admit `target` and keep rejecting every version the original rejected: a wider,
+/// wrong range still contains the target, so inclusion alone proves nothing.
+fn assert_epoch_rewrite(original: &str, target: &str, expected: &str, still_forbidden: &[&str]) {
+    let target = make_pep440_version(target);
+    let rewritten = round_trip(&make_pypi_spec(original), &target).expect(original);
+    assert_eq!(raw_of(Some(rewritten.clone())).as_deref(), Some(expected), "{original}");
+    let DepSpec::Range(req, _) = rewritten else {
+        panic!("{original} must stay a range")
+    };
+    assert!(
+        req.matches(&target).unwrap(),
+        "{expected} must admit {}",
+        target.render()
+    );
+    for raw in still_forbidden {
+        assert!(
+            !req.matches(&make_pep440_version(raw)).unwrap(),
+            "{expected} must keep rejecting {raw}"
+        );
+    }
+}
+
+#[test]
+fn round_trip_keeps_the_epoch_of_every_operator() {
+    assert_epoch_rewrite(">=2!0.4.8", "2!0.4.9", ">=2!0.4.9", &["99.0.0", "2!0.4.8", "1!9.9.9"]);
+    assert_epoch_rewrite("==2!0.4.8", "2!0.4.9", "==2!0.4.9", &["99.0.0", "2!0.4.8", "0.4.9"]);
+    assert_epoch_rewrite("~=2!0.4.8", "2!0.4.9", "~=2!0.4.9", &["99.0.0", "2!0.4.8", "2!0.5.0"]);
+    assert_epoch_rewrite("~=2!0.4", "2!0.5.0", "~=2!0.5", &["99.0.0", "2!0.4.0", "3!0.0.1"]);
+}
+
+#[test]
+fn round_trip_bounds_a_range_inside_the_targets_epoch() {
+    assert_epoch_rewrite(
+        ">=2!0.4.0,<2!1",
+        "2!0.4.9",
+        ">=2!0.4.9,<2!1",
+        &["99.0.0", "2!0.4.8", "2!1.0.0"],
+    );
+    assert_epoch_rewrite(
+        ">=2!0.1.0,<2!0.2",
+        "2!0.2.0",
+        ">=2!0.2.0,<2!0.3",
+        &["99.0.0", "2!0.1.9", "2!0.3.0"],
+    );
+    assert_epoch_rewrite(
+        ">=1!1.0.0,<1!2",
+        "1!2.5.1",
+        ">=1!2.5.1,<1!3",
+        &["99.0.0", "1!1.9.9", "1!3.0.0"],
+    );
+}
+
+#[test]
+fn round_trip_does_not_narrow_a_range_whose_bounds_sit_in_different_epochs() {
+    let original = ">=0.1.0,<1!0.2";
+    let target = make_pep440_version("0.1.1");
+    let rewritten = round_trip(&make_pypi_spec(original), &target).expect(original);
+    let DepSpec::Range(req, _) = rewritten else {
+        panic!("{original} must stay a range")
+    };
+    assert!(req.matches(&target).unwrap(), "the target stays admitted");
+    assert!(
+        req.matches(&make_pep440_version("0.5.0")).unwrap(),
+        "a version the original admitted must stay admitted"
+    );
+}
+
+#[test]
+fn round_trip_adds_no_epoch_to_an_epoch_zero_target() {
+    assert_epoch_rewrite(">=0.4.8,<1", "0.4.9", ">=0.4.9,<1", &["99.0.0", "0.4.8"]);
+}
+
+#[test]
+fn round_trip_leaves_a_poetry_clause_alone_when_the_target_has_an_epoch() {
+    let target = make_pep440_version("2!1.2.3");
+    for (normalized, raw) in [(">=1.0.0,<2.0.0", "^1.0.0"), (">=1.0.0,<1.1.0", "~1.0.0")] {
+        let spec = DepSpec::Range(VersionReq::parse(normalized, Ecosystem::Pypi).unwrap(), raw.to_string());
+        assert!(round_trip(&spec, &target).is_none(), "{raw}");
+    }
+}
+
 #[test]
 fn round_trip_range_of_one_minor_stays_one_minor_wide() {
     let spec = make_pypi_spec(">=0.1.0,<0.2");

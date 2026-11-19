@@ -24,7 +24,7 @@ A rerun never reuses an intent from another build. `release execute --intent` an
 
 ## Readers outside the model crate
 
-- Shell and `jq` readers carry no version gate and depend on shape: the release workflow reads `.artifactSlots` from the intent, the generated build-matrix workflow reads `.operations[].id.package` and `.artifactSlots[]`, and `run-release.sh` reads the receipt's outcome paths.
+- Shell and `jq` readers carry no version gate and depend on shape: the release workflow reads `.artifactSlots` from the intent, the generated workflows read `.operations[].id.package` and `.operations[].id.role.kind` (and the build-matrix `.artifactSlots[]`), and `run-release.sh` reads the receipt's outcome paths.
 - `release-pr` snapshots are built by `create-or-update-release-pr.sh` with a hard-coded `schemaVersion: 2`, while the action's `version` input can pin another binary.
 - The standalone JSON stdout of `release` and `release execute` flattens the receipt and carries its schema version; the nothing-to-release report is a separate shape with version 1.
 

@@ -9,7 +9,7 @@ pub(super) fn run_npm_publish_argv(
 ) -> Result<CommandOutput, GraphError> {
     let token = std::env::var("NPM_TOKEN").ok().filter(|value| !value.is_empty());
     let config = publish_npm_config();
-    let env = npm_publisher_environment(&argv.program, token.as_deref(), config.as_deref());
+    let env = npm_publisher_environment(token.as_deref(), config.as_deref());
     let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
     Ok(context
         .runner()
@@ -46,16 +46,12 @@ pub(super) fn npm_view_args(
 }
 
 pub(super) fn npm_publisher_environment<'a>(
-    program: &str,
     token: Option<&'a str>,
     config: Option<&'a str>,
 ) -> Vec<(&'static str, &'a str)> {
     let mut env = Vec::new();
     if let Some(token) = token {
         env.push(("NPM_TOKEN", token));
-        if program == "bun" {
-            env.push(("NPM_CONFIG_TOKEN", token));
-        }
     }
     if let Some(config) = config {
         env.push(("NPM_CONFIG_USERCONFIG", config));
@@ -190,43 +186,57 @@ impl RegistryEcosystem for NpmRegistry {
         Ok(classify_npm_view(&output, &operation.version))
     }
 
+    /// Publishes one tarball with `npm`, scripts off. A manifest that seals the package supplies the tarball a
+    /// credential-free job packed; one that does not is refused, so a package's `prepack` never runs beside the
+    /// registry token. Without a manifest (the local route) the tarball is packed here with credentials withheld.
     fn publish(
         &self,
         context: &ProviderContext<'_>,
         _id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
-        _artifacts: Option<&VerifiedArtifactManifest<'_>>,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<CommandOutput, GraphError> {
         let workspace_dir = crate::workspace_owner::npm_workspace_dir(context.root(), &operation.package_dir)?;
-        if operation.by_directory {
-            let argv = registry_argv::npm_publish_directory_argv(
-                context.root(),
-                &workspace_dir,
-                &operation.package_dir,
-                &operation.package_name,
-                operation.npm_tag.as_deref(),
-                operation.npm_access,
-                operation.registry.endpoint.as_deref(),
-            );
-            return run_npm_publish_argv(context, &argv, publish_timeout(operation));
-        }
-        // The package manager and the directory it runs in belong to the workspace that holds the package.
-        let workspace_root = context.root().join(&workspace_dir);
-        let package_manager = registry_argv::detect_npm_package_manager(&workspace_root)?;
-        if package_manager == registry_argv::NpmPackageManager::Yarn && operation.registry.endpoint.is_some() {
-            return Err(GraphError::UnsupportedRelease {
-                feature: UnsupportedReleaseFeature::YarnRegistryUrl,
-            });
-        }
-        let within_workspace = operation
-            .package_dir
-            .strip_prefix(&workspace_dir)
-            .unwrap_or(&operation.package_dir);
-        let argv = registry_argv::npm_publish_argv(
-            &workspace_root,
-            within_workspace,
+        let published = callisto_model::ReleasePackageId::new(Ecosystem::Npm, &operation.package_name)?;
+        let packed_here;
+        let tarball = match artifacts {
+            Some(artifacts) => {
+                let sealed = artifacts
+                    .sealed_files(&published, &operation.version)
+                    .and_then(|mut files| (files.len() == 1).then(|| files.remove(0)));
+                let Some(sealed) = sealed else {
+                    return Err(GraphError::BuildOutputIncomplete {
+                        tool: "artifact manifest",
+                        package: operation.package_name.clone(),
+                        version: operation.version.clone(),
+                        missing: "sealed npm tarball",
+                    });
+                };
+                recheck_sealed_file(&sealed)?;
+                sealed.path
+            }
+            None if context.route() == PublishRoute::Ci => {
+                return Err(GraphError::BuildOutputIncomplete {
+                    tool: "artifact manifest",
+                    package: operation.package_name.clone(),
+                    version: operation.version.clone(),
+                    missing: "sealed npm tarball",
+                });
+            }
+            None => {
+                packed_here = tempfile::tempdir().map_err(|error| {
+                    GraphError::Command(callisto_model::CommandError::Io {
+                        program: "npm pack".to_string(),
+                        message: error.to_string(),
+                    })
+                })?;
+                Self::pack_into(context, operation, packed_here.path())?
+            }
+        };
+        let argv = registry_argv::npm_publish_tarball_argv(
+            &context.root().join(&workspace_dir),
+            &tarball,
             &operation.package_name,
-            package_manager,
             operation.npm_tag.as_deref(),
             operation.npm_access,
             operation.registry.endpoint.as_deref(),
@@ -236,5 +246,88 @@ impl RegistryEcosystem for NpmRegistry {
 
     fn classify(&self, output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
         registry_argv::classify_npm_publish_output(output)
+    }
+}
+
+impl NpmRegistry {
+    /// Packs the package into `outdir` with its workspace's tool and returns the tarball's path. The package's
+    /// lifecycle scripts run, so credentials are withheld. A platform package is not a workspace member, so `npm`
+    /// packs it by directory.
+    pub(crate) fn pack_into(
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
+        outdir: &std::path::Path,
+    ) -> Result<PathBuf, GraphError> {
+        let io = |error: std::io::Error| {
+            GraphError::Command(callisto_model::CommandError::Io {
+                program: "npm pack".to_string(),
+                message: error.to_string(),
+            })
+        };
+        let manager = if operation.by_directory {
+            registry_argv::NpmPackageManager::Npm
+        } else {
+            let workspace_dir = crate::workspace_owner::npm_workspace_dir(context.root(), &operation.package_dir)?;
+            registry_argv::detect_npm_package_manager(&context.root().join(workspace_dir))?
+        };
+        // A fresh empty directory, so the tarball found afterwards is the one this pack wrote.
+        let scratch = tempfile::tempdir_in(outdir).map_err(io)?;
+        let argv = registry_argv::npm_pack_argv(&context.root().join(&operation.package_dir), manager, scratch.path());
+        let output = run_build_argv(context, &argv)?;
+        if output.exit_code != Some(0) {
+            return Err(GraphError::ReleaseCommand {
+                program: argv.program.clone(),
+                args: argv.args.clone(),
+                failure: CommandFailure::NonZeroExit {
+                    exit_code: output.exit_code,
+                    stderr: output.stderr,
+                },
+            });
+        }
+        let expected = callisto_model::npm_tarball_filename(&operation.package_name, &operation.version);
+        let mut tarballs = Vec::new();
+        for entry in std::fs::read_dir(scratch.path()).map_err(io)? {
+            tarballs.push(entry.map_err(io)?.path());
+        }
+        let incomplete = |missing| GraphError::BuildOutputIncomplete {
+            tool: "npm pack",
+            package: operation.package_name.clone(),
+            version: operation.version.clone(),
+            missing,
+        };
+        let [packed] = tarballs.as_slice() else {
+            return Err(incomplete("single tarball"));
+        };
+        // The manager's own file name is not trusted (yarn names a scoped package its own way): the manifest inside is.
+        let packed_name = packed.to_string_lossy();
+        let manifest = context.runner().run(
+            "tar",
+            &["-xOzf", packed_name.as_ref(), "package/package.json"],
+            scratch.path(),
+        )?;
+        let manifest: serde_json::Value = serde_json::from_str(&manifest.stdout).unwrap_or_default();
+        let named = manifest["name"].as_str() == Some(operation.package_name.as_str())
+            && manifest["version"].as_str() == Some(operation.version.render());
+        if !named {
+            return Err(incomplete("tarball of this package and version"));
+        }
+        let target = outdir.join(&expected);
+        std::fs::rename(packed, &target).map_err(io)?;
+        Ok(target)
+    }
+}
+
+/// Re-hashes a sealed file just before it is uploaded: a file changed after verification must not reach the registry.
+fn recheck_sealed_file(file: &SealedFile) -> Result<(), GraphError> {
+    let unchanged = std::fs::symlink_metadata(&file.path).is_ok_and(|metadata| metadata.is_file())
+        && std::fs::File::open(&file.path)
+            .and_then(callisto_model::ArtifactDigest::from_reader)
+            .is_ok_and(|(digest, _)| digest.as_str() == file.sha256);
+    if unchanged {
+        Ok(())
+    } else {
+        Err(GraphError::ArtifactBytesMismatch {
+            path: file.path.clone(),
+        })
     }
 }

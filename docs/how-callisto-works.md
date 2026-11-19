@@ -80,4 +80,4 @@ Known release limits matter when choosing a workflow:
 - A multi-registry release is not atomic.
 - Callisto does not infer arbitrary cross-language dependencies. Go and NuGet publishers are not available.
 
-Package owners control native lifecycle hooks. Callisto invokes supported tools without rewriting those hooks. See [publishing](publishing.md) for credentials and Python index limits, and [releasing](releasing.md) for the complete operation and recovery rules.
+Package owners control native lifecycle hooks, but not where they run: `prepack` and `prepare` run when an npm package is packed, in a job without registry credentials, and `prepublishOnly`, `publish` and `postpublish` do not run. See [publishing](publishing.md) for credentials and Python index limits, and [releasing](releasing.md) for the complete operation and recovery rules.

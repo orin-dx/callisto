@@ -56,7 +56,7 @@ impl CliError {
             | Self::ReleasePlanDryRun
             | Self::ReleaseExecuteDryRun
             | Self::ReleasePendingFromInvalid { .. }
-            | Self::ReleaseBuildPythonDryRun
+            | Self::ReleaseBuildDryRun { .. }
             | Self::ReleaseCommitInvalid { .. }
             | Self::ReleaseDecisionOutsideSource { .. }
             | Self::ReleaseDecisionPathInvalid { .. }
@@ -202,12 +202,12 @@ pub enum CliError {
     #[diagnostic(code(E219), help("plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots"))]
     ReleaseNoArtifactSlots,
 
-    #[error("release intent publishes no Python package; there is nothing to build or seal")]
+    #[error("release intent publishes no {ecosystem} package; there is nothing to build or seal")]
     #[diagnostic(
         code(E308),
-        help("drop --seal-python and `release build-python` for an intent without a Python publish")
+        help("drop --seal-python and `release build-python` for an intent without a Python publish, --seal-npm and `release pack-npm` for one without an npm publish, or `release package-cargo` for one without a crate publish")
     )]
-    ReleaseNoPythonPublishes,
+    ReleaseNoSealablePublishes { ecosystem: &'static str },
 
     #[error("`--from` must be a full commit SHA: {reason}")]
     #[diagnostic(
@@ -216,9 +216,9 @@ pub enum CliError {
     )]
     ReleasePendingFromInvalid { reason: String },
 
-    #[error("release build-python writes build output; remove --dry-run")]
-    #[diagnostic(code(E309), help("re-run `callisto release build-python` without --dry-run"))]
-    ReleaseBuildPythonDryRun,
+    #[error("release {command} writes build output; remove --dry-run")]
+    #[diagnostic(code(E309), help("re-run `callisto release {command}` without --dry-run"))]
+    ReleaseBuildDryRun { command: &'static str },
 
     #[error("artifact manifests require a Git commit release source")]
     #[diagnostic(code(E220), help("plan the release from a Git commit source"))]
@@ -668,8 +668,8 @@ mod tests {
             CliError::ReleasePlanDryRun,
             CliError::ReleaseExecuteDryRun,
             CliError::ReleaseNoArtifactSlots,
-            CliError::ReleaseNoPythonPublishes,
-            CliError::ReleaseBuildPythonDryRun,
+            CliError::ReleaseNoSealablePublishes { ecosystem: "npm" },
+            CliError::ReleaseBuildDryRun { command: "pack-npm" },
             CliError::ReleaseManifestSourceNotGit,
             CliError::ReleaseArtifactNotRegularFile {
                 asset: "x".to_owned(),

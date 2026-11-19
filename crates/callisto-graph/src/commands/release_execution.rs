@@ -147,7 +147,7 @@ fn require_verified_artifact_manifest(
 ) -> Result<(), GraphError> {
     match (intent.artifact_slots.is_empty(), artifacts) {
         (true, None) => Ok(()),
-        (true, Some(artifacts)) if !callisto_model::python_publishes(intent).is_empty() => {
+        (true, Some(artifacts)) if callisto_model::has_sealable_publishes(intent) => {
             require_artifact_manifest_matches_intent(intent, Some(artifacts.manifest()))
         }
         (true, Some(_)) => Err(GraphError::ReleaseInvariant {
@@ -365,6 +365,67 @@ mod tests {
             callisto_model::CommitSha::parse(&"b".repeat(40)).unwrap(),
         )
         .unwrap()
+    }
+
+    /// An intent with no slots and one npm registry publish, which a build job seals.
+    fn npm_only_intent() -> ReleaseIntentV1 {
+        let package = ReleasePackageId::new(Ecosystem::Npm, "pkg").unwrap();
+        let version = Version::parse_for_ecosystem("1.0.0", Ecosystem::Npm).unwrap();
+        let registry = RegistryBindingId::new("npm", RegistryBindingDigest::from_normalized_binding(b"npm")).unwrap();
+        let publish = ReleaseOperation::registry_publish(package.clone(), version.clone(), registry, vec![]).unwrap();
+        ReleaseIntentV1::new(
+            callisto_model::ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+                package,
+                target_version: version,
+                reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+            }])
+            .unwrap(),
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]).unwrap(),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![publish],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    /// A manifest is accepted for an intent with no slots only when it seals something of the plan's; a manifest for a
+    /// plan with nothing to seal, or no manifest for a plan with slots, is refused.
+    #[test]
+    fn a_verified_manifest_is_required_exactly_where_the_plan_has_something_to_seal() {
+        let npm = npm_only_intent();
+        let sealed = callisto_model::ArtifactManifestV1::with_distributions(
+            &npm,
+            vec![],
+            vec![callisto_model::DistributionSetV1 {
+                package: ReleasePackageId::new(Ecosystem::Npm, "pkg").unwrap(),
+                version: "1.0.0".to_owned(),
+                files: vec![callisto_model::DistributionFileV1 {
+                    filename: "pkg-1.0.0.tgz".to_owned(),
+                    digest: callisto_model::ArtifactDigest::from_bytes(b"tarball"),
+                    byte_length: 7,
+                }],
+            }],
+        )
+        .unwrap();
+        let verified = VerifiedArtifactManifest::for_tests(&sealed, std::path::PathBuf::new());
+        require_verified_artifact_manifest(&npm, Some(&verified)).unwrap();
+
+        let cargo = intent();
+        let nothing = callisto_model::ArtifactManifestV1::new(&cargo, vec![]).unwrap();
+        let verified = VerifiedArtifactManifest::for_tests(&nothing, std::path::PathBuf::new());
+        assert!(matches!(
+            require_verified_artifact_manifest(&cargo, Some(&verified)),
+            Err(GraphError::ReleaseInvariant { .. })
+        ));
+        require_verified_artifact_manifest(&cargo, None).unwrap();
+
+        let (with_slot, _) = intent_with_artifact_slot();
+        assert!(matches!(
+            require_verified_artifact_manifest(&with_slot, None),
+            Err(GraphError::ReleasePreconditionUnmet {
+                requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest
+            })
+        ));
     }
 
     /// An intent that declares exactly one compiled-binary artifact slot.

@@ -308,6 +308,111 @@ pub fn start_json_simple_index(external: &Path, name: &str, port: u16, packages_
     guard
 }
 
+/// A Cargo sparse registry with the publish and download API; its directory survives a restart. After `refuse_after`
+/// publishes every publish fails, and the index shows a publish only `index_delay` seconds later. Logs to stderr.
+const SPARSE_CARGO_REGISTRY: &str = r#"
+import hashlib, http.server, json, os, re, sys, threading, time
+root, port, refuse_after, index_delay = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4])
+state_path = os.path.join(root, "state.json")
+os.makedirs(os.path.join(root, "crates"), exist_ok=True)
+lock = threading.Lock()
+state = json.load(open(state_path)) if os.path.exists(state_path) else {"entries": []}
+published_this_run = 0
+def index_path(name):
+    name = name.lower()
+    if len(name) <= 2:
+        return "%d/%s" % (len(name), name)
+    if len(name) == 3:
+        return "3/%s/%s" % (name[0], name)
+    return "%s/%s/%s" % (name[:2], name[2:4], name)
+class Handler(http.server.BaseHTTPRequestHandler):
+    def reply(self, status, body=b"", content_type="application/json"):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def error(self, status, detail):
+        self.reply(status, json.dumps({"errors": [{"detail": detail}]}).encode())
+    def do_GET(self):
+        if self.path == "/index/config.json":
+            base = "http://127.0.0.1:%d" % port
+            self.reply(200, json.dumps({"dl": base + "/api/v1/crates/{crate}/{version}/download", "api": base}).encode())
+            return
+        match = re.fullmatch(r"/api/v1/crates/([^/]+)/([^/]+)/download", self.path)
+        if match:
+            path = os.path.join(root, "crates", "%s-%s.crate" % match.groups())
+            self.reply(200, open(path, "rb").read(), "application/octet-stream") if os.path.exists(path) else self.error(404, "no such crate")
+            return
+        if self.path.startswith("/index/"):
+            wanted = self.path[len("/index/"):]
+            with lock:
+                lines = [e["line"] for e in state["entries"] if index_path(e["name"]) == wanted and e["visible_at"] <= time.time()]
+            if lines:
+                self.reply(200, ("\n".join(lines) + "\n").encode(), "text/plain")
+                return
+        self.error(404, "not found")
+    def do_PUT(self):
+        global published_this_run
+        if self.path != "/api/v1/crates/new":
+            self.error(404, "not found")
+            return
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        size = int.from_bytes(body[:4], "little")
+        meta = json.loads(body[4:4 + size])
+        crate_size = int.from_bytes(body[4 + size:8 + size], "little")
+        crate = body[8 + size:8 + size + crate_size]
+        with lock:
+            if published_this_run >= refuse_after:
+                self.error(403, "publish refused by the test registry")
+                return
+            if any(e["name"] == meta["name"] and e["vers"] == meta["vers"] for e in state["entries"]):
+                self.error(400, "crate version `%s` is already uploaded" % meta["vers"])
+                return
+            open(os.path.join(root, "crates", "%s-%s.crate" % (meta["name"], meta["vers"])), "wb").write(crate)
+            deps = [{"name": d["name"], "req": d["version_req"], "features": d["features"], "optional": d["optional"],
+                     "default_features": d["default_features"], "target": d["target"], "kind": d["kind"],
+                     "registry": d.get("registry"), "package": d.get("explicit_name_in_toml")} for d in meta["deps"]]
+            line = json.dumps({"name": meta["name"], "vers": meta["vers"], "deps": deps, "features": meta["features"],
+                               "cksum": hashlib.sha256(crate).hexdigest(), "yanked": False, "v": 1})
+            state["entries"].append({"name": meta["name"], "vers": meta["vers"], "line": line, "visible_at": time.time() + index_delay})
+            json.dump(state, open(state_path, "w"))
+            published_this_run += 1
+            sys.stderr.write("published %s %s\n" % (meta["name"], meta["vers"]))
+            sys.stderr.flush()
+        self.reply(200, json.dumps({"warnings": {"invalid_categories": [], "invalid_badges": [], "other": []}}).encode())
+    def log_message(self, format, *args):
+        sys.stderr.write(format % args + "\n")
+        sys.stderr.flush()
+http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+"#;
+
+/// Starts [`SPARSE_CARGO_REGISTRY`] on `port`; `registry_dir` holds its crates and state across restarts.
+pub fn start_sparse_cargo_registry(
+    external: &Path,
+    name: &str,
+    port: u16,
+    registry_dir: &Path,
+    refuse_after: u32,
+    index_delay: Duration,
+) -> ServerGuard {
+    fs::create_dir_all(registry_dir).unwrap();
+    let script = external.join(format!("sparse-cargo-registry-{name}.py"));
+    fs::write(&script, SPARSE_CARGO_REGISTRY).unwrap();
+    let mut command = Command::new("python3");
+    command
+        .arg(&script)
+        .arg(registry_dir)
+        .arg(port.to_string())
+        .arg(refuse_after.to_string())
+        .arg(index_delay.as_secs_f64().to_string());
+    let log_path = log_to_file(&mut command, external, &format!("sparse-cargo-registry-{name}.log"));
+    let child = command.spawn().expect("python3 must be spawnable");
+    let mut guard = ServerGuard { child, log_path };
+    wait_for_port(&mut guard, port, Duration::from_secs(20));
+    guard
+}
+
 /// Starts a real local `cargo-http-registry` on an ephemeral loopback port,
 /// serving `registry_root` as its git-protocol index and package store; no
 /// authentication is enforced (any registry token is accepted).

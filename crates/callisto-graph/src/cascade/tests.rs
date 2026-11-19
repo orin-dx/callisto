@@ -2160,3 +2160,135 @@ fn a_linked_group_member_that_is_not_in_the_workspace_is_skipped_with_a_warning(
         warning.message
     );
 }
+
+fn run_two_package_cascade(kind: DepKind, spec: &str, mode: CascadeMode) -> CascadeOutcome {
+    let lib = PackageId::parse("lib").unwrap();
+    let app = PackageId::parse("app").unwrap();
+    let mut edge = make_dep_edge(&app, &lib, spec, Ecosystem::Cargo);
+    edge.kind = kind;
+    let graph = TestGraph {
+        packages: vec![bare_package(&lib), bare_package(&app)],
+        edges: vec![edge],
+    };
+    let cfg = CascadeConfig {
+        mode,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: false,
+        preserve_npm_ranges: false,
+    };
+    let seed = BTreeMap::from([(lib.clone(), Severity::Patch)]);
+    let base = BTreeMap::from([(lib, Version::semver(1, 0, 0)), (app, Version::semver(1, 0, 0))]);
+    run_cascade(CascadeInput {
+        graph: &graph,
+        groups: &GroupTable::default(),
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &BTreeMap::new(),
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    })
+    .unwrap()
+}
+
+#[test]
+fn a_dependent_is_listed_as_updated_only_when_its_range_is_rewritten_or_it_is_released() {
+    let app = PackageId::parse("app").unwrap();
+    let listed = |outcome: &CascadeOutcome| outcome.dependency_updates.contains_key(&app);
+
+    let covered = run_two_package_cascade(DepKind::Runtime, "^1.0.0", CascadeMode::OutOfRange);
+    assert!(!listed(&covered), "a range that still covers is not an update");
+
+    let always = run_two_package_cascade(DepKind::Runtime, "^1.0.0", CascadeMode::Always);
+    assert!(
+        listed(&always),
+        "a released dependent is listed even when its range is untouched"
+    );
+
+    let dev = run_two_package_cascade(DepKind::Dev, "=1.0.0", CascadeMode::OutOfRange);
+    assert!(
+        listed(&dev),
+        "a rewritten dev range is listed though nothing is released"
+    );
+    assert!(!dev.severities.contains_key(&app));
+}
+
+#[test]
+fn a_fixed_group_member_is_never_visible_at_its_own_provisional_version() {
+    use std::sync::atomic::AtomicUsize;
+
+    let lib_a = PackageId::parse("lib-a").unwrap();
+    let lib_b = PackageId::parse("lib-b").unwrap();
+    let app = PackageId::parse("app").unwrap();
+    let graph = TestGraph {
+        packages: vec![
+            package_with_canonical_manifest(&lib_a),
+            package_with_canonical_manifest(&lib_b),
+            package_with_canonical_manifest(&app),
+        ],
+        // The range forbids lib-b's provisional 2.0.1 but admits the aligned 1.0.1.
+        edges: vec![make_dep_edge(&app, &lib_b, "<2.0.1", Ecosystem::Cargo)],
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let runner = FakeGitTagRunner {
+        calls: AtomicUsize::new(0),
+        tags: vec!["lib-a@1.0.0".to_string()],
+    };
+    let git = callisto_model::vcs::GitAccess::new(tmp.path(), &runner);
+    let tags = crate::tags::TagIndex::build(
+        &git,
+        &graph,
+        &Default::default(),
+        &crate::config::load(tmp.path()).unwrap(),
+    )
+    .unwrap();
+    let mut groups = GroupTable::default();
+    let group = GroupDef {
+        name: GroupName("pair".to_string()),
+        kind: GroupKind::Fixed,
+        members: vec![GroupMember::Package(lib_a.clone()), GroupMember::Package(lib_b.clone())],
+    };
+    for member in [&lib_a, &lib_b] {
+        groups.fixed_of.insert(member.clone(), group.name.clone());
+    }
+    groups.fixed.insert(group.name.clone(), group);
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: false,
+        preserve_npm_ranges: false,
+    };
+    let seed = BTreeMap::from([(lib_b.clone(), Severity::Patch)]);
+    let base = BTreeMap::from([
+        (lib_a.clone(), Version::semver(1, 0, 0)),
+        (lib_b.clone(), Version::semver(2, 0, 0)),
+        (app.clone(), Version::semver(0, 1, 0)),
+    ]);
+    let outcome = run_cascade(CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &BTreeMap::new(),
+        base: &base,
+        pre: None,
+        tags: &tags,
+        identity: &IdentityIndex::default(),
+    })
+    .unwrap();
+
+    assert_eq!(outcome.targets[&lib_b].render(), "1.0.1");
+    assert!(
+        !outcome.severities.contains_key(&app),
+        "the dependent is not released: {:?} {:?}",
+        outcome.severities,
+        outcome.reasons
+    );
+    assert!(outcome.rewrites.is_empty(), "{:?}", outcome.rewrites);
+    assert!(
+        outcome.dependency_updates.is_empty(),
+        "{:?}",
+        outcome.dependency_updates
+    );
+}

@@ -504,6 +504,490 @@ pub(crate) mod tests {
         assert!(eligible.is_empty(), "the owner must not publish: {eligible:?}");
     }
 
+    /// Git is real; a pack writes the tarball its package.json names, and `tar` reads that package.json back.
+    struct PackFake {
+        packed: std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, String>>,
+        packs: std::sync::Mutex<Vec<String>>,
+        publishes: std::sync::Mutex<Vec<Vec<String>>>,
+    }
+
+    impl CommandRunner for PackFake {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            let ok = |stdout: String| {
+                Ok(CommandOutput {
+                    exit_code: Some(0),
+                    stdout,
+                    stderr: String::new(),
+                })
+            };
+            if program == "tar" {
+                let tarball = Path::new(args[1]);
+                return ok(self.packed.lock().unwrap()[tarball.parent().unwrap()].clone());
+            }
+            if program == "npm" && args.first() == Some(&"publish") {
+                self.publishes
+                    .lock()
+                    .unwrap()
+                    .push(args.iter().map(|arg| (*arg).to_owned()).collect());
+                return ok(String::new());
+            }
+            let Some(at) = args.iter().position(|arg| *arg == "--pack-destination") else {
+                return RealGitRunner.run(program, args, cwd);
+            };
+            let destination = std::path::PathBuf::from(args[at + 1]);
+            let json = std::fs::read_to_string(cwd.join("package.json")).unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&json).unwrap();
+            let name = manifest["name"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches('@')
+                .replace('/', "-");
+            std::fs::write(
+                destination.join(format!("{name}-{}.tgz", manifest["version"].as_str().unwrap())),
+                b"tarball",
+            )
+            .unwrap();
+            self.packs.lock().unwrap().push(program.to_owned());
+            self.packed.lock().unwrap().insert(destination, json);
+            ok(String::new())
+        }
+
+        fn run_with_timeout_env_filtered(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            _timeout: std::time::Duration,
+            _removed: &[&str],
+        ) -> Result<CommandOutput, CommandError> {
+            self.run(program, args, cwd)
+        }
+    }
+
+    /// The pack job packs each npm publish of the plan, an owner and its platform packages each once, and nothing else.
+    #[test]
+    fn packing_covers_every_npm_publish_of_the_plan_and_no_other_publish() {
+        let dir = platform_owner_fixture();
+        let runner = PackFake {
+            packed: Default::default(),
+            packs: Default::default(),
+            publishes: Default::default(),
+        };
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let owner = ReleasePackageId::new(Ecosystem::Npm, "@s/cli").unwrap();
+        let decision = ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+            package: owner,
+            target_version: Version::parse("0.1.0", VersionGrammar::SemVer).unwrap(),
+            reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+        }])
+        .unwrap();
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision,
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
+        let out = tempfile::tempdir().unwrap();
+
+        let packed = validated.pack_npm_tarballs(out.path()).unwrap();
+        assert_eq!(packed, ["@s/cli", "@s/cli-darwin-arm64", "@s/cli-linux-x64-gnu"]);
+        let mut files: Vec<String> = std::fs::read_dir(out.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        let mut expected: Vec<String> = ["@s/cli", "@s/cli-darwin-arm64", "@s/cli-linux-x64-gnu"]
+            .map(|name| {
+                callisto_model::npm_tarball_filename(name, &Version::parse("0.1.0", VersionGrammar::SemVer).unwrap())
+            })
+            .to_vec();
+        expected.sort();
+        assert_eq!(files, expected);
+        let mut programs = runner.packs.lock().unwrap().clone();
+        programs.sort();
+        assert_eq!(
+            programs,
+            ["npm", "npm", "pnpm"],
+            "the owner packs with pnpm, platform packages with npm"
+        );
+    }
+
+    /// `@acme/lib` and `acme-lib` flatten to one name in npm's own file naming. Each is staged under its own name, so
+    /// both survive the pack, both are sealed, and the sealed publish uploads each one's own file.
+    #[test]
+    fn packages_whose_names_flatten_alike_are_packed_sealed_and_published_separately() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        write(
+            "package.json",
+            r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
+        );
+        write(
+            "packages/scoped/package.json",
+            r#"{"name":"@acme/lib","version":"1.0.0"}"#,
+        );
+        write(
+            "packages/plain/package.json",
+            r#"{"name":"acme-lib","version":"1.0.0"}"#,
+        );
+        write(
+            "callisto.toml",
+            "[[package]]\nmatch = \"npm/@acme/lib\"\npublish-to = [\"npm\"]\n\n[[package]]\nmatch = \"npm/acme-lib\"\npublish-to = [\"npm\"]\n",
+        );
+        callisto_fixtures::git::init_repo(dir.path());
+        for args in [
+            ["remote", "add", "origin", "https://github.com/example/acme.git"].as_slice(),
+            ["add", "."].as_slice(),
+            ["commit", "-q", "-m", "fixture"].as_slice(),
+            ["checkout", "--detach", "-q", "HEAD"].as_slice(),
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .unwrap()
+                .success());
+        }
+        let runner = PackFake {
+            packed: Default::default(),
+            packs: Default::default(),
+            publishes: Default::default(),
+        };
+        let version = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let decision = ReleaseDecisionV1::new(
+            ["@acme/lib", "acme-lib"]
+                .map(|name| callisto_model::ReleaseDecisionEntry {
+                    package: ReleasePackageId::new(Ecosystem::Npm, name).unwrap(),
+                    target_version: version.clone(),
+                    reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+                })
+                .to_vec(),
+        )
+        .unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision,
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent.clone()).unwrap();
+        let out = tempfile::tempdir().unwrap();
+
+        assert_eq!(
+            validated.pack_npm_tarballs(out.path()).unwrap(),
+            ["@acme/lib", "acme-lib"]
+        );
+        assert_eq!(
+            std::fs::read_dir(out.path()).unwrap().count(),
+            2,
+            "neither tarball overwrote the other"
+        );
+
+        let sets = crate::commands::seal_npm_tarballs(&intent, out.path()).unwrap();
+        assert_eq!(sets.len(), 2);
+        let manifest = callisto_model::ArtifactManifestV1::with_distributions(&intent, vec![], sets).unwrap();
+        let verified = crate::commands::release_artifacts::VerifiedArtifactManifest::for_tests(
+            &manifest,
+            out.path().canonicalize().unwrap(),
+        );
+        let context = super::provider::ProviderContext::new(&validated.prepared().root, &runner, None)
+            .with_route(super::provider::PublishRoute::Ci);
+        for (id, operation) in &validated.prepared().operations {
+            let PreparedOperation::RegistryPublish(operation) = operation else {
+                continue;
+            };
+            super::provider::registry::adapter_for(Ecosystem::Npm)
+                .unwrap()
+                .publish(&context, id, operation, Some(&verified))
+                .unwrap();
+        }
+        let published = runner.publishes.lock().unwrap().clone();
+        let mut tarballs: Vec<&String> = published.iter().map(|args| &args[1]).collect();
+        tarballs.sort();
+        tarballs.dedup();
+        assert_eq!(tarballs.len(), 2, "each package publishes its own file: {published:?}");
+        for tarball in tarballs {
+            assert!(std::path::Path::new(tarball).is_file());
+        }
+    }
+
+    /// Git is real; every other command is recorded and succeeds, so the `cargo package` calls can be read back.
+    struct CargoPackageRecorder {
+        calls: std::sync::Mutex<Vec<(std::path::PathBuf, Vec<String>)>>,
+    }
+
+    impl CommandRunner for CargoPackageRecorder {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            if program == "cargo" && args.first() == Some(&"package") {
+                self.calls.lock().unwrap().push((
+                    cwd.canonicalize().unwrap(),
+                    args.iter().map(|arg| (*arg).to_owned()).collect(),
+                ));
+                return Ok(CommandOutput {
+                    exit_code: Some(0),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                });
+            }
+            RealGitRunner.run(program, args, cwd)
+        }
+
+        fn run_with_timeout_env_filtered(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            _timeout: std::time::Duration,
+            _removed: &[&str],
+        ) -> Result<CommandOutput, CommandError> {
+            self.run(program, args, cwd)
+        }
+    }
+
+    /// Packages the crates of a fixture whose manifests are `files` (crate name, manifest path) with the real
+    /// derivation of the plan, and returns each `cargo package` call: where it ran and its arguments.
+    fn package_calls(
+        workspaces: &[(&str, &str)],
+        crates: &[(&str, &str)],
+        npm: &[&str],
+    ) -> Vec<(std::path::PathBuf, Vec<String>)> {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        for (path, members) in workspaces {
+            write(path, &format!("[workspace]\nmembers = [{members}]\nresolver = \"2\"\n"));
+        }
+        let mut config = String::new();
+        for (name, path) in crates {
+            write(
+                path,
+                &format!(
+                    "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n"
+                ),
+            );
+            write(&path.replace("Cargo.toml", "src/lib.rs"), "\n");
+            config.push_str(&format!(
+                "[[package]]\nmatch = \"cargo/{name}\"\npublish-to = [\"crates-io\"]\n\n"
+            ));
+        }
+        for name in npm {
+            write(
+                &format!("{name}/package.json"),
+                &format!(r#"{{"name":"{name}","version":"0.1.0"}}"#),
+            );
+            config.push_str(&format!(
+                "[[package]]\nmatch = \"npm/{name}\"\npublish-to = [\"npm\"]\n\n"
+            ));
+        }
+        write("callisto.toml", &config);
+        callisto_fixtures::git::init_repo(dir.path());
+        for args in [
+            ["remote", "add", "origin", "https://github.com/example/crates.git"].as_slice(),
+            ["add", "."].as_slice(),
+            ["commit", "-q", "-m", "fixture"].as_slice(),
+            ["checkout", "--detach", "-q", "HEAD"].as_slice(),
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .unwrap()
+                .success());
+        }
+        let runner = CargoPackageRecorder {
+            calls: Default::default(),
+        };
+        let entries = |ecosystem, names: Vec<&str>| {
+            names
+                .into_iter()
+                .map(move |name| callisto_model::ReleaseDecisionEntry {
+                    package: ReleasePackageId::new(ecosystem, name).unwrap(),
+                    target_version: Version::parse("0.1.0", VersionGrammar::SemVer).unwrap(),
+                    reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut all = entries(Ecosystem::Cargo, crates.iter().map(|(name, _)| *name).collect());
+        all.extend(entries(Ecosystem::Npm, npm.to_vec()));
+        let decision = ReleaseDecisionV1::new(all).unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision,
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
+        validated.package_cargo_crates().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let calls = runner.calls.lock().unwrap().clone();
+        calls
+            .into_iter()
+            .map(|(cwd, args)| (cwd.strip_prefix(&root).unwrap().to_path_buf(), args))
+            .collect()
+    }
+
+    fn call(cwd: &str, crates: &[&str]) -> (std::path::PathBuf, Vec<String>) {
+        let mut args = vec!["package".to_owned(), "--locked".to_owned()];
+        for name in crates {
+            args.extend(["-p".to_owned(), (*name).to_owned()]);
+        }
+        (std::path::PathBuf::from(cwd), args)
+    }
+
+    /// A layout with its Cargo workspace under `native/` and no root manifest packages from there, once, with every
+    /// crate of the release in that one call.
+    #[test]
+    fn crates_of_a_nested_cargo_workspace_are_packaged_together_from_its_directory() {
+        let calls = package_calls(
+            &[("native/Cargo.toml", "\"crates/*\"")],
+            &[
+                ("alpha", "native/crates/alpha/Cargo.toml"),
+                ("beta", "native/crates/beta/Cargo.toml"),
+            ],
+            &[],
+        );
+        assert_eq!(calls, [call("native", &["alpha", "beta"])]);
+    }
+
+    /// Only crate publishes are packaged: an npm package of the same plan is never handed to cargo.
+    #[test]
+    fn an_npm_package_in_the_plan_is_not_packaged_with_cargo() {
+        let calls = package_calls(&[("Cargo.toml", "\"core\"")], &[("core", "core/Cargo.toml")], &["web"]);
+        assert_eq!(calls, [call("", &["core"])]);
+    }
+
+    /// One call per owning workspace, each from its own directory; the common single-workspace layout is one call
+    /// from the root.
+    #[test]
+    fn each_cargo_workspace_of_a_release_is_packaged_in_its_own_call_from_its_own_directory() {
+        let calls = package_calls(
+            &[
+                ("native/Cargo.toml", "\"crates/*\""),
+                ("tools/Cargo.toml", "\"crates/*\""),
+            ],
+            &[
+                ("alpha", "native/crates/alpha/Cargo.toml"),
+                ("beta", "native/crates/beta/Cargo.toml"),
+                ("gamma", "tools/crates/gamma/Cargo.toml"),
+            ],
+            &[],
+        );
+        assert_eq!(calls, [call("native", &["alpha", "beta"]), call("tools", &["gamma"])]);
+
+        let single = package_calls(
+            &[("Cargo.toml", "\"a\", \"b\"")],
+            &[("a", "a/Cargo.toml"), ("b", "b/Cargo.toml")],
+            &[],
+        );
+        assert_eq!(single, [call("", &["a", "b"])]);
+    }
+
+    /// A plan that publishes only a crate has nothing to pack.
+    #[test]
+    fn packing_a_plan_with_no_npm_publish_runs_no_pack() {
+        let (dir, _) = fixture();
+        let runner = PackFake {
+            packed: Default::default(),
+            packs: Default::default(),
+            publishes: Default::default(),
+        };
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision(),
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        assert!(validated.pack_npm_tarballs(out.path()).unwrap().is_empty());
+        assert!(runner.packs.lock().unwrap().is_empty());
+        assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
+    }
+
+    /// A yarn workspace publishing `lib` to npm, with `yarnrc` as its `.yarnrc.yml`.
+    fn yarn_registry_fixture(yarnrc: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        write(
+            "package.json",
+            r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
+        );
+        write("yarn.lock", "");
+        write(".yarnrc.yml", yarnrc);
+        write("packages/lib/package.json", r#"{"name":"lib","version":"1.0.0"}"#);
+        write(
+            "callisto.toml",
+            "[[package]]\nmatch = \"npm/lib\"\npublish-to = [\"npm\"]\n",
+        );
+        callisto_fixtures::git::init_repo(dir.path());
+        for args in [
+            ["remote", "add", "origin", "https://github.com/example/lib.git"].as_slice(),
+            ["add", "."].as_slice(),
+            ["commit", "-q", "-m", "fixture"].as_slice(),
+            ["checkout", "--detach", "-q", "HEAD"].as_slice(),
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .unwrap()
+                .success());
+        }
+        dir
+    }
+
+    /// The refusal comes with the intent, before any effect, so a plan and a local release stop on it alike.
+    #[test]
+    fn an_intent_for_a_yarn_workspace_with_a_registry_only_yarn_reads_is_refused() {
+        let decision = ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+            package: ReleasePackageId::new(Ecosystem::Npm, "lib").unwrap(),
+            target_version: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+        }])
+        .unwrap();
+        let build = |yarnrc: &str| {
+            let dir = yarn_registry_fixture(yarnrc);
+            let locator = crate::IgnoreWalkLocator::new(dir.path());
+            build_release_intent(
+                dir.path(),
+                &locator,
+                &RealGitRunner,
+                &decision,
+                ExecutionTrustProfileV1::GitCommit,
+            )
+        };
+        assert!(matches!(
+            build("npmPublishRegistry: \"https://r.example/\"\n"),
+            Err(GraphError::UnsupportedRelease {
+                feature: crate::error::UnsupportedReleaseFeature::NpmRegistryConfig { .. }
+            })
+        ));
+        build("nodeLinker: node-modules\n").unwrap();
+    }
+
     #[test]
     fn fresh_validation_rejects_manifest_change() {
         let (dir, runner) = fixture();

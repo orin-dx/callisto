@@ -422,9 +422,17 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
                     .then(|| npm_dist_tag(version))
                     .flatten();
                 if matches!(target, PublishTarget::Npm { .. }) {
+                    crate::commands::registry_argv::require_registry_npm_publish_honors(
+                        &workspace.root,
+                        &package_dir(package)?,
+                    )?;
                     let mut platform_ids = Vec::new();
                     for (name, manifest) in workspace.identity.attached_platforms(package) {
                         let directory = manifest.parent().unwrap_or(std::path::Path::new(""));
+                        crate::commands::registry_argv::require_registry_npm_publish_honors(
+                            &workspace.root,
+                            directory,
+                        )?;
                         let platform = PlatformPackageV1::new(
                             ReleasePackageId::new(callisto_model::Ecosystem::Npm, name)?,
                             directory.to_string_lossy().replace('\\', "/"),

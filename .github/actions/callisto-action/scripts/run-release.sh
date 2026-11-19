@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs `callisto release` (mode: release) and fills published/publishedPackages
-# from its receipt; callisto release's own idempotency makes a redundant run a no-op.
+# Runs `callisto release` (mode: release) or `callisto release execute` on a handoff directory (mode: execute) and
+# fills published/publishedPackages from its receipt; a rerun adopts what already landed, so a redundant run is a no-op.
 set -euo pipefail
 
 cd "$INPUT_CWD"
@@ -31,13 +31,26 @@ if [[ -n "${PYPI_TOKEN:-}" ]]; then
   unset PYPI_TOKEN
 fi
 
-output=$(callisto --format json release --receipt "$receipt")
-
-if jq -e '.nothingToRelease == true' <<< "$output" > /dev/null; then
-  echo 'published=false' >> "$GITHUB_OUTPUT"
-  echo 'publishedPackages=[]' >> "$GITHUB_OUTPUT"
-  echo '::notice::Nothing to release.'
-  exit 0
+if [[ "${INPUT_MODE:-release}" == execute ]]; then
+  # The handoff holds the intent, the files a credential-free job packaged, and their manifest when it sealed any.
+  handoff="${INPUT_HANDOFF:-}"
+  if [[ -z "$handoff" ]]; then
+    echo "::error::callisto-action mode 'execute' needs the handoff input"
+    exit 1
+  fi
+  args=(--intent "$handoff/release-intent.json" --receipt "$receipt" --orchestration-revision "$GITHUB_SHA")
+  if [[ -f "$handoff/release-manifest.json" ]]; then
+    args+=(--artifact-manifest "$handoff/release-manifest.json" --artifact-dir "$handoff")
+  fi
+  callisto release execute "${args[@]}"
+else
+  output=$(callisto --format json release --receipt "$receipt")
+  if jq -e '.nothingToRelease == true' <<< "$output" > /dev/null; then
+    echo 'published=false' >> "$GITHUB_OUTPUT"
+    echo 'publishedPackages=[]' >> "$GITHUB_OUTPUT"
+    echo '::notice::Nothing to release.'
+    exit 0
+  fi
 fi
 
 packages=$(jq -c '[

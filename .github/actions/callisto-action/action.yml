@@ -49,18 +49,22 @@ inputs:
     required: false
     default: '.'
   mode:
-    description: 'version-pr (default): create/update the release PR. release: run `callisto release`.'
+    description: 'version-pr (default): create/update the release PR. release: run `callisto release`. execute: run `callisto release execute` on the `handoff` directory.'
     required: false
     default: 'version-pr'
+  handoff:
+    description: 'mode: execute only. Directory holding release-intent.json, the files a credential-free job packaged, and release-manifest.json when it sealed any.'
+    required: false
+    default: ''
 outputs:
   hasChangesets:
     description: 'Whether pending changesets were found (mode: version-pr only)'
     value: ${{ steps.version-pr.outputs.hasChangesets }}
   published:
-    description: 'Whether `callisto release` published anything (mode: release only; otherwise false)'
+    description: 'Whether `callisto release` or `callisto release execute` published anything (mode: release or execute only; otherwise false)'
     value: ${{ steps.release.outputs.published || 'false' }}
   publishedPackages:
-    description: 'JSON array of packages `callisto release` published (mode: release only; otherwise [])'
+    description: 'JSON array of packages `callisto release` or `callisto release execute` published (mode: release or execute only; otherwise [])'
     value: ${{ steps.release.outputs.publishedPackages || '[]' }}
 runs:
   using: composite
@@ -118,9 +122,11 @@ runs:
       run: bash "$GITHUB_ACTION_PATH/scripts/create-or-update-release-pr.sh"
     - name: Run release
       id: release
-      if: inputs.mode == 'release'
+      if: inputs.mode == 'release' || inputs.mode == 'execute'
       shell: bash
       env:
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_HANDOFF: ${{ inputs.handoff }}
         INPUT_CWD: ${{ inputs.cwd }}
         GH_TOKEN: ${{ inputs.github_token || github.token }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-release.sh"

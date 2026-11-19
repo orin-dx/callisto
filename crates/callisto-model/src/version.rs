@@ -98,6 +98,14 @@ impl Version {
         &self.raw
     }
 
+    /// The PEP 440 epoch; `0` for a version with none and for every SemVer version.
+    pub fn epoch(&self) -> u64 {
+        match &self.parsed {
+            ParsedVersion::SemVer(_) => 0,
+            ParsedVersion::Pep440(v) => v.epoch(),
+        }
+    }
+
     pub fn major(&self) -> Option<u64> {
         match &self.parsed {
             ParsedVersion::SemVer(v) => Some(v.major),
@@ -381,6 +389,13 @@ mod tests {
     use super::*;
     use crate::identity::assert_string_wire_schema;
     use std::hash::Hash as _;
+
+    #[test]
+    fn only_a_pep440_version_with_an_epoch_has_one() {
+        assert_eq!(Version::parse("2!0.4.8", VersionGrammar::Pep440).unwrap().epoch(), 2);
+        assert_eq!(Version::parse("0.4.8", VersionGrammar::Pep440).unwrap().epoch(), 0);
+        assert_eq!(Version::semver(1, 2, 3).epoch(), 0);
+    }
 
     #[test]
     fn contextual_versions_use_native_grammar_without_fallback() {

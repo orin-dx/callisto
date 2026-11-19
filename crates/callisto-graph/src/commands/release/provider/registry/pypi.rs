@@ -250,16 +250,17 @@ impl PypiRegistry {
                     &operation.package_name,
                     &operation.version,
                 ),
-                None => {
-                    if artifacts.is_some() {
-                        eprintln!(
-                            "warning: the artifact manifest does not seal {} {}; building it in this job",
-                            operation.package_name,
-                            operation.version.render()
-                        );
-                    }
-                    Self::build_set(context, operation)
+                // A manifest without this release's files means the build job did not run: building here would run the
+                // package's build backend beside the registry credentials.
+                None if artifacts.is_some() || context.route() == PublishRoute::Ci => {
+                    Err(GraphError::BuildOutputIncomplete {
+                        tool: "artifact manifest",
+                        package: operation.package_name.clone(),
+                        version: operation.version.clone(),
+                        missing: "sealed Python file set",
+                    })
                 }
+                None => Self::build_set(context, operation),
             },
         )
     }
