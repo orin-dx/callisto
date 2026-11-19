@@ -1200,62 +1200,23 @@ mod static_python_release {
         assert_eq!(registry_observations, 1);
     }
 
+    /// The CI executor publishes only what a credential-free job sealed: with no manifest it builds nothing itself.
     #[test]
-    fn python_stable_release_executes_and_reruns_from_provider_evidence() {
+    fn a_python_release_with_no_manifest_is_refused_before_any_effect() {
         let (dir, revision) = release_fixture();
         let external = tempfile::tempdir().unwrap();
         let intent_path = external.path().join("intent.json");
         let result = plan(dir.path(), &revision, &intent_path);
         assert!(result.status.success(), "Python plan failed: {}", stderr_of(&result));
-        let intent = assert_python_intent(&intent_path);
         let rig = python_publishers(external.path(), &revision);
         let receipt = external.path().join("receipt.json");
-        let first = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &[], None);
-        assert!(first.status.success(), "Python execute failed: {}", stderr_of(&first));
-        assert_python_receipt(&receipt, &intent, "published", &revision);
-        assert_eq!(
-            git(dir.path(), &["rev-parse", &format!("refs/tags/{TAG}^{{commit}}")]),
-            revision
-        );
-        assert_eq!(git(dir.path(), &["cat-file", "-t", &format!("refs/tags/{TAG}")]), "tag");
-        assert_eq!(
-            git(
-                &external.path().join("remote.git"),
-                &["rev-parse", &format!("refs/tags/{TAG}^{{commit}}")]
-            ),
-            revision
-        );
-        let calls_path = external.path().join("pypi-calls.log");
-        let calls = fs::read_to_string(&calls_path).unwrap();
-        assert_eq!(calls.lines().filter(|line| line.starts_with("python ")).count(), 1);
-        assert_eq!(calls.lines().filter(|line| line.starts_with("twine ")).count(), 1);
-        assert_eq!(rig.log_count("git push"), 1);
-        assert_eq!(rig.log_count("gh release create"), 1);
-        assert_eq!(rig.log_count("gh release edit"), 1);
-        assert_argv_within_allowlists(&rig.log, &rig.git_trace);
-
-        fs::remove_file(&receipt).unwrap();
-        let second = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &[], None);
-        assert!(second.status.success(), "Python rerun failed: {}", stderr_of(&second));
-        assert_python_receipt(&receipt, &intent, "alreadySatisfied", &revision);
-        let recovered_calls = fs::read_to_string(&calls_path).unwrap();
-        let count = |log: &str, tool: &str| log.lines().filter(|line| line.starts_with(tool)).count();
-        assert_eq!(
-            count(&recovered_calls, "twine "),
-            count(&calls, "twine "),
-            "a complete release uploads nothing on a rerun"
-        );
-        assert_eq!(
-            count(&recovered_calls, "python "),
-            count(&calls, "python ") + 1,
-            "a rerun builds once to know which files the release declares"
-        );
-        assert!(recovered_calls.matches("curl ").count() > calls.matches("curl ").count());
-        for effect in ["git push", "gh release create", "gh release edit"] {
-            assert_eq!(rig.log_count(effect), 1, "rerun repeated {effect}");
-        }
-        assert_argv_within_allowlists(&rig.log, &rig.git_trace);
-        assert!(git(dir.path(), &["status", "--porcelain"]).is_empty());
+        let run = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &[], None);
+        assert!(!run.status.success());
+        assert_eq!(diagnostic_codes(&run), ["E306"], "{}", stderr_of(&run));
+        assert!(!receipt.exists());
+        assert_eq!(rig.log_count("git push"), 0);
+        let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap_or_default();
+        assert!(calls.is_empty(), "nothing was built or uploaded: {calls}");
     }
 
     /// One file per name in `$CALLISTO_TEST_PYPI_STATE`: the index serves exactly what was uploaded.
@@ -1296,55 +1257,6 @@ for f in "$@"; do
   sent=$((sent + 1))
 done
 "#;
-
-    #[test]
-    fn python_release_resumes_after_a_partial_upload_and_uploads_only_the_missing_file() {
-        let (dir, revision) = release_fixture();
-        let external = tempfile::tempdir().unwrap();
-        let intent_path = external.path().join("intent.json");
-        let result = plan(dir.path(), &revision, &intent_path);
-        assert!(result.status.success(), "Python plan failed: {}", stderr_of(&result));
-        let intent = assert_python_intent(&intent_path);
-        let state = external.path().join("pypi-state");
-        fs::create_dir_all(&state).unwrap();
-        let fail = external.path().join("pypi-fail");
-        fs::write(&fail, "").unwrap();
-
-        let mut rig = python_publishers(external.path(), &revision);
-        rig.set("CALLISTO_TEST_PYPI_STATE", state.to_str().unwrap());
-        rig.set("CALLISTO_TEST_PYPI_FAIL", fail.to_str().unwrap());
-        for (program, body) in [("curl", PYPI_STATE_CURL), ("twine", PYPI_STATE_TWINE)] {
-            let path = rig.bin.join(program);
-            write_fixture(&path, body);
-            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-        }
-
-        let receipt = external.path().join("receipt.json");
-        let first = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &[], None);
-        assert!(!first.status.success(), "the dying upload must fail the run");
-        assert!(!receipt.exists(), "a failed run issues no receipt");
-        let uploaded: Vec<_> = fs::read_dir(&state).unwrap().map(|e| e.unwrap().file_name()).collect();
-        assert_eq!(uploaded.len(), 1, "exactly one file reached the index: {uploaded:?}");
-        assert_eq!(
-            rig.log_count("git push"),
-            0,
-            "no tag is pushed before the release is complete"
-        );
-
-        fs::remove_file(&fail).unwrap();
-        let second = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &[], None);
-        assert!(second.status.success(), "the rerun failed: {}", stderr_of(&second));
-        assert_python_receipt(&receipt, &intent, "published", &revision);
-        let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap();
-        let twine: Vec<_> = calls.lines().filter(|line| line.starts_with("twine ")).collect();
-        assert_eq!(
-            twine,
-            ["twine 2", "twine 1"],
-            "the first run offered both files, the rerun only the missing one: {calls}"
-        );
-        assert_eq!(fs::read_dir(&state).unwrap().count(), 2);
-        assert_eq!(rig.log_count("git push"), 1);
-    }
 
     /// The build job's two steps: build every Python publish into `artifacts`, then seal the files in a manifest.
     fn build_and_seal(dir: &Path, rig: &Rig, intent: &Path, artifacts: &Path, manifest: &Path) {
@@ -1496,7 +1408,7 @@ done
         ];
         let run = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &args, None);
         assert!(!run.status.success());
-        assert_eq!(diagnostic_codes(&run), ["E232"], "{}", stderr_of(&run));
+        assert_eq!(diagnostic_codes(&run), ["E306"], "{}", stderr_of(&run));
 
         assert!(!receipt.exists());
         let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap_or_default();
@@ -1589,4 +1501,209 @@ sdist_sha=$(shasum -a 256 "$3" | cut -d' ' -f1)
 printf '{"meta":{"api-version":"1.0"},"name":"stable-python","files":[{"filename":"stable_python-0.2.0-py3-none-any.whl","url":"https://files.example.invalid/w","hashes":{"sha256":"%s"},"yanked":false},{"filename":"stable_python-0.2.0.tar.gz","url":"https://files.example.invalid/s","hashes":{"sha256":"%s"},"yanked":false}]}\n' "$wheel_sha" "$sdist_sha" > "$CALLISTO_TEST_PYPI_MARKER"
 printf 'Uploading stable_python-0.2.0-py3-none-any.whl\nUploading stable_python-0.2.0.tar.gz\n'
 "#;
+}
+
+/// An npm release whose package runs a `prepack` script: the credential-free pack job runs it once, and the executing
+/// job publishes the sealed tarball without running it. Real `npm pack`; `npm view` and `npm publish` are fakes.
+mod sealed_npm_release {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    const REMOTE: &str = "https://github.com/example/stable-npm.git";
+    const TAG: &str = "stable-npm@0.2.0";
+
+    fn release_fixture() -> (tempfile::TempDir, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        callisto_fixtures::git::init_repo(root);
+        git(root, &["remote", "add", "origin", REMOTE]);
+        fs::write(
+            root.join("package.json"),
+            "{\"name\":\"fixture-root\",\"version\":\"0.0.0\",\"private\":true,\"workspaces\":[\"packages/*\"]}\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("packages/stable-npm")).unwrap();
+        fs::write(
+            root.join("packages/stable-npm/package.json"),
+            "{\"name\":\"stable-npm\",\"version\":\"0.1.0\",\"scripts\":{\"prepack\":\"echo prepack >> \\\"$CALLISTO_TEST_NPM_MARKER\\\"\"}}\n",
+        )
+        .unwrap();
+        git(root, &["add", "."]);
+        git(root, &["commit", "-m", "initial npm workspace"]);
+        let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
+        assert!(init.status.success(), "init failed: {}", stderr_of(&init));
+        let config_path = root.join("callisto.toml");
+        let config = fs::read_to_string(&config_path).unwrap();
+        fs::write(
+            &config_path,
+            format!("{config}\n[[package]]\nmatch = \"npm/stable-npm\"\npublish-to = [\"npm\"]\n"),
+        )
+        .unwrap();
+        git(root, &["add", "."]);
+        git(root, &["commit", "-m", "configure npm release"]);
+        let add = callisto(
+            root,
+            &[
+                "add",
+                "--package",
+                "npm/stable-npm:minor",
+                "--summary",
+                "Ship stable npm",
+            ],
+        );
+        assert!(add.status.success(), "add failed: {}", stderr_of(&add));
+        git(root, &["add", "."]);
+        git(root, &["commit", "-m", "add changeset"]);
+        let version = callisto(
+            root,
+            &["version", "--no-refresh-lockfiles", "--emit-decision", DECISION_PATH],
+        );
+        assert!(version.status.success(), "version failed: {}", stderr_of(&version));
+        for entry in fs::read_dir(root.join(".changeset")).unwrap() {
+            let path = entry.unwrap().path();
+            if path.file_name().is_some_and(|name| name != "README.md")
+                && path.extension().is_some_and(|extension| extension == "md")
+            {
+                fs::remove_file(path).unwrap();
+            }
+        }
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-m", "release stable-npm 0.2.0"]);
+        let revision = git(root, &["rev-parse", "HEAD"]);
+        git(root, &["checkout", "--detach", &revision]);
+        (dir, revision)
+    }
+
+    /// Every `npm pack` is the real tool; `view` and `publish` answer from a marker file and log what they were given.
+    const NPM: &str = r#"#!/bin/sh
+set -eu
+case "$1" in
+  pack) exec "$CALLISTO_TEST_REAL_NPM" "$@" ;;
+  view)
+    printf 'view\n' >> "$CALLISTO_TEST_NPM_CALLS"
+    if [ -f "$CALLISTO_TEST_NPM_PUBLISHED" ]; then
+      printf '{"name":"stable-npm","version":"0.2.0"}\n'
+    else
+      printf '{"error":{"code":"E404","summary":"not found"}}\n'
+      exit 1
+    fi
+    ;;
+  publish)
+    tarball=$2
+    case "$tarball" in */stable-npm-0.2.0.tgz) ;; *) exit 64 ;; esac
+    [ -f "$tarball" ] || exit 65
+    case " $* " in *" --ignore-scripts "*) ;; *) exit 66 ;; esac
+    printf 'publish %s\n' "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" >> "$CALLISTO_TEST_NPM_CALLS"
+    : > "$CALLISTO_TEST_NPM_PUBLISHED"
+    printf '+ stable-npm@0.2.0\n'
+    ;;
+  *) exit 64 ;;
+esac
+"#;
+
+    fn real_npm() -> String {
+        let output = std::process::Command::new("sh")
+            .args(["-c", "command -v npm"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "the npm e2e needs the real `npm` on PATH");
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+
+    #[test]
+    fn a_packages_prepack_runs_in_the_pack_job_and_not_in_the_executing_job() {
+        let (dir, revision) = release_fixture();
+        let external = tempfile::tempdir().unwrap();
+        let intent = external.path().join("intent.json");
+        let planned = callisto(
+            dir.path(),
+            &[
+                "release",
+                "plan",
+                "--from-release-commit",
+                &revision,
+                "--decision",
+                DECISION_PATH,
+                "--out",
+                intent.to_str().unwrap(),
+            ],
+        );
+        assert!(planned.status.success(), "plan failed: {}", stderr_of(&planned));
+
+        let marker = external.path().join("prepack-marker");
+        let calls = external.path().join("npm-calls.log");
+        let mut rig = Rig::new(external.path(), &revision);
+        let bare = bare_remote(external.path());
+        rig.real_git_push(&bare, REMOTE);
+        rig.set("CALLISTO_TEST_NPM_MARKER", marker.to_str().unwrap());
+        rig.set("CALLISTO_TEST_NPM_CALLS", calls.to_str().unwrap());
+        rig.set(
+            "CALLISTO_TEST_NPM_PUBLISHED",
+            external.path().join("npm-published").to_str().unwrap(),
+        );
+        rig.set("CALLISTO_TEST_REAL_NPM", &real_npm());
+        let shim = rig.bin.join("npm");
+        fs::write(&shim, NPM).unwrap();
+        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let artifacts = external.path().join("artifacts");
+        fs::create_dir(&artifacts).unwrap();
+        let packed = rig_command(dir.path(), dir.path(), &rig, TAG)
+            .args(["release", "pack-npm", "--intent", intent.to_str().unwrap()])
+            .args(["--artifact-dir", artifacts.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(packed.status.success(), "pack-npm failed: {}", stderr_of(&packed));
+        assert_eq!(
+            fs::read_to_string(&marker).unwrap().lines().count(),
+            1,
+            "pack runs prepack"
+        );
+        let names: Vec<_> = fs::read_dir(&artifacts)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["stable-npm-0.2.0.tgz"], "only the tarball is left behind");
+
+        let manifest = external.path().join("manifest.json");
+        let sealed = rig_command(dir.path(), dir.path(), &rig, TAG)
+            .args(["release", "artifact-manifest", "--intent", intent.to_str().unwrap()])
+            .args(["--artifact-dir", artifacts.to_str().unwrap(), "--seal-npm"])
+            .args(["--out", manifest.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            sealed.status.success(),
+            "artifact-manifest failed: {}",
+            stderr_of(&sealed)
+        );
+        let wire: serde_json::Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+        let set = &wire["distributions"][0];
+        assert_eq!(set["package"], "npm/stable-npm");
+        assert_eq!(set["files"][0]["filename"], "stable-npm-0.2.0.tgz");
+        let digest = set["files"][0]["digest"].as_str().unwrap().to_owned();
+
+        let receipt = external.path().join("receipt.json");
+        let args = [
+            "--artifact-manifest",
+            manifest.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+        ];
+        let executed = execute_rig(dir.path(), &intent, &receipt, &rig, TAG, &args, None);
+        assert!(executed.status.success(), "execute failed: {}", stderr_of(&executed));
+        assert!(receipt.exists());
+        assert_eq!(
+            fs::read_to_string(&marker).unwrap().lines().count(),
+            1,
+            "the executing job must not run the package's scripts"
+        );
+        let log = fs::read_to_string(&calls).unwrap();
+        let published: Vec<_> = log.lines().filter(|line| line.starts_with("publish ")).collect();
+        assert_eq!(published.len(), 1, "{log}");
+        assert!(
+            digest.contains(published[0].trim_start_matches("publish ")),
+            "the published bytes are the sealed bytes: {log} vs {digest}"
+        );
+    }
 }

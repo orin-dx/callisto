@@ -28,7 +28,7 @@ Why: Callisto's release engine is rigorous but its surface is confusing and its 
 - `callisto init` detects ecosystems/packages, asks only intent (fixed vs independent; release artifacts if binaries exist), writes minimal config, and can write a GitHub workflow using `callisto-action` of <= 40 lines; a non-interactive mode exists.
 - Supported fixtures cover separate native packages, and dual Cargo/npm outputs. Native dependency ranges/names, all affected lockfiles and built distribution metadata agree after versioning.
 - A retry completes required missing effects without inventing a new version, even after tag creation or a partial Python/platform upload. Required outputs and shared public-announcement prerequisites are explicit; version/tag existence alone is not completion evidence.
-- Generated workflows build/place only intended supported outputs and configure native authentication without registry secrets in plan/build jobs. This repo retains no GitHub Environment or separate reviewer gate; the reviewed merge remains the authorization.
+- Generated workflows build/place only intended supported outputs and configure native authentication without registry secrets in plan, build, attest, package and pack jobs. This repo retains no GitHub Environment or separate reviewer gate; the reviewed merge remains the authorization.
 - Fresh-repository runs measure init-to-first-publication against the existing under-ten-minute goal, including commit and credential steps. The supported/unsupported boundary is documented; no timing evidence is claimed until measured.
 
 ## Decisions still open

@@ -1205,37 +1205,111 @@ fn the_confirmation_and_repository_lookups_pass_the_publish_config_to_npm_view()
 
 #[test]
 fn publisher_environment_maps_only_the_selected_native_tool() {
-    let npm = npm_publisher_environment("npm", Some("npm-secret"), Some("/tmp/npmrc"));
+    let npm = npm_publisher_environment(Some("npm-secret"), Some("/tmp/npmrc"));
     assert_eq!(
         npm,
         [("NPM_TOKEN", "npm-secret"), ("NPM_CONFIG_USERCONFIG", "/tmp/npmrc")]
-    );
-    let bun = npm_publisher_environment("bun", Some("npm-secret"), Some("/tmp/npmrc"));
-    assert_eq!(
-        bun,
-        [
-            ("NPM_TOKEN", "npm-secret"),
-            ("NPM_CONFIG_TOKEN", "npm-secret"),
-            ("NPM_CONFIG_USERCONFIG", "/tmp/npmrc")
-        ]
     );
     assert_eq!(
         pypi_publisher_environment(Some("__token__"), Some("pypi-secret")),
         [("TWINE_USERNAME", "__token__"), ("TWINE_PASSWORD", "pypi-secret")]
     );
-    assert!(npm_publisher_environment("npm", None, None).is_empty());
+    assert!(npm_publisher_environment(None, None).is_empty());
     assert!(pypi_publisher_environment(None, None).is_empty());
 }
 
-/// A platform package outside the workspace globs cannot be selected by name
-/// (`pnpm --filter` answers "No projects matched"), so it is published by path
-/// with npm, even in a pnpm workspace.
+/// The staged name of `name`'s tarball at 1.0.0.
+fn staged(name: &str) -> String {
+    callisto_model::npm_tarball_filename(name, &Version::parse("1.0.0", VersionGrammar::SemVer).unwrap())
+}
+
+/// Records every command, answers success, and writes the tarball a pack names into its destination as the real tools
+/// do. Commands run with credentials removed are listed apart.
+struct PackingRunner {
+    tarball: String,
+    package_json: String,
+    calls: std::sync::Mutex<Vec<(String, Vec<String>, PathBuf)>>,
+    credential_free: std::sync::Mutex<Vec<String>>,
+}
+
+impl PackingRunner {
+    fn new(tarball: &str, name: &str, version: &str) -> Self {
+        Self {
+            tarball: tarball.to_owned(),
+            package_json: format!("{{\"name\":\"{name}\",\"version\":\"{version}\"}}"),
+            calls: std::sync::Mutex::new(Vec::new()),
+            credential_free: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Every command but the `tar` read of the tarball's manifest.
+    fn calls(&self) -> Vec<(String, Vec<String>, PathBuf)> {
+        let mut calls = self.calls.lock().unwrap().clone();
+        calls.retain(|(program, ..)| program != "tar");
+        calls
+    }
+
+    fn credential_free(&self) -> Vec<String> {
+        self.credential_free.lock().unwrap().clone()
+    }
+}
+
+impl callisto_model::CommandRunner for PackingRunner {
+    fn run(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        self.calls.lock().unwrap().push((
+            program.to_owned(),
+            args.iter().map(|arg| (*arg).to_owned()).collect(),
+            cwd.to_path_buf(),
+        ));
+        if program == "tar" {
+            return Ok(callisto_model::CommandOutput {
+                exit_code: Some(0),
+                stdout: self.package_json.clone(),
+                stderr: String::new(),
+            });
+        }
+        let destination = args.windows(2).find_map(|pair| match pair[0] {
+            "--pack-destination" | "--destination" => Some(PathBuf::from(pair[1])),
+            "--out" => Path::new(pair[1]).parent().map(Path::to_path_buf),
+            _ => None,
+        });
+        if let Some(destination) = destination {
+            std::fs::write(destination.join(&self.tarball), b"tarball").unwrap();
+        }
+        Ok(callisto_model::CommandOutput {
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+
+    fn run_with_timeout_env_filtered(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        _timeout: std::time::Duration,
+        _removed: &[&str],
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        self.credential_free.lock().unwrap().push(program.to_owned());
+        self.run(program, args, cwd)
+    }
+}
+
+/// A platform package outside the workspace globs cannot be packed by name, so `npm` packs it by path, even in a pnpm
+/// workspace; the owner is a member and keeps its package manager. Without a manifest the tarball is packed here with
+/// credentials removed, then published by path with scripts off.
 #[test]
-fn a_platform_package_is_published_by_directory_with_npm() {
+fn a_platform_package_is_packed_by_directory_with_npm_and_published_as_a_tarball() {
     temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("pnpm-lock.yaml"), "").unwrap();
-        let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+        let runner = PackingRunner::new("s-cli-linux-x64-gnu-1.0.0.tgz", "@s/cli-linux-x64-gnu", "1.0.0");
         let context = ProviderContext::new(root.path(), &runner, None);
         let mut platform = operation("npm", "@s/cli-linux-x64-gnu", "1.0.0");
         platform.package_dir = PathBuf::from("packages/cli/npm/linux-x64-gnu");
@@ -1246,31 +1320,277 @@ fn a_platform_package_is_published_by_directory_with_npm() {
             .unwrap()
             .publish(&context, &operation_id(Ecosystem::Npm, &platform), &platform, None)
             .unwrap();
-        let dir = root.path().join("packages/cli/npm/linux-x64-gnu");
+        let calls = runner.calls();
+        let (pack, publish) = (&calls[0], &calls[1]);
+        assert_eq!(calls.len(), 2, "{calls:?}");
+        assert_eq!(pack.0, "npm");
+        assert_eq!(pack.1[..2], ["pack", "--pack-destination"]);
+        assert_eq!(pack.2, root.path().join("packages/cli/npm/linux-x64-gnu"));
         assert_eq!(
-            runner.0.lock().unwrap().as_slice(),
-            [(
-                "npm".to_owned(),
-                vec![
-                    "publish".to_owned(),
-                    dir.to_string_lossy().into_owned(),
-                    "--access".to_owned(),
-                    "public".to_owned()
-                ],
-                root.path().to_path_buf(),
-            )]
+            runner.credential_free(),
+            ["npm"],
+            "only the pack runs without credentials"
         );
+        assert_eq!(publish.0, "npm");
+        assert_eq!(publish.1[0], "publish");
+        assert!(publish.1[1].ends_with(&staged("@s/cli-linux-x64-gnu")), "{publish:?}");
+        assert_eq!(publish.1[2..], ["--ignore-scripts", "--access", "public"]);
+        assert_eq!(publish.2, root.path().to_path_buf());
 
-        // The owner is a workspace member and keeps its package manager's by-name form.
-        runner.0.lock().unwrap().clear();
+        // The owner is a workspace member and packs with its package manager.
+        let runner = PackingRunner::new("s-cli-1.0.0.tgz", "@s/cli", "1.0.0");
+        let context = ProviderContext::new(root.path(), &runner, None);
         let owner = operation("npm", "@s/cli", "1.0.0");
         adapter_for(Ecosystem::Npm)
             .unwrap()
             .publish(&context, &operation_id(Ecosystem::Npm, &owner), &owner, None)
             .unwrap();
-        assert_eq!(runner.0.lock().unwrap()[0].0, "pnpm");
-        assert!(runner.0.lock().unwrap()[0].1.contains(&"--filter=@s/cli".to_owned()));
+        assert_eq!(runner.calls()[0].0, "pnpm");
+        assert_eq!(runner.calls()[1].0, "npm", "every package publishes with npm");
     });
+}
+
+/// The tarball must be this package at this version: a right name at another version, or the reverse, is not it.
+#[test]
+fn a_tarball_whose_manifest_differs_from_the_plan_in_name_or_version_alone_is_rejected() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        for (name, version) in [("pkg", "2.0.0"), ("other", "1.0.0")] {
+            let runner = PackingRunner::new("pkg-1.0.0.tgz", name, version);
+            let context = ProviderContext::new(root.path(), &runner, None);
+            let package = operation("npm", "pkg", "1.0.0");
+            let out = tempfile::tempdir().unwrap();
+            let error = NpmRegistry::pack_into(&context, &package, out.path()).unwrap_err();
+            assert!(
+                matches!(error, GraphError::BuildOutputIncomplete { tool: "npm pack", .. }),
+                "{name} {version}: {error:?}"
+            );
+            assert!(!out.path().join("pkg-1.0.0.tgz").exists());
+        }
+    });
+}
+
+/// A manager's own file name is not trusted: the manifest inside decides, so a tool that names a scoped package its own
+/// way still yields the planned tarball.
+#[test]
+fn a_tarball_the_manager_named_its_own_way_is_accepted_when_its_manifest_matches_the_plan() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("yarn.lock"), "").unwrap();
+        let runner = PackingRunner::new("package.tgz", "@s/lib", "1.0.0");
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let package = operation("npm", "@s/lib", "1.0.0");
+        let out = tempfile::tempdir().unwrap();
+        let tarball = NpmRegistry::pack_into(&context, &package, out.path()).unwrap();
+        assert_eq!(tarball, out.path().join(staged("@s/lib")));
+    });
+}
+
+/// A package whose pack names a different file is not the package the intent authorized, so nothing is published.
+#[test]
+fn a_pack_that_writes_another_tarball_than_the_planned_one_publishes_nothing() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        let runner = PackingRunner::new("other-9.9.9.tgz", "other", "9.9.9");
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let package = operation("npm", "pkg", "1.0.0");
+        let error = adapter_for(Ecosystem::Npm)
+            .unwrap()
+            .publish(&context, &operation_id(Ecosystem::Npm, &package), &package, None)
+            .unwrap_err();
+        assert!(
+            matches!(error, GraphError::BuildOutputIncomplete { tool: "npm pack", .. }),
+            "{error:?}"
+        );
+        assert!(runner.calls().iter().all(|(_, args, _)| args[0] != "publish"));
+    });
+}
+
+/// The sealed tarball is the only thing published: nothing is packed in the credentialed job, so the package's scripts
+/// never run beside the registry token.
+#[test]
+fn a_sealed_tarball_is_published_without_packing() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        let runner = PackingRunner::new("unused.tgz", "pkg", "1.0.0");
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let package = operation("npm", "@s/cli", "1.0.0");
+        let sealed = SealedNpm::new("npm/@s/cli", &[(staged("@s/cli").as_str(), "sealed bytes")]);
+        let artifacts = sealed.verified();
+
+        adapter_for(Ecosystem::Npm)
+            .unwrap()
+            .publish(
+                &context,
+                &operation_id(Ecosystem::Npm, &package),
+                &package,
+                Some(&artifacts),
+            )
+            .unwrap();
+        let calls = runner.calls();
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        assert!(runner.credential_free().is_empty());
+        assert_eq!(calls[0].1[0], "publish");
+        assert_eq!(
+            calls[0].1[1],
+            sealed.dir.path().join(staged("@s/cli")).to_string_lossy()
+        );
+        assert!(calls[0].1.contains(&"--ignore-scripts".to_owned()), "{calls:?}");
+    });
+}
+
+/// The CI executor follows a credential-free pack job: with no manifest at all it packs nothing itself, and a local
+/// run, which has no job before it, still packs in place.
+#[test]
+fn the_ci_route_without_a_manifest_refuses_to_pack_and_the_local_route_packs() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        let package = operation("npm", "pkg", "1.0.0");
+        let adapter = adapter_for(Ecosystem::Npm).unwrap();
+
+        let runner = PackingRunner::new("pkg-1.0.0.tgz", "pkg", "1.0.0");
+        let ci = ProviderContext::new(root.path(), &runner, None).with_route(PublishRoute::Ci);
+        let error = adapter
+            .publish(&ci, &operation_id(Ecosystem::Npm, &package), &package, None)
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::BuildOutputIncomplete {
+                    tool: "artifact manifest",
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert!(runner.calls().is_empty(), "{:?}", runner.calls());
+
+        let local = ProviderContext::new(root.path(), &runner, None).with_route(PublishRoute::Local);
+        adapter
+            .publish(&local, &operation_id(Ecosystem::Npm, &package), &package, None)
+            .unwrap();
+        assert_eq!(runner.calls().len(), 2, "pack then publish");
+    });
+}
+
+/// A crate the CI route publishes was compiled by the credential-free `cargo package`; a local publish verifies itself.
+#[test]
+fn a_cargo_publish_skips_verification_only_on_the_ci_route() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"2.0.0\"\n",
+    )
+    .unwrap();
+    for (route, skipped) in [(PublishRoute::Ci, true), (PublishRoute::Local, false)] {
+        let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+        let context = ProviderContext::new(root.path(), &runner, None).with_route(route);
+        let publish = operation(RegistryKey::CRATES_IO, "demo", "2.0.0");
+        adapter_for(Ecosystem::Cargo)
+            .unwrap()
+            .publish(&context, &operation_id(Ecosystem::Cargo, &publish), &publish, None)
+            .unwrap();
+        let args = runner.0.lock().unwrap()[0].1.clone();
+        assert_eq!(args.contains(&"--no-verify".to_owned()), skipped, "{route:?}: {args:?}");
+    }
+}
+
+/// A manifest that does not seal the package means the pack job did not run: packing here would run `prepack` beside
+/// the registry token, so nothing runs.
+#[test]
+fn a_manifest_that_seals_no_tarball_for_the_package_is_refused_without_running_anything() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        let runner = PackingRunner::new("pkg-1.0.0.tgz", "pkg", "1.0.0");
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let package = operation("npm", "pkg", "1.0.0");
+        let sealed = SealedNpm::new("npm/other", &[("other-1.0.0.tgz", "bytes")]);
+        let artifacts = sealed.verified();
+        let error = adapter_for(Ecosystem::Npm)
+            .unwrap()
+            .publish(
+                &context,
+                &operation_id(Ecosystem::Npm, &package),
+                &package,
+                Some(&artifacts),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::BuildOutputIncomplete {
+                    tool: "artifact manifest",
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert!(runner.calls().is_empty(), "{:?}", runner.calls());
+    });
+}
+
+/// Verification happened when the run started; the publish must not trust it blindly.
+#[test]
+fn a_sealed_tarball_changed_after_verification_is_not_published() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        let runner = PackingRunner::new("unused.tgz", "pkg", "1.0.0");
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let package = operation("npm", "pkg", "1.0.0");
+        let sealed = SealedNpm::new("npm/pkg", &[("pkg-1.0.0.tgz", "sealed bytes")]);
+        let artifacts = sealed.verified();
+        std::fs::write(sealed.dir.path().join("pkg-1.0.0.tgz"), "swapped").unwrap();
+        let error = adapter_for(Ecosystem::Npm)
+            .unwrap()
+            .publish(
+                &context,
+                &operation_id(Ecosystem::Npm, &package),
+                &package,
+                Some(&artifacts),
+            )
+            .unwrap_err();
+        assert!(matches!(error, GraphError::ArtifactBytesMismatch { .. }), "{error:?}");
+        assert!(runner.calls().is_empty());
+    });
+}
+
+/// A pack output directory and the manifest sealing it.
+struct SealedNpm {
+    dir: tempfile::TempDir,
+    manifest: callisto_model::ArtifactManifestV1,
+}
+
+impl SealedNpm {
+    fn new(package: &str, files: &[(&str, &str)]) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, content) in files {
+            std::fs::write(dir.path().join(name), content).unwrap();
+        }
+        let sets = vec![callisto_model::DistributionSetV1 {
+            package: ReleasePackageId::parse(package).unwrap(),
+            version: "1.0.0".to_owned(),
+            files: files
+                .iter()
+                .map(|(name, content)| callisto_model::DistributionFileV1 {
+                    filename: (*name).to_owned(),
+                    digest: ArtifactDigest::from_bytes(content.as_bytes()),
+                    byte_length: content.len() as u64,
+                })
+                .collect(),
+        }];
+        let manifest = callisto_model::ArtifactManifestV1 {
+            schema_version: 1,
+            intent_digest: callisto_model::IntentDigest::parse(&"a".repeat(64)).unwrap(),
+            source_commit: callisto_model::CommitSha::parse(&"b".repeat(40)).unwrap(),
+            entries: Vec::new(),
+            distributions: sets,
+        };
+        Self { dir, manifest }
+    }
+
+    fn verified(&self) -> VerifiedArtifactManifest<'_> {
+        VerifiedArtifactManifest::for_tests(&self.manifest, self.dir.path().to_path_buf())
+    }
 }
 
 /// A cargo publish names its registry unless it is crates.io; dropping the flag would send a private crate to crates.io.
@@ -1299,40 +1619,33 @@ fn a_cargo_publish_names_a_custom_registry_and_omits_the_default() {
     }
 }
 
-/// Yarn has no `--registry`, so a registry configured in callisto.toml would be dropped and the package published
-/// wherever yarn's own config points. The publish stops before running yarn.
+/// Yarn packs, `npm` publishes, so a registry configured in callisto.toml reaches the publish whatever the workspace
+/// uses.
 #[test]
-fn a_configured_npm_registry_with_yarn_is_refused_before_publishing() {
+fn a_configured_npm_registry_reaches_the_publish_in_a_yarn_workspace() {
     temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("yarn.lock"), "").unwrap();
-        let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+        let runner = PackingRunner::new("s-lib-1.0.0.tgz", "@s/lib", "1.0.0");
         let context = ProviderContext::new(root.path(), &runner, None);
         let mut publish = operation("npm", "@s/lib", "1.0.0");
         publish.registry.endpoint = Some("https://npm.corp.example/".to_owned());
 
-        let error = adapter_for(Ecosystem::Npm)
-            .unwrap()
-            .publish(&context, &operation_id(Ecosystem::Npm, &publish), &publish, None)
-            .unwrap_err();
-
-        assert!(
-            matches!(
-                error,
-                GraphError::UnsupportedRelease {
-                    feature: UnsupportedReleaseFeature::YarnRegistryUrl
-                }
-            ),
-            "{error:?}"
-        );
-        assert!(runner.0.lock().unwrap().is_empty(), "yarn must not run");
-
-        publish.registry.endpoint = None;
         adapter_for(Ecosystem::Npm)
             .unwrap()
             .publish(&context, &operation_id(Ecosystem::Npm, &publish), &publish, None)
             .unwrap();
-        assert_eq!(runner.0.lock().unwrap()[0].0, "yarn");
+        let calls = runner.calls();
+        assert_eq!(calls[0].0, "yarn");
+        assert_eq!(calls[0].1[0], "pack");
+        assert_eq!(calls[1].0, "npm");
+        assert!(
+            calls[1]
+                .1
+                .windows(2)
+                .any(|pair| pair == ["--registry", "https://npm.corp.example/"]),
+            "{calls:?}"
+        );
     });
 }
 
@@ -1354,36 +1667,35 @@ fn observing_and_publishing_a_nested_npm_package_all_run_in_the_workspace_that_o
         );
         write("web/.npmrc", "registry=https://nested.example.test/\n");
         write("web/packages/a/package.json", r#"{"name":"a","version":"1.0.0"}"#);
-        let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+        let runner = PackingRunner::new("a-1.0.0.tgz", "a", "1.0.0");
         let context = ProviderContext::new(root.path(), &runner, None);
         let adapter = adapter_for(Ecosystem::Npm).unwrap();
 
-        let mut by_name = operation("npm", "a", "1.0.0");
-        by_name.package_dir = PathBuf::from("web/packages/a");
-        adapter.observe_once(&context, &by_name).unwrap();
+        let mut package = operation("npm", "a", "1.0.0");
+        package.package_dir = PathBuf::from("web/packages/a");
+        adapter.observe_once(&context, &package).unwrap();
         adapter
-            .publish(&context, &operation_id(Ecosystem::Npm, &by_name), &by_name, None)
-            .unwrap();
-        let mut by_directory = operation("npm", "a", "1.0.0");
-        by_directory.package_dir = PathBuf::from("web/packages/a");
-        by_directory.by_directory = true;
-        adapter
-            .publish(
-                &context,
-                &operation_id(Ecosystem::Npm, &by_directory),
-                &by_directory,
-                None,
-            )
+            .publish(&context, &operation_id(Ecosystem::Npm, &package), &package, None)
             .unwrap();
 
-        let calls = runner.0.lock().unwrap().clone();
-        let programs: Vec<&str> = calls.iter().map(|(program, ..)| program.as_str()).collect();
-        assert_eq!(programs, ["npm", "npm", "npm"], "{calls:?}");
-        assert!(calls[0].1.contains(&"view".to_owned()), "{calls:?}");
-        assert!(calls[1].1.contains(&"--workspace=a".to_owned()), "{calls:?}");
-        for (_, _, cwd) in &calls {
-            assert_eq!(cwd, &root.path().join("web"), "{calls:?}");
-        }
+        let calls = runner.calls();
+        let steps: Vec<&str> = calls.iter().map(|(_, args, _)| args[0].as_str()).collect();
+        assert_eq!(steps, ["view", "pack", "publish"], "{calls:?}");
+        assert_eq!(
+            calls[0].2,
+            root.path().join("web"),
+            "observation reads the owning workspace"
+        );
+        assert_eq!(
+            calls[1].2,
+            root.path().join("web/packages/a"),
+            "the package is packed where it is"
+        );
+        assert_eq!(
+            calls[2].2,
+            root.path().join("web"),
+            "the publish reads the owning workspace's .npmrc"
+        );
     });
 }
 

@@ -66,7 +66,7 @@ fn a_build_without_a_wheel_or_an_sdist_is_an_error() {
         }
         let error = BuiltSet::from_dir(dir, "my-pkg", &version("1.0.0")).unwrap_err();
         assert!(
-            matches!(error, GraphError::PypiBuildOutputIncomplete { missing: found, .. } if found == missing),
+            matches!(error, GraphError::BuildOutputIncomplete { missing: found, .. } if found == missing),
             "{error:?}"
         );
     }

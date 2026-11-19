@@ -167,6 +167,44 @@ impl crate::report::Report for ReleaseBuildPythonReport {
     }
 }
 
+/// `callisto release package-cargo --format json` report: the crates packaged.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasePackageCargoReport {
+    pub built: Vec<String>,
+}
+
+impl crate::report::Report for ReleasePackageCargoReport {
+    const COMMAND: &'static str = "release package-cargo";
+
+    fn schema_version(&self) -> u32 {
+        crate::SCHEMA_VERSION
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
+/// `callisto release pack-npm --format json` report: the npm packages packed.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasePackNpmReport {
+    pub built: Vec<String>,
+}
+
+impl crate::report::Report for ReleasePackNpmReport {
+    const COMMAND: &'static str = "release pack-npm";
+
+    fn schema_version(&self) -> u32 {
+        crate::SCHEMA_VERSION
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::Ecosystem;
@@ -174,6 +212,36 @@ mod tests {
     use super::super::test_support::test_intent;
     use super::*;
     use crate::release::*;
+
+    #[test]
+    fn the_package_cargo_report_carries_the_shared_schema_version_and_the_crates() {
+        use crate::report::Report;
+        let report = ReleasePackageCargoReport {
+            built: vec!["a".to_owned()],
+        };
+        assert_eq!(report.schema_version(), crate::SCHEMA_VERSION);
+        assert!(report.diagnostics().is_empty());
+        assert_eq!(ReleasePackageCargoReport::COMMAND, "release package-cargo");
+        assert_eq!(
+            serde_json::to_value(&report).unwrap(),
+            serde_json::json!({"built": ["a"]})
+        );
+    }
+
+    #[test]
+    fn the_pack_npm_report_carries_the_shared_schema_version_and_the_built_packages() {
+        use crate::report::Report;
+        let report = ReleasePackNpmReport {
+            built: vec!["@s/cli".to_owned()],
+        };
+        assert_eq!(report.schema_version(), crate::SCHEMA_VERSION);
+        assert!(report.diagnostics().is_empty());
+        assert_eq!(ReleasePackNpmReport::COMMAND, "release pack-npm");
+        assert_eq!(
+            serde_json::to_value(&report).unwrap(),
+            serde_json::json!({"built": ["@s/cli"]})
+        );
+    }
 
     /// `ReleasePlanReport` must flatten `ReleaseIntentV1`'s own fields (not nest them
     /// under an `intent` key) and add a `diagnostics` array only when non-empty --

@@ -142,7 +142,7 @@ impl ReleaseRunEnvelopeV1 {
         if self.intent_digest != intent.digest {
             return Err(ReleaseRunEnvelopeError::MismatchedIntent);
         }
-        let sealable = !intent.artifact_slots.is_empty() || !super::python_publishes(intent).is_empty();
+        let sealable = !intent.artifact_slots.is_empty() || super::has_sealable_publishes(intent);
         match (intent.artifact_slots.is_empty(), &self.artifact_manifest_digest) {
             (false, None) => return Err(ReleaseRunEnvelopeError::MissingArtifactManifest),
             (true, Some(_)) if !sealable => return Err(ReleaseRunEnvelopeError::UnexpectedArtifactManifest),

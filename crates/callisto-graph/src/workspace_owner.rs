@@ -1,7 +1,7 @@
 //! The workspace that owns a package, resolved once and used everywhere a command must run "in the workspace".
 //!
-//! Each tool reads its project configuration (`.npmrc`, registries, credentials) and resolves `--workspace` from the
-//! directory it runs in, and a lockfile sits beside the workspace root. If publishing, observing and refreshing each
+//! Each tool reads its project configuration (`.npmrc`, registries, credentials) from the directory it runs in, and a
+//! lockfile sits beside the workspace root. If publishing, observing and refreshing each
 //! guessed that directory their own way they could disagree about it, so they all ask here. The owner is the nearest
 //! directory at or above the package whose manifest declares a workspace, the same declaration discovery reads; only for
 //! a package no workspace declares does a lockfile or marker file decide.

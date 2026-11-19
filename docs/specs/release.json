@@ -42,12 +42,33 @@
       ]
     },
     {
-      "name": "callisto release artifact-manifest (hidden)",
-      "signature": "callisto release artifact-manifest --intent FILE --artifact-dir DIR [--seal-python] --out FILE",
-      "description": "Hashes one regular file per declared artifact slot and writes the artifact manifest. With --seal-python it also records the name, size and sha256 of every built Python file of the plan.",
+      "name": "callisto release package-cargo (hidden)",
+      "signature": "callisto release package-cargo [--source-root DIR] --intent FILE",
+      "description": "Runs `cargo package --locked -p <crate>...` for every crate the plan publishes, one call per owning Cargo workspace and from that workspace's directory, without registry credentials.",
       "error_conditions": [
-        "Plan declares no slots and --seal-python is absent: E219.",
-        "--seal-python on a plan that publishes no Python package: E308.",
+        "--dry-run: E309.",
+        "Plan publishes no crate: E308.",
+        "A cargo package that fails: E164."
+      ]
+    },
+    {
+      "name": "callisto release pack-npm (hidden)",
+      "signature": "callisto release pack-npm [--source-root DIR] --intent FILE --artifact-dir DIR",
+      "description": "Packs every npm publish in the plan, platform packages included, into the directory with its workspace's package manager, without registry credentials. The package's `prepack` and `prepare` scripts run here.",
+      "error_conditions": [
+        "--dry-run: E309.",
+        "Plan publishes no npm package: E308.",
+        "A pack that writes no tarball, or one not named for the package and version: E306."
+      ]
+    },
+    {
+      "name": "callisto release artifact-manifest (hidden)",
+      "signature": "callisto release artifact-manifest --intent FILE --artifact-dir DIR [--seal-python] [--seal-npm] --out FILE",
+      "description": "Hashes one regular file per declared artifact slot and writes the artifact manifest. With --seal-python it also records the name, size and sha256 of every built Python file of the plan, and with --seal-npm that of the tarball of every npm publish.",
+      "error_conditions": [
+        "Plan declares no slots and neither --seal-python nor --seal-npm is given: E219.",
+        "--seal-python on a plan that publishes no Python package, or --seal-npm on one that publishes no npm package: E308.",
+        "--seal-npm with a tarball missing from the directory: E306.",
         "Asset missing, a symlink or not a regular file: E221."
       ]
     },
@@ -194,7 +215,7 @@
     },
     {
       "id": "REL-ORD-03",
-      "criterion": "An npm package with attached platform packages publishes each platform package with `npm publish <platform-dir>` before publishing the owner package. Operations start one at a time and a failed publish command stops the run, so an owner package is never published after the command for one of its platform packages fails."
+      "criterion": "An npm package with attached platform packages publishes each platform package's tarball before the owner package's. Operations start one at a time and a failed publish command stops the run, so an owner package is never published after the command for one of its platform packages fails."
     },
     {
       "id": "REL-ORD-04",
@@ -203,11 +224,11 @@
     },
     {
       "id": "REL-PUB-01",
-      "criterion": "Cargo publish runs `cargo publish --manifest-path <pkg>/Cargo.toml --locked` from the directory of the Cargo workspace that governs the package, adding `--registry <key>` for registries other than crates.io. It runs only after the on-disk version (resolving `version.workspace = true`) equals the planned version and fails with an on-disk version drift error otherwise."
+      "criterion": "Cargo publish runs `cargo publish --manifest-path <pkg>/Cargo.toml --locked` from the directory of the Cargo workspace that governs the package, adding `--registry <key>` for registries other than crates.io, and `--no-verify` when `release execute` publishes, because a credential-free job already compiled every crate of the release; a local `callisto release` keeps cargo's verification. It runs only after the on-disk version (resolving `version.workspace = true`) equals the planned version and fails with an on-disk version drift error otherwise."
     },
     {
       "id": "REL-PUB-02",
-      "criterion": "npm publish picks its tool from the workspace that owns the package and runs there. The owner is the nearest directory at or above the package whose `package.json` declares `workspaces` or whose `pnpm-workspace.yaml` has a `packages` list, else for a package no workspace declares the nearest directory with a lockfile, else the root; a lockfile beside a package never moves it out of a declared workspace. The `npm view` observation and a publish by directory run in that same directory, so one `.npmrc` governs what is looked for and what is published. A marker that cannot be inspected is an error, not `npm`. A `pnpm-workspace.yaml` alone, without a lockfile, selects pnpm. The tools: `pnpm publish --filter=<name> --no-git-checks`, `yarn workspace <name> npm publish`, `bun publish` in the package directory, and otherwise `npm publish --workspace=<name>`. It appends `--tag <label>` for prerelease versions, where the label is the lowercase letters that start the first prerelease identifier (`1.0.0-beta.2` publishes under `beta`), or `next` when there are none or the word is `latest`, and `--access` and, except for yarn (which reads `publishConfig.registry` from the manifest), `--registry` when set. A stable version takes the registry default tag."
+      "criterion": "npm publish packs with the tool of the workspace that owns the package, then publishes the tarball with `npm`. The owner is the nearest directory at or above the package whose `package.json` declares `workspaces` or whose `pnpm-workspace.yaml` has a `packages` list, else for a package no workspace declares the nearest directory with a lockfile, else the root; a lockfile beside a package never moves it out of a declared workspace. The `npm view` observation and the publish run in that same directory, so one `.npmrc` governs what is looked for and what is published. A marker that cannot be inspected is an error, not `npm`. A `pnpm-workspace.yaml` alone, without a lockfile, selects pnpm. The pack runs in the package directory without registry credentials: `pnpm pack --pack-destination <dir>`, `yarn pack --out <dir>/%s-%v.tgz`, `bun pm pack --destination <dir>`, and otherwise `npm pack --pack-destination <dir>`; a platform package is always packed with `npm`. The pack must leave exactly one tarball whose `package.json` names the package and version, or the run fails with E306. It is staged as `<flattened name>-<version>.tgz`, and a scoped package carries a digest of its full name in that name, so `@acme/lib` and `acme-lib` at one version stay two files. The publish is `npm publish <tarball> --ignore-scripts`, so only `prepack` and `prepare` run, in the pack, and `prepublishOnly`, `publish` and `postpublish` do not run. It appends `--tag <label>` for prerelease versions, where the label is the lowercase letters that start the first prerelease identifier (`1.0.0-beta.2` publishes under `beta`), or `next` when there are none or the word is `latest`, and `--access` and `--registry` when set. A stable version takes the registry default tag."
     },
     {
       "id": "REL-PUB-03",
@@ -216,6 +237,11 @@
     {
       "id": "REL-PUB-04",
       "criterion": "PyPI publish builds with `python3 -m build --sdist --wheel --outdir <temporary directory>` in the package directory, falling back to `python` and failing with E170 when neither is on PATH, and fails with E306 when the build produced no wheel or no sdist for the version. It then runs `twine upload` naming only the built files the index lacks, with `--repository-url` for a configured upload endpoint (a registry's `publish-url`, else its `url`) and never `--skip-existing`. One build serves the preflight and the publish of a run. Every build runs with `SOURCE_DATE_EPOCH` set to the release commit's committer time. `release build-python` runs the same build for each Python publish of a plan into `--artifact-dir`."
+    },
+    {
+      "id": "REL-PUB-19",
+      "criterion": "An npm publish of a run whose artifact manifest seals the package's tarball publishes that file and packs nothing: the manifest records the tarball's name, size and sha256 (`release pack-npm`, then `release artifact-manifest --seal-npm`), `release execute` verifies the bytes before any effect and the publish checks them again just before it runs, and a mismatch fails with E139. A manifest that seals a Python or npm publish's files seals every publish of that ecosystem in the plan, or none. `release execute` with an npm or PyPI publish in the plan and no manifest, or a manifest that does not seal one of those publishes, fails with E306 when the manifest is verified, before any effect, and again before the publish command, so a package's scripts and build backend never run beside registry credentials. Only the local `callisto release`, which has no manifest, packs in place: the tarball is packed in a temporary directory with registry credentials withheld from the pack, then published the same way.",
+      "is_error_case": true
     },
     {
       "id": "REL-PUB-05",
@@ -278,7 +304,7 @@
     },
     {
       "id": "REL-PUB-18",
-      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its URL from `.cargo/config.toml`. A `publish-to` entry that is neither a built-in target nor the name of a `cargo` registry fails config loading with E330. Publishing an npm package with yarn while the npm registry has a `url` fails with E168 before yarn runs, because `yarn npm publish` has no `--registry`; the same configuration with npm, pnpm or bun passes `--registry <url>`."
+      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its URL from `.cargo/config.toml`. A `publish-to` entry that is neither a built-in target nor the name of a `cargo` registry fails config loading with E330. An npm registry `url` is passed to the publish as `--registry <url>` whichever package manager packed the tarball. A registry that only yarn or bun reads, `npmPublishRegistry` or `npmRegistryServer` in the owning workspace's `.yarnrc.yml` (at the top level or under `npmScopes`) or a registry in its `bunfig.toml`, fails with E168 naming the file and key when the plan is derived, on the local route too and before any effect, because `npm publish <tarball>` does not read it; `publishConfig.registry` and `.npmrc` are honored."
     },
     {
       "id": "REL-RERUN-01",
@@ -347,7 +373,7 @@
     },
     {
       "id": "REL-GH-05",
-      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`E221` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, or with a manifest that seals Python files, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`E233`); otherwise it rejects either flag (`E232`). `--seal-python` records the wheel and sdist of every Python publish of the plan, sealed all or none, each named for its package and version, and `release execute` verifies each file's sha256 and byte length (`E139`) before any effect.",
+      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`E221` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, or with a manifest that seals Python or npm files, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`E233`); otherwise it rejects either flag (`E232`). `--seal-python` records the wheel and sdist of every Python publish of the plan, and `--seal-npm` the one tarball of every npm publish (a registry publish or a platform package, under the published package's own name), each sealed all or none per ecosystem and named for its package and version, and `release execute` verifies each file's sha256 and byte length (`E139`) before any effect.",
       "is_error_case": true
     },
     {
@@ -383,7 +409,7 @@
     },
     {
       "id": "REL-PR-05",
-      "criterion": "`callisto-action` with `mode: release` runs `callisto --format json release --receipt <tmp>` and sets `published` and `publishedPackages` from registry and platform publish operations whose outcome is `published`. A `mode` other than `version-pr` or `release` fails the step."
+      "criterion": "`callisto-action` with `mode: release` runs `callisto --format json release --receipt <tmp>` and sets `published` and `publishedPackages` from registry and platform publish operations whose outcome is `published`. `mode: execute` runs `callisto release execute` on its `handoff` directory with the same credential mapping and outputs. A `mode` other than `version-pr`, `release` or `execute` fails the step."
     },
     {
       "id": "REL-PR-06",
@@ -411,7 +437,7 @@
     },
     {
       "id": "REL-ERR-02",
-      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest`, `release execute` or `release build-python` fails with `E217`, `E216`, `E218` or `E309` and writes nothing.",
+      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest`, `release execute`, `release build-python`, `release pack-npm` or `release package-cargo` fails with `E217`, `E216`, `E218` or `E309` and writes nothing.",
       "is_error_case": true
     },
     {

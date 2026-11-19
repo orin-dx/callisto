@@ -274,6 +274,19 @@ pub fn pypi_dist_belongs_to(filename: &str, package_name: &str, version: &Versio
     })
 }
 
+/// The file a packed tarball of `package_name` at `version` is staged under, unique per package. npm names the file
+/// with the scope's `@` dropped and its `/` a `-`, which makes `@acme/lib` and `acme-lib` one name, so a scoped
+/// package carries a digest of its full name.
+pub fn npm_tarball_filename(package_name: &str, version: &Version) -> String {
+    let flat = package_name.trim_start_matches('@').replace('/', "-");
+    if package_name.starts_with('@') {
+        let digest = crate::ArtifactDigest::from_bytes(package_name.as_bytes());
+        format!("{flat}-{}-{}.tgz", &digest.as_str()[..12], version.render())
+    } else {
+        format!("{flat}-{}.tgz", version.render())
+    }
+}
+
 fn pypi_name_parts(name: &str) -> Vec<String> {
     name.to_lowercase()
         .split(['-', '.', '_'])
@@ -332,6 +345,25 @@ mod tests {
         assert!(!pypi_dist_belongs_to("my_pkg-1.0.1.tar.gz", "my-pkg", &version));
         assert!(!pypi_dist_belongs_to("other-1.0.0.tar.gz", "my-pkg", &version));
         assert!(!pypi_dist_belongs_to("README.md", "my-pkg", &version));
+    }
+
+    #[test]
+    fn an_npm_tarball_is_named_the_way_npm_pack_names_it() {
+        let version = Version::parse("1.2.3-beta.1", VersionGrammar::SemVer).unwrap();
+        assert_eq!(npm_tarball_filename("left-pad", &version), "left-pad-1.2.3-beta.1.tgz");
+        let scoped = npm_tarball_filename("@s/cli", &version);
+        assert!(
+            scoped.starts_with("s-cli-") && scoped.ends_with("-1.2.3-beta.1.tgz"),
+            "{scoped}"
+        );
+        assert_ne!(
+            npm_tarball_filename("@acme/lib", &version),
+            npm_tarball_filename("acme-lib", &version)
+        );
+        assert_ne!(
+            npm_tarball_filename("@a/b-c", &version),
+            npm_tarball_filename("@a-b/c", &version)
+        );
     }
 
     #[test]

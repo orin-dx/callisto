@@ -8,6 +8,10 @@ on: {push: {branches: ["trunk"]}}
 
 permissions: {}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   version-pr:
     runs-on: ubuntu-latest
@@ -20,21 +24,108 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  release:
+  # No registry credentials: project build code runs here, and the executing job publishes these exact files.
+  package:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    outputs:
+      release: ${{ steps.decision.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      # Content precondition, not release detection: `release plan` requires this commit to write its decision.
+      - name: Check for a release decision
+        id: decision
+        run: |
+          set -euo pipefail
+          release=false
+          if git rev-parse --verify --quiet HEAD^ > /dev/null &&
+            git diff-tree --no-commit-id --name-only --diff-filter=AM -r HEAD^ HEAD | grep -qxF .callisto/release-decision.json; then
+            release=true
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+      - if: steps.decision.outputs.release == 'true'
+        uses: orin-dx/callisto/.github/actions/setup-callisto@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # callisto@0.8.0
+        with: {version: callisto@0.8.0}
+      - name: Plan the release
+        id: plan
+        if: steps.decision.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          handoff="$RUNNER_TEMP/release-handoff"
+          mkdir -p "$handoff"
+          callisto release plan --from-release-commit "$GITHUB_SHA" --decision .callisto/release-decision.json \
+            --orchestration-revision "$GITHUB_SHA" --artifact-repository "$GITHUB_REPOSITORY" \
+            --out "$handoff/release-intent.json"
+          {
+            echo "has_python=$(jq '[.operations[].id | select(.role.kind == "registryPublish" and (.package | startswith("pypi/")))] | length > 0' "$handoff/release-intent.json")"
+            echo "has_cargo=$(jq '[.operations[].id | select(.role.kind == "registryPublish" and (.package | startswith("cargo/")))] | length > 0' "$handoff/release-intent.json")"
+            echo "has_npm=$(jq '[.operations[].id | select(.role.kind == "platformPublish" or (.role.kind == "registryPublish" and (.package | startswith("npm/"))))] | length > 0' "$handoff/release-intent.json")"
+          } >> "$GITHUB_OUTPUT"
+      - name: Package the crates
+        if: steps.plan.outputs.has_cargo == 'true'
+        run: |
+          set -euo pipefail
+          callisto release package-cargo --intent "$RUNNER_TEMP/release-handoff/release-intent.json"
+      - name: Build the Python distributions
+        if: steps.plan.outputs.has_python == 'true'
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/build-venv"
+          "$RUNNER_TEMP/build-venv/bin/python" -m pip install --quiet build==1.4.4
+          export PATH="$RUNNER_TEMP/build-venv/bin:$PATH"
+          callisto release build-python --intent "$RUNNER_TEMP/release-handoff/release-intent.json" \
+            --artifact-dir "$RUNNER_TEMP/release-handoff"
+      - name: Pack the npm packages
+        if: steps.plan.outputs.has_npm == 'true'
+        run: |
+          set -euo pipefail
+          callisto release pack-npm --intent "$RUNNER_TEMP/release-handoff/release-intent.json" \
+            --artifact-dir "$RUNNER_TEMP/release-handoff"
+      - name: Seal the artifact manifest
+        if: steps.plan.outputs.has_python == 'true' || steps.plan.outputs.has_npm == 'true'
+        env:
+          HAS_PYTHON: ${{ steps.plan.outputs.has_python }}
+          HAS_NPM: ${{ steps.plan.outputs.has_npm }}
+        run: |
+          set -euo pipefail
+          handoff="$RUNNER_TEMP/release-handoff"
+          args=(--intent "$handoff/release-intent.json" --artifact-dir "$handoff" --out "$handoff/release-manifest.json")
+          if [[ "$HAS_PYTHON" == true ]]; then args+=(--seal-python); fi
+          if [[ "$HAS_NPM" == true ]]; then args+=(--seal-npm); fi
+          callisto release artifact-manifest "${args[@]}"
+      - if: steps.decision.outputs.release == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-handoff
+          path: ${{ runner.temp }}/release-handoff
+          if-no-files-found: error
+
+  execute:
+    needs: package
+    if: needs.package.outputs.release == 'true'
     runs-on: ubuntu-latest
     concurrency: {group: callisto-release, cancel-in-progress: false}
     permissions: {contents: write, id-token: write}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: {fetch-depth: 0} # zizmor: ignore[artipacked] tag push needs persisted credentials
-      - name: Install the Python publishing tools
+        with: {ref: "${{ github.sha }}", fetch-depth: 0} # zizmor: ignore[artipacked] tag push needs persisted credentials
+      - name: Install twine
         run: |
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/publish-venv"
-          "$RUNNER_TEMP/publish-venv/bin/python" -m pip install --quiet build==1.4.4 twine==7.0.0
+          "$RUNNER_TEMP/publish-venv/bin/python" -m pip install --quiet twine==7.0.0
           echo "$RUNNER_TEMP/publish-venv/bin" >> "$GITHUB_PATH"
+      # The action's own setup would install the checkout's project-selected toolchains beside the credentials.
+      - uses: orin-dx/callisto/.github/actions/setup-callisto@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # callisto@0.8.0
+        with: {version: callisto@0.8.0}
+      # Downloads land under $RUNNER_TEMP: `release execute` requires a clean worktree.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-handoff
+          path: ${{ runner.temp }}/release-handoff
       - uses: orin-dx/callisto/.github/actions/callisto-action@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # callisto@0.8.0
-        with: {mode: release}
+        with: {mode: execute, handoff: "${{ runner.temp }}/release-handoff", setup_callisto: "false"}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

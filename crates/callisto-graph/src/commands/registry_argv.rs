@@ -39,6 +39,15 @@ pub struct Argv {
 
 // ---------------------------------------------------------------- cargo
 
+/// Whether `cargo publish` compiles the packaged crate before uploading it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CargoVerification {
+    /// Cargo's own verification build, for a run with no credential-free job before it.
+    Build,
+    /// A credential-free job already ran `cargo package` over the release's crates, so the credentialed job compiles nothing.
+    PackagedElsewhere,
+}
+
 /// Builds the exact `cargo publish` argv for one crate: `--manifest-path`
 /// (so the caller can keep the workspace root as its own working directory)
 /// plus `--locked`, so a stale `Cargo.lock` fails the publish immediately
@@ -60,6 +69,7 @@ pub fn cargo_publish_argv(
     package_name: &str,
     version: &Version,
     registry_key: Option<&str>,
+    verification: CargoVerification,
 ) -> Result<Argv, GraphError> {
     verify_cargo_ondisk_version(workspace_root, package_dir, package_name, version)?;
 
@@ -70,6 +80,9 @@ pub fn cargo_publish_argv(
         manifest_path.to_string_lossy().into_owned(),
         "--locked".to_string(),
     ];
+    if verification == CargoVerification::PackagedElsewhere {
+        args.push("--no-verify".to_string());
+    }
     if let Some(reg) = registry_key {
         args.push("--registry".to_string());
         args.push(reg.to_string());
@@ -158,12 +171,26 @@ fn verify_cargo_ondisk_version(
     Ok(())
 }
 
+/// `cargo package --locked -p <crate>...` for the crates of one Cargo workspace, run from that workspace's directory.
+/// One call for the whole set: a crate cannot resolve an unpublished sibling of the same release on its own.
+pub fn cargo_package_argv(workspace_dir: &Path, crates: &[String]) -> Argv {
+    let mut args = vec!["package".to_string(), "--locked".to_string()];
+    for name in crates {
+        args.push("-p".to_string());
+        args.push(name.clone());
+    }
+    Argv {
+        program: "cargo".to_string(),
+        args,
+        cwd: workspace_dir.to_path_buf(),
+    }
+}
+
 // ------------------------------------------------------------------ npm
 
 /// The npm-compatible package manager a workspace uses, detected from
-/// lockfile presence. Each one needs a materially different invocation to
-/// publish a single named package out of a monorepo -- see
-/// [`npm_publish_argv`].
+/// lockfile presence. Each one packs with its own command -- see
+/// [`npm_pack_argv`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NpmPackageManager {
     Pnpm,
@@ -176,8 +203,8 @@ pub enum NpmPackageManager {
 /// Detection priority: pnpm > yarn > bun > npm (default). A `pnpm-workspace.yaml` is pnpm even where the lockfile is not
 /// committed, and a file that cannot be inspected is an error, not a reason to fall back to `npm`.
 ///
-/// The package manager comes from the workspace, so a pnpm or yarn workspace publishes with its own tool, not
-/// plain `npm publish`.
+/// The package manager comes from the workspace, so a pnpm or yarn workspace packs with its own tool, not
+/// plain `npm pack`.
 ///
 /// # Errors
 ///
@@ -203,74 +230,155 @@ pub fn detect_npm_package_manager(workspace_dir: &Path) -> Result<NpmPackageMana
     })
 }
 
-/// Builds the npm-ecosystem publish argv for one package, given the
-/// already-detected `package_manager` (see [`detect_npm_package_manager`]).
+/// Refuses a registry set where only yarn or bun reads it. The publish is `npm publish <tarball>`, which ignores
+/// `.yarnrc.yml` and `bunfig.toml`, so the tarball would go to a registry the project did not choose.
 ///
-/// | Package manager | Program | Base args                                  |
-/// |------------------|---------|--------------------------------------------|
-/// | Pnpm             | `pnpm`  | `publish --filter=<name> --no-git-checks`  |
-/// | Yarn             | `yarn`  | `workspace <name> npm publish`             |
-/// | Bun              | `bun`   | `publish` (run from `package_dir`)         |
-/// | Npm              | `npm`   | `publish --workspace=<name>`               |
+/// # Errors
 ///
-/// `--filter=`/`--workspace=` use the joined form so the name cannot be
-/// re-read as an option. Yarn takes the name positionally and has no joined
-/// spelling, so there it rests on `ReleasePackageId`'s leading-`-` rejection.
-///
-/// `tag`/`access`/`registry` are appended to every variant's base args.
-/// `package_dir` is only used for bun: it has no `--filter`/`--workspace`
-/// flag to target one package by name, so it alone must run from the
-/// package's own directory rather than the workspace root.
-pub fn npm_publish_argv(
-    workspace_root: &Path,
-    package_dir: &Path,
-    package_name: &str,
-    package_manager: NpmPackageManager,
-    tag: Option<&str>,
-    access: Option<NpmAccess>,
-    registry: Option<&str>,
-) -> Argv {
-    // `yarn npm publish` has no `--registry` option (it rejects one); the publish step refuses a configured registry
-    // for yarn before it gets here, so nothing is dropped silently.
-    let registry = registry.filter(|_| !matches!(package_manager, NpmPackageManager::Yarn));
-    let extra = npm_publish_flags(package_name, tag, access, registry);
+/// The workspace that owns `package_dir` uses yarn and its `.yarnrc.yml` sets `npmPublishRegistry` or
+/// `npmRegistryServer` (at the top level or under `npmScopes`), or uses bun and its `bunfig.toml` sets a registry; or
+/// one of those files cannot be read.
+pub(crate) fn require_registry_npm_publish_honors(workspace_root: &Path, package_dir: &Path) -> Result<(), GraphError> {
+    let workspace = workspace_root.join(crate::workspace_owner::npm_workspace_dir(workspace_root, package_dir)?);
+    let unsupported = |file: &'static str, key: String| GraphError::UnsupportedRelease {
+        feature: crate::error::UnsupportedReleaseFeature::NpmRegistryConfig { file, key },
+    };
+    let read = |file: &str| -> Result<Option<String>, GraphError> {
+        let path = workspace.join(file);
+        if !callisto_model::strict_fs::exists(&path).map_err(|error| GraphError::ReleaseInputRead {
+            path: path.clone(),
+            message: error.to_string(),
+        })? {
+            return Ok(None);
+        }
+        std::fs::read_to_string(&path)
+            .map(Some)
+            .map_err(|error| GraphError::ReleaseInputRead {
+                path,
+                message: error.to_string(),
+            })
+    };
+    match detect_npm_package_manager(&workspace)? {
+        NpmPackageManager::Yarn => {
+            let Some(text) = read(".yarnrc.yml")? else {
+                return Ok(());
+            };
+            let docs = yaml_rust2::YamlLoader::load_from_str(&text).map_err(|error| GraphError::ReleaseInputRead {
+                path: workspace.join(".yarnrc.yml"),
+                message: error.to_string(),
+            })?;
+            let Some(config) = docs.first() else {
+                return Ok(());
+            };
+            const KEYS: [&str; 2] = ["npmPublishRegistry", "npmRegistryServer"];
+            for key in KEYS {
+                if !config[key].is_badvalue() {
+                    return Err(unsupported(".yarnrc.yml", key.to_owned()));
+                }
+            }
+            if let Some(scopes) = config["npmScopes"].as_hash() {
+                for (scope, settings) in scopes {
+                    for key in KEYS {
+                        if !settings[key].is_badvalue() {
+                            let scope = scope.as_str().unwrap_or_default();
+                            return Err(unsupported(".yarnrc.yml", format!("npmScopes.{scope}.{key}")));
+                        }
+                    }
+                }
+            }
+        }
+        NpmPackageManager::Bun => {
+            let Some(text) = read("bunfig.toml")? else {
+                return Ok(());
+            };
+            let config: toml::Table = toml::from_str(&text).map_err(|error| GraphError::ReleaseInputRead {
+                path: workspace.join("bunfig.toml"),
+                message: error.to_string(),
+            })?;
+            let install = config.get("install").and_then(toml::Value::as_table);
+            if install.is_some_and(|install| install.contains_key("registry")) {
+                return Err(unsupported("bunfig.toml", "install.registry".to_owned()));
+            }
+            if let Some(scope) = install
+                .and_then(|install| install.get("scopes"))
+                .and_then(toml::Value::as_table)
+                .and_then(|scopes| scopes.keys().next())
+            {
+                return Err(unsupported("bunfig.toml", format!("install.scopes.{scope}")));
+            }
+        }
+        NpmPackageManager::Pnpm | NpmPackageManager::Npm => {}
+    }
+    Ok(())
+}
 
-    let (program, mut args, cwd) = match package_manager {
+/// Packs the package in `package_dir` into the empty directory `destination` with the tool that owns its workspace, so
+/// `workspace:` and `catalog:` ranges are rewritten into the tarball. Both paths are absolute and the tool runs in
+/// `package_dir`. The package's `prepack` and `prepare` scripts run here, so this runs without credentials.
+///
+/// | Package manager | Program | Args                                  |
+/// |------------------|---------|---------------------------------------|
+/// | Pnpm             | `pnpm`  | `pack --pack-destination <dir>`       |
+/// | Yarn             | `yarn`  | `pack --out <dir>/package.tgz`          |
+/// | Bun              | `bun`   | `pm pack --destination <dir>`         |
+/// | Npm              | `npm`   | `pack --pack-destination <dir>`       |
+pub fn npm_pack_argv(package_dir: &Path, package_manager: NpmPackageManager, destination: &Path) -> Argv {
+    let destination = destination.to_string_lossy().into_owned();
+    let (program, args) = match package_manager {
         NpmPackageManager::Pnpm => (
             "pnpm",
-            vec![
-                "publish".to_string(),
-                // `--filter=<name>`, not `--filter <name>`: the joined form
-                // cannot be re-read as an option even if a name slipped past
-                // `ReleasePackageId`'s charset rule.
-                format!("--filter={package_name}"),
-                // pnpm >= 7 refuses a dirty tree, and the tree is dirty after `callisto version` stages bumps.
-                "--no-git-checks".to_string(),
-            ],
-            workspace_root.to_path_buf(),
+            vec!["pack".to_string(), "--pack-destination".to_string(), destination],
         ),
         NpmPackageManager::Yarn => (
             "yarn",
             vec![
-                "workspace".to_string(),
-                package_name.to_string(),
-                "npm".to_string(),
-                "publish".to_string(),
+                "pack".to_string(),
+                "--out".to_string(),
+                format!("{destination}/package.tgz"),
             ],
-            workspace_root.to_path_buf(),
         ),
-        NpmPackageManager::Bun => ("bun", vec!["publish".to_string()], workspace_root.join(package_dir)),
+        NpmPackageManager::Bun => (
+            "bun",
+            vec![
+                "pm".to_string(),
+                "pack".to_string(),
+                "--destination".to_string(),
+                destination,
+            ],
+        ),
         NpmPackageManager::Npm => (
             "npm",
-            vec!["publish".to_string(), format!("--workspace={package_name}")],
-            workspace_root.to_path_buf(),
+            vec!["pack".to_string(), "--pack-destination".to_string(), destination],
         ),
     };
-    args.extend(extra);
     Argv {
         program: program.to_string(),
         args,
-        cwd,
+        cwd: package_dir.to_path_buf(),
+    }
+}
+
+/// Publishes the sealed `tarball` with `npm`, from `workspace_dir` (the workspace that owns the package, where its
+/// `.npmrc` is read), whatever tool packed it. `--ignore-scripts` keeps the package's lifecycle scripts out of the job
+/// that holds the registry credentials. The tarball path is absolute, so it cannot be read as an option.
+pub fn npm_publish_tarball_argv(
+    workspace_dir: &Path,
+    tarball: &Path,
+    package_name: &str,
+    tag: Option<&str>,
+    access: Option<NpmAccess>,
+    registry: Option<&str>,
+) -> Argv {
+    let mut args = vec![
+        "publish".to_string(),
+        tarball.to_string_lossy().into_owned(),
+        "--ignore-scripts".to_string(),
+    ];
+    args.extend(npm_publish_flags(package_name, tag, access, registry));
+    Argv {
+        program: "npm".to_string(),
+        args,
+        cwd: workspace_dir.to_path_buf(),
     }
 }
 
@@ -280,7 +388,7 @@ pub fn npm_default_access(name: &str, explicit: Option<NpmAccess>) -> Option<Npm
     explicit.or_else(|| name.starts_with('@').then_some(NpmAccess::Public))
 }
 
-/// `--tag`/`--access`/`--registry`, shared by every npm-ecosystem publish argv.
+/// `--tag`/`--access`/`--registry` of an npm publish.
 fn npm_publish_flags(
     package_name: &str,
     tag: Option<&str>,
@@ -307,32 +415,6 @@ fn npm_publish_flags(
         extra.push(reg.to_string());
     }
     extra
-}
-
-/// Publishes the package in `package_dir` by path: `npm publish <dir>` from `workspace_dir` (the workspace that owns
-/// it, where its `.npmrc` is read), whatever the package manager. pnpm `--filter`, yarn
-/// `workspace`, and npm `--workspace` select only workspace members, and an npm
-/// platform package directory usually is not one. The path is absolute, so it
-/// cannot be read as an option.
-pub fn npm_publish_directory_argv(
-    workspace_root: &Path,
-    workspace_dir: &Path,
-    package_dir: &Path,
-    package_name: &str,
-    tag: Option<&str>,
-    access: Option<NpmAccess>,
-    registry: Option<&str>,
-) -> Argv {
-    let mut args = vec![
-        "publish".to_string(),
-        workspace_root.join(package_dir).to_string_lossy().into_owned(),
-    ];
-    args.extend(npm_publish_flags(package_name, tag, access, registry));
-    Argv {
-        program: "npm".to_string(),
-        args,
-        cwd: workspace_root.join(workspace_dir),
-    }
 }
 
 // ----------------------------------------------------------------- pypi
@@ -621,12 +703,39 @@ mod tests {
         let manifest = dir.path().join("Cargo.toml");
         std::fs::write(&manifest, "[package]\nname = \"demo\"\nversion = \"1.0.0\"\n").unwrap();
 
-        let argv = cargo_publish_argv(dir.path(), Path::new("."), "demo", &v("1.0.0"), None).unwrap();
+        let argv = cargo_publish_argv(
+            dir.path(),
+            Path::new("."),
+            "demo",
+            &v("1.0.0"),
+            None,
+            CargoVerification::Build,
+        )
+        .unwrap();
         assert_eq!(argv.program, "cargo");
         assert!(argv.args.contains(&"--locked".to_string()));
         assert!(argv.args.contains(&"--manifest-path".to_string()));
         assert!(!argv.args.iter().any(|a| a == "--registry"));
         assert_eq!(argv.cwd, dir.path());
+    }
+
+    #[test]
+    fn a_cargo_publish_after_a_credential_free_package_skips_verification_and_a_local_one_keeps_it() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let publish = |verification| {
+            cargo_publish_argv(dir.path(), Path::new("."), "demo", &v("1.0.0"), None, verification).unwrap()
+        };
+        assert!(publish(CargoVerification::PackagedElsewhere)
+            .args
+            .contains(&"--no-verify".to_string()));
+        assert!(!publish(CargoVerification::Build)
+            .args
+            .contains(&"--no-verify".to_string()));
     }
 
     #[test]
@@ -643,7 +752,15 @@ mod tests {
             "[package]\nname = \"a\"\nversion = \"0.3.0\"\n",
         );
 
-        let argv = cargo_publish_argv(dir.path(), Path::new("native/crates/a"), "a", &v("0.3.0"), None).unwrap();
+        let argv = cargo_publish_argv(
+            dir.path(),
+            Path::new("native/crates/a"),
+            "a",
+            &v("0.3.0"),
+            None,
+            CargoVerification::Build,
+        )
+        .unwrap();
         assert_eq!(argv.cwd, dir.path().join("native"));
         assert!(argv.args.contains(
             &dir.path()
@@ -662,7 +779,15 @@ mod tests {
         )
         .unwrap();
 
-        let argv = cargo_publish_argv(dir.path(), Path::new("."), "demo", &v("2.0.0"), Some("my-registry")).unwrap();
+        let argv = cargo_publish_argv(
+            dir.path(),
+            Path::new("."),
+            "demo",
+            &v("2.0.0"),
+            Some("my-registry"),
+            CargoVerification::Build,
+        )
+        .unwrap();
         assert!(argv.args.windows(2).any(|w| w == ["--registry", "my-registry"]));
     }
 
@@ -675,7 +800,15 @@ mod tests {
         )
         .unwrap();
 
-        let err = cargo_publish_argv(dir.path(), Path::new("."), "demo", &v("2.0.0"), None).unwrap_err();
+        let err = cargo_publish_argv(
+            dir.path(),
+            Path::new("."),
+            "demo",
+            &v("2.0.0"),
+            None,
+            CargoVerification::Build,
+        )
+        .unwrap_err();
         assert!(
             matches!(err, GraphError::OnDiskVersionDrift { .. }),
             "expected OnDiskVersionDrift, got: {err:?}"
@@ -698,7 +831,15 @@ mod tests {
         )
         .unwrap();
 
-        let argv = cargo_publish_argv(dir.path(), Path::new("crates/demo"), "demo", &v("3.1.4"), None).unwrap();
+        let argv = cargo_publish_argv(
+            dir.path(),
+            Path::new("crates/demo"),
+            "demo",
+            &v("3.1.4"),
+            None,
+            CargoVerification::Build,
+        )
+        .unwrap();
         assert!(argv
             .args
             .iter()
@@ -767,9 +908,9 @@ mod tests {
         assert!(result.is_err(), "{result:?}");
     }
 
-    /// A package in a nested workspace publishes with that workspace's tool, from that workspace's directory.
+    /// A package in a nested workspace packs with that workspace's tool.
     #[test]
-    fn a_nested_workspace_publishes_from_its_own_directory() {
+    fn a_nested_workspace_packs_with_its_own_tool() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("web/packages/a")).unwrap();
         std::fs::write(
@@ -778,92 +919,67 @@ mod tests {
         )
         .unwrap();
         let workspace = crate::workspace_owner::npm_workspace_dir(dir.path(), Path::new("web/packages/a")).unwrap();
-        let workspace_root = dir.path().join(&workspace);
-        let manager = detect_npm_package_manager(&workspace_root).unwrap();
-        let argv = npm_publish_argv(&workspace_root, Path::new("packages/a"), "a", manager, None, None, None);
+        let manager = detect_npm_package_manager(&dir.path().join(&workspace)).unwrap();
+        let package = dir.path().join("web/packages/a");
+        let argv = npm_pack_argv(&package, manager, Path::new("/out"));
         assert_eq!(argv.program, "pnpm");
-        assert_eq!(argv.cwd, dir.path().join("web"));
+        assert_eq!(argv.cwd, package);
+    }
+
+    /// Each pack argv was checked against the real tool's help where it is installed (pnpm 11 and npm 11:
+    /// `--pack-destination`). Yarn berry's `--out` and bun's `pm pack --destination` come from their
+    /// documentation, not a local run.
+    #[test]
+    fn every_package_manager_packs_into_the_destination_with_its_own_flags() {
+        let package = Path::new("/workspace/packages/a");
+        let pack = |manager| npm_pack_argv(package, manager, Path::new("/out"));
+        for (manager, program, args) in [
+            (
+                NpmPackageManager::Pnpm,
+                "pnpm",
+                vec!["pack", "--pack-destination", "/out"],
+            ),
+            (
+                NpmPackageManager::Yarn,
+                "yarn",
+                vec!["pack", "--out", "/out/package.tgz"],
+            ),
+            (
+                NpmPackageManager::Bun,
+                "bun",
+                vec!["pm", "pack", "--destination", "/out"],
+            ),
+            (
+                NpmPackageManager::Npm,
+                "npm",
+                vec!["pack", "--pack-destination", "/out"],
+            ),
+        ] {
+            let argv = pack(manager);
+            assert_eq!(argv.program, program);
+            assert_eq!(argv.args, args, "{program}");
+            assert_eq!(argv.cwd, package, "{program} packs the directory it runs in");
+        }
     }
 
     #[test]
-    fn pnpm_publish_argv_uses_filter_and_no_git_checks() {
-        let argv = npm_publish_argv(
+    fn the_npm_publish_argv_publishes_one_tarball_with_scripts_off() {
+        let argv = npm_publish_tarball_argv(
             Path::new("/workspace"),
-            Path::new("packages/a"),
-            "pkg-a",
-            NpmPackageManager::Pnpm,
-            None,
-            None,
-            None,
-        );
-        assert_eq!(argv.program, "pnpm");
-        assert_eq!(argv.args, vec!["publish", "--filter=pkg-a", "--no-git-checks"]);
-        assert_eq!(argv.cwd, Path::new("/workspace"));
-    }
-
-    #[test]
-    fn yarn_publish_argv_uses_workspace_npm_publish() {
-        let argv = npm_publish_argv(
-            Path::new("/workspace"),
-            Path::new("packages/a"),
-            "pkg-a",
-            NpmPackageManager::Yarn,
-            None,
-            None,
-            None,
-        );
-        assert_eq!(argv.program, "yarn");
-        assert_eq!(argv.args, vec!["workspace", "pkg-a", "npm", "publish"]);
-        assert_eq!(argv.cwd, Path::new("/workspace"));
-    }
-
-    #[test]
-    fn bun_publish_argv_runs_from_package_dir() {
-        let argv = npm_publish_argv(
-            Path::new("/workspace"),
-            Path::new("packages/a"),
-            "pkg-a",
-            NpmPackageManager::Bun,
-            None,
-            None,
-            None,
-        );
-        assert_eq!(argv.program, "bun");
-        assert_eq!(argv.args, vec!["publish"]);
-        assert_eq!(argv.cwd, Path::new("/workspace/packages/a"));
-    }
-
-    #[test]
-    fn npm_publish_argv_uses_workspace_flag() {
-        let argv = npm_publish_argv(
-            Path::new("/workspace"),
-            Path::new("packages/a"),
-            "pkg-a",
-            NpmPackageManager::Npm,
-            None,
-            None,
-            None,
-        );
-        assert_eq!(argv.program, "npm");
-        assert_eq!(argv.args, vec!["publish", "--workspace=pkg-a"]);
-    }
-
-    #[test]
-    fn npm_publish_argv_appends_tag_access_and_registry() {
-        let argv = npm_publish_argv(
-            Path::new("/workspace"),
-            Path::new("packages/a"),
-            "pkg-a",
-            NpmPackageManager::Npm,
+            Path::new("/handoff/s-cli-1.0.0.tgz"),
+            "@s/cli",
             Some("next"),
-            Some(NpmAccess::Public),
+            None,
             Some("https://registry.example.com"),
         );
+        assert_eq!(argv.program, "npm");
+        assert_eq!(argv.cwd, Path::new("/workspace"));
         assert_eq!(
             argv.args,
             vec![
                 "publish",
-                "--workspace=pkg-a",
+                "/handoff/s-cli-1.0.0.tgz",
+                "--ignore-scripts",
                 "--tag",
                 "next",
                 "--access",
@@ -872,51 +988,133 @@ mod tests {
                 "https://registry.example.com",
             ]
         );
+        let tarball: Vec<&String> = argv.args.iter().filter(|arg| arg.ends_with(".tgz")).collect();
+        assert_eq!(tarball.len(), 1, "a tarball path, never a directory: {:?}", argv.args);
     }
 
-    /// Each argv was checked against the real tool's `publish --help` (pnpm 10, yarn 4.9, bun 1.2, npm 11): yarn's
-    /// `npm publish` accepts `--access` and `--tag` but rejects `--registry`, and reads `publishConfig.registry` itself.
+    /// A standalone package with no workspace is packed and published as a tarball by path: the publish names no
+    /// workspace, which native npm refuses for a root package ("No workspaces found"). Real npm, no network.
     #[test]
-    fn every_package_manager_gets_only_the_publish_flags_it_accepts() {
-        let argv = |manager| {
-            npm_publish_argv(
-                Path::new("/workspace"),
-                Path::new("packages/a"),
-                "pkg-a",
-                manager,
-                Some("next"),
-                Some(NpmAccess::Public),
-                Some("https://registry.example.com"),
-            )
-        };
-        let flags = ["--tag", "next", "--access", "public"];
-        let registry = ["--registry", "https://registry.example.com"];
-        let expect = |base: &[&str], with_registry: bool| -> Vec<String> {
-            let mut args: Vec<String> = base.iter().chain(&flags).map(|arg| (*arg).to_owned()).collect();
-            if with_registry {
-                args.extend(registry.iter().map(|arg| (*arg).to_owned()));
-            }
-            args
-        };
-        assert_eq!(
-            argv(NpmPackageManager::Pnpm).args,
-            expect(&["publish", "--filter=pkg-a", "--no-git-checks"], true)
+    fn a_standalone_root_package_packs_and_publishes_as_a_tarball_without_a_workspace_flag() {
+        let package = tempfile::tempdir().unwrap();
+        std::fs::write(
+            package.path().join("package.json"),
+            r#"{"name":"standalone-root","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let pack = npm_pack_argv(package.path(), NpmPackageManager::Npm, out.path());
+        let packed = std::process::Command::new(&pack.program)
+            .args(&pack.args)
+            .current_dir(&pack.cwd)
+            .output()
+            .expect("npm must be installed to run this test");
+        assert!(packed.status.success(), "{}", String::from_utf8_lossy(&packed.stderr));
+        let tarball = out.path().join("standalone-root-1.0.0.tgz");
+        assert!(tarball.is_file());
+
+        let mut publish = npm_publish_tarball_argv(package.path(), &tarball, "standalone-root", None, None, None);
+        assert!(
+            !publish.args.iter().any(|arg| arg.starts_with("--workspace")),
+            "{:?}",
+            publish.args
         );
-        assert_eq!(
-            argv(NpmPackageManager::Yarn).args,
-            expect(&["workspace", "pkg-a", "npm", "publish"], false)
+        // `--dry-run` appears in the test only: it stops npm before it contacts a registry.
+        publish.args.push("--dry-run".to_owned());
+        let published = std::process::Command::new(&publish.program)
+            .args(&publish.args)
+            .current_dir(&publish.cwd)
+            .output()
+            .expect("npm must be installed to run this test");
+        assert!(
+            published.status.success(),
+            "{}",
+            String::from_utf8_lossy(&published.stderr)
         );
-        let bun = argv(NpmPackageManager::Bun);
-        assert_eq!(bun.args, expect(&["publish"], true));
-        assert_eq!(
-            bun.cwd,
-            Path::new("/workspace/packages/a"),
-            "bun publishes the directory it runs in"
+    }
+
+    /// A workspace of `manager` (marked by its lockfile) with a package `pkg` and the extra files given.
+    fn workspace_with(lockfile: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("pkg")).unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"root","private":true,"workspaces":["pkg"]}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join(lockfile), "").unwrap();
+        std::fs::write(
+            dir.path().join("pkg/package.json"),
+            r#"{"name":"pkg","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        for (name, text) in files {
+            std::fs::write(dir.path().join(name), text).unwrap();
+        }
+        dir
+    }
+
+    fn refusal(dir: &tempfile::TempDir) -> Option<(&'static str, String)> {
+        match require_registry_npm_publish_honors(dir.path(), Path::new("pkg")) {
+            Ok(()) => None,
+            Err(GraphError::UnsupportedRelease {
+                feature: crate::error::UnsupportedReleaseFeature::NpmRegistryConfig { file, key },
+            }) => Some((file, key)),
+            Err(other) => panic!("{other:?}"),
+        }
+    }
+
+    /// `npm publish <tarball>` ignores yarn's and bun's own registry settings, so a registry set only there is refused
+    /// before anything is published.
+    #[test]
+    fn a_registry_set_only_in_yarnrc_or_bunfig_is_refused_naming_the_file_and_key() {
+        for (text, key) in [
+            ("npmPublishRegistry: \"https://r.example/\"\n", "npmPublishRegistry"),
+            ("npmRegistryServer: \"https://r.example/\"\n", "npmRegistryServer"),
+            (
+                "npmScopes:\n  acme:\n    npmPublishRegistry: \"https://r.example/\"\n",
+                "npmScopes.acme.npmPublishRegistry",
+            ),
+            (
+                "npmScopes:\n  acme:\n    npmRegistryServer: \"https://r.example/\"\n",
+                "npmScopes.acme.npmRegistryServer",
+            ),
+        ] {
+            let dir = workspace_with("yarn.lock", &[(".yarnrc.yml", text)]);
+            assert_eq!(refusal(&dir), Some((".yarnrc.yml", key.to_owned())), "{text}");
+        }
+        for (text, key) in [
+            ("[install]\nregistry = \"https://r.example/\"\n", "install.registry"),
+            (
+                "[install.scopes]\nacme = { url = \"https://r.example/\" }\n",
+                "install.scopes.acme",
+            ),
+        ] {
+            let dir = workspace_with("bun.lock", &[("bunfig.toml", text)]);
+            assert_eq!(refusal(&dir), Some(("bunfig.toml", key.to_owned())), "{text}");
+        }
+    }
+
+    /// A registry in `publishConfig.registry` or `.npmrc` is honored by `npm publish`, and settings that are not a
+    /// registry, or a file in a workspace that does not use that manager, are not refused.
+    #[test]
+    fn a_registry_npm_honors_or_no_registry_at_all_is_not_refused() {
+        let publish_config = r#"{"name":"pkg","version":"1.0.0","publishConfig":{"registry":"https://r.example/"}}"#;
+        let dir = workspace_with(
+            "yarn.lock",
+            &[(".yarnrc.yml", "nodeLinker: node-modules\nenableTelemetry: false\n")],
         );
-        assert_eq!(
-            argv(NpmPackageManager::Npm).args,
-            expect(&["publish", "--workspace=pkg-a"], true)
-        );
+        std::fs::write(dir.path().join("pkg/package.json"), publish_config).unwrap();
+        std::fs::write(dir.path().join(".npmrc"), "registry=https://r.example/\n").unwrap();
+        assert_eq!(refusal(&dir), None);
+
+        let bun = workspace_with("bun.lock", &[("bunfig.toml", "[install]\nexact = true\n")]);
+        assert_eq!(refusal(&bun), None);
+        let no_file = workspace_with("yarn.lock", &[]);
+        assert_eq!(refusal(&no_file), None);
+        // Another manager's file is not read: npm publishes this workspace without consulting `.yarnrc.yml`.
+        let npm = workspace_with("package-lock.json", &[(".yarnrc.yml", "npmPublishRegistry: x\n")]);
+        assert_eq!(refusal(&npm), None);
     }
 
     #[test]
@@ -927,27 +1125,12 @@ mod tests {
             npm_default_access("@s/cli", Some(NpmAccess::Restricted)),
             Some(NpmAccess::Restricted)
         );
-        let by_name = npm_publish_argv(
-            Path::new("/workspace"),
-            Path::new("packages/a"),
-            "@s/cli",
-            NpmPackageManager::Npm,
-            None,
-            None,
-            None,
-        );
-        let by_directory = npm_publish_directory_argv(
-            Path::new("/workspace"),
-            Path::new(""),
-            Path::new("npm/x"),
-            "@s/cli-x",
-            None,
-            None,
-            None,
-        );
-        for args in [&by_name.args, &by_directory.args] {
-            assert!(args.windows(2).any(|pair| pair == ["--access", "public"]), "{args:?}");
-        }
+        let publish = |name| npm_publish_tarball_argv(Path::new("/w"), Path::new("/t.tgz"), name, None, None, None);
+        assert!(publish("@s/cli")
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--access", "public"]));
+        assert!(!publish("cli").args.contains(&"--access".to_string()));
     }
 
     // ----------------------------------------------------------------- pypi

@@ -20,7 +20,7 @@ use super::binding::{recheck_git_remote, PreparedGitRemote, PreparedRegistryBind
 use super::release_artifacts::VerifiedArtifactManifest;
 
 pub(crate) use pypi_files::{seal_distributions, PypiFileSets};
-pub(crate) use registry::build_python_into;
+pub(crate) use registry::{build_python_into, pack_npm_into, package_cargo_workspace};
 
 pub(crate) mod artifact;
 pub(crate) mod forge;
@@ -240,8 +240,17 @@ pub(crate) struct ProviderRequest<'a> {
     pub(crate) artifacts: Option<&'a VerifiedArtifactManifest<'a>>,
 }
 
+/// Where a publish runs. The CI executor follows credential-free jobs that verified and packaged what it publishes; a
+/// local run has nothing before it, so it verifies and packs itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PublishRoute {
+    Ci,
+    Local,
+}
+
 /// Everything a provider may touch outside its prepared operation.
 pub(crate) struct ProviderContext<'a> {
+    route: PublishRoute,
     root: &'a Path,
     runner: &'a dyn CommandRunner,
     git_remote: Option<&'a PreparedGitRemote>,
@@ -259,6 +268,7 @@ impl<'a> ProviderContext<'a> {
         git_remote: Option<&'a PreparedGitRemote>,
     ) -> Self {
         ProviderContext {
+            route: PublishRoute::Local,
             root,
             runner,
             git_remote,
@@ -266,6 +276,15 @@ impl<'a> ProviderContext<'a> {
             file_sets: None,
             patience: None,
         }
+    }
+
+    pub(crate) fn with_route(mut self, route: PublishRoute) -> Self {
+        self.route = route;
+        self
+    }
+
+    pub(crate) fn route(&self) -> PublishRoute {
+        self.route
     }
 
     pub(crate) fn with_patience(mut self, patience: Duration) -> Self {

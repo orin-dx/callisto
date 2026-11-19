@@ -16,7 +16,7 @@ COORDINATOR_CONST_SRC = "crates/callisto-model/src/release/github.rs"
 # unnoticed.
 ALLOWED_WRITES = {
     "version-pr": {"contents", "pull-requests"},
-    "build-artifact": {"attestations", "id-token"},
+    "attest": {"attestations", "id-token"},
     "execute": {"contents"},
     "drain": {"actions"},
 }
@@ -71,6 +71,11 @@ def check(path):
                 errs.append(f"{name}: {scope}: write is not in that job's allowed write scopes")
         if any(isinstance(n, dict) and "environment" in n for n in walk(job)):
             errs.append(f"{name}: environment key forbidden (merge is the approval)")
+        # A job that can mint an OIDC token other than the publisher must not be able to run project code.
+        steps = job.get("steps", [])
+        if perms.get("id-token") == "write" and name != "execute":
+            if any(str(s.get("uses", "")).startswith("actions/checkout@") or "run" in s for s in steps):
+                errs.append(f"{name}: id-token: write needs a job with no checkout and no run step")
         for step in job.get("steps", []):
             if str(step.get("uses", "")).startswith("actions/checkout@"):
                 w = step.get("with") or {}
@@ -96,6 +101,17 @@ def check(path):
     ex_if = re.sub(r"\s+", " ", str(ex.get("if", "")))
     if "!cancelled()" not in ex_if or re.search(r"\balways\(\)", ex_if):
         errs.append("execute must gate on !cancelled(), not always()")
+    # execute publishes with --no-verify, so a credential-free job must have compiled the crates first, in one call.
+    needs = ex.get("needs", [])
+    needs = [needs] if isinstance(needs, str) else needs
+    package = jobs.get("package-crates", {})
+    if "package-crates" not in needs or "needs.package-crates.result == 'success'" not in ex_if:
+        errs.append("execute must need a successful package-crates job")
+    # The command groups the crates by owning Cargo workspace and runs each group from that workspace's directory; a
+    # shell `cargo package` at the checkout root fails for a layout with no root manifest.
+    runs = [str(s.get("run", "")) for s in package.get("steps", [])]
+    if not any("callisto release package-cargo" in run for run in runs) or any("cargo package" in run.replace("callisto release package-cargo", "") for run in runs):
+        errs.append("package-crates must package the crates with callisto release package-cargo, not a bare cargo package")
     src = [
         s for s in ex.get("steps", [])
         if str(s.get("uses", "")).startswith("actions/checkout@") and (s.get("with") or {}).get("path") == "release-source"

@@ -60,12 +60,59 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use callisto_graph::commands::registry_argv::{cargo_publish_argv, pypi_build_argv, pypi_upload_argv, Argv};
+use callisto_graph::commands::registry_argv::{
+    cargo_publish_argv, pypi_build_argv, pypi_upload_argv, Argv, CargoVerification,
+};
 use callisto_model::{Version, VersionGrammar};
 use local_registries::*;
 use release_harness::*;
 
 const NPM_PACKAGE: &str = "callisto-e2e-probe";
+
+/// The credential-free pack job's two steps: pack every npm package of the intent, then seal the tarballs. Returns the
+/// manifest and directory arguments `release execute` takes.
+fn pack_and_seal(root: &Path, intent: &Path, external: &Path) -> Vec<String> {
+    let artifacts = external.join("npm-dist");
+    fs::create_dir_all(&artifacts).unwrap();
+    let manifest = external.join("npm-manifest.json");
+    let packed = callisto(
+        root,
+        &[
+            "release",
+            "pack-npm",
+            "--intent",
+            intent.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+        ],
+    );
+    assert!(packed.status.success(), "pack-npm failed: {}", stderr_of(&packed));
+    let sealed = callisto(
+        root,
+        &[
+            "release",
+            "artifact-manifest",
+            "--intent",
+            intent.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+            "--seal-npm",
+            "--out",
+            manifest.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        sealed.status.success(),
+        "artifact-manifest failed: {}",
+        stderr_of(&sealed)
+    );
+    vec![
+        "--artifact-manifest".to_owned(),
+        manifest.to_str().unwrap().to_owned(),
+        "--artifact-dir".to_owned(),
+        artifacts.to_str().unwrap().to_owned(),
+    ]
+}
 
 /// A missing test tool skips on a developer machine but fails under CI, where the workflow installs every one of them:
 /// a skip there would report as a pass and hide that nothing ran.
@@ -130,7 +177,9 @@ fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
 
     let receipt = external.path().join("release-receipt.json");
     let tag = format!("{NPM_PACKAGE}@0.2.0");
-    let output = execute_rig(root, &intent, &receipt, &rig, &tag, &[], None);
+    let sealed = pack_and_seal(root, &intent, external.path());
+    let sealed: Vec<&str> = sealed.iter().map(String::as_str).collect();
+    let output = execute_rig(root, &intent, &receipt, &rig, &tag, &sealed, None);
     assert!(
         output.status.success(),
         "real-registry npm release execute failed: {}\neffect log:\n{}",
@@ -204,7 +253,17 @@ fn a_dependent_npm_package_is_published_with_its_dependency_against_a_real_verda
     rig.real_git_push(&bare, NPM_ORIGIN);
 
     let receipt = external.path().join("release-receipt.json");
-    let output = execute_rig(root, &intent, &receipt, &rig, "callisto-e2e-dependent@0.2.0", &[], None);
+    let sealed = pack_and_seal(root, &intent, external.path());
+    let sealed: Vec<&str> = sealed.iter().map(String::as_str).collect();
+    let output = execute_rig(
+        root,
+        &intent,
+        &receipt,
+        &rig,
+        "callisto-e2e-dependent@0.2.0",
+        &sealed,
+        None,
+    );
     assert!(
         output.status.success(),
         "real-registry npm release execute failed: {}\neffect log:\n{}",
@@ -434,7 +493,15 @@ fn cargo_publish_against_a_real_cargo_http_registry_is_retrievable_afterward() {
     .unwrap();
 
     let version = Version::parse(CARGO_VERSION, VersionGrammar::SemVer).unwrap();
-    let argv = cargo_publish_argv(root, Path::new("."), CARGO_PACKAGE, &version, Some("local-e2e")).unwrap();
+    let argv = cargo_publish_argv(
+        root,
+        Path::new("."),
+        CARGO_PACKAGE,
+        &version,
+        Some("local-e2e"),
+        CargoVerification::Build,
+    )
+    .unwrap();
     assert!(
         argv.args.contains(&"--registry".to_string()) && argv.args.contains(&"local-e2e".to_string()),
         "cargo must be routed via --registry <key>, not a URL: {:?}",

@@ -47,18 +47,25 @@ require_line "$release_candidate" '          release_source_sha="$RELEASE_SOURCE
 require_line "$release_candidate" '            release_source_sha=$(callisto --format json release pending | jq -r '\''.pending[0].source // empty'\'')' 'release-candidate must consider a pending older release first'
 require_line "$release_candidate" '          if ! git merge-base --is-ancestor "$release_source_sha" "$TRIGGERING_SHA"; then' 'release-candidate must require the source on main history'
 
-build_artifact="$(job_block build-artifact build)"
+build_artifact="$(job_block build-artifact attest)"
 require_line "$build_artifact" '      contents: read' 'each target build must read the intent-bound source tree'
-require_line "$build_artifact" '      attestations: write' 'each target build must create provenance attestations'
-require_line "$build_artifact" '      id-token: write' 'each target build must mint the Sigstore OIDC identity'
 require_line "$build_artifact" '          path: ${{ runner.temp }}/release-intent' 'each target build must keep the release handoff outside either checkout'
-require_line "$build_artifact" '          subject-path: ${{ runner.temp }}/release-artifacts/${{ matrix.asset }}' 'each target build must attest its staged artifact bytes'
+if grep -Eq 'attestations: write|id-token: write' <<< "$build_artifact"; then
+  printf 'release workflow contract failed: target builds run project code and must hold no attestation or OIDC permission\n' >&2
+  exit 1
+fi
 require_line "$build_artifact" '          bash .github/scripts/build-release-artifact.sh' 'production artifact builds must use the shared preflighted build recipe'
 require_line "$build_artifact" '            target: aarch64-apple-darwin' 'the product matrix must build macOS ARM64'
 require_line "$build_artifact" '            target: x86_64-apple-darwin' 'the product matrix must build macOS Intel'
 require_line "$build_artifact" '            target: aarch64-unknown-linux-gnu' 'the product matrix must build glibc Linux ARM64'
 require_line "$build_artifact" '            target: x86_64-unknown-linux-gnu' 'the product matrix must build glibc Linux x86_64'
 require_line "$build_artifact" '            target: x86_64-unknown-linux-musl' 'the product matrix must build musl Linux x86_64'
+
+attest="$(job_block attest build)"
+require_line "$attest" '      attestations: write' 'attestation must create provenance attestations'
+require_line "$attest" '      id-token: write' 'attestation must mint the Sigstore OIDC identity'
+require_line "$attest" '          pattern: release-build-*' 'attestation must download every target build by pattern'
+require_line "$attest" '          subject-path: ${{ runner.temp }}/release-artifacts/*' 'attestation must attest every staged artifact'
 
 build="$(job_block build execute)"
 require_line "$build" '          pattern: release-build-*' 'assembly must download every target build by pattern, not by a list of names that a new matrix target can miss'
@@ -77,7 +84,7 @@ require_line "$plan" '            --orchestration-revision "$ORCHESTRATION_SHA" 
 require_line "$plan" '            --from-release-commit "$RELEASE_SOURCE_SHA" \' 'planning must bind the exact release source checkout'
 
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
-require_line "$execute" '    needs: [plan, build, release-candidate, gate]' 'PR merge is the release approval; execute must depend directly on the plan and verified build, not a GitHub Environment gate'
+require_line "$execute" '    needs: [plan, build, package-crates, release-candidate, gate]' 'PR merge is the release approval; execute must depend directly on the plan and verified build, not a GitHub Environment gate'
 require_line "$execute" '            cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"' 'execute must reject a build handoff whose immutable intent differs from planning'
 require_line "$execute" '          path: ${{ runner.temp }}/release-intent' 'execute must download release-intent outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: ${{ runner.temp }}/release-build' 'execute must download release-build outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'

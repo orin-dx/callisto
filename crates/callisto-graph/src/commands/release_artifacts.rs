@@ -26,7 +26,89 @@ pub fn seal_python_distributions(
     super::release::provider::seal_distributions(intent, &root)
 }
 
-/// One verified file of a sealed Python release.
+/// The sealed tarball of every npm publish in `intent`: the one file `npm pack` names after the package and version,
+/// found in the pack output in `dir`.
+pub fn seal_npm_tarballs(
+    intent: &ReleaseIntentV1,
+    dir: &Path,
+) -> Result<Vec<callisto_model::DistributionSetV1>, GraphError> {
+    let root = canonical_artifact_root(dir)?;
+    let mut sets = Vec::new();
+    for (package, rendered) in callisto_model::npm_publishes(intent) {
+        let version = callisto_model::Version::parse_for_ecosystem(&rendered, callisto_model::Ecosystem::Npm)
+            .expect("an npm publish listed from the intent has a valid npm version");
+        let filename = callisto_model::npm_tarball_filename(package.name(), &version);
+        let path = root.join(&filename);
+        let regular = fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file());
+        if !regular {
+            return Err(GraphError::BuildOutputIncomplete {
+                tool: "npm pack",
+                package: package.name().to_owned(),
+                version,
+                missing: "tarball",
+            });
+        }
+        let read_error = |error: std::io::Error| GraphError::ArtifactRead {
+            path: path.clone(),
+            message: error.to_string(),
+        };
+        let (digest, byte_length) =
+            callisto_model::ArtifactDigest::from_reader(File::open(&path).map_err(read_error)?).map_err(read_error)?;
+        sets.push(callisto_model::DistributionSetV1 {
+            package: package.clone(),
+            version: rendered,
+            files: vec![callisto_model::DistributionFileV1 {
+                filename,
+                digest,
+                byte_length,
+            }],
+        });
+    }
+    Ok(sets)
+}
+
+/// Fails unless `manifest` seals every npm and Python publish of `intent`. The CI executor publishes only sealed files,
+/// so a plan whose build job did not seal one stops here, before any effect.
+pub fn require_sealed_publishes(
+    intent: &ReleaseIntentV1,
+    manifest: Option<&ArtifactManifestV1>,
+) -> Result<(), GraphError> {
+    let sealed = |package: &callisto_model::ReleasePackageId, version: &str| {
+        manifest.is_some_and(|manifest| {
+            manifest
+                .distributions
+                .iter()
+                .any(|set| set.package == *package && set.version == version)
+        })
+    };
+    for (publishes, missing, ecosystem) in [
+        (
+            callisto_model::npm_publishes(intent),
+            "sealed npm tarball",
+            callisto_model::Ecosystem::Npm,
+        ),
+        (
+            callisto_model::python_publishes(intent),
+            "sealed Python file set",
+            callisto_model::Ecosystem::Pypi,
+        ),
+    ] {
+        for (package, version) in publishes {
+            if !sealed(package, &version) {
+                return Err(GraphError::BuildOutputIncomplete {
+                    tool: "artifact manifest",
+                    package: package.name().to_owned(),
+                    version: callisto_model::Version::parse_for_ecosystem(&version, ecosystem)
+                        .expect("a publish listed from the intent has a valid version"),
+                    missing,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One verified file of a sealed release.
 #[derive(Debug)]
 pub(crate) struct SealedFile {
     pub(crate) filename: String,
@@ -61,7 +143,7 @@ impl<'a> VerifiedArtifactManifest<'a> {
         resolve_asset_path(&self.root, &slot.asset_name)
     }
 
-    /// The sealed files of one Python release, or `None` when the manifest seals none.
+    /// The sealed files of one release, or `None` when the manifest seals none.
     pub(crate) fn sealed_files(
         &self,
         package: &callisto_model::ReleasePackageId,
@@ -117,6 +199,7 @@ pub fn verify_artifact_manifest<'a, R: CommandRunner>(
     manifest
         .validate_for_intent(intent)
         .map_err(|source| GraphError::ArtifactManifest { source })?;
+    require_sealed_publishes(intent, Some(manifest))?;
 
     let root = canonical_artifact_root(artifact_root)?;
     for entry in &manifest.entries {
@@ -353,6 +436,143 @@ mod tests {
             callisto_model::CommitSha::parse("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap(),
         )
         .unwrap()
+    }
+
+    /// `intent_with_slot` plus an npm registry publish of the slot's package.
+    fn intent_with_slot_and_npm_publish(slot: ArtifactSlotId) -> ReleaseIntentV1 {
+        use callisto_model::{
+            ExecutionTrustProfileV1, ReleaseDecisionEntry, ReleaseDecisionV1, ReleaseInclusionReason,
+            ReleaseInputSnapshotV1, ReleaseOperation, SourceIdentity,
+        };
+        let source = callisto_model::CommitSha::parse("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+        let snapshot = ReleaseInputSnapshotV1::new(SourceIdentity::GitCommit { sha: source }, vec![]).unwrap();
+        let decision = ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
+            package: slot.package.clone(),
+            target_version: slot.version.clone(),
+            reasons: vec![ReleaseInclusionReason::ExplicitSelection],
+        }])
+        .unwrap();
+        let registry = callisto_model::RegistryBindingId::new(
+            "npm",
+            callisto_model::RegistryBindingDigest::from_normalized_binding("npm"),
+        )
+        .unwrap();
+        let publish =
+            ReleaseOperation::registry_publish(slot.package.clone(), slot.version.clone(), registry, vec![]).unwrap();
+        let upload = ReleaseOperation::artifact_upload(slot.clone(), vec![]).unwrap();
+        ReleaseIntentV1::new(
+            decision,
+            snapshot,
+            ExecutionTrustProfileV1::GitCommit,
+            vec![publish, upload],
+            vec![slot],
+        )
+        .unwrap()
+    }
+
+    /// An old workflow's manifest seals the binaries but not the npm tarball: it fails when verified, before the
+    /// attestation check or any effect, so a half-sealed plan cannot start releasing.
+    #[test]
+    fn a_manifest_that_seals_no_tarball_for_an_npm_publish_fails_verification_before_any_check() {
+        let directory = tempdir().unwrap();
+        let bytes = b"trusted artifact";
+        fs::write(directory.path().join("artifact.tar.gz"), bytes).unwrap();
+        let intent = intent_with_slot_and_npm_publish(slot("artifact.tar.gz"));
+        let manifest = manifest_for(&intent, ArtifactDigest::from_bytes(bytes), bytes.len() as u64);
+        let runner = RecordingRunner::default();
+
+        let error = verify_artifact_manifest(&intent, &manifest, directory.path(), &runner).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::BuildOutputIncomplete {
+                    tool: "artifact manifest",
+                    missing: "sealed npm tarball",
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert!(runner.calls.lock().unwrap().is_empty(), "nothing was verified or run");
+        assert!(
+            require_sealed_publishes(&intent, None).is_err(),
+            "no manifest is no seal"
+        );
+        let no_publishes = intent_with_slot(slot("artifact.tar.gz"));
+        assert!(require_sealed_publishes(&no_publishes, None).is_ok());
+    }
+
+    fn npm_set(package: &str, version: &str) -> callisto_model::DistributionSetV1 {
+        callisto_model::DistributionSetV1 {
+            package: ReleasePackageId::new(Ecosystem::Npm, package).unwrap(),
+            version: version.to_owned(),
+            files: vec![callisto_model::DistributionFileV1 {
+                filename: format!("{package}-{version}.tgz"),
+                digest: ArtifactDigest::from_bytes(b"tarball"),
+                byte_length: 7,
+            }],
+        }
+    }
+
+    fn manifest_sealing(intent: &ReleaseIntentV1, sets: Vec<callisto_model::DistributionSetV1>) -> ArtifactManifestV1 {
+        ArtifactManifestV1 {
+            schema_version: 1,
+            intent_digest: intent.digest().clone(),
+            source_commit: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+            entries: Vec::new(),
+            distributions: sets,
+        }
+    }
+
+    /// Sealing names, sizes and hashes the one tarball npm names for each npm publish of the plan.
+    #[test]
+    fn sealing_records_the_tarball_of_every_npm_publish_and_refuses_a_missing_or_irregular_one() {
+        let intent = intent_with_slot_and_npm_publish(slot("artifact.tar.gz"));
+        let directory = tempdir().unwrap();
+        fs::write(directory.path().join("package-1.0.0.tgz"), b"tarball").unwrap();
+
+        let sets = seal_npm_tarballs(&intent, directory.path()).unwrap();
+        assert_eq!(sets.len(), 1);
+        assert_eq!(
+            sets[0].package,
+            ReleasePackageId::new(Ecosystem::Npm, "package").unwrap()
+        );
+        assert_eq!(sets[0].version, "1.0.0");
+        assert_eq!(sets[0].files.len(), 1);
+        assert_eq!(sets[0].files[0].filename, "package-1.0.0.tgz");
+        assert_eq!(sets[0].files[0].digest, ArtifactDigest::from_bytes(b"tarball"));
+        assert_eq!(sets[0].files[0].byte_length, 7);
+
+        let empty = tempdir().unwrap();
+        assert!(matches!(
+            seal_npm_tarballs(&intent, empty.path()),
+            Err(GraphError::BuildOutputIncomplete { tool: "npm pack", .. })
+        ));
+        let directory_named_like_it = tempdir().unwrap();
+        fs::create_dir(directory_named_like_it.path().join("package-1.0.0.tgz")).unwrap();
+        assert!(matches!(
+            seal_npm_tarballs(&intent, directory_named_like_it.path()),
+            Err(GraphError::BuildOutputIncomplete { tool: "npm pack", .. })
+        ));
+    }
+
+    /// A seal counts only for the package and the version it names.
+    #[test]
+    fn a_publish_is_sealed_only_by_a_set_for_its_own_package_and_version() {
+        let intent = intent_with_slot_and_npm_publish(slot("artifact.tar.gz"));
+        let sealed = |sets| require_sealed_publishes(&intent, Some(&manifest_sealing(&intent, sets)));
+        assert!(sealed(vec![npm_set("package", "1.0.0")]).is_ok());
+        for wrong in [
+            vec![npm_set("package", "2.0.0")],
+            vec![npm_set("other", "1.0.0")],
+            vec![npm_set("other", "2.0.0")],
+            vec![],
+        ] {
+            assert!(
+                matches!(sealed(wrong), Err(GraphError::BuildOutputIncomplete { .. })),
+                "a set for another package or version must not seal this publish"
+            );
+        }
     }
 
     #[test]
