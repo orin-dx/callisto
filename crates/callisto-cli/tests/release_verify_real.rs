@@ -523,3 +523,246 @@ fn a_python_release_with_a_missing_wheel_uploads_only_the_wheel() {
         "the sdist the index already held must not be uploaded again"
     );
 }
+
+// --------------------------------------------------------------------- cargo
+
+const CARGO_ORIGIN: &str = "https://github.com/example/cargo-registry-fixture.git";
+const CARGO_REGISTRY: &str = "verify-reg";
+const CARGO_CRATES: [&str; 2] = ["callisto-verify-crate-a", "callisto-verify-crate-b"];
+
+/// A released two-crate workspace publishing to the `verify-reg` Cargo registry, whose URL only `CARGO_HOME` knows.
+struct CargoRelease {
+    release: Release,
+    port: u16,
+    registry_dir: PathBuf,
+}
+
+impl CargoRelease {
+    fn new() -> Self {
+        let external = tempfile::tempdir().unwrap();
+        let tls = Tls::generate(external.path());
+        let port = free_loopback_port();
+        let fixture = cargo_release_fixture(&format!(
+            "\n[registries.{CARGO_REGISTRY}]\nkind = \"cargo\"\nconfirm-timeout = \"30s\"\n"
+        ));
+        let cargo_home = external.path().join("cargo-home");
+        fs::create_dir_all(&cargo_home).unwrap();
+        fs::write(
+            cargo_home.join("config.toml"),
+            format!(
+                "[registries.{CARGO_REGISTRY}]\nindex = \"sparse+http://127.0.0.1:{port}/index/\"\n\n\
+                 [unstable]\npublish-timeout = true\n\n[publish]\ntimeout = 0\n"
+            ),
+        )
+        .unwrap();
+        let registry_dir = external.path().join("cargo-registry");
+        let mut release = Release::new(
+            fixture,
+            external,
+            tls,
+            CARGO_ORIGIN,
+            &format!("{}@0.2.0", CARGO_CRATES[0]),
+        );
+        release
+            .rig
+            .set("CARGO_HOME", cargo_home.to_str().unwrap())
+            .set("CARGO_REGISTRIES_VERIFY_REG_TOKEN", "callisto-verify-token")
+            // Stable cargo only reads `publish.timeout` (0: do not wait for the index) when it is allowed unstable keys.
+            .set("RUSTC_BOOTSTRAP", "1")
+            .set("__CALLISTO_TEST_SLEEP_SCALE", "0.1");
+        Self {
+            release,
+            port,
+            registry_dir,
+        }
+    }
+
+    fn registry(&self, refuse_after: u32, index_delay: Duration) -> ServerGuard {
+        start_sparse_cargo_registry(
+            self.release.external.path(),
+            "cargo",
+            self.port,
+            &self.registry_dir,
+            refuse_after,
+            index_delay,
+        )
+    }
+
+    /// The crate files the registry holds.
+    fn crates(&self) -> Vec<String> {
+        files_in(&self.registry_dir.join("crates"))
+    }
+}
+
+/// A released workspace of two independent crates with a committed `Cargo.lock`.
+fn cargo_release_fixture(registries: &str) -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    git(root, &["remote", "add", "origin", CARGO_ORIGIN]);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::write(root.join(".gitignore"), "/target/\n").unwrap();
+    for name in CARGO_CRATES {
+        let crate_dir = root.join("crates").join(name);
+        fs::create_dir_all(crate_dir.join("src")).unwrap();
+        fs::write(
+            crate_dir.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\
+                 description = \"verify-real probe\"\nlicense = \"MIT\"\n"
+            ),
+        )
+        .unwrap();
+        fs::write(crate_dir.join("src/lib.rs"), "pub fn probe() {}\n").unwrap();
+    }
+    let lock = std::process::Command::new("cargo")
+        .args(["generate-lockfile", "--offline"])
+        .current_dir(root)
+        .output()
+        .expect("cargo must be runnable");
+    assert!(
+        lock.status.success(),
+        "lockfile failed: {}",
+        String::from_utf8_lossy(&lock.stderr)
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "initial workspace"]);
+
+    let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
+    assert!(init.status.success(), "init failed: {}", stderr_of(&init));
+    let config_path = root.join("callisto.toml");
+    let mut config = fs::read_to_string(&config_path).unwrap();
+    for name in CARGO_CRATES {
+        config.push_str(&format!(
+            "\n[[package]]\nmatch = \"cargo/{name}\"\npublish-to = [\"{CARGO_REGISTRY}\"]\n"
+        ));
+    }
+    config.push_str(registries);
+    fs::write(&config_path, config).unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "configure callisto"]);
+
+    let mut add_args = vec!["add".to_owned()];
+    for name in CARGO_CRATES {
+        add_args.extend(["--package".to_owned(), format!("cargo/{name}:minor")]);
+    }
+    add_args.extend(["--summary".to_owned(), "Ship the verify-real probes".to_owned()]);
+    let add_args: Vec<&str> = add_args.iter().map(String::as_str).collect();
+    let add = callisto(root, &add_args);
+    assert!(add.status.success(), "add failed: {}", stderr_of(&add));
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "add release changeset"]);
+
+    let version = callisto(root, &["version", "--emit-decision", DECISION_PATH]);
+    assert!(version.status.success(), "version failed: {}", stderr_of(&version));
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-m", "release the probes 0.2.0"]);
+    let release_commit = git(root, &["rev-parse", "HEAD"]);
+    git(root, &["checkout", "--detach", &release_commit]);
+    (dir, release_commit)
+}
+
+#[test]
+#[ignore = "needs local registries; run via `just verify-real`"]
+fn a_partial_cargo_publish_is_adopted_by_the_rerun_without_republishing() {
+    let cargo = CargoRelease::new();
+    let release = &cargo.release;
+
+    let first_published = {
+        // The registry takes one crate, then refuses: the run dies between the two publishes.
+        let _registry = cargo.registry(1, Duration::ZERO);
+        let output = release.execute();
+        assert!(
+            !output.status.success(),
+            "the registry refuses the second crate, so the run must fail\n{}",
+            release.failure_context(&output)
+        );
+        assert!(!release.receipt.exists(), "a failed run must leave no terminal receipt");
+        let published = cargo.crates();
+        assert_eq!(
+            published.len(),
+            1,
+            "exactly one crate published before the failure: {published:?}"
+        );
+        published
+    };
+
+    let _registry = cargo.registry(u32::MAX, Duration::ZERO);
+    let second = release.execute();
+    release.assert_completed(&second);
+    assert!(
+        stderr_of(&second).contains("already published"),
+        "the rerun must adopt the first crate instead of publishing it again:\n{}",
+        stderr_of(&second)
+    );
+    let all = cargo.crates();
+    assert_eq!(all.len(), 2, "both crates must be on the registry: {all:?}");
+    assert!(all.contains(&first_published[0]));
+    for name in CARGO_CRATES {
+        assert!(
+            release.remote_has_tag(&format!("{name}@0.2.0")),
+            "{name} tag must reach the remote"
+        );
+    }
+}
+
+#[test]
+#[ignore = "needs local registries; run via `just verify-real`"]
+fn a_cargo_release_waits_for_a_delayed_index() {
+    let cargo = CargoRelease::new();
+    let release = &cargo.release;
+    let registry = cargo.registry(u32::MAX, Duration::from_millis(2500));
+
+    let output = release.execute();
+    release.assert_completed(&output);
+    assert_eq!(cargo.crates().len(), 2);
+
+    // `cargo info` also asks for the underscore spelling of the name and `cargo publish`'s own wait does not, so a 404
+    // for it after the publish is callisto looking at the index while the entry is still hidden.
+    let log = registry.log();
+    let lines: Vec<&str> = log.lines().collect();
+    let published = lines
+        .iter()
+        .position(|line| *line == format!("published {} 0.2.0", CARGO_CRATES[0]))
+        .expect("the first crate must be published");
+    let hidden_look = format!(
+        "\"GET /index/{}/{}/{} HTTP/1.1\" 404 -",
+        &CARGO_CRATES[0][..2],
+        &CARGO_CRATES[0][2..4],
+        CARGO_CRATES[0].replace('-', "_")
+    );
+    assert!(
+        lines[published..].contains(&hidden_look.as_str()),
+        "callisto must have looked at the index before the entry showed:\n{log}"
+    );
+}
+
+#[test]
+#[ignore = "needs local registries; run via `just verify-real`"]
+fn a_cargo_remote_tag_on_another_commit_stops_the_release_with_a_conflict() {
+    let cargo = CargoRelease::new();
+    let release = &cargo.release;
+    let _registry = cargo.registry(u32::MAX, Duration::ZERO);
+    let other = git(release.root(), &["rev-parse", "HEAD~1"]);
+    let tag = format!("{}@0.2.0", CARGO_CRATES[1]);
+    git(
+        release.root(),
+        &[
+            "push",
+            &format!("file://{}", release.bare.display()),
+            &format!("{other}:refs/tags/{tag}"),
+        ],
+    );
+
+    let output = release.execute();
+    release.assert_failed_with(&output, "E167");
+    assert_eq!(
+        git(&release.bare, &["rev-parse", &format!("refs/tags/{tag}^{{commit}}")]),
+        other,
+        "the foreign tag must be left as it was"
+    );
+}

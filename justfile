@@ -125,22 +125,28 @@ features-boundary:
 verify-real-tools:
     #!/usr/bin/env bash
     set -euo pipefail
+    for tool in npm uv; do
+        command -v "$tool" >/dev/null || { echo "$tool is required: the install matrix uses npm, pnpm and uv" >&2; exit 1; }
+    done
     tools=target/verify-real
     mkdir -p "$tools"
-    npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4
-    if command -v uv >/dev/null; then uv venv -q --seed --allow-existing --python 3.12 "$tools/venv"; else python3 -m venv "$tools/venv"; fi
+    npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4 pnpm@11.9.0
+    PATH="$PWD/$tools/npm/node_modules/.bin:$PATH" pnpm --version
+    uv venv -q --seed --allow-existing --python 3.12 "$tools/venv"
     python_pins="pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0 setuptools==80.9.0 wheel==0.45.1"
     "$tools/venv/bin/python" -m pip install -q $python_pins
     "$tools/venv/bin/python" -m pip download -q -d "$tools/wheels" setuptools==80.9.0 wheel==0.45.1
     cargo install --locked --root "$tools/cargo" cargo-http-registry@0.1.8
 
-# Rehearses partial publish, delayed visibility, a conflicting tag and a missing Python artifact against local registries.
+# Rehearses recovery against local npm, PyPI and Cargo registries, then runs the native install matrix.
 verify-real: verify-real-tools
     #!/usr/bin/env bash
     set -euo pipefail
     tools="$PWD/target/verify-real"
     export PATH="$tools/venv/bin:$tools/npm/node_modules/.bin:$tools/cargo/bin:$PATH"
+    cargo --version && npm --version && pnpm --version && uv --version
     VERIFY_REAL_WHEELS="$tools/wheels" cargo test -p callisto-cli --test release_verify_real -- --ignored --test-threads=1
+    cargo test -p callisto-cli --test native_resolution_e2e_tests -- --test-threads=1
 
 # Run unused dependency check via cargo-machete
 machete:
