@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_014dFsjQhiMRMnBo7BNkiG6E",
+  "agent_id": "a20ed0df249b76d55",
+  "subagent_type": "general-purpose",
+  "task_description": "Review token-mapping diff",
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 78968,
+    "cache_read_tokens": 591935,
+    "output_tokens": 8936,
+    "api_call_count": 10
+  },
+  "started_at": "2026-11-19T11:22:32.359768-08:00",
+  "completed_at": "2026-11-19T11:24:09.159496-08:00"
+}

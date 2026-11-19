@@ -1,0 +1,126 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7TMRQHWDSQ7GJ8FW7DVW789",
+  "session_id": "716fae99-7b4d-4a1a-a03c-f34103d95395",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-19T19:33:18.678673Z",
+  "branch": "worktree-wp-token-mapping-j-docs",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    ".changeset/noble-leopards-run.md",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init/snapshots/callisto_graph__commands__init__tests__rendered_matrix_workflow_bytes_are_pinned.snap",
+    "crates/callisto-graph/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+    "docs/publishing.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "09e40720daaf",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 152,
+    "cache_creation_tokens": 128399,
+    "cache_read_tokens": 9002589,
+    "output_tokens": 31551,
+    "api_call_count": 74,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 78968,
+      "cache_read_tokens": 591935,
+      "output_tokens": 8936,
+      "api_call_count": 10
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 152,
+    "cache_creation_tokens": 128399,
+    "cache_read_tokens": 9002589,
+    "output_tokens": 31551,
+    "api_call_count": 74,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 78968,
+      "cache_read_tokens": 591935,
+      "output_tokens": 8936,
+      "api_call_count": 10
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 14,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 2,
+      "entropy": 12,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Implement one PR off fresh origin/main that maps NPM_TOKEN and PYPI_TOKEN into the generated matrix workflow's execute job (keeping OIDC working), adds a tokenless trusted-publishing recipe and routing-wording fix to docs/publishing.md, and adds a changeset, for trail #459.",
+    "outcome": "Tests, template/renderer fix, docs, and changeset were done; just pre-push, lint, doc-check, test, workflow-contracts and ci all passed, mutants caught both mutants, and a signed commit was made. The push, merge of latest origin/main, trail ci-pr, finding resolution and report to the lead were not done in this transcript.",
+    "learnings": {
+      "repo": [
+        "The generated matrix workflow's execute step is built from matrix_workflow.tmpl plus Rust-rendered snippets in crates/callisto-graph/src/commands/init.rs; the simple workflow goes through callisto-action's run-release.sh, which already maps both tokens.",
+        "The rendered matrix workflow bytes are pinned by an insta snapshot (rendered_matrix_workflow_bytes_are_pinned); update with INSTA_UPDATE=always and delete any leftover .snap.new file.",
+        "The matrix token-mapping block duplicates run-release.sh logic and had drifted (no leading newline in printf, ignored NPM_CONFIG_USERCONFIG); AGENTS.md prefers unifying N copies of one logic.",
+        "AGENTS.md says the release workflow has no GitHub Environment by owner policy, so docs should not invite environment binding; npm trusted publisher always needs the workflow filename.",
+        "The changeset must follow AGENTS.md user-facing style: one idea per bullet, separate **Action:** paragraph, and docs-only corrections may belong in no changeset.",
+        "Installed `callisto` binary is older than the repo config, so changesets must be created with `cargo run -p callisto-cli -- add`.",
+        "Tests can parse the rendered workflow with yaml_rust2 and run the step's `run` script under bash with a stub `callisto` to assert credentials.",
+        "Without NPM_TOKEN, CALLISTO_PUBLISH_NPM_CONFIG is unset and the publish check runs `npm view` anonymously, which can 404 for restricted packages (earlier E157 timeout in CHANGELOG)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 899,
+          "end_line": 901,
+          "finding": "MATRIX_NPM_AUTH copied $HOME/.npmrc and used printf '%s\\n', drifting from run-release.sh (which honors NPM_CONFIG_USERCONFIG and prefixes a newline)."
+        },
+        {
+          "path": ".github/actions/callisto-action/scripts/run-release.sh",
+          "line": 17,
+          "end_line": 24,
+          "finding": "Reference implementation of the npm/twine token mapping: copies ${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc} and appends the token entry with a leading newline."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 850,
+          "finding": "twine is pinned to ==7.0.0 in the generated workflow."
+        }
+      ],
+      "workflow": [
+        "The sandbox blocks gpg (~/.gnupg), ~/.npm and uv caches, and network hosts; redirect npm_config_cache and UV_CACHE_DIR to /tmp/claude and run gpg/network gates (workflow-contracts, ci) outside the sandbox.",
+        "The shell guard rejects multi-line/compound commands such as heredocs with python and $'...' multi-line args; use Edit/Write tools instead.",
+        "Cargo builds cannot run in parallel in one checkout, so run the read-only Opus reviewer while CI runs, and rerun the full gate after applying review fixes.",
+        "CARGO_BUILD_JOBS was computed as cores/5 (18 cores gives 3).",
+        "Use cargo mutants --in-diff with a diff file written outside the repo and --output outside the repo so mutants.out* is never committed."
+      ]
+    },
+    "friction": [
+      "Combined heredoc/python shell commands were rejected, forcing the test addition to be redone with edit tools.",
+      "The multi-line $'...' changeset summary was rejected by the shell guard; the changeset had to be created with a placeholder and edited.",
+      "The installed callisto binary was older than the repo config, requiring cargo run.",
+      "just test failed repeatedly in the sandbox (network, ~/.npm and uv cache not writable) until cache dirs were redirected.",
+      "workflow-contracts failed in the sandbox because fixture commits needed gpg signing, and had to be run outside it.",
+      "The first just ci run was invalidated by review findings and had to be stopped and rerun."
+    ],
+    "open_items": [
+      "Still to do: merge latest origin/main, push with git push origin HEAD:refs/heads/<branch>, verify with git ls-remote, link #459 and open with entire trail ci-pr, resolve finding 01M7QS45H578, and report to the lead session.",
+      "Reviewer finding 6 (restricted scoped package over OIDC may time out on publish confirmation because `npm view` runs without userconfig) is not verified and may need a docs limit note.",
+      "Reviewer finding 7 (the docs YAML example uses actions/setup-node@v4 by tag rather than a pinned SHA) may remain unaddressed.",
+      "The generated matrix step and run-release.sh still duplicate the token-mapping logic; sharing one script was suggested but not done.",
+      "Node 22.14 / npm 11.5.1 version claims were not verified against registry docs."
+    ]
+  }
+}
