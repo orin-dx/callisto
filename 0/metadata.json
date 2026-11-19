@@ -1,0 +1,114 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7TKFQQZREJK2CH6D991K02A",
+  "session_id": "2fe3bf01-6645-4333-8987-868cccfc9710",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-19T19:10:54.165255Z",
+  "branch": "worktree-wp-g-pre-v3",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "88c87649b9ff",
+  "checkpoint_transcript_start": 1178,
+  "transcript_lines_at_start": 1178,
+  "compact_transcript_start": 138,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 15753,
+    "cache_read_tokens": 3656385,
+    "output_tokens": 9051,
+    "api_call_count": 12,
+    "subagent_tokens": {
+      "input_tokens": 62,
+      "cache_creation_tokens": 98186,
+      "cache_read_tokens": 2762235,
+      "output_tokens": 17145,
+      "api_call_count": 31
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 296,
+    "cache_creation_tokens": 282012,
+    "cache_read_tokens": 28119802,
+    "output_tokens": 106920,
+    "api_call_count": 146,
+    "subagent_tokens": {
+      "input_tokens": 142,
+      "cache_creation_tokens": 214841,
+      "cache_read_tokens": 6247193,
+      "output_tokens": 36820,
+      "api_call_count": 71
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 5,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 3,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Implement part 1 of named Cargo registry support in Callisto: allow a `[registries.<name>]` entry with `kind = \"cargo\"` as a valid `publish-to` target, then address review and mutation-testing findings and open the PR.",
+    "outcome": "Pushed a signed commit and opened PR #575 (trail #460). Named cargo registries now pass `--registry <name>` to `cargo publish` and `cargo info`. All gates were green and `cargo mutants --in-diff` reported 0 missed after a fix. Part 2 (Cargo rehearsals and native install/load matrix in #572) is deferred until #575 merges.",
+    "learnings": {
+      "repo": [
+        "Changes are gated by `just pre-push`, `just lint`, `just doc-check` and `just test`, plus `cargo mutants --in-diff` run against a diff of `crates/callisto-model/src` and `crates/callisto-graph/src` versus origin/main.",
+        "Commits are GPG-signed (`-S`), and GitHub's verification reason is checked via `gh api repos/orin-dx/callisto/commits/<sha>`. They carry no session trailer.",
+        "Work is done in a git worktree under `.claude/worktrees/wp-cargo-named-registries`, and the branch is pushed with an explicit refspec `HEAD:refs/heads/worktree-wp-cargo-named-registries`.",
+        "PRs are linked to trails with `entire trail link <n>` and `entire trail ci-pr --branch <branch>`.",
+        "Reusing an existing error code was preferred over adding a new one: only E330's help text and its row in `docs/errors.md` were touched. Adding codes is treated as a larger decision.",
+        "A `crates-io` publish runs plain `cargo publish` with no `--registry`, while observation passes `--registry crates-io`. Cargo's own config can redirect the publish, and Callisto then fails with E157 after the upload. This predates the PR.",
+        "Named registries need a `CARGO_REGISTRIES_<NAME>_TOKEN` env var in the release job. Docs and the changeset now say so.",
+        "Built-in publish target names (`none`, `github-release`, `npm`, etc.) always win over a cargo registry declared with the same name.",
+        "Docs touched for this feature: `docs/publishing.md`, `docs/config.md`, REL-PUB-06 and REL-PUB-18."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/release/operation.rs",
+          "finding": "`validated_registry_key` lives here and was reused from the graph config resolver (`crates/callisto-graph/src/config/resolve.rs`) so malformed registry names fail at load with E330 rather than late with E159."
+        },
+        {
+          "path": "crates/callisto-model/src/ecosystem.rs",
+          "finding": "`PublishTarget` gained a `CargoRegistry` variant, and `config_str()` now returns `&str`. Wire output for `crates-io` is unchanged."
+        },
+        {
+          "path": "docs/publishing.md",
+          "line": 38,
+          "finding": "This line needed correcting and now describes the `crates-io` publish/observe `--registry` asymmetry."
+        }
+      ],
+      "workflow": [
+        "Mutation testing caught gaps that normal tests missed: 3 missed mutants in the new variant's `registry_key` and `config_str`, closed with a unit test.",
+        "A fresh reviewer agent (Opus) surfaced real issues, including a wrong claim in earlier docs. Amend the unpushed commit, regenerate the diff and rerun mutants after each fix.",
+        "Boundary tests were written first and failed first, driving the real binary to assert `--registry my-reg` appears with no `crates-io`.",
+        "Edits were scripted through temp Python scripts run with `python3 -I`, with gate output captured to files and grepped for `GATE` and `^error` lines.",
+        "The worktree `target/` was deleted after finishing to reclaim disk."
+      ]
+    },
+    "friction": [
+      "The first push command was combined with several other checks and then re-run separately, suggesting the push or verification step needed splitting to confirm the remote ref.",
+      "The first mutation run missed 3 mutants, forcing a fix, an amend, a gate rerun and another mutation run.",
+      "An earlier claim in AGENTS.md (#572), that callisto always publishes with `--registry crates-io`, turned out to be wrong."
+    ],
+    "open_items": [
+      "Decision needed from the user: should a cargo registry named like a built-in target (`none`, `github-release`, etc.) be rejected at config load? This requires a new error code.",
+      "Part 2 is not started and waits for #575 to merge: Cargo rehearsals and the native install/load matrix in #572.",
+      "Fix the incorrect AGENTS.md line from #572 about always publishing with `--registry crates-io` in part 2.",
+      "No tests cover `confirm-timeout` or `publish-timeout` on a named registry, and nothing pins the fingerprint value for that target.",
+      "Pre-existing behaviour left unchanged: Cargo config can redirect a `crates-io` publish, causing E157 after upload."
+    ]
+  }
+}
