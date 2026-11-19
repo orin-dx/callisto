@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01724SqJZCUwjyk7kfUfRh8q",
+  "agent_id": "ac24cd4f1c1562b97",
+  "subagent_type": "claude-code-guide",
+  "task_description": "Check nested sessions feature",
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 38382,
+    "cache_read_tokens": 109263,
+    "output_tokens": 2174,
+    "api_call_count": 4
+  },
+  "started_at": "2026-11-17T14:20:29.861591-08:00",
+  "completed_at": "2026-11-17T14:21:08.835502-08:00"
+}

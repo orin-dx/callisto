@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7TKG4F8W31Q0HZEA6C69R6A",
+  "session_id": "05ccf986-0971-4b83-a248-f2775e0d791b",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-19T19:11:14.723058Z",
+  "branch": "main",
+  "checkpoints_count": 38,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/research/2026-11-17-release-tool-landscape.json",
+    "docs/research/2026-11-17-release-tools-deep-dive.json",
+    "docs/research/2026-11-17-rust-implementation-lessons.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8af9af528190",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 354,
+    "cache_creation_tokens": 1080337,
+    "cache_read_tokens": 36081614,
+    "output_tokens": 152333,
+    "api_call_count": 163,
+    "subagent_tokens": {
+      "input_tokens": 284,
+      "cache_creation_tokens": 357116,
+      "cache_read_tokens": 9146493,
+      "output_tokens": 56049,
+      "api_call_count": 128
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 354,
+    "cache_creation_tokens": 1080337,
+    "cache_read_tokens": 36081614,
+    "output_tokens": 152333,
+    "api_call_count": 163,
+    "subagent_tokens": {
+      "input_tokens": 284,
+      "cache_creation_tokens": 357116,
+      "cache_read_tokens": 9146493,
+      "output_tokens": 56049,
+      "api_call_count": 128
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 4,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 38
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_011Da8zm8yr1j8SN2uP8udCZ",
+  "agent_id": "a3325ef3b96e01a6f",
+  "subagent_type": "bug-hunter",
+  "task_description": "Verify semantic-model findings",
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 96470,
+    "cache_read_tokens": 1928622,
+    "output_tokens": 13909,
+    "api_call_count": 29
+  },
+  "started_at": "2026-11-17T13:57:45.987316-08:00",
+  "completed_at": "2026-11-17T14:00:40.374787-08:00"
+}
