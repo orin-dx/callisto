@@ -443,7 +443,7 @@ fn apply_write_step(
             let mut mutated = false;
             if let Some((bump_idx, target_version)) = &group.bump {
                 let bump = &plan.bumps[*bump_idx];
-                mutated = write_version_guarded(handle.as_mut(), path, &bump.from, target_version, permit)?;
+                mutated = write_version_guarded(handle.as_mut(), path, &bump.from, target_version)?;
             }
             for rewrite_idx in &group.rewrite_indices {
                 rewrite_dependency(handle.as_mut(), &plan.rewrites[*rewrite_idx], permit)?;
@@ -458,12 +458,12 @@ fn apply_write_step(
             let mut ws_res = WorkspaceCargoResolver::load_at(root, root_manifest)?;
             let mut mutated = false;
             if let Some((_, target_version)) = &group.bump {
-                ws_res.write_version(target_version, permit)?;
+                ws_res.write_version(target_version)?;
                 mutated = true;
             }
             for rewrite_idx in &group.rewrite_indices {
                 let rewrite = &plan.rewrites[*rewrite_idx];
-                ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
+                ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone())?;
                 mutated = true;
             }
             if mutated {
@@ -473,14 +473,14 @@ fn apply_write_step(
         }
         WriteStep::MixedManifestVersion { path, bump } => {
             let mut handle = open_canonical(path, ctx)?;
-            if write_version_guarded(handle.as_mut(), path, &bump.from, &bump.to, permit)? {
+            if write_version_guarded(handle.as_mut(), path, &bump.from, &bump.to)? {
                 handle.persist(permit)?;
             }
             Ok((*path).clone())
         }
         WriteStep::MixedWorkspaceVersion { root_manifest, to } => {
             let mut ws_res = WorkspaceCargoResolver::load_at(root, root_manifest)?;
-            ws_res.write_version(to, permit)?;
+            ws_res.write_version(to)?;
             ws_res.persist(permit)?;
             Ok((*root_manifest).clone())
         }
@@ -492,20 +492,20 @@ fn apply_write_step(
         }
         WriteStep::MixedWorkspaceRewrite { root_manifest, rewrite } => {
             let mut ws_res = WorkspaceCargoResolver::load_at(root, root_manifest)?;
-            ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
+            ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone())?;
             ws_res.persist(permit)?;
             Ok((*root_manifest).clone())
         }
         WriteStep::PlatformVersion(write) => {
             let mut handle = open_canonical(&write.manifest, ctx)?;
-            if write_version_guarded(handle.as_mut(), &write.manifest, &write.from, &write.version, permit)? {
+            if write_version_guarded(handle.as_mut(), &write.manifest, &write.from, &write.version)? {
                 handle.persist(permit)?;
             }
             Ok(write.manifest.clone())
         }
         WriteStep::OptionalDependencies(update) => {
             let mut handle = open_canonical(&update.manifest, ctx)?;
-            handle.update_optional_dependencies(&update.updates, permit)?;
+            handle.update_optional_dependencies(&update.updates)?;
             handle.persist(permit)?;
             Ok(update.manifest.clone())
         }
@@ -525,7 +525,6 @@ fn write_version_guarded(
     path: &Path,
     from: &Version,
     to: &Version,
-    permit: &ApplyPermit,
 ) -> Result<bool, GraphError> {
     let current = handle.current_version()?;
     if current == *to {
@@ -539,7 +538,7 @@ fn write_version_guarded(
             found: current,
         });
     }
-    handle.write_version(to, permit)?;
+    handle.write_version(to)?;
     Ok(true)
 }
 
