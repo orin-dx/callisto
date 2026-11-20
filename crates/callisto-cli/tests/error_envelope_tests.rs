@@ -188,3 +188,24 @@ fn outside_a_repository_stderr_is_still_only_the_envelope() {
     let envelope = envelope_in(dir.path(), &["status"]);
     assert_eq!(envelope["command"], "status", "{envelope}");
 }
+
+#[test]
+fn dry_run_is_refused_before_the_artifact_directory_is_resolved() {
+    let dir = tempfile::tempdir().unwrap();
+    callisto_fixtures::git::init_repo(dir.path());
+    for subcommand in ["build-python", "pack-npm"] {
+        let args = [
+            "--dry-run",
+            "release",
+            subcommand,
+            "--intent",
+            "intent.json",
+            "--artifact-dir",
+            "missing-dir",
+        ];
+        let out = callisto(dir.path(), &args);
+        let envelope: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
+        assert_eq!(envelope["error"]["code"], "E309", "{subcommand}: {envelope}");
+        assert_eq!(out.status.code(), Some(2), "{subcommand}: {envelope}");
+    }
+}

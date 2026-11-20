@@ -360,9 +360,16 @@ fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     Ok(ExitCode::SUCCESS)
 }
 
-/// Shared steps of the build commands: refuse `--dry-run`, require a publish for the ecosystem, validate the intent.
+fn refuse_dry_run(command: &'static str, global: &GlobalArgs) -> Result<(), CliError> {
+    if global.dry_run {
+        return Err(CliError::DryRunRefused { command });
+    }
+    Ok(())
+}
+
+/// Shared steps of the build commands: require a publish for the ecosystem, validate the intent. Callers refuse
+/// `--dry-run` first.
 fn build_from_intent(
-    command: &'static str,
     ecosystem: &'static str,
     intent_path: &Path,
     source_root: Option<&Path>,
@@ -370,9 +377,6 @@ fn build_from_intent(
     publishes_nothing: fn(&ReleaseIntentV1) -> bool,
     build: impl FnOnce(&ValidatedReleaseIntent<'_>) -> Result<Vec<String>, GraphError>,
 ) -> Result<Vec<String>, CliError> {
-    if global.dry_run {
-        return Err(CliError::DryRunRefused { command });
-    }
     let intent = read_intent(&global.resolve_file_arg(intent_path))?;
     if publishes_nothing(&intent) {
         return Err(CliError::ReleaseNoSealablePublishes { ecosystem });
@@ -394,9 +398,9 @@ fn canonical_artifact_dir(global: &GlobalArgs, dir: &Path) -> Result<PathBuf, Cl
 }
 
 fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    refuse_dry_run("release build-python", global)?;
     let outdir = canonical_artifact_dir(global, &args.artifact_dir)?;
     let built = build_from_intent(
-        "release build-python",
         "Python",
         &args.intent,
         args.source_root.as_deref(),
@@ -420,9 +424,9 @@ fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<Exi
 }
 
 fn pack_npm(args: ReleasePackNpmArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    refuse_dry_run("release pack-npm", global)?;
     let outdir = canonical_artifact_dir(global, &args.artifact_dir)?;
     let built = build_from_intent(
-        "release pack-npm",
         "npm",
         &args.intent,
         args.source_root.as_deref(),
@@ -446,8 +450,8 @@ fn pack_npm(args: ReleasePackNpmArgs, global: &GlobalArgs) -> Result<ExitCode, C
 }
 
 fn package_cargo(args: ReleasePackageCargoArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    refuse_dry_run("release package-cargo", global)?;
     let built = build_from_intent(
-        "release package-cargo",
         "Cargo",
         &args.intent,
         args.source_root.as_deref(),
