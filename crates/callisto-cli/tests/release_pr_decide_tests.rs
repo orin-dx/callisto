@@ -67,6 +67,33 @@ fn a_release_inferred_from_commits_alone_opens_a_release_pr() {
     assert_eq!(action_kind(&decide(root)), "create");
 }
 
+/// Inference starts at the last tag, so the generated workflow runs decide only after execute tags a release merge:
+/// before the tag it would propose the released commits again.
+#[test]
+fn a_merged_inferred_release_is_settled_by_its_tag() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    tagged_auto_package(root);
+    std::fs::write(root.join("lib.rs"), "pub fn feature() {}\n").unwrap();
+    run_git(root, &["add", "."]);
+    run_git(root, &["commit", "-q", "-m", "feat: add a feature"]);
+    let version = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", root.to_str().unwrap(), "version", "--no-refresh-lockfiles"])
+        .output()
+        .unwrap();
+    assert!(version.status.success(), "{}", String::from_utf8_lossy(&version.stderr));
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "chore(release): version packages"]);
+    assert_eq!(
+        action_kind(&decide(root)),
+        "create",
+        "untagged, the released feat commit is inferred again"
+    );
+
+    run_git(root, &["tag", "-m", "release", "pkg-alpha@1.1.0"]);
+    assert_eq!(action_kind(&decide(root)), "noop");
+}
+
 #[test]
 fn an_unparseable_changeset_fails_decide_instead_of_a_noop() {
     let dir = tempfile::tempdir().unwrap();

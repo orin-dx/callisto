@@ -1025,12 +1025,15 @@ fn matrix_workflow_requests_npm_provenance_only_for_npm_workspaces() {
     assert!(render_matrix_workflow().contains("NPM_CONFIG_PROVENANCE: \"true\""));
 }
 
-// The version-pr job matches the simple workflow's.
+// The version-pr job matches the simple workflow's, gated on `plan` where the simple shape has `package`.
 #[test]
 fn matrix_workflow_keeps_the_simple_version_pr_job() {
     let simple = render_workflow_0_8_0(&cargo_only_facts(), "main");
     let matrix = render_matrix_workflow();
-    assert_eq!(job(&matrix, "version-pr"), job(&simple, "version-pr"));
+    assert_eq!(
+        job(&matrix, "version-pr"),
+        job(&simple, "version-pr").replace("package", "plan")
+    );
     assert!(job(&matrix, "version-pr").contains("with: {mode: version-pr, branch: \"main\"}"));
 }
 
@@ -1087,6 +1090,48 @@ fn scalars(node: &yaml_rust2::Yaml) -> Vec<&str> {
             .flat_map(|(key, value)| scalars(key).into_iter().chain(scalars(value)))
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+/// On a release merge the release PR is rebuilt only after execute has pushed the new tags, since decide infers from the
+/// last tag; on any other push execute is skipped and version-pr still runs. Checked on the parsed YAML of both shapes.
+#[test]
+fn version_pr_waits_for_execute_on_a_release_merge() {
+    for (shape, decides) in [(WorkflowShape::Simple, "package"), (WorkflowShape::BuildMatrix, "plan")] {
+        let text = render_workflow(
+            &all_ecosystem_facts(),
+            shape,
+            &branch("main"),
+            &fake_commit(),
+            &v0_8_0(),
+        );
+        let docs = yaml_rust2::YamlLoader::load_from_str(&text).expect("the generated workflow is YAML");
+        let version_pr = &docs[0]["jobs"]["version-pr"];
+        let needs: Vec<&str> = version_pr["needs"]
+            .as_vec()
+            .expect("version-pr lists its needs")
+            .iter()
+            .filter_map(|need| need.as_str())
+            .collect();
+        assert_eq!(needs, [decides, "execute"], "{shape:?}");
+        let condition = version_pr["if"]
+            .as_str()
+            .expect("version-pr has a condition")
+            .trim_end();
+        assert_eq!(
+            condition,
+            format!(
+                "!cancelled() && needs.{decides}.result == 'success' && \
+                 (needs.{decides}.outputs.release != 'true' || needs.execute.result == 'success')"
+            ),
+            "{shape:?}"
+        );
+        assert!(
+            docs[0]["jobs"]["execute"]["if"]
+                .as_str()
+                .is_some_and(|execute| execute.contains(&format!("needs.{decides}.outputs.release == 'true'"))),
+            "{shape:?}: execute runs exactly when the decision says release"
+        );
     }
 }
 

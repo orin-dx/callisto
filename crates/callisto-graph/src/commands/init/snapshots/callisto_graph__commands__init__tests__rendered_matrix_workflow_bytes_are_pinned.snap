@@ -16,6 +16,11 @@ defaults:
 
 jobs:
   version-pr:
+    # After a release merge, decide reads the new tags: before execute pushes them it would re-infer released commits.
+    needs: [plan, execute]
+    if: >-
+      !cancelled() && needs.plan.result == 'success' &&
+      (needs.plan.outputs.release != 'true' || needs.execute.result == 'success')
     runs-on: ubuntu-latest
     permissions: {contents: write, pull-requests: write}
     steps:
