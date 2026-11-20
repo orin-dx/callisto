@@ -32,9 +32,7 @@ fn step_script(name: &str) -> String {
         .join("\n")
 }
 
-fn git(root: &Path, args: &[&str]) {
-    callisto_fixtures::git::run_git(root, args);
-}
+use callisto_fixtures::git::run_git as git;
 
 /// A Cargo crate `crate_name` next to an npm package `npm_name` with napi targets, in `dir`.
 /// A `broken` addon has no crate to build, which makes `callisto matrix` fail on it with E204.

@@ -297,7 +297,6 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
     assert_eq!(
         commands::version::handle(
             VersionArgs {
-                refresh_lockfiles: false,
                 no_refresh_lockfiles: true,
                 strict: false,
                 allow_empty_changesets: false,
@@ -312,7 +311,6 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
 
     let second = commands::version::handle(
         VersionArgs {
-            refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
@@ -363,7 +361,6 @@ fn decision_write_failure_is_finished_by_a_retry_without_a_second_bump() {
 
     let first = commands::version::handle(
         VersionArgs {
-            refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
@@ -393,7 +390,6 @@ fn decision_write_failure_is_finished_by_a_retry_without_a_second_bump() {
     std::fs::set_permissions(root.join("decision-parent"), std::fs::Permissions::from_mode(0o755)).unwrap();
     let retry = commands::version::handle(
         VersionArgs {
-            refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,

@@ -30,7 +30,7 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
         since: args.since,
     };
 
-    let inference = crate::workspace::select_inference();
+    let inference = callisto_graph::infer::CommitInference;
     let report = callisto_graph::commands::status(&ws, &inference, &opts)?;
 
     match global.format {

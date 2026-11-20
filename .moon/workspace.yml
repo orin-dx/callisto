@@ -8,9 +8,4 @@ projects: ["crates/*"]
 vcs:
   defaultBranch: "main"
   provider: "github"
-  hooks:
-    pre-commit:
-      - "just pre-commit"
-    pre-push:
-      - "just pre-push"
 

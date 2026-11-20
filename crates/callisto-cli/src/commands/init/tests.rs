@@ -84,14 +84,7 @@ impl Prompter for Scripted {
     }
 }
 
-fn git(root: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?}");
-}
+use callisto_fixtures::git::run_git as git;
 
 /// A Cargo workspace: `bins` binary crates (`app`, `tool`) plus library `core`, with `origin`.
 fn workspace(bins: usize) -> tempfile::TempDir {

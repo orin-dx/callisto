@@ -6,7 +6,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
-Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248, E253, E254, E257, E258, E318. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338). E318 refused `release-pr decide` in pre mode; a release PR now runs a whole pre cycle.
+Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E216, E217, E218, E248, E253, E254, E257, E258, E282, E318. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338). E318 refused `release-pr decide` in pre mode; a release PR now runs a whole pre cycle.
 
 ## callisto-model
 
@@ -264,9 +264,6 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E213 | An I/O error, optionally naming the path being accessed | check that the path exists and that you have permission to access it |
 | E214 | Refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given | specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments |
 | E215 | Release intent's schema version doesn't match what this build reads | re-run `callisto release plan` to derive a fresh intent: an intent is bound to one build's operation graph and is never reused across versions |
-| E216 | `release artifact-manifest` was run with `--dry-run`, but it needs an output file | re-run `callisto release artifact-manifest` without --dry-run |
-| E217 | `release plan` was run with `--dry-run`, but planning is already read-only and needs an output file | re-run `callisto release plan --out <file>` without --dry-run |
-| E218 | `release execute` was run with `--dry-run`, which it doesn't support | remove --dry-run; release execute has no read-only mode |
 | E219 | Release intent declares no binary artifact slots; no artifact manifest can be created | plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots |
 | E220 | Artifact manifests require a Git commit release source | plan the release from a Git commit source |
 | E221 | A declared artifact isn't a regular file directly in the artifact directory | place the built asset as a plain file (not a symlink or directory) directly in the artifact directory |
@@ -305,12 +302,11 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E279 | `pre enter` was given an empty or whitespace-only tag | pass a non-empty tag, for example `callisto pre enter beta` |
 | E280 | `pre exit` was run after prerelease mode was already exited | run `callisto version` to finalize the release |
 | E281 | A `release-pr` `--decision`/`--snapshot` argument given inline or on stdin is not valid JSON | check the JSON is well-formed and matches the expected schema |
-| E282 | `release-pr commit-plan` was run with both `--out` and `--dry-run` | re-run without --dry-run, or drop --out |
 | E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
 | E298 | `init --product-package` given without `--artifact-target` | drop --<flag>, or pass --artifact-target to ship the product's binaries |
 | E299 | `init --workflow`/`--artifact-target` given with no `origin` remote configured | add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init |
 | E308 | `release build-python` or `artifact-manifest --seal-python` on an intent that publishes no Python package, `release pack-npm` or `--seal-npm` on one that publishes no npm package, or `release package-cargo` on one that publishes no crate | drop --seal-python and `release build-python` for an intent without a Python publish, --seal-npm and `release pack-npm` for one without an npm publish, or `release package-cargo` for one without a crate publish |
-| E309 | `release build-python`, `release pack-npm` or `release package-cargo` run with `--dry-run`, which cannot write build output | re-run `callisto release <command>` without --dry-run |
+| E309 | `release artifact-manifest`, `release plan`, `release execute`, `release-pr commit-plan`, `release build-python`, `release pack-npm` or `release package-cargo` was run with `--dry-run`, which it refuses | re-run `callisto <command>` without --dry-run |
 | E310 | Failed to read manifest `<path>`: <message> | Make the manifest readable UTF-8 text; a workspace member's manifest is never skipped. |
 | E311 | Invalid workspace membership in `<path>`: <message> | Make `members`/`exclude` (Cargo, uv) or `workspaces`/`packages` (npm, pnpm) an array of valid glob strings; Callisto will not guess which packages a malformed workspace admits. |
 | E312 | Package `<path>` is reached through a symbolic link, which Git cannot stage | Replace the link with the real directory, or list it in a .gitignore under the workspace root so discovery skips it; Callisto cannot commit a version bump to a file beneath a symbolic link. |

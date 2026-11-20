@@ -78,7 +78,6 @@ fn test_version_strict_no_changesets_exits_nonzero() {
     let args = VersionArgs {
         strict: true,
         allow_empty_changesets: false,
-        refresh_lockfiles: false,
         no_refresh_lockfiles: true,
         emit_decision: None,
         emit_preview: None,
@@ -107,7 +106,6 @@ fn test_version_no_strict_no_changesets_succeeds() {
     let args = VersionArgs {
         strict: false,
         allow_empty_changesets: false,
-        refresh_lockfiles: false,
         no_refresh_lockfiles: true,
         emit_decision: None,
         emit_preview: None,
@@ -161,7 +159,6 @@ fn test_version_strict_fails_before_writing_a_pre_exit_bump() {
     let args = VersionArgs {
         strict: true,
         allow_empty_changesets: false,
-        refresh_lockfiles: false,
         no_refresh_lockfiles: true,
         emit_decision: None,
         emit_preview: None,

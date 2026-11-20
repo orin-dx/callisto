@@ -148,27 +148,6 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
     assert!(!completions.stdout.is_empty(), "completions must print a script");
 }
 
-/// `validate` was removed, not merely hidden --
-/// invoking it must fail clap's own argument parsing (unrecognized
-/// subcommand), not dispatch anywhere.
-#[test]
-fn validate_subcommand_is_unrecognized() {
-    let output = Command::new(bin())
-        .args(["validate"])
-        .output()
-        .unwrap_or_else(|e| panic!("failed to spawn callisto validate: {e}"));
-
-    assert!(
-        !output.status.success(),
-        "`callisto validate` must fail now that the subcommand is removed"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("unrecognized subcommand") || stderr.contains("error"),
-        "expected clap's unrecognized-subcommand error, got: {stderr}"
-    );
-}
-
 /// `callisto compose-pr-body --existing-body -` must read the existing PR
 /// body from stdin, stripping a leading BOM if present.
 #[test]

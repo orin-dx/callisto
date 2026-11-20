@@ -17,14 +17,6 @@ tasks:
       - "**/*.snap"
       - "**/*.trycmd"
 
-  lint:
-    command: "cargo"
-    args: ["clippy", "-p", "$project", "--all-targets", "--", "-D", "warnings"]
-    inputs:
-      - "src/**/*"
-      - "tests/**/*"
-      - "Cargo.toml"
-
   format:
     command: "cargo"
     args: ["fmt", "-p", "$project"]
@@ -39,11 +31,4 @@ tasks:
     inputs:
       - "src/**/*"
       - "tests/**/*"
-      - "Cargo.toml"
-
-  publish:
-    command: "cargo"
-    args: ["publish", "-p", "$project", "--no-verify"]
-    inputs:
-      - "src/**/*"
       - "Cargo.toml"

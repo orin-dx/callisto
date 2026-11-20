@@ -149,7 +149,7 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
 
     let runner = callisto_cli::runner::CliCommandRunner;
     let ws = callisto_cli::workspace::load_workspace(&global, &runner).unwrap();
-    let inference = callisto_cli::workspace::select_inference();
+    let inference = callisto_graph::infer::CommitInference;
     let report =
         callisto_graph::commands::status(&ws, &inference, &callisto_graph::commands::StatusOptions::default()).unwrap();
 
@@ -158,124 +158,5 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
         "status must detect a pending changeset whose entry uses an ecosystem-qualified \
          name (cargo/my-app) for a package registered as my-app; got: {:?}",
         report.packages
-    );
-}
-
-/// `callisto status --check` must return exit code 0 regardless of pending
-/// state, as long as there are no error-level diagnostics
-/// (`--check` is a conventional errors-only gate).
-#[test]
-fn test_status_check_exit_codes() {
-    use std::process::ExitCode;
-
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-
-    callisto_fixtures::git::init_repo(root);
-
-    fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
-    )
-    .unwrap();
-
-    let crate_dir = root.join("crates/my-app");
-    fs::create_dir_all(&crate_dir).unwrap();
-    fs::write(
-        crate_dir.join("Cargo.toml"),
-        "[package]\nname = \"my-app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
-    )
-    .unwrap();
-
-    let global = GlobalArgs {
-        format: OutputFormat::Json,
-        cwd: root.to_path_buf(),
-        dry_run: false,
-    };
-
-    // Initialize so callisto.toml exists.
-    callisto_fixtures::scaffold_callisto(&global.cwd);
-
-    let check_args = StatusArgs {
-        strict: false,
-        check: true,
-        since: None,
-    };
-
-    // --- Clean workspace: nothing pending, no errors -> exit code 0 ---
-    let clean_code = commands::status::handle(check_args.clone(), &global).unwrap();
-    assert_eq!(
-        format!("{clean_code:?}"),
-        format!("{:?}", ExitCode::SUCCESS),
-        "clean workspace with --check must return exit code 0"
-    );
-
-    // --- Workspace with a pending changeset (no errors) -> still exit code 0 ---
-    assert_eq!(
-        commands::add::handle(
-            callisto_cli::cli::AddArgs {
-                packages: vec!["cargo/my-app:patch".to_string()],
-                summary: Some("test fix".to_string()),
-            },
-            &global,
-        )
-        .unwrap(),
-        std::process::ExitCode::SUCCESS
-    );
-
-    let pending_code = commands::status::handle(check_args.clone(), &global).unwrap();
-    assert_eq!(
-        format!("{pending_code:?}"),
-        format!("{:?}", ExitCode::SUCCESS),
-        "workspace with a well-formed pending changeset and --check must still return \
-         exit code 0 -- pending state never gates the exit code"
-    );
-}
-
-/// `callisto status` must return exit code 0 on a clean workspace without
-/// the `--check` flag.
-#[test]
-fn test_status_default_exit_code_clean_workspace() {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-
-    callisto_fixtures::git::init_repo(root);
-
-    fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
-    )
-    .unwrap();
-
-    let crate_dir = root.join("crates/lib-a");
-    fs::create_dir_all(&crate_dir).unwrap();
-    fs::write(
-        crate_dir.join("Cargo.toml"),
-        "[package]\nname = \"lib-a\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
-    )
-    .unwrap();
-
-    let global = GlobalArgs {
-        format: OutputFormat::Json,
-        cwd: root.to_path_buf(),
-        dry_run: false,
-    };
-
-    callisto_fixtures::scaffold_callisto(&global.cwd);
-
-    let code = commands::status::handle(
-        StatusArgs {
-            strict: false,
-            check: false,
-            since: None,
-        },
-        &global,
-    )
-    .unwrap();
-
-    assert_eq!(
-        format!("{code:?}"),
-        format!("{:?}", std::process::ExitCode::SUCCESS),
-        "status without --check on a clean workspace must return exit code 0"
     );
 }

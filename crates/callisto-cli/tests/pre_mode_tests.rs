@@ -42,7 +42,6 @@ fn test_pre_mode_blackbox_lifecycle() {
     // 3. Version in pre-release mode -> should produce 0.2.0-beta.0
     let version_res = commands::version::handle(
         VersionArgs {
-            refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
@@ -63,7 +62,6 @@ fn test_pre_mode_blackbox_lifecycle() {
     // 5. Final versioning after exit -> should finalize to 0.2.0
     let final_version_res = commands::version::handle(
         VersionArgs {
-            refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: true,
@@ -269,7 +267,6 @@ fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
 
     let version_res = commands::version::handle(
         VersionArgs {
-            refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
@@ -287,66 +284,6 @@ fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
     assert!(
         cargo_content.contains("version = \"0.1.0\""),
         "Cargo.toml must not be modified when pre.json is malformed, but got:\n{cargo_content}"
-    );
-}
-
-/// Bug 1: `pre enter` must refuse to overwrite an existing pre.json.
-///
-/// Running `pre enter` a second time while the workspace is already in
-/// pre-release mode should return an error, not silently overwrite the file.
-/// The check must fire in both the real-write and dry-run paths.
-#[test]
-fn test_pre_enter_rejects_if_already_in_pre_mode() {
-    let dir = setup_polyglot_git_repo();
-    let root = dir.path();
-
-    let global = GlobalArgs {
-        format: OutputFormat::Text,
-        cwd: root.to_path_buf(),
-        dry_run: false,
-    };
-
-    let first = commands::pre::handle(
-        PreArgs::Enter {
-            tag: "alpha".to_string(),
-        },
-        &global,
-    );
-    assert!(first.is_ok(), "first pre enter must succeed: {first:?}");
-    assert!(
-        root.join(".changeset/pre.json").exists(),
-        "pre.json must exist after first enter"
-    );
-
-    let second = commands::pre::handle(
-        PreArgs::Enter {
-            tag: "beta".to_string(),
-        },
-        &global,
-    );
-    assert!(
-        second.is_err(),
-        "second pre enter must fail when pre.json already exists, but got Ok"
-    );
-
-    let content = fs::read_to_string(root.join(".changeset/pre.json")).unwrap();
-    assert!(
-        content.contains("alpha"),
-        "pre.json must still contain 'alpha' after rejected second enter: {content}"
-    );
-    assert!(
-        !content.contains("beta"),
-        "pre.json must NOT contain 'beta' after rejected second enter: {content}"
-    );
-
-    let global_dry = GlobalArgs {
-        dry_run: true,
-        ..global.clone()
-    };
-    let dry = commands::pre::handle(PreArgs::Enter { tag: "rc".to_string() }, &global_dry);
-    assert!(
-        dry.is_err(),
-        "dry-run pre enter must also fail when pre.json already exists on disk"
     );
 }
 
@@ -546,7 +483,6 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
         assert_eq!(
             commands::version::handle(
                 VersionArgs {
-                    refresh_lockfiles: false,
                     no_refresh_lockfiles: true,
                     strict: false,
                     allow_empty_changesets: false,

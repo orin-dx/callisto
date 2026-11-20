@@ -3,14 +3,7 @@
 
 use std::{fs, path::Path, process::Command};
 
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git").args(args).current_dir(root).output().unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+use callisto_fixtures::git::run_git as git;
 
 #[test]
 fn red_c3_renamed_tag_template_still_finds_prior_tags() {
