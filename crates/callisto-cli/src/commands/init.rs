@@ -4,7 +4,7 @@ use std::io::Write;
 use std::process::ExitCode;
 
 use callisto_graph::commands::init::{
-    self as scaffold, BinaryRelease, InitAnswers, InitFacts, InitPackage, Versioning,
+    self as scaffold, changesets, BinaryRelease, InitAnswers, InitFacts, InitPackage, Versioning,
 };
 use callisto_graph::locate::{IgnoreWalkLocator, LocateError};
 use callisto_graph::GraphError;
@@ -161,9 +161,17 @@ pub fn run<R: CommandRunner>(
         }
     }
     let prompting = interactive && !args.yes;
-    let answers = collect_answers(&args, &facts, prompting, prompter)?;
+    let migration = changesets::migrate(&facts.root, &facts);
+    // A dry run writes nothing, so it previews with the warning instead.
+    if !migration.public_scoped.is_empty() && !args.yes && !global.dry_run {
+        return Err(CliError::InitChangesetsAccess {
+            packages: migration.public_scoped,
+        });
+    }
+    let mut answers = collect_answers(&args, &facts, prompting, prompter)?;
 
-    let mut diagnostics = scaffold::changesets_config_diagnostics(&facts.root);
+    let mut diagnostics = migration.diagnostics.clone();
+    diagnostics.extend(migration.apply_fixed_groups(&mut answers));
     if facts.origin.is_none() {
         writeln!(human, "{ORIGIN_MISSING_NOTE}")?;
         diagnostics.push(callisto_model::Diagnostic {
@@ -210,7 +218,7 @@ pub fn run<R: CommandRunner>(
     // A workflow nobody asked for (the default) never fails `init`: if it cannot be built, say why and go on.
     let asked_for_workflow = args.workflow || prompting;
     let workflow = match shape.filter(|_| want_workflow) {
-        Some(shape) => match build_workflow(&facts, shape, runner, human) {
+        Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner, human) {
             Ok(built) => Some(built),
             Err(error) if !asked_for_workflow => {
                 let note =
@@ -229,7 +237,10 @@ pub fn run<R: CommandRunner>(
             }
             Err(error) => return Err(error),
         },
-        None => None,
+        None => {
+            diagnostics.extend(migration.base_branch_unused());
+            None
+        }
     };
 
     let config = scaffold::render_config(&facts, &answers);
@@ -337,7 +348,8 @@ fn run_workflow_only<R: CommandRunner>(
                 reason: reason.to_string(),
             }
         })?;
-    let (workflow, branch) = build_workflow(&facts, shape, runner, human)?;
+    let base_branch = changesets::base_branch(root);
+    let (workflow, branch) = build_workflow(&facts, shape, base_branch.as_ref(), runner, human)?;
     writeln!(
         human,
         "\n{}:\n{workflow}",
@@ -376,11 +388,18 @@ fn run_workflow_only<R: CommandRunner>(
 fn build_workflow<R: CommandRunner>(
     facts: &InitFacts,
     shape: scaffold::WorkflowShape,
+    base_branch: Option<&BranchName>,
     runner: &R,
     human: &mut dyn Write,
 ) -> Result<(String, BranchName), CliError> {
     scaffold::ensure_workflow_absent(&facts.root)?;
-    let branch = scaffold::default_branch(runner, &facts.root);
+    let branch = match base_branch {
+        Some(name) => scaffold::DefaultBranch {
+            name: name.clone(),
+            source: scaffold::DefaultBranchSource::ChangesetsBaseBranch,
+        },
+        None => scaffold::default_branch(runner, &facts.root),
+    };
     writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
     let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package versions are semver");
     let commit = scaffold::resolve_release_commit(runner, &facts.root, &version)?;
@@ -461,6 +480,7 @@ fn collect_answers(
     let no_binaries = InitAnswers {
         versioning,
         binaries: None,
+        fixed_groups: Vec::new(),
     };
 
     let binaries: Vec<&InitPackage> = facts.binary_packages().collect();
@@ -530,6 +550,7 @@ fn collect_answers(
             product: product.id.clone(),
             targets,
         }),
+        fixed_groups: Vec::new(),
     })
 }
 

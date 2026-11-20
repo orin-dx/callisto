@@ -166,6 +166,21 @@ name = "workspace"
 members = ["cargo/callisto-model", "cargo/callisto-manifests", "cargo/callisto-graph", "cargo/callisto-cli", "cargo/callisto-fixtures"]
 ```
 
+## Migrating from Changesets
+
+`callisto init` reads `.changeset/config.json` from `@changesets/cli` 2.x and 3.x. The `.changeset/*.md` files need no conversion.
+
+| Changesets key | `init` does |
+| --- | --- |
+| `fixed` | Writes `[[fixed-group]]` entries named `fixed-<n>`. Globs expand to the npm packages that exist now, so add packages created later by hand. |
+| `linked` | Warns and writes nothing. A callisto linked group bumps every member on each release, and Changesets bumps only members with changesets. |
+| `ignore` | Warns and writes nothing. An ignored package is still versioned; `publish-to = ["none"]` stops its publishing. |
+| `access` | Writes nothing. Without `--yes`, `init` refuses (E342) when `access` is `restricted` or absent and a scoped npm package has no `publishConfig.access`, because callisto publishes it as public. Set `publishConfig.access` in each package.json, or pass `--yes`. |
+| `baseBranch` | Sets the branch filter of the generated workflow. |
+| `updateInternalDependencies` | Warns and writes nothing. Callisto always raises the ranges of dependents released with the dependency. |
+
+Every other key (`changelog`, `commit`, `privatePackages`, `snapshot`) gets a warning, so nothing is dropped silently.
+
 ## Identity and defaults
 
 Unspecified package fields are filled during graph construction: the release trigger defaults to changesets, the changelog to the package directory, and publish targets to those declared by its manifests. Default tags use the display id, so newly created tags become qualified after name promotion; historical bare tags use the ownership fallback described in [identity](architecture/identity.md). Canonical references alone do not repair the open rename/demotion failures.

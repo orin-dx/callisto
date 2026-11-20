@@ -277,7 +277,7 @@
     },
     {
       "id": "CLI-INIT-14",
-      "criterion": "When `.changeset/config.json` exists and declares `fixed`, `linked`, `ignore`, `access`, `baseBranch`, or `updateInternalDependencies` -- none of which callisto translates -- init emits a `changesets-config-key-dropped` warning diagnostic per such key present, naming `[[fixed-group]]` as `fixed`'s callisto.toml equivalent and stating no equivalent exists for the others."
+      "criterion": "When `.changeset/config.json` is a JSON object, init translates `fixed` into `[[fixed-group]]` entries named `fixed-<n>`, with each member pattern matched as a glob against npm package names and written as the npm packages that exist now, and generates the workflow's branch filter from `baseBranch` in place of the detected default branch. Every other key it does not carry over (`linked`, `ignore`, `updateInternalDependencies`, `changelog`, `commit` and any unknown key, but not `$schema`, and not an empty `fixed`, `linked` or `ignore`) gets one `changesets-config-key-dropped` warning diagnostic naming the key. The `fixed` warning says packages created later must be added by hand and names each pattern that matched no npm package. The `linked` warning says callisto bumps every member of a linked group. With `--versioning fixed` the translated groups are dropped and a warning says so. A `baseBranch` with no generated workflow gets a warning."
     },
     {
       "id": "CLI-INIT-15",
@@ -287,6 +287,11 @@
     {
       "id": "CLI-INIT-16",
       "criterion": "Cargo binary detection includes every explicit `[[bin]]` name (or path-derived name when omitted), `src/main.rs`, `src/bin/<name>.rs`, and `src/bin/<name>/main.rs`, de-duplicates names, and honors `package.autobins = false` for automatic targets. npm `bin` and Python `[project.scripts]` are detected as executables but are rejected as GitHub artifact builders before init writes files."
+    },
+    {
+      "id": "CLI-INIT-17",
+      "criterion": "When `.changeset/config.json` leaves `access` absent or `restricted` and an npm package named `@scope/name` that publishes has no `publishConfig.access`, init without --yes exits 1 with E342 naming each such package, before any prompt and without writing; with --yes it writes and emits a `changesets-config-key-dropped` warning naming the same packages; `--dry-run` previews with that warning instead of exiting. `access` set to `public` never triggers it.",
+      "is_error_case": true
     },
     {
       "id": "CLI-WF-01",
