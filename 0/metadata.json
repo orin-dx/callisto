@@ -1,0 +1,82 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XN6YK1MKSPEHXFTA6RRQVH",
+  "session_id": "bc9b2f75-695e-49e4-9b84-15ce92be4050",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T23:38:45.461756Z",
+  "branch": "wp-differential-assert-init",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/release_verify_real.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a2aac6068397",
+  "checkpoint_transcript_start": 269,
+  "transcript_lines_at_start": 269,
+  "compact_transcript_start": 20,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 14190,
+    "cache_read_tokens": 1392307,
+    "output_tokens": 3759,
+    "api_call_count": 15
+  },
+  "session_token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 70631,
+    "cache_read_tokens": 2687002,
+    "output_tokens": 9909,
+    "api_call_count": 33
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Resolve a trail finding (callisto/211) after pushing a fix for --dry-run handling, then start step 3: update the Changesets differential test to assert that `init` now writes the fixed group into callisto.toml.",
+    "outcome": "Finding resolved with a note referencing commit 74f8dc735. A new worktree and branch wp-differential-assert-init was created, the ignored real-Changesets differential test was changed to assert `[[fixed-group]]` with npm/alpha and npm/beta in callisto.toml, and it passed. Lint, commit, merge of origin/main and push were run in the last command, but its output (lint result, push success) isn't shown in the transcript.",
+    "learnings": {
+      "repo": [
+        "Real Changesets differential tests live in crates/callisto-cli/tests/release_verify_real.rs and are #[ignore]d; they need network and real @changesets/cli installs.",
+        "Running them needs @changesets/cli@3.0.3 installed under target/verify-real/npm and @changesets/cli@2.31.1 under target/verify-real/changesets-2, with PATH including the first's node_modules/.bin and VERIFY_REAL_CHANGESETS_2 pointing at the second's changeset binary.",
+        "The tests are run with `cargo test -p callisto-cli --test release_verify_real <name> -- --ignored --test-threads=1`, with CARGO_BUILD_JOBS=2 to limit load.",
+        "`callisto init` (crates/callisto-graph/src/commands/init/changesets.rs) now carries the Changesets `fixed` group into callisto.toml as [[fixed-group]] rather than only warning about it.",
+        "Worktrees are created under .claude/worktrees/<branch> off origin/main; `just lint` is the lint entry point.",
+        "The `entire` CLI provides `trail finding resolve <repo/PR> <id> -m <msg>` for resolving review findings, and `entire agent-help` for usage."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/release_verify_real.rs",
+          "line": 940,
+          "end_line": 1010,
+          "finding": "The a_changesets_fixed_group differential test previously parsed init's JSON report for a 'warned about fixed' flag; it now reads callisto.toml and asserts it contains [[fixed-group]], npm/alpha and npm/beta."
+        }
+      ],
+      "workflow": [
+        "Verify the pushed commit's signature via `gh api repos/.../commits/<sha> --jq .commit.verification.reason` before resolving findings.",
+        "Doing an in-place Python string-slice edit via heredoc was used for a multi-line test replacement.",
+        "Fresh worktrees lack target/verify-real, so the npm tooling must be reinstalled per worktree."
+      ]
+    },
+    "friction": [
+      "The fresh worktree had no installed Changesets CLIs, requiring two npm installs before the ignored test could run.",
+      "Several `entire` subcommands had to be probed with --help to find the right resolve syntax."
+    ],
+    "open_items": [
+      "Confirm the final command's results (lint pass, merge of origin/main, push of wp-differential-assert-init) since output wasn't shown.",
+      "Open a PR or trail entry for the wp-differential-assert-init branch if not already done.",
+      "Signature verification result for commit 74f8dc735 was not shown in the transcript."
+    ]
+  }
+}
