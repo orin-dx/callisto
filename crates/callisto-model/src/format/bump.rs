@@ -2,7 +2,6 @@ use crate::{Severity, Version, VersionGrammar};
 
 /// Trait for version arithmetic per versioning grammar.
 pub trait Versioning: Send + Sync {
-    fn grammar(&self) -> VersionGrammar;
     fn bump(&self, current: &Version, severity: Severity) -> Result<Version, BumpError>;
     fn bump_prerelease(
         &self,
@@ -47,10 +46,6 @@ pub fn versioning_for(grammar: VersionGrammar) -> Option<&'static dyn Versioning
 }
 
 impl Versioning for SemVerVersioning {
-    fn grammar(&self) -> VersionGrammar {
-        VersionGrammar::SemVer
-    }
-
     fn bump(&self, current: &Version, severity: Severity) -> Result<Version, BumpError> {
         if current.grammar() != VersionGrammar::SemVer {
             return Err(BumpError::NotSemVer {
@@ -121,10 +116,6 @@ impl Versioning for SemVerVersioning {
 }
 
 impl Versioning for Pep440Versioning {
-    fn grammar(&self) -> VersionGrammar {
-        VersionGrammar::Pep440
-    }
-
     fn bump(&self, current: &Version, severity: Severity) -> Result<Version, BumpError> {
         if current.grammar() != VersionGrammar::Pep440 {
             return Err(BumpError::NotPep440 {
@@ -286,14 +277,10 @@ fn next_counter(suffix: Option<&str>, overflow: impl Fn() -> BumpError) -> Resul
     }
 }
 
-pub fn bump_version(current: &Version, severity: Severity) -> Result<Version, BumpError> {
-    SEMVER_VERSIONING.bump(current, severity)
-}
-
 #[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BumpError {
-    #[error("bump_version requires a SemVer version; `{raw}` was parsed as {grammar:?}")]
+    #[error("bump requires a SemVer version; `{raw}` was parsed as {grammar:?}")]
     #[diagnostic(code(E035))]
     NotSemVer { raw: String, grammar: VersionGrammar },
     #[error("no versioning implementation exists for {grammar:?}")]
@@ -329,7 +316,7 @@ mod tests {
     #[case("0.5.2", Severity::Major, "1.0.0")]
     fn test_semver_bump_matrix(#[case] input: &str, #[case] sev: Severity, #[case] expected: &str) {
         let v = Version::parse(input, VersionGrammar::SemVer).unwrap();
-        assert_eq!(bump_version(&v, sev).unwrap().render(), expected);
+        assert_eq!(SEMVER_VERSIONING.bump(&v, sev).unwrap().render(), expected);
     }
 
     #[test]
@@ -466,17 +453,17 @@ mod tests {
     #[test]
     fn semver_zero_base_plain_bump() {
         let v = Version::parse("0.0.0", VersionGrammar::SemVer).unwrap();
-        assert_eq!(bump_version(&v, Severity::Minor).unwrap().render(), "0.1.0");
+        assert_eq!(SEMVER_VERSIONING.bump(&v, Severity::Minor).unwrap().render(), "0.1.0");
         let v = Version::parse("0.0.0", VersionGrammar::SemVer).unwrap();
-        assert_eq!(bump_version(&v, Severity::Major).unwrap().render(), "1.0.0");
+        assert_eq!(SEMVER_VERSIONING.bump(&v, Severity::Major).unwrap().render(), "1.0.0");
     }
 
     #[test]
     fn semver_zero_base_prerelease_bump_hits_zero_guards() {
         let v = Version::parse("0.0.0-alpha.0", VersionGrammar::SemVer).unwrap();
-        assert_eq!(bump_version(&v, Severity::Minor).unwrap().render(), "0.0.0");
+        assert_eq!(SEMVER_VERSIONING.bump(&v, Severity::Minor).unwrap().render(), "0.0.0");
         let v = Version::parse("0.0.0-alpha.0", VersionGrammar::SemVer).unwrap();
-        assert_eq!(bump_version(&v, Severity::Major).unwrap().render(), "0.0.0");
+        assert_eq!(SEMVER_VERSIONING.bump(&v, Severity::Major).unwrap().render(), "0.0.0");
     }
 
     #[test]
@@ -563,7 +550,7 @@ mod tests {
     fn test_semver_bump_major_at_max_returns_error() {
         let input = format!("{}.0.0", u64::MAX);
         let v = Version::parse(&input, VersionGrammar::SemVer).unwrap();
-        let err = bump_version(&v, Severity::Major).unwrap_err();
+        let err = SEMVER_VERSIONING.bump(&v, Severity::Major).unwrap_err();
         assert!(matches!(err, BumpError::Overflow { .. }));
     }
 
@@ -571,7 +558,7 @@ mod tests {
     fn test_semver_bump_patch_at_max_returns_error() {
         let input = format!("1.2.{}", u64::MAX);
         let v = Version::parse(&input, VersionGrammar::SemVer).unwrap();
-        let err = bump_version(&v, Severity::Patch).unwrap_err();
+        let err = SEMVER_VERSIONING.bump(&v, Severity::Patch).unwrap_err();
         assert!(matches!(err, BumpError::Overflow { .. }));
     }
 

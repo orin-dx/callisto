@@ -43,9 +43,10 @@ mod historical_version_authority {
     }
 
     fn write_workspace_version(root: &Path, version: callisto_model::Version) {
-        let mut manifest = callisto_manifests::WorkspaceCargoResolver::load(&root.join("Cargo.toml")).unwrap();
+        let mut manifest =
+            callisto_manifests::WorkspaceCargoResolver::load_at(root, std::path::Path::new("Cargo.toml")).unwrap();
         let permit = ApplyPermit::force_for_tests();
-        manifest.write_version(&version, &permit).unwrap();
+        manifest.write_version(&version).unwrap();
         manifest.persist(&permit).unwrap();
     }
 

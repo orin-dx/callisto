@@ -5,6 +5,7 @@
 //! at different times. The commits after the first each edit one package, and the last commit adds a changeset to every
 //! tenth package, so `status`, `version` and `release --dry-run` have real work.
 
+use crate::git::run_git;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -55,7 +56,7 @@ pub struct ScaledWorkspace {
 impl ScaledWorkspace {
     /// Writes the repository under `root`, which must exist and be empty.
     pub fn build(self, root: &Path) {
-        git(root, &["init", "-q", "-b", "main"]);
+        run_git(root, &["init", "-q", "-b", "main"]);
         let stream = self.stream();
         let mut child = Command::new("git")
             .args(["fast-import", "--quiet"])
@@ -65,8 +66,8 @@ impl ScaledWorkspace {
             .unwrap();
         child.stdin.take().unwrap().write_all(&stream).unwrap();
         assert!(child.wait().unwrap().success(), "git fast-import");
-        git(root, &["reset", "-q", "--hard", "main"]);
-        git(
+        run_git(root, &["reset", "-q", "--hard", "main"]);
+        run_git(
             root,
             &["remote", "add", "origin", "https://github.com/example/bench.git"],
         );
@@ -237,11 +238,6 @@ fn commit(out: &mut Vec<u8>, mark: usize, message: &str, files: &[(String, Strin
     for (path, content) in files {
         write!(out, "M 100644 inline {path}\ndata {}\n{content}\n", content.len()).unwrap();
     }
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let status = Command::new("git").args(args).current_dir(root).status().unwrap();
-    assert!(status.success(), "git {args:?}");
 }
 
 #[cfg(test)]

@@ -4,13 +4,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::identity::string_json_schema;
 use crate::Ecosystem;
 
-/// `SemVer` is the only implemented grammar; the rest are declared so `Ecosystem::version_grammar` is total.
+/// `SemVer` and `Pep440` are implemented; `Maven` is declared so `Ecosystem::version_grammar` is total.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum VersionGrammar {
     SemVer,
-    /// PEP 440 — declared, not implemented.
+    /// PEP 440.
     Pep440,
     /// Maven's qualifier-ordering comparator — declared, not implemented.
     Maven,

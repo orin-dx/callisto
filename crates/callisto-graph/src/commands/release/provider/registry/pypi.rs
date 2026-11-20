@@ -7,8 +7,8 @@ pub(super) fn run_pypi_upload_argv(
     argv: &registry_argv::Argv,
     timeout: Duration,
 ) -> Result<CommandOutput, GraphError> {
-    let username = std::env::var("TWINE_USERNAME").ok();
-    let password = std::env::var("TWINE_PASSWORD").ok();
+    let username = env_value("TWINE_USERNAME");
+    let password = env_value("TWINE_PASSWORD");
     let env = pypi_publisher_environment(username.as_deref(), password.as_deref());
     let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
     Ok(context
@@ -21,10 +21,10 @@ pub(super) fn pypi_publisher_environment<'a>(
     password: Option<&'a str>,
 ) -> Vec<(&'static str, &'a str)> {
     let mut env = Vec::new();
-    if let Some(username) = username {
+    if let Some(username) = username.filter(|value| !value.is_empty()) {
         env.push(("TWINE_USERNAME", username));
     }
-    if let Some(password) = password {
+    if let Some(password) = password.filter(|value| !value.is_empty()) {
         env.push(("TWINE_PASSWORD", password));
     }
     env

@@ -1362,7 +1362,7 @@ fn apply_version_plan_cargo_bump_produces_byte_identical_output_to_direct_mutate
         npm_workspace_kind: None,
     };
     let mut handle = open(&decl, &ctx).unwrap();
-    handle.write_version(&cargo_version("1.1.0"), &permit).unwrap();
+    handle.write_version(&cargo_version("1.1.0")).unwrap();
     handle.persist(&permit).unwrap();
     let via_direct = std::fs::read_to_string(dir_b.path().join("Cargo.toml")).unwrap();
 
@@ -1414,7 +1414,7 @@ fn apply_version_plan_npm_bump_produces_byte_identical_output_to_direct_mutate_t
         npm_workspace_kind: None,
     };
     let mut handle = open(&decl, &ctx).unwrap();
-    handle.write_version(&cargo_version("1.1.0"), &permit).unwrap();
+    handle.write_version(&cargo_version("1.1.0")).unwrap();
     handle.persist(&permit).unwrap();
     let via_direct = std::fs::read_to_string(dir_b.path().join("package.json")).unwrap();
 

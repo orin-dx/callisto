@@ -70,6 +70,7 @@ impl CliError {
             | Self::ReleaseForgeRepositoryMismatch { from_flag: true, .. }
             | Self::InitRequiresYes { .. }
             | Self::InitMissingFlags { .. }
+            | Self::InitChangesetsAccess { .. }
             | Self::InitWorkflowFlagsConflict
             | Self::InitFlagRequiresArtifactTarget { .. }
             | Self::AddInvalidPackageSpec { .. }
@@ -343,6 +344,16 @@ pub enum CliError {
         help("re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked")
     )]
     InitRequiresYes { missing: Vec<&'static str> },
+
+    #[error(
+        "`.changeset/config.json` leaves access restricted, but callisto would publish {} as public",
+        .packages.join(", ")
+    )]
+    #[diagnostic(
+        code(E342),
+        help("set `publishConfig.access` in each listed package.json (`restricted` keeps it private to the scope, `public` confirms it), or pass --yes to publish them as public")
+    )]
+    InitChangesetsAccess { packages: Vec<String> },
 
     #[error("init --yes is missing required flag(s): {}", .missing.join(", "))]
     #[diagnostic(code(E241), help("supply the listed flags; see `callisto init --help`"))]

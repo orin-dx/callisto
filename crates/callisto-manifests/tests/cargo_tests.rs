@@ -14,7 +14,10 @@ version = "0.2.0"
 "#;
     std::fs::write(&root_cargo, content).unwrap();
 
-    let resolver = callisto_manifests::WorkspaceCargoResolver::load(&root_cargo);
+    let resolver = callisto_manifests::WorkspaceCargoResolver::load_at(
+        root_cargo.parent().unwrap(),
+        std::path::Path::new("Cargo.toml"),
+    );
     assert!(resolver.is_ok());
 
     let inh = resolver.unwrap().inheritance().unwrap();
@@ -117,7 +120,10 @@ workspace = true
 "#;
     std::fs::write(&root, root_source).unwrap();
     std::fs::write(&member_path, member_source).unwrap();
-    let inheritance = WorkspaceCargoResolver::load(&root).unwrap().inheritance().unwrap();
+    let inheritance = WorkspaceCargoResolver::load_at(root.parent().unwrap(), std::path::Path::new("Cargo.toml"))
+        .unwrap()
+        .inheritance()
+        .unwrap();
     for alias in ["inline_alias", "table_alias"] {
         let inherited = inheritance.inherited(alias).unwrap();
         assert_eq!(inherited.package_name, "actual-package");

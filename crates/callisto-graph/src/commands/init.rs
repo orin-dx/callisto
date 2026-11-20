@@ -4,16 +4,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ApplyPermit, BranchName, CommandRunner, CommitSha, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem,
-    GitHubRepository, InitReport, PublishTarget, TagName, TagTemplate, Version, SCHEMA_VERSION,
+    ApplyPermit, BranchName, CommandRunner, CommitSha, Ecosystem, GitHubRepository, InitReport, NpmAccess,
+    PublishTarget, TagName, TagTemplate, Version, SCHEMA_VERSION,
 };
 
+use crate::commands::registry_argv::npm_default_access;
 use crate::commands::release::{
     canonical_root, is_platform_package, optional_git_remote, plan_workspace_release, programs, timeouts,
     LocalReleasePlan, LocalReleaseSource,
 };
 use crate::error::GraphError;
 use crate::{DependencyResolver, ProjectLocator, ResolvedConfig, Workspace};
+
+pub mod changesets;
+
+use changesets::FixedGroup;
 
 /// Content of the scaffolded `.changeset/README.md`.
 pub const CHANGESET_README: &str = "# Changesets
@@ -58,11 +63,25 @@ pub struct InitPackage {
     pub publish_to: Vec<String>,
     /// A napi/maturin platform package: never grouped or shipped.
     pub platform: bool,
+    /// The `publishConfig.access` the package sets itself, if any.
+    pub npm_access: Option<NpmAccess>,
+    /// The package's name in npm, whatever ecosystem its primary id is in.
+    pub npm_name: Option<String>,
 }
 
 impl InitPackage {
     pub fn is_binary(&self) -> bool {
         !self.platform && !self.bin_names.is_empty()
+    }
+
+    /// A scoped npm package that publishes, with no `publishConfig.access`: callisto publishes it as public.
+    pub fn publishes_public_by_default(&self) -> bool {
+        self.publish_to.iter().any(|target| target == "npm")
+            && self.npm_access.is_none()
+            && self
+                .npm_name
+                .as_deref()
+                .is_some_and(|name| npm_default_access(name, None) == Some(NpmAccess::Public))
     }
 
     fn supports_artifact_builder(&self) -> bool {
@@ -155,6 +174,8 @@ pub struct BinaryRelease {
 pub struct InitAnswers {
     pub versioning: Versioning,
     pub binaries: Option<BinaryRelease>,
+    /// Groups carried over from a Changesets config; unused under `Versioning::Fixed`.
+    pub fixed_groups: Vec<FixedGroup>,
 }
 
 fn io_err(path: &Path) -> impl Fn(std::io::Error) -> GraphError + '_ {
@@ -295,6 +316,7 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
                 &InitAnswers {
                     versioning: Versioning::Independent,
                     binaries: None,
+                    fixed_groups: Vec::new(),
                 },
             ),
         )?;
@@ -333,6 +355,14 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
                 .filter(|target| target != PublishTarget::None.config_str())
                 .collect(),
             platform: is_platform_package(package),
+            npm_name: workspace
+                .identity
+                .native_name(&package.id, Ecosystem::Npm)
+                .map(str::to_owned),
+            npm_access: package.publish_to.iter().find_map(|target| match target {
+                PublishTarget::Npm { access, .. } => *access,
+                _ => None,
+            }),
         });
     }
     packages.sort_by(|a, b| a.id.cmp(&b.id));
@@ -446,21 +476,27 @@ pub fn render_config(facts: &InitFacts, answers: &InitAnswers) -> String {
     use toml_edit::{value, Array, ArrayOfTables, DocumentMut, Item, Table};
 
     let mut doc = DocumentMut::new();
-    if answers.versioning == Versioning::Fixed {
-        let members: Array = facts
-            .packages
-            .iter()
-            .filter(|package| !package.platform)
-            .map(|package| package.id.as_str())
-            .collect();
-        if !members.is_empty() {
-            let mut group = Table::new();
-            group["name"] = value("all");
-            group["members"] = value(members);
-            let mut groups = ArrayOfTables::new();
-            groups.push(group);
-            doc["fixed-group"] = Item::ArrayOfTables(groups);
-        }
+    let groups: Vec<FixedGroup> = match answers.versioning {
+        Versioning::Fixed => vec![FixedGroup {
+            name: "all".to_owned(),
+            members: facts
+                .packages
+                .iter()
+                .filter(|package| !package.platform)
+                .map(|package| package.id.clone())
+                .collect(),
+        }],
+        Versioning::Independent => answers.fixed_groups.clone(),
+    };
+    let mut fixed = ArrayOfTables::new();
+    for group in groups.iter().filter(|group| !group.members.is_empty()) {
+        let mut table = Table::new();
+        table["name"] = value(group.name.as_str());
+        table["members"] = value(group.members.iter().map(String::as_str).collect::<Array>());
+        fixed.push(table);
+    }
+    if !fixed.is_empty() {
+        doc["fixed-group"] = Item::ArrayOfTables(fixed);
     }
     let mut rules: BTreeMap<&str, Table> = BTreeMap::new();
     for (package, template) in &facts.tag_templates {
@@ -627,52 +663,6 @@ pub fn write_changeset_readme(root: &Path, permit: &ApplyPermit) -> Result<(), G
     callisto_model::atomic::atomic_write(&readme, CHANGESET_README, permit).map_err(io_err(&readme))
 }
 
-/// `@changesets/cli` `config.json` keys callisto never reads, and the callisto.toml construct
-/// that replaces each one, when one exists.
-const CHANGESETS_CONFIG_KEYS: [(&str, Option<&str>); 6] = [
-    ("fixed", Some("[[fixed-group]]")),
-    ("linked", None),
-    ("ignore", None),
-    ("access", None),
-    ("baseBranch", None),
-    ("updateInternalDependencies", None),
-];
-
-/// Warns, per key, about every `.changeset/config.json` key callisto ignores.
-///
-/// callisto never translates this file; a present, unhonoured key is silently inert otherwise.
-/// Returns no diagnostics when the file is absent or is not a JSON object.
-pub fn changesets_config_diagnostics(root: &Path) -> Vec<Diagnostic> {
-    let path = root.join(".changeset/config.json");
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    let Ok(serde_json::Value::Object(config)) = serde_json::from_str(&text) else {
-        return Vec::new();
-    };
-    CHANGESETS_CONFIG_KEYS
-        .iter()
-        .filter(|(key, _)| config.contains_key(*key))
-        .map(|(key, equivalent)| {
-            let message = match equivalent {
-                Some(equivalent) => {
-                    format!("`.changeset/config.json` key `{key}` is not honoured; use {equivalent} instead")
-                }
-                None => format!("`.changeset/config.json` key `{key}` is not honoured; callisto has no equivalent"),
-            };
-            Diagnostic {
-                code: DiagnosticCode::ChangesetsConfigKeyDropped,
-                severity: DiagnosticSeverity::Warning,
-                message,
-                package: None,
-                path: Some(path.clone()),
-                escalated_by: None,
-                governed_by: None,
-            }
-        })
-        .collect()
-}
-
 /// Path `init` writes a generated GitHub Actions release workflow to: the one
 /// workflow `release plan` binds artifact attestations to.
 pub fn workflow_path(root: &Path) -> PathBuf {
@@ -739,6 +729,8 @@ pub enum DefaultBranchSource {
     CurrentBranch,
     /// No remote and no checked-out branch (e.g. a fresh repo with no commits): `main`.
     Fallback,
+    /// `baseBranch` in the Changesets config.
+    ChangesetsBaseBranch,
 }
 
 impl std::fmt::Display for DefaultBranchSource {
@@ -748,6 +740,7 @@ impl std::fmt::Display for DefaultBranchSource {
             Self::RemoteHead => "origin, queried live",
             Self::CurrentBranch => "the current branch",
             Self::Fallback => "fallback: none of the above resolved",
+            Self::ChangesetsBaseBranch => "`baseBranch` in .changeset/config.json",
         })
     }
 }

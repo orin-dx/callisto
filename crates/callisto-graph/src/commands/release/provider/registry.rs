@@ -380,6 +380,11 @@ pub(crate) fn pack_npm_into(
     NpmRegistry::pack_into(context, operation, outdir)
 }
 
+/// An environment variable's value, or `None` when unset or empty: an empty credential must not reach a tool.
+fn env_value(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
 mod cargo;
 mod npm;
 mod pypi;
