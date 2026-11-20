@@ -365,6 +365,14 @@ jobs:
           if [[ -f "$RUNNER_TEMP/release-manifest.json" ]]; then
             args+=(--artifact-manifest "$RUNNER_TEMP/release-manifest.json" --artifact-dir "$RUNNER_TEMP/release-assets")
           fi
+          if [[ -n "${NPM_TOKEN:-}" ]]; then
+            npmrc="$RUNNER_TEMP/publish-npmrc"
+            user_npmrc="${NPM_CONFIG_USERCONFIG:-${HOME:-}/.npmrc}"
+            if [[ -f "$user_npmrc" ]]; then cp "$user_npmrc" "$npmrc"; else : > "$npmrc"; fi
+            chmod 600 "$npmrc"
+            printf '\n%s\n' "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" >> "$npmrc"
+            export CALLISTO_PUBLISH_NPM_CONFIG="$npmrc"
+          fi
           callisto release execute "${args[@]}"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -361,5 +361,6 @@ jobs:
           if [[ -f "$RUNNER_TEMP/release-manifest.json" ]]; then
             args+=(--artifact-manifest "$RUNNER_TEMP/release-manifest.json" --artifact-dir "$RUNNER_TEMP/release-assets")
           fi
+          __PUBLISH_AUTH__
           callisto release execute "${args[@]}"
         __RELEASE_ENV__

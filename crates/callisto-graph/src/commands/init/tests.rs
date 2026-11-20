@@ -1712,3 +1712,90 @@ fn existing_config_with_a_non_cargo_artifact_owner_is_unsupported() {
         "{error}"
     );
 }
+
+/// The `run` script and `env` names of the matrix workflow's "Execute the release" step.
+fn matrix_execute_step(facts: &InitFacts) -> (String, Vec<String>) {
+    let workflow = render_workflow(
+        facts,
+        WorkflowShape::BuildMatrix,
+        &branch("main"),
+        &fake_commit(),
+        &v0_8_0(),
+    );
+    let docs = yaml_rust2::YamlLoader::load_from_str(&workflow).expect("the workflow is valid YAML");
+    let step = docs[0]["jobs"]["execute"]["steps"]
+        .as_vec()
+        .expect("execute has steps")
+        .iter()
+        .find(|step| step["name"].as_str() == Some("Execute the release"))
+        .expect("execute step");
+    let env = step["env"]
+        .as_hash()
+        .expect("execute step env")
+        .keys()
+        .map(|key| key.as_str().unwrap().to_owned())
+        .collect();
+    (step["run"].as_str().expect("run script").to_owned(), env)
+}
+
+/// Runs the step's script with `callisto` stubbed to print the credentials the publish would see.
+fn run_matrix_execute(run: &str, tokens: &[(&str, &str)]) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let stub = bin.join("callisto");
+    std::fs::write(
+        &stub,
+        "#!/bin/sh\necho \"twine_user=${TWINE_USERNAME:-}\"\necho \"twine_pass=${TWINE_PASSWORD:-}\"\n\
+         echo \"npm_config=${CALLISTO_PUBLISH_NPM_CONFIG:-}\"\n\
+         if [ -n \"${CALLISTO_PUBLISH_NPM_CONFIG:-}\" ]; then cat \"$CALLISTO_PUBLISH_NPM_CONFIG\"; fi\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut command = std::process::Command::new("bash");
+    command
+        .args(["-c", run])
+        .env_clear()
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("HOME", &home)
+        .env("RUNNER_TEMP", dir.path())
+        .env("GITHUB_SHA", "0".repeat(40));
+    for (name, value) in tokens {
+        command.env(name, value);
+    }
+    let output = command.output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn npm_and_pypi_facts() -> InitFacts {
+    let mut facts = oxc_shaped_facts();
+    facts.ecosystems.insert(Ecosystem::Pypi);
+    facts
+}
+
+#[test]
+fn matrix_execute_maps_the_npm_and_pypi_tokens_for_the_native_tools() {
+    let (run, env) = matrix_execute_step(&npm_and_pypi_facts());
+    for name in ["NPM_TOKEN", "PYPI_TOKEN"] {
+        assert!(env.iter().any(|key| key == name), "{name} missing from {env:?}");
+    }
+    let out = run_matrix_execute(&run, &[("NPM_TOKEN", "npm-secret"), ("PYPI_TOKEN", "pypi-secret")]);
+    assert!(out.contains("twine_user=__token__"), "{out}");
+    assert!(out.contains("twine_pass=pypi-secret"), "{out}");
+    assert!(out.contains("//registry.npmjs.org/:_authToken=${NPM_TOKEN}"), "{out}");
+    assert!(
+        !out.contains("npm-secret"),
+        "the token is read from the environment, never written: {out}"
+    );
+}
+
+#[test]
+fn matrix_execute_without_tokens_leaves_trusted_publishing_to_the_native_tools() {
+    let (run, _) = matrix_execute_step(&npm_and_pypi_facts());
+    let out = run_matrix_execute(&run, &[("NPM_TOKEN", ""), ("PYPI_TOKEN", "")]);
+    assert!(out.contains("twine_user=\n") && out.contains("twine_pass=\n"), "{out}");
+    assert!(out.contains("npm_config=\n"), "{out}");
+}
