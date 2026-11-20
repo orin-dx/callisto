@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Sxziz7TYoJEJ1Pm38JwWwe",
+  "agent_id": "a8185d7643ccf65ca",
+  "subagent_type": "general-purpose",
+  "task_description": "Review Changesets init migration diff",
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 117675,
+    "cache_read_tokens": 2816847,
+    "output_tokens": 17140,
+    "api_call_count": 32
+  },
+  "started_at": "2026-11-20T12:49:26.360851-08:00",
+  "completed_at": "2026-11-20T12:55:56.19716-08:00"
+}
