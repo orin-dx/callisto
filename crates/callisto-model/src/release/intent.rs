@@ -95,7 +95,8 @@ impl ReleaseIntentV1 {
     /// every artifact upload, so a version-2 intent's DAG is not executable here.
     /// 4 adds the `platformPublish` role, which an earlier reader cannot execute.
     /// 5 removes the release `profile`.
-    pub const SCHEMA_VERSION: u8 = 5;
+    /// 6 spells the crates.io registry key `crates-io`.
+    pub const SCHEMA_VERSION: u8 = 6;
 
     pub fn new(
         decision: ReleaseDecisionV1,
@@ -516,12 +517,12 @@ mod tests {
     #[test]
     fn registry_binding_is_credential_free_and_part_of_operation_identity() {
         let first = RegistryBindingId::new(
-            "cratesIo",
+            "crates-io",
             RegistryBindingDigest::from_normalized_binding("https://index.example.test/v1"),
         )
         .unwrap();
         let second = RegistryBindingId::new(
-            "cratesIo",
+            "crates-io",
             RegistryBindingDigest::from_normalized_binding("https://mirror.example.test/v1"),
         )
         .unwrap();
@@ -549,7 +550,7 @@ mod tests {
         let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
         let version = Version::semver(1, 2, 3);
         let publish =
-            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry_binding("cratesIo"), vec![])
+            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry_binding("crates-io"), vec![])
                 .unwrap();
         let tag = ReleaseOperation::tag(package, version, vec![publish.id().clone()]).unwrap();
         let snapshot = ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]);
@@ -571,7 +572,7 @@ mod tests {
         let mut cycle_publish = ReleaseOperation::registry_publish(
             ReleasePackageId::parse("cargo/callisto-model").unwrap(),
             Version::semver(1, 2, 3),
-            registry_binding("cratesIo"),
+            registry_binding("crates-io"),
             vec![tag.id().clone()],
         )
         .unwrap();
@@ -694,7 +695,7 @@ mod tests {
         let operation = ReleaseOperation::registry_publish(
             ReleasePackageId::parse("cargo/callisto-model").unwrap(),
             Version::semver(1, 2, 3),
-            registry_binding("cratesIo"),
+            registry_binding("crates-io"),
             vec![],
         )
         .unwrap();

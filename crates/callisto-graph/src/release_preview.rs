@@ -795,9 +795,9 @@ mod tests {
     fn two_distributions_with_one_name_stay_two_rows_with_their_own_version_and_registry() {
         use callisto_model::Ecosystem;
         let ids = operations_for(&[
-            (Ecosystem::Cargo, "shared", Version::semver(1, 0, 0), "cratesIo"),
+            (Ecosystem::Cargo, "shared", Version::semver(1, 0, 0), "crates-io"),
             (Ecosystem::Npm, "shared", Version::semver(2, 0, 0), "npm"),
-            (Ecosystem::Cargo, "only-cargo", Version::semver(3, 0, 0), "cratesIo"),
+            (Ecosystem::Cargo, "only-cargo", Version::semver(3, 0, 0), "crates-io"),
         ]);
 
         let rows = group_operations(&ids);
