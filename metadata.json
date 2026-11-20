@@ -1,0 +1,70 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7X4QVPNGGGQKMHEAPRW8DKK",
+  "strategy": "manual-commit",
+  "branch": "worktree-cfg-package-fold",
+  "checkpoints_count": 6,
+  "files_touched": [
+    ".changeset/swift-stags-race.md",
+    "README.md",
+    "crates/callisto-cli/tests/error_code_hygiene_tests.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/config/mod.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/config/raw.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/glob_package_rule_test.rs",
+    "crates/callisto-graph/tests/package_set_ecosystem_test.rs",
+    "crates/callisto-graph/tests/per_package_config_test.rs",
+    "crates/callisto-graph/tests/tag_glob_cache_count_test.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "docs/architecture/identity.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 212,
+    "cache_creation_tokens": 130422,
+    "cache_read_tokens": 20573815,
+    "output_tokens": 48641,
+    "api_call_count": 100,
+    "subagent_tokens": {
+      "input_tokens": 66,
+      "cache_creation_tokens": 124154,
+      "cache_read_tokens": 3233843,
+      "output_tokens": 16852,
+      "api_call_count": 33
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

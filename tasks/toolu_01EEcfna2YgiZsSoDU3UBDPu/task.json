@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01EEcfna2YgiZsSoDU3UBDPu",
+  "agent_id": "a25ea573dcc54dcca",
+  "subagent_type": "general-purpose",
+  "task_description": "Review package-set fold",
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 124154,
+    "cache_read_tokens": 3233843,
+    "output_tokens": 16852,
+    "api_call_count": 33
+  },
+  "started_at": "2026-11-20T10:36:24.56798-08:00",
+  "completed_at": "2026-11-20T10:40:24.093119-08:00"
+}

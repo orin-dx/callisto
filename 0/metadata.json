@@ -1,0 +1,141 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7X4QVPNGGGQKMHEAPRW8DKK",
+  "session_id": "fc31e809-231d-454b-93ce-23eeb1c538ef",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T18:50:55.403564Z",
+  "branch": "worktree-cfg-package-fold",
+  "checkpoints_count": 6,
+  "save_step_count": 6,
+  "files_touched": [
+    ".changeset/swift-stags-race.md",
+    "README.md",
+    "crates/callisto-cli/tests/error_code_hygiene_tests.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/config/mod.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/config/raw.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/glob_package_rule_test.rs",
+    "crates/callisto-graph/tests/package_set_ecosystem_test.rs",
+    "crates/callisto-graph/tests/per_package_config_test.rs",
+    "crates/callisto-graph/tests/tag_glob_cache_count_test.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "docs/architecture/identity.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "9f30190d3480",
+  "checkpoint_transcript_start": 806,
+  "transcript_lines_at_start": 806,
+  "compact_transcript_start": 69,
+  "token_usage": {
+    "input_tokens": 212,
+    "cache_creation_tokens": 130422,
+    "cache_read_tokens": 20573815,
+    "output_tokens": 48641,
+    "api_call_count": 100,
+    "subagent_tokens": {
+      "input_tokens": 66,
+      "cache_creation_tokens": 124154,
+      "cache_read_tokens": 3233843,
+      "output_tokens": 16852,
+      "api_call_count": 33
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 336,
+    "cache_creation_tokens": 235321,
+    "cache_read_tokens": 26883422,
+    "output_tokens": 69090,
+    "api_call_count": 158,
+    "subagent_tokens": {
+      "input_tokens": 114,
+      "cache_creation_tokens": 213614,
+      "cache_read_tokens": 5024850,
+      "output_tokens": 25908,
+      "api_call_count": 57
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "summary": {
+    "intent": "Land two PRs in the callisto repo: (a) a fix so pre-major-inference applies from package-set globs (PR #588), and (b) a breaking refactor folding `[[package-set]]` into `[[package]]` so one table takes an exact name or glob.",
+    "outcome": "PR (a) #588 was pushed, linked to trail 463, and given a title/body. PR (b) was implemented in a separate worktree (types, resolver, diagnostics, tests, docs, spec, changeset), passed the gate, mutants (10 caught, 0 missed) and an Opus review, and was committed after review fixes; pushing and the draft PR were still pending.",
+    "learnings": {
+      "repo": [
+        "Config rule precedence: an exact [[package]] rule wins over any glob, then the first glob in declaration order; fields are not merged across rules.",
+        "A [[package]] match containing any of `*?[]{}` is treated as a glob. Retired [[package-set]] now fails with E325 via a RetiredPackageSet type whose Deserialize always errors with a rename hint.",
+        "previous-tag-templates on a glob rule is E338 because it names one package's old tags. The diagnostic code package-set-matched-nothing was retired into package-rule-matched-nothing.",
+        "Adding a changeset uses `cargo run -p callisto-cli -- add --package cargo/callisto-cli:minor --summary ...`. AGENTS.md rules apply: bold lead-in, separate **Breaking:**/**Action:** paragraphs, no headings or emojis, and one short-line comments.",
+        "The hand-maintained diagnostic-code list lives in crates/callisto-cli/tests/schema_guard_test.rs and must be updated when codes are removed.",
+        "The private npm workspace root check is exact-only (exact_package_config), unchanged by the fold."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "line": 648,
+          "end_line": 651,
+          "finding": "E338 message for previous-tag-templates on a glob originally said the pattern was invalid, which is misleading since `cargo/*` is valid. The reviewer asked for a key-specific reason, and it was reworded to 'give it an exact match'."
+        },
+        {
+          "path": "docs/specs/workspace.json",
+          "line": 184,
+          "end_line": 186,
+          "finding": "Spec criterion WS-CFG-09 became redundant with rewritten WS-CFG-07 after the fold, so it was removed."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/pattern.rs",
+          "line": 112,
+          "finding": "PackagePattern::as_str lost its only production caller after the walk.rs message change; ecosystem(), matches() and matches_in_ecosystems() are used only by tests."
+        }
+      ],
+      "workflow": [
+        "When origin/main hasn't moved (verified via fetch plus ls-remote), skip the merge and push directly.",
+        "Use `entire trail link` and `entire trail ci-pr` to attach a branch to a trail and find its PR.",
+        "Run the full gate in the background with a Monitor, then inspect step= and ALL DONE markers in the log.",
+        "A load-sensitive test (git_process_count_tests, 10 vs 11 processes) failed under the gate but passed 3/3 alone and in `just ci`; verify flakiness by rerunning in isolation.",
+        "Subagent reviewer output is advisory; its findings were verified and applied by the main agent, not treated as user instruction."
+      ]
+    },
+    "friction": [
+      "A gate failure came from a wrong test expectation: a lone `}` is classified as a glob and rejected as E338, not treated as exact.",
+      "The old gate-A monitor expired after 30m with no events, causing a stale notification.",
+      "git_process_count_tests flaked under gate load, costing an extra gate run and a manual `just ci`.",
+      "The reviewer's sandbox hit an npm EPERM on ~/.npm cache for one lib test (a_standalone_root_package_packs_and_publishes), unrelated to the change.",
+      "Multi-line sed/python edits were brittle, and an abandoned Python edit script was echoed as 'skip'. A stray crates/.claude directory had to be removed."
+    ],
+    "open_items": [
+      "Push branch (b) and open the draft PR for the package-set fold; the commit was just created.",
+      "Reviewer-noted migration edge now covered only by a changeset 'Limits' line: a [[package-set]] with a non-glob match becomes an exact rule after rename, changing precedence, PyPI NativeName normalization, and private npm root handling.",
+      "Possibly trim now test-only PackagePattern methods (ecosystem, matches, matches_in_ecosystems) in pattern.rs.",
+      "Reviewer did not run just lint, doc-check, pre-push, or the full callisto-cli suite; old-binary compatibility was only source-checked against 0.21.1."
+    ]
+  }
+}
