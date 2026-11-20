@@ -1,0 +1,22 @@
+Task: a differential test against the real Changesets tool, so our Changesets compatibility (pre.json v2/v3 and config migration) is proven by the real tool, not by docs. Worktree name wp-changesets-differential, trail #458. just verify-real (crates/callisto-cli/tests/release_verify_real.rs and the verify-real-tools recipe) already installs npm, pnpm and uv in CI. Add @changesets/cli at an exact pinned 3.x version (and optionally 2.x) to verify-real-tools, installed locally under target/verify-real like the other tools. Add a small number of real-tool scenarios, each in a scratch npm workspace: (a) changeset init, then a fixed group using plain names; run 'changeset status --output' (or 'changeset version' in a copy) to get Changesets' own release plan; run 'callisto init --yes' (migration) and 'callisto version --dry-run --format json'; assert the same packages and versions. (b) changeset pre enter beta, add a changeset, changeset version (notes move to .changeset/pre/), then callisto reads that real state mid-cycle, versions the next beta, and handles pre exit. Keep it to these two or three scenarios. Fail when a tool is missing (no skips). If the migration PR #596 hasn't merged when you start, base (a) on main's current behaviour and note that in the PR body. No changeset (test-only). Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<task-notification>
+<task-id>bk3xdtsg7</task-id>
+<tool-use-id>toolu_01LoJpmca71DsQDNk1s1zzeY</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/d0c16489-cf9c-4e8c-903d-0adee14216ec/tasks/bk3xdtsg7.output</output-file>
+<status>completed</status>
+<summary>Background command "CARGO_BUILD_JOBS=2 rtk cargo build -p callisto-cli 2&gt;&amp;1 | tail -3" completed (exit code 0)</summary>
+</task-notification>

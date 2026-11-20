@@ -1,0 +1,85 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XJEX6419ZYM1Z3AW7616KT",
+  "session_id": "d0c16489-cf9c-4e8c-903d-0adee14216ec",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T22:50:42.762338Z",
+  "branch": "worktree-wp-changesets-differential",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/release_verify_real.rs",
+    "docs/architecture/release.md",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "129c97e444d4",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 136,
+    "cache_creation_tokens": 158756,
+    "cache_read_tokens": 7649290,
+    "output_tokens": 39505,
+    "api_call_count": 68
+  },
+  "session_token_usage": {
+    "input_tokens": 136,
+    "cache_creation_tokens": 158756,
+    "cache_read_tokens": 7649290,
+    "output_tokens": 39505,
+    "api_call_count": 68
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Add differential tests that run the real @changesets/cli (pinned 3.x, optionally 2.x) in scratch npm workspaces and compare against callisto's Changesets compatibility (fixed-group migration via init and pre-mode v2/v3 state), wired into the verify-real-tools recipe and failing rather than skipping when tools are missing.",
+    "outcome": "Installed @changesets/cli 3.0.3 and 2.31.1 under target/verify-real, added Changesets scenarios to release_verify_real.rs, updated the justfile and docs/architecture/release.md, and passed fmt and clippy. A commit was being made (the first attempt failed on sandboxed gpg signing, so it was retried unsandboxed); push, PR, trail link and report to the lead were not yet done.",
+    "learnings": {
+      "repo": [
+        "PR #596 (config migration) was still open, so scenario (a) is based on main's current init behaviour, which must be noted in the PR body.",
+        "On main, `callisto init` only warns about a Changesets fixed group and does not translate it, while real Changesets bumps the group together. This is a real compatibility gap the differential test exposes.",
+        "verify-real tests live in crates/callisto-cli/tests/release_verify_real.rs and are #[ignore]d, run with `--ignored --test-threads=1`; the tools are installed locally under target/verify-real by the justfile verify-real-tools recipe.",
+        "Fixtures and harness helpers are in crates/callisto-cli/tests/common/ (release_harness.rs, local_registries.rs) and crates/callisto-fixtures/src/git.rs.",
+        "Changesets' @manypkg get-packages requires a proper workspace root (package.json with workspaces, possibly a lockfile or packageManager) or `changeset version` fails in the scratch workspace.",
+        "`changeset init` is interactive (GitHub integration prompt) in 3.x, so the scratch setup needs scripted input or writing .changeset/config.json directly."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "finding": "Init emits changesets config diagnostics (warning for fixed groups) rather than migrating them on main."
+        }
+      ],
+      "workflow": [
+        "The sandbox blocks gpg keybox access, so signed commits need an unsandboxed retry; signing must stay on.",
+        "Use a $TMPDIR-based npm cache (--cache) to avoid sandbox write failures with npm.",
+        "Probe real-tool behaviour with throwaway scripts in /tmp before encoding assertions in tests.",
+        "Use CARGO_BUILD_JOBS=2 and avoid concurrent cargo builds in one worktree."
+      ]
+    },
+    "friction": [
+      "The EnterWorktree and cd steps were repeated several times before the right worktree directory was active.",
+      "Interactive `changeset init` hung or needed several attempts with piped input before its flow was understood by reading init.mjs.",
+      "`changeset version` initially failed in the scratch workspace due to manypkg workspace detection, requiring debugging with a custom get-packages script.",
+      "The first signed commit failed because the sandbox blocked gpg's keybox."
+    ],
+    "open_items": [
+      "Push the branch with `git push origin HEAD:refs/heads/<branch>` after merging the latest origin/main, confirm with git ls-remote, link trail #458, and open with `entire trail ci-pr`.",
+      "Note in the PR body that scenario (a) is based on main's behaviour because #596 had not merged, and that the fixed-group translation gap exists on main.",
+      "Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what was run.",
+      "Re-check whether #596 merges and update scenario (a) if so.",
+      "Confirm the CI workflow installs the pinned @changesets/cli via verify-real-tools (the install-registry-test-tools action was inspected but any change is not shown)."
+    ]
+  }
+}
