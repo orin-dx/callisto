@@ -152,7 +152,7 @@ pub trait Manifest: Send + Sync {
     fn role(&self) -> ManifestRole;
     fn package_name(&self) -> Result<String, ManifestError>;
     fn current_version(&self) -> Result<Version, ManifestError>;
-    fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError>;
+    fn write_version(&mut self, v: &Version) -> Result<(), ManifestError>;
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError>;
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = callisto_model::DependencyEntry> + '_>;
     fn update_dependency_spec(
@@ -163,27 +163,9 @@ pub trait Manifest: Send + Sync {
         new: DepSpec,
         permit: &ApplyPermit,
     ) -> Result<(), ManifestError>;
-    fn is_publishable(&self) -> bool {
-        true
-    }
-    fn publish_targets(&self) -> Vec<callisto_model::PublishTarget> {
-        if !self.is_publishable() {
-            return vec![callisto_model::PublishTarget::None];
-        }
-        match self.ecosystem() {
-            Ecosystem::Cargo => vec![callisto_model::PublishTarget::CratesIo],
-            Ecosystem::Npm => vec![callisto_model::PublishTarget::Npm {
-                registry: None,
-                access: None,
-            }],
-            _ => vec![callisto_model::PublishTarget::None],
-        }
-    }
-    fn update_optional_dependencies(
-        &mut self,
-        updates: &[(String, Version)],
-        permit: &ApplyPermit,
-    ) -> Result<(), ManifestError>;
+    fn is_publishable(&self) -> bool;
+    fn publish_targets(&self) -> Vec<callisto_model::PublishTarget>;
+    fn update_optional_dependencies(&mut self, updates: &[(String, Version)]) -> Result<(), ManifestError>;
     /// The role this manifest's own content declares itself to play (see
     /// [`NpmRole`]). `None` for every ecosystem other than npm, and for an
     /// npm manifest that isn't a platform package. Overridden by

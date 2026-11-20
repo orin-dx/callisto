@@ -156,15 +156,14 @@ fn workspace_root_manifest_path_normalizes_to_bare_cargo_toml() {
     let content =
         "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"root-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
 
-    // Absolute root case: exercises WorkspaceCargoResolver::load's
-    // is_absolute()==true branch (root_manifest_path.file_name()).
     let dir = tempdir().unwrap();
     let abs_root_cargo = dir.path().join("Cargo.toml");
     fs::write(&abs_root_cargo, content).unwrap();
-    let abs_inheritance = WorkspaceCargoResolver::load(&abs_root_cargo)
-        .unwrap()
-        .inheritance()
-        .unwrap();
+    let abs_inheritance =
+        WorkspaceCargoResolver::load_at(abs_root_cargo.parent().unwrap(), std::path::Path::new("Cargo.toml"))
+            .unwrap()
+            .inheritance()
+            .unwrap();
     assert_eq!(abs_inheritance.root_manifest, PathBuf::from("Cargo.toml"));
 
     // Relative input goes straight to `workspace_relative`, asserted directly since it is cwd-independent.
@@ -241,7 +240,7 @@ serde = "1.0"
     assert_eq!(manifest.current_version().unwrap().render(), "0.1.0");
 
     let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated_content = fs::read_to_string(&manifest_path).unwrap();
@@ -265,7 +264,7 @@ fn write_version_does_not_touch_disk_until_persist_called() {
 
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
     let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
 
     let unchanged = fs::read_to_string(&manifest_path).unwrap();
     assert_eq!(unchanged, content, "write_version alone must not write to disk");
@@ -310,7 +309,7 @@ fn preserves_bom_on_write_round_trip() {
 
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
     let new_ver = Version::parse("1.0.1", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated_bytes = fs::read(&manifest_path).unwrap();
@@ -352,7 +351,7 @@ fn preserves_crlf_line_endings_on_write() {
     assert_eq!(manifest.package_name().unwrap(), "crlf-crate");
 
     let new_ver = Version::parse("1.0.1", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated_bytes = fs::read(&manifest_path).unwrap();
@@ -437,12 +436,13 @@ fn write_dependency_errors_on_unrecognized_value_shape_instead_of_silently_no_op
     let content = "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.dependencies]\nserde = 1\n";
     fs::write(&manifest_path, content).unwrap();
 
-    let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+    let mut resolver =
+        WorkspaceCargoResolver::load_at(manifest_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let new_spec = DepSpec::Range(
         VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
         "^1.1.0".to_string(),
     );
-    let result = resolver.write_dependency("serde", new_spec, &permit());
+    let result = resolver.write_dependency("serde", new_spec);
 
     assert!(
         matches!(result, Err(ManifestError::UnrecognizedDependencyValue { .. })),
@@ -467,12 +467,13 @@ fn write_dependency_errors_on_array_of_tables_dependency_shape() {
     let content = "[workspace]\nmembers = [\"crates/*\"]\n\n[[workspace.dependencies.serde]]\nversion = \"1.0.0\"\n";
     fs::write(&manifest_path, content).unwrap();
 
-    let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+    let mut resolver =
+        WorkspaceCargoResolver::load_at(manifest_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let new_spec = DepSpec::Range(
         VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
         "^1.1.0".to_string(),
     );
-    let result = resolver.write_dependency("serde", new_spec, &permit());
+    let result = resolver.write_dependency("serde", new_spec);
 
     assert!(
         matches!(result, Err(ManifestError::UnrecognizedDependencyValue { .. })),
@@ -499,12 +500,13 @@ path = "../serde"
 "#;
     fs::write(&manifest_path, content).unwrap();
 
-    let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+    let mut resolver =
+        WorkspaceCargoResolver::load_at(manifest_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let new_spec = DepSpec::Range(
         VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
         "^1.1.0".to_string(),
     );
-    resolver.write_dependency("serde", new_spec, &permit()).unwrap();
+    resolver.write_dependency("serde", new_spec).unwrap();
     resolver.persist(&permit()).unwrap();
 
     let updated = fs::read_to_string(&manifest_path).unwrap();
@@ -524,9 +526,9 @@ fn write_dependency_preserves_comments_around_plain_and_full_table_values() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("Cargo.toml");
         fs::write(&path, source).unwrap();
-        let mut resolver = WorkspaceCargoResolver::load(&path).unwrap();
+        let mut resolver = WorkspaceCargoResolver::load_at(path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
         let spec = DepSpec::Range(VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(), "^1.1.0".to_string());
-        resolver.write_dependency("serde", spec, &permit()).unwrap();
+        resolver.write_dependency("serde", spec).unwrap();
         resolver.persist(&permit()).unwrap();
         assert_eq!(fs::read_to_string(path).unwrap(), source.replace("1.0.0", "^1.1.0"));
     }
@@ -541,12 +543,13 @@ fn write_dependency_preserves_decor_on_inline_table_version() {
     let content = "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.dependencies]\nserde = { version =   \"1.0.0\"  , path = \"../serde\" }\n";
     fs::write(&manifest_path, content).unwrap();
 
-    let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+    let mut resolver =
+        WorkspaceCargoResolver::load_at(manifest_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let new_spec = DepSpec::Range(
         VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
         "^1.1.0".to_string(),
     );
-    resolver.write_dependency("serde", new_spec, &permit()).unwrap();
+    resolver.write_dependency("serde", new_spec).unwrap();
     resolver.persist(&permit()).unwrap();
 
     let updated = fs::read_to_string(&manifest_path).unwrap();
@@ -579,7 +582,7 @@ fn preserves_tab_indentation_cargo_toml() {
     assert_eq!(manifest.package_name().unwrap(), "tabbed-crate");
 
     let new_ver = Version::parse("1.0.1", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated = fs::read_to_string(&manifest_path).unwrap();
@@ -628,7 +631,7 @@ fn pinned_over_inherited(source: &str) -> String {
     };
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
     manifest
-        .write_version(&Version::parse("1.0.1", VersionGrammar::SemVer).unwrap(), &permit())
+        .write_version(&Version::parse("1.0.1", VersionGrammar::SemVer).unwrap())
         .unwrap();
     manifest.persist(&permit()).unwrap();
     fs::read_to_string(dir.path().join("member/Cargo.toml")).unwrap()
@@ -685,10 +688,7 @@ fn optional_dependencies_are_not_a_cargo_concept_and_refuse_to_be_updated() {
     let dir = tempdir().unwrap();
     let mut manifest = open_cargo(dir.path(), "[package]\nname = \"c\"\nversion = \"0.1.0\"\n");
     let error = manifest
-        .update_optional_dependencies(
-            &[("x".to_owned(), Version::parse("1.0.0", VersionGrammar::SemVer).unwrap())],
-            &permit(),
-        )
+        .update_optional_dependencies(&[("x".to_owned(), Version::parse("1.0.0", VersionGrammar::SemVer).unwrap())])
         .unwrap_err();
     assert!(
         matches!(
@@ -974,7 +974,7 @@ edition = "2021"
 
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
     let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated = fs::read_to_string(&manifest_path).unwrap();
@@ -1102,7 +1102,8 @@ edition = "2021"
     .unwrap();
 
     // Build workspace inheritance context
-    let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+    let ws_resolver =
+        WorkspaceCargoResolver::load_at(root_cargo_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
 
     let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
@@ -1119,7 +1120,7 @@ edition = "2021"
 
     // Apply bump to 1.1.0 on the MEMBER ONLY
     let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
 
     // write_version alone must not touch disk: the member file still has `version.workspace = true`.
     let member_before_persist = fs::read_to_string(&member_cargo_path).unwrap();
@@ -1174,7 +1175,8 @@ fn current_version_errors_when_inherited_but_workspace_has_no_version() {
     )
     .unwrap();
 
-    let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+    let ws_resolver =
+        WorkspaceCargoResolver::load_at(root_cargo_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
 
     let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
@@ -1220,7 +1222,8 @@ fn iter_dependencies_resolves_inherited_deps_and_flags_unresolved_ones() {
         )
         .unwrap();
 
-    let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+    let ws_resolver =
+        WorkspaceCargoResolver::load_at(root_cargo_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
 
     let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
@@ -1282,7 +1285,8 @@ fn update_dependency_spec_delegates_inherited_dependency_write_to_workspace_root
         )
         .unwrap();
 
-    let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+    let ws_resolver =
+        WorkspaceCargoResolver::load_at(root_cargo_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
 
     let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
@@ -1365,7 +1369,7 @@ fn workspace_version_reads_present_and_absent() {
         "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"3.2.1\"\n",
     )
     .unwrap();
-    let resolver = WorkspaceCargoResolver::load(&with_version).unwrap();
+    let resolver = WorkspaceCargoResolver::load_at(dir.path(), std::path::Path::new("with-version.toml")).unwrap();
     assert_eq!(
         resolver.workspace_version().unwrap().map(|v| v.render().to_string()),
         Some("3.2.1".to_string())
@@ -1373,7 +1377,7 @@ fn workspace_version_reads_present_and_absent() {
 
     let without_version = dir.path().join("without-version.toml");
     fs::write(&without_version, "[workspace]\nmembers = []\n").unwrap();
-    let resolver = WorkspaceCargoResolver::load(&without_version).unwrap();
+    let resolver = WorkspaceCargoResolver::load_at(dir.path(), std::path::Path::new("without-version.toml")).unwrap();
     assert_eq!(resolver.workspace_version().unwrap(), None);
 }
 
@@ -1392,9 +1396,10 @@ fn workspace_cargo_resolver_write_version_persists_to_disk() {
     )
     .unwrap();
 
-    let mut resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+    let mut resolver =
+        WorkspaceCargoResolver::load_at(root_cargo_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let new_ver = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
-    resolver.write_version(&new_ver, &permit()).unwrap();
+    resolver.write_version(&new_ver).unwrap();
 
     let unchanged = fs::read_to_string(&root_cargo_path).unwrap();
     assert!(
@@ -1611,10 +1616,11 @@ fn update_dependency_spec_self_referential_workspace_delegation_returns_invarian
     let content = "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"self-referential-root\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = { workspace = true }\n\n[workspace.dependencies]\nserde = \"1.0.0\"\n";
     fs::write(&root_cargo_path, content).unwrap();
 
-    let inheritance = WorkspaceCargoResolver::load(&root_cargo_path)
-        .unwrap()
-        .inheritance()
-        .unwrap();
+    let inheritance =
+        WorkspaceCargoResolver::load_at(root_cargo_path.parent().unwrap(), std::path::Path::new("Cargo.toml"))
+            .unwrap()
+            .inheritance()
+            .unwrap();
 
     let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
     let ctx = OpenContext {
@@ -1699,12 +1705,13 @@ fn workspace_resolver_preserves_bom_and_crlf_on_persist() {
         "\u{FEFF}[workspace]\r\nmembers = [\"crates/*\"]\r\n\r\n[workspace.dependencies]\r\nserde = \"1.0.0\"\r\n";
     fs::write(&manifest_path, content).unwrap();
 
-    let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+    let mut resolver =
+        WorkspaceCargoResolver::load_at(manifest_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     let new_spec = DepSpec::Range(
         VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
         "^1.1.0".to_string(),
     );
-    resolver.write_dependency("serde", new_spec, &permit()).unwrap();
+    resolver.write_dependency("serde", new_spec).unwrap();
     resolver.persist(&permit()).unwrap();
 
     let written = fs::read_to_string(&manifest_path).unwrap();

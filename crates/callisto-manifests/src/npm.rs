@@ -48,7 +48,7 @@ impl PackageJson {
         })?;
 
         let common_fp = crate::common::FormatFingerprint::detect(&content);
-        let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
+        let clean_content = without_bom(&content);
         let fingerprint = detect_fingerprint(clean_content, common_fp);
 
         let doc: Map<String, Value> = serde_json::from_str(clean_content).map_err(|e| ManifestError::Parse {
@@ -158,7 +158,7 @@ pub fn npm_package_name(doc: &serde_json::Map<String, serde_json::Value>) -> Opt
 /// for `version` (npm has no workspace-inherited-version concept, unlike
 /// Cargo).
 pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::ManifestIdentity, ManifestError> {
-    let clean = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let clean = without_bom(source);
     let doc: Map<String, Value> = serde_json::from_str(clean).map_err(|e| ManifestError::Parse {
         path: path.to_path_buf(),
         format: ManifestFormat::PackageJson,
@@ -409,7 +409,7 @@ impl Manifest for PackageJson {
         })
     }
 
-    fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
         self.doc
             .insert("version".to_string(), Value::String(v.render().to_string()));
         Ok(())
@@ -510,11 +510,7 @@ impl Manifest for PackageJson {
         Ok(())
     }
 
-    fn update_optional_dependencies(
-        &mut self,
-        updates: &[(String, Version)],
-        _permit: &ApplyPermit,
-    ) -> Result<(), ManifestError> {
+    fn update_optional_dependencies(&mut self, updates: &[(String, Version)]) -> Result<(), ManifestError> {
         let section = self
             .doc
             .entry("optionalDependencies".to_string())
@@ -694,12 +690,10 @@ pub fn detect_npm_workspace_kind(workspace_root: &Path) -> Result<Option<Workspa
         message: e.to_string(),
     })?;
     if let Some(content) = content {
-        let val = serde_json::from_str::<Value>(content.strip_prefix('\u{FEFF}').unwrap_or(&content)).map_err(|e| {
-            ManifestError::Parse {
-                path: root_pkg_json.clone(),
-                format: ManifestFormat::PackageJson,
-                message: e.to_string(),
-            }
+        let val = serde_json::from_str::<Value>(without_bom(&content)).map_err(|e| ManifestError::Parse {
+            path: root_pkg_json.clone(),
+            format: ManifestFormat::PackageJson,
+            message: e.to_string(),
         })?;
         if val.get("workspaces").is_some() {
             return Ok(Some(WorkspaceKind::Npm));

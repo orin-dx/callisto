@@ -116,7 +116,8 @@ features-boundary:
     if [ -z "$tree" ]; then echo "cargo tree printed nothing" >&2; exit 1; fi
     if grep 'test-util' <<<"$tree"; then exit 1; fi
 
-# The local npm, PyPI and Cargo registries the real-registry suites run against, installed under target/verify-real.
+# The local npm, PyPI and Cargo registries the real-registry suites run against, and the Changesets 2.x and 3.x CLIs
+# the compatibility differential runs against, installed under target/verify-real.
 # gunicorn: pypiserver's default backend does a slow getfqdn() bind. setuptools and wheel: the offline Python build.
 verify-real-tools:
     #!/usr/bin/env bash
@@ -126,8 +127,11 @@ verify-real-tools:
     done
     tools=target/verify-real
     mkdir -p "$tools"
-    npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4 pnpm@11.9.0
+    npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4 pnpm@11.9.0 @changesets/cli@3.0.3
+    npm install --silent --no-audit --no-fund --prefix "$tools/changesets-2" @changesets/cli@2.31.1
     PATH="$PWD/$tools/npm/node_modules/.bin:$PATH" pnpm --version
+    PATH="$PWD/$tools/npm/node_modules/.bin:$PATH" changeset --version
+    "$tools/changesets-2/node_modules/.bin/changeset" --version
     uv venv -q --seed --allow-existing --python 3.12 "$tools/venv"
     python_pins="pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0 setuptools==80.9.0 wheel==0.45.1"
     "$tools/venv/bin/python" -m pip install -q $python_pins
@@ -141,7 +145,7 @@ verify-real: verify-real-tools
     tools="$PWD/target/verify-real"
     export PATH="$tools/venv/bin:$tools/npm/node_modules/.bin:$tools/cargo/bin:$PATH"
     cargo --version && npm --version && pnpm --version && uv --version
-    VERIFY_REAL_WHEELS="$tools/wheels" cargo test -p callisto-cli --test release_verify_real -- --ignored --test-threads=1
+    VERIFY_REAL_CHANGESETS_2="$tools/changesets-2/node_modules/.bin/changeset" VERIFY_REAL_WHEELS="$tools/wheels" cargo test -p callisto-cli --test release_verify_real -- --ignored --test-threads=1
     cargo test -p callisto-cli --test native_resolution_e2e_tests -- --test-threads=1
 
 # Run unused dependency check via cargo-machete

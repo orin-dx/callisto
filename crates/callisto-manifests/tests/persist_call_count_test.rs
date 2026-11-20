@@ -124,7 +124,8 @@ fn workspace_cargo_resolver_load_and_persist_increment_their_own_counters() {
     assert_eq!(callisto_manifests::resolver_load_call_count(), 0);
     assert_eq!(callisto_manifests::resolver_persist_call_count(), 0);
 
-    let mut resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+    let mut resolver =
+        WorkspaceCargoResolver::load_at(root_cargo_path.parent().unwrap(), std::path::Path::new("Cargo.toml")).unwrap();
     assert_eq!(
         callisto_manifests::resolver_load_call_count(),
         1,
@@ -137,7 +138,7 @@ fn workspace_cargo_resolver_load_and_persist_increment_their_own_counters() {
     );
 
     let new_ver = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
-    resolver.write_version(&new_ver, &permit()).unwrap();
+    resolver.write_version(&new_ver).unwrap();
     assert_eq!(
         callisto_manifests::resolver_persist_call_count(),
         0,
