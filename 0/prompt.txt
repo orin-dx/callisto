@@ -1,0 +1,29 @@
+Three small follow-ups, in order, each on its existing branch. Use a worktree per branch, merge the latest origin/main first, push with an explicit refspec, check ls-remote.
+(1) PR #603 (branch wp-cleanup-cli-tooling, Entire change callisto/211): finding 01M7XMCZD173 (medium) is valid. After the three build handlers were merged into one, build_from_intent (crates/callisto-cli/src/commands/release.rs around lines 373-374) canonicalizes the artifact directory before the dry-run guard, so 'release build-python --dry-run --intent intent.json --artifact-dir missing-dir' returns E213 exit 1 instead of E309 exit 2; pack_npm has the same ordering (around line 423). Move artifact-directory resolution after the shared dry-run check, with a binary-level test first for build-python and pack-npm, then resolve the finding after the push.
+(2) PR #604 (branch worktree-wp-cleanup-graph): resolve its conflicts with main in crates/callisto-graph/src/commands/init.rs (K, #596, merged) and crates/callisto-graph/src/commands/release/provider/registry.rs. Keep main's behaviour and the cleanup's deletions. Run cargo test -p callisto-graph and just lint.
+(3) PR #602 (branch wp-changesets-differential): #596 has merged, so in scenario (a) stop appending the [[fixed-group]] by hand. Assert that the callisto.toml written by 'callisto init' contains the fixed group, then keep the same release-plan comparison against the real Changesets. Update the PR body note. Run that test with --ignored as before.
+Report in 4 lines to the lead session (close-gap-for-alpha). Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: skip step 2 (#604 conflicts). A separate session is doing it now. Finish step 1 (#603) and then step 3 (#602).
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: #602 has merged already. Do step 3 as a new small PR off fresh origin/main (worktree name wp-differential-assert-init, trail #458, no changeset): in release_verify_real.rs scenario (a), assert the [[fixed-group]] that `callisto init` writes instead of appending it by hand. Do it after #603.
+</cross-session-message>
