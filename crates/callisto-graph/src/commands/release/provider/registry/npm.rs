@@ -7,7 +7,7 @@ pub(super) fn run_npm_publish_argv(
     argv: &registry_argv::Argv,
     timeout: Duration,
 ) -> Result<CommandOutput, GraphError> {
-    let token = std::env::var("NPM_TOKEN").ok().filter(|value| !value.is_empty());
+    let token = env_value("NPM_TOKEN");
     let config = publish_npm_config();
     let env = npm_publisher_environment(token.as_deref(), config.as_deref());
     let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
@@ -18,9 +18,7 @@ pub(super) fn run_npm_publish_argv(
 
 /// The temporary npm config the release action writes when it is given `NPM_TOKEN`, if any.
 fn publish_npm_config() -> Option<String> {
-    std::env::var("CALLISTO_PUBLISH_NPM_CONFIG")
-        .ok()
-        .filter(|value| !value.is_empty())
+    env_value("CALLISTO_PUBLISH_NPM_CONFIG")
 }
 
 /// `npm view` arguments for one package version. `userconfig` is the publish's temporary npm config: a restricted
