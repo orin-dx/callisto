@@ -346,7 +346,7 @@ pub enum GraphError {
     )]
     #[diagnostic(
         code(E119),
-        help("Remove the mismatched target from publish-to, or fix the [[package]]/[[package-set]] rule so it only matches packages in that ecosystem.")
+        help("Remove the mismatched target from publish-to, or fix the [[package]] rule so it only matches packages in that ecosystem.")
     )]
     PublishTargetEcosystemMismatch {
         package: PackageId,

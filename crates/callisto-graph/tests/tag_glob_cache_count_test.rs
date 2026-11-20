@@ -92,7 +92,7 @@ fn non_repo_dir() -> tempfile::TempDir {
 
 /// Spec: `TagIndex::build` must compile/scan a given tag-template glob at
 /// most once per *distinct* template string, not once per package -- a
-/// `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template` applies
+/// glob `[[package]]` rule with a fixed (non-`{name}`) `tag-template` applies
 /// the identical template to every matching package, so N packages sharing
 /// one explicit template must cost one glob compile, not N.
 #[test]

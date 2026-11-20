@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use callisto_manifests::read_identity;
-use callisto_model::vcs::GitAccess;
+use callisto_model::vcs::{GitAccess, Pathspec};
 use callisto_model::{Ecosystem, ManifestFormat, Package};
 
 use crate::commands::git_batch::{batch_blobs, BatchBlob};
@@ -82,7 +82,7 @@ fn declares(
     format: ManifestFormat,
     file_name: &str,
 ) -> Result<bool, GraphError> {
-    for path in git.files_containing_at(rev, name, &[&format!(":(glob)**/{file_name}")])? {
+    for path in git.files_containing_at(rev, name, &[Pathspec::named_anywhere(file_name)])? {
         let Some(text) = git.read_at(rev, &path)? else {
             continue;
         };

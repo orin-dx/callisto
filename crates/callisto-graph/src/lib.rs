@@ -47,8 +47,8 @@ pub use aggregate::{
 };
 pub use apply::{apply_version_plan, ApplyOptions, ApplyOutcome};
 pub use cascade::{
-    cascade_action, coverage, rewrite_spec, run_cascade, CascadeDecision, CascadeInput, CascadeOutcome, DepWriteTarget,
-    RewriteKey, RewriteOutcome, SpecRewrite,
+    cascade_action, coverage, run_cascade, CascadeDecision, CascadeInput, CascadeOutcome, ConvergedTarget,
+    ConvergedTargets, DepWriteTarget, RewriteKey, RewriteOutcome, SpecRewrite,
 };
 pub use config::{load as load_config, resolve as resolve_config, GroupDef, GroupTable, ResolvedConfig};
 pub use error::{ConfigError, ExitKind, GraphError};

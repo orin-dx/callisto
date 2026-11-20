@@ -3,6 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput, ChangelogStyle};
 use callisto_manifests::{open, OpenContext};
+use callisto_model::vcs::GitStdout;
 use callisto_model::{BumpReason, CommandRunner, GroupKind, ManifestRole, Severity};
 
 use crate::aggregate::aggregate;
@@ -41,7 +42,10 @@ fn map_reason_to_change_source(
         // Listed from `CascadeOutcome::dependency_updates`, which covers every bumped dependency, not just the first.
         BumpReason::Cascade { .. } => None,
         BumpReason::PeerEscalation { via, .. } => {
-            let dep_to = outcome.targets.get(via).cloned().unwrap_or_else(|| to.clone());
+            let dep_to = outcome
+                .targets
+                .get(via)
+                .map_or_else(|| to.clone(), |t| t.version().clone());
             Some(ChangeSource::PeerEscalation {
                 dependency: via.clone(),
                 to: dep_to,
@@ -73,7 +77,7 @@ fn dependency_update_entries(
     updates
         .iter()
         .filter_map(|(dependency, dep_kind)| {
-            let to = outcome.targets.get(dependency)?.clone();
+            let to = outcome.targets.get(dependency)?.version().clone();
             Some(ChangelogEntry {
                 severity,
                 source: ChangeSource::DependencyUpdate {
@@ -224,7 +228,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
                 field: "version",
             })
         })?;
-        let to = outcome.targets.get(id).cloned().ok_or_else(|| {
+        let to = outcome.targets.get(id).map(|t| t.version().clone()).ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
                 path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
                 field: "version",
@@ -702,19 +706,16 @@ fn head_dir_has_changeset<R: CommandRunner, D: DependencyResolver>(
     }
     let output = ws
         .runner
-        .run("git", &["ls-tree", "--name-only", &spec], &ws.root)
+        .run("git", &["ls-tree", "-z", "--name-only", &spec], &ws.root)
         .map_err(GraphError::Command)?;
-    if !output.success() {
-        return Err(GraphError::Command(callisto_model::CommandError::Failed {
+    let names = GitStdout::of(output).map_err(|output| {
+        GraphError::Command(callisto_model::CommandError::Failed {
             program: "git".to_string(),
             exit_code: output.exit_code,
             stderr: output.stderr,
-        }));
-    }
-    Ok(output.stdout.lines().any(|name| {
-        let name = name.trim();
-        name.ends_with(".md") && name != "README.md"
-    }))
+        })
+    })?;
+    Ok(names.fields().any(|name| name.ends_with(".md") && name != "README.md"))
 }
 
 fn manifest_blob_at<R: CommandRunner, D: DependencyResolver>(
@@ -730,14 +731,14 @@ fn manifest_blob_at<R: CommandRunner, D: DependencyResolver>(
         .runner
         .run("git", &["show", &spec], &ws.root)
         .map_err(GraphError::Command)?;
-    if !output.success() {
-        return Err(GraphError::Command(callisto_model::CommandError::Failed {
+    let blob = GitStdout::of(output).map_err(|output| {
+        GraphError::Command(callisto_model::CommandError::Failed {
             program: "git".to_string(),
             exit_code: output.exit_code,
             stderr: output.stderr,
-        }));
-    }
-    Ok(Some(output.stdout))
+        })
+    })?;
+    Ok(Some(blob.into_text()))
 }
 
 fn manifest_blob_in_index<R: CommandRunner, D: DependencyResolver>(
@@ -752,14 +753,14 @@ fn manifest_blob_in_index<R: CommandRunner, D: DependencyResolver>(
         .runner
         .run("git", &["show", &spec], &ws.root)
         .map_err(GraphError::Command)?;
-    if !output.success() {
-        return Err(GraphError::Command(callisto_model::CommandError::Failed {
+    let blob = GitStdout::of(output).map_err(|output| {
+        GraphError::Command(callisto_model::CommandError::Failed {
             program: "git".to_string(),
             exit_code: output.exit_code,
             stderr: output.stderr,
-        }));
-    }
-    Ok(Some(output.stdout))
+        })
+    })?;
+    Ok(Some(blob.into_text()))
 }
 
 /// The paths that differ from `HEAD` in the working tree or the index, and those that differ in the index alone.
@@ -779,18 +780,14 @@ impl SourceChanges {
         let index = vec!["diff", "--cached", "--name-only", "-z", "--relative", head];
         for (args, is_index) in [(working_tree, false), (index, true)] {
             let output = ws.runner.run("git", &args, &ws.root).map_err(GraphError::Command)?;
-            if !output.success() {
-                return Err(GraphError::Command(callisto_model::CommandError::Failed {
+            let output = GitStdout::of(output).map_err(|output| {
+                GraphError::Command(callisto_model::CommandError::Failed {
                     program: "git".to_string(),
                     exit_code: output.exit_code,
                     stderr: output.stderr,
-                }));
-            }
-            let paths = output
-                .stdout
-                .split('\0')
-                .filter(|path| !path.is_empty())
-                .map(str::to_owned);
+                })
+            })?;
+            let paths = output.fields().map(str::to_owned);
             if is_index {
                 let paths: Vec<String> = paths.collect();
                 staged.extend(paths.iter().cloned());

@@ -3,6 +3,7 @@
 //! It records the exact package/version authority that later intent construction consumes, without
 //! exposing a mutation route.
 
+use callisto_model::vcs::GitStdout;
 use callisto_model::{
     BumpReason, CommandRunner, CommitSha, Ecosystem, Package, ReleaseDecisionEntry, ReleaseDecisionV1,
     ReleaseInclusionReason, ReleasePackageId, Version,
@@ -428,8 +429,8 @@ fn commit_delta<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<(String, Vec<(String, String)>), GraphError> {
     let head_args = ["rev-parse", "HEAD"];
     let head = git_stdout(workspace.runner, &workspace.root, &head_args)?;
-    let head =
-        CommitSha::parse(&head).map_err(|source| command_malformed_output("git", &head_args, source.to_string()))?;
+    let head = CommitSha::parse(head.line())
+        .map_err(|source| command_malformed_output("git", &head_args, source.to_string()))?;
     if &head != release_commit {
         return Err(GraphError::ReleaseCommitVerificationFailed {
             commit: release_commit.clone(),
@@ -439,7 +440,9 @@ fn commit_delta<R: CommandRunner, D: DependencyResolver>(
 
     let parent_ref = format!("{}^", release_commit.as_str());
     let parent_args = ["rev-parse", parent_ref.as_str()];
-    let parent = git_stdout(workspace.runner, &workspace.root, &parent_args)?;
+    let parent = git_stdout(workspace.runner, &workspace.root, &parent_args)?
+        .line()
+        .to_owned();
     CommitSha::parse(&parent).map_err(|source| command_malformed_output("git", &parent_args, source.to_string()))?;
 
     let diff_tree_args = [
@@ -458,9 +461,10 @@ fn commit_delta<R: CommandRunner, D: DependencyResolver>(
     // `diff-tree` paths are repository-top-relative. Rewrite them workspace-relative; an edit outside the workspace
     // becomes `../..` so it never matches a workspace path and is still refused as unexpected.
     let prefix = git_stdout(workspace.runner, &workspace.root, &["rev-parse", "--show-prefix"])?;
+    let prefix = prefix.line();
     let up = "../".repeat(prefix.matches('/').count());
     for (_, path) in &mut changed {
-        *path = match path.strip_prefix(prefix.as_str()) {
+        *path = match path.strip_prefix(prefix) {
             Some(inside) => inside.to_owned(),
             None => format!("{up}{path}"),
         };
@@ -758,17 +762,14 @@ pub(super) fn command_malformed_output(program: &str, args: &[&str], detail: imp
     }
 }
 
-fn git_stdout<R: CommandRunner>(runner: &R, root: &std::path::Path, args: &[&str]) -> Result<String, GraphError> {
+fn git_stdout<R: CommandRunner>(runner: &R, root: &std::path::Path, args: &[&str]) -> Result<GitStdout, GraphError> {
     let output = runner.run_with_timeout("git", args, root, super::release::timeouts::LOCAL_GIT)?;
-    if !output.success() {
-        return Err(command_non_zero_exit("git", args, &output));
-    }
-    Ok(output.stdout_line().to_string())
+    GitStdout::of(output).map_err(|output| command_non_zero_exit("git", args, &output))
 }
 
 /// Reads `--name-status -z` output: NUL-terminated status and path fields, the path unquoted.
-fn parse_name_status(output: &str, args: &[&str]) -> Result<Vec<(String, String)>, GraphError> {
-    let mut fields = output.strip_suffix('\0').unwrap_or(output).split('\0');
+fn parse_name_status(output: &GitStdout, args: &[&str]) -> Result<Vec<(String, String)>, GraphError> {
+    let mut fields = output.fields();
     let mut changed = Vec::new();
     while let Some(status) = fields.next().filter(|status| !status.is_empty()) {
         let path = fields.next().unwrap_or_default();
@@ -791,7 +792,7 @@ fn git_file<R: CommandRunner>(
     path: &str,
 ) -> Result<String, GraphError> {
     let object = object_at(commit, path);
-    git_stdout(runner, root, &["show", &object])
+    git_stdout(runner, root, &["show", &object]).map(GitStdout::into_text)
 }
 
 /// `rev:./path`: git resolves a bare `rev:path` from the repository top, not the workspace directory.
@@ -1034,9 +1035,18 @@ fn reason_from_bump<D: DependencyResolver>(
 
 #[cfg(test)]
 mod tests {
-    use callisto_model::{Ecosystem, Version};
+    use callisto_model::{CommandOutput, Ecosystem, Version};
 
     use super::*;
+
+    fn stdout(text: &str) -> GitStdout {
+        GitStdout::of(CommandOutput {
+            exit_code: Some(0),
+            stdout: text.to_owned(),
+            stderr: String::new(),
+        })
+        .unwrap()
+    }
 
     #[test]
     fn decision_is_canonical_and_ecosystem_qualified() {
@@ -1063,15 +1073,19 @@ mod tests {
     fn release_commit_delta_parser_accepts_only_unambiguous_path_statuses() {
         let args = ["diff-tree", "--name-status"];
         assert_eq!(
-            parse_name_status("M\0Cargo.toml\0D\0.changeset/release.md\0A\0p\u{fc}ber/a\tb\0", &args).unwrap(),
+            parse_name_status(
+                &stdout("M\0Cargo.toml\0D\0.changeset/release.md\0A\0p\u{fc}ber/a\tb\0"),
+                &args
+            )
+            .unwrap(),
             vec![
                 ("M".to_string(), "Cargo.toml".to_string()),
                 ("D".to_string(), ".changeset/release.md".to_string()),
                 ("A".to_string(), "p\u{fc}ber/a\tb".to_string()),
             ]
         );
-        assert!(parse_name_status("R100\0old\0new\0", &args).is_err());
-        assert!(parse_name_status("M\0", &args).is_err());
+        assert!(parse_name_status(&stdout("R100\0old\0new\0"), &args).is_err());
+        assert!(parse_name_status(&stdout("M\0"), &args).is_err());
     }
 
     #[test]
@@ -1097,7 +1111,7 @@ mod tests {
     #[test]
     fn release_commit_delta_parser_reports_malformed_output_not_stale_intent() {
         let args = ["diff-tree", "--name-status"];
-        let err = parse_name_status("R100\0old\0new\0", &args).unwrap_err();
+        let err = parse_name_status(&stdout("R100\0old\0new\0"), &args).unwrap_err();
         match err {
             GraphError::ReleaseCommand {
                 program,
