@@ -171,7 +171,7 @@ impl PublishTarget {
         }
     }
 
-    /// Fills gaps left by a `[[package]]`/`[[package-set]]` `publish-to`
+    /// Fills gaps left by a `[[package]]` `publish-to`
     /// override with the manifest-derived target for the same ecosystem --
     /// e.g. npm's `publishConfig.access`/`registry`, which an override
     /// naming only `"npm"` doesn't itself specify. Fields the override

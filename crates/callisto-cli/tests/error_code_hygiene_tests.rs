@@ -50,6 +50,13 @@ fn config_unknown_key_reports_e325() {
 }
 
 #[test]
+fn the_retired_package_set_table_reports_e325_naming_package() {
+    let stderr = config_error("[[package-set]]\nmatch = \"cargo/*\"\n");
+    assert_only_code(&stderr, "E325");
+    assert!(stderr.contains("rename it to `[[package]]`"), "{stderr}");
+}
+
+#[test]
 fn config_syntax_error_reports_e111() {
     assert_only_code(&config_error("[changesets\n"), "E111");
 }
@@ -73,7 +80,7 @@ fn a_bad_publish_to_value_reports_e330() {
     assert_code(&stderr, "E330");
     assert!(stderr.contains("bogus"), "{stderr}");
     assert_code(
-        &config_error("[[package-set]]\nmatch = \"cargo/*\"\npublish-to = [\"bogus\"]\n"),
+        &config_error("[[package]]\nmatch = \"cargo/*\"\npublish-to = [\"bogus\"]\n"),
         "E330",
     );
 }
@@ -85,7 +92,7 @@ fn a_bad_release_trigger_reports_e331() {
         "E331",
     );
     assert_code(
-        &config_error("[[package-set]]\nmatch = \"cargo/*\"\nrelease-trigger = \"sometimes\"\n"),
+        &config_error("[[package]]\nmatch = \"cargo/*\"\nrelease-trigger = \"sometimes\"\n"),
         "E331",
     );
 }
@@ -130,7 +137,11 @@ fn an_unusable_registry_timeout_reports_e337() {
 #[test]
 fn an_unparsable_package_match_reports_e338() {
     assert_code(&config_error("[[package]]\nmatch = \"cargo/a..b\"\n"), "E338");
-    assert_code(&config_error("[[package-set]]\nmatch = \"cargo/[\"\n"), "E338");
+    assert_code(&config_error("[[package]]\nmatch = \"cargo/[\"\n"), "E338");
+    assert_code(
+        &config_error("[[package]]\nmatch = \"cargo/*\"\nprevious-tag-templates = [\"old-{version}\"]\n"),
+        "E338",
+    );
 }
 
 #[test]

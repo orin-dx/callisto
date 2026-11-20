@@ -527,7 +527,6 @@ fn diagnostic_code_enum_variants_match_expected_set() {
         "init-origin-missing",
         "manifest-unresolved",
         "unrecognised-platform-triple",
-        "package-set-matched-nothing",
         "duplicate-platform-triple",
         "ambiguous-package-name",
         "platform-package-without-owner",

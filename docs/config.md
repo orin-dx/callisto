@@ -14,8 +14,7 @@ This reference describes current keys, not the unimplemented parts of the [polyg
 | `[changelog]` | table | no | Layout of the changelog sections `callisto version` writes |
 | `[release]` | table | no | Product binary release declaration |
 | `[registries]` | table of tables | no | Registry endpoint overrides |
-| `[[package]]` | array of tables | no | Per-package exact-match overrides |
-| `[[package-set]]` | array of tables | no | Per-package glob-match overrides |
+| `[[package]]` | array of tables | no | Per-package overrides, matched by exact name or by glob |
 | `[[fixed-group]]` | array of tables | no | Packages that version in lock-step |
 | `[[linked-group]]` | array of tables | no | Packages that share severity, not version |
 
@@ -127,17 +126,21 @@ match = "cargo/my-crate"
 publish-to = ["internal-crates"]
 ```
 
-## `[[package]]` and `[[package-set]]`
+## `[[package]]`
 
-Both blocks share five override fields, parsed identically; `[[package]]` also accepts `previous-tag-templates`. `[[package]]`'s `match` is an exact ecosystem-qualified id: the package's own name in that ecosystem, which for a dual package can differ per ecosystem (first matching rule wins). `[[package-set]]`'s `match` is an ecosystem-qualified glob, compared with each package's name in that ecosystem, and can match many packages at once; a rule for several ecosystems is one rule per ecosystem; `[[package]]` always takes priority over `[[package-set]]` for a given package.
+A `match` is either exact or a glob; a `match` containing any of `*?[]{}` is a glob. An exact `match` is an ecosystem-qualified id: the package's own name in that ecosystem, which for a dual package can differ per ecosystem. A glob `match` is an ecosystem-qualified glob, compared with each package's name in that ecosystem, and can match many packages at once; a rule for several ecosystems is one rule per ecosystem.
+
+An exact rule wins over any glob, whatever the declaration order. Otherwise the first matching rule in declaration order wins. The winning rule applies whole: fields are not merged across rules.
+
+`[[package-set]]` is no longer a key: it is E325. Rename each `[[package-set]]` to `[[package]]`; its `match` already holds a glob.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `match` | string | required | `[[package]]`: exact `ecosystem/name`. `[[package-set]]`: `ecosystem/glob`. The ecosystem is `cargo`, `npm` or `pypi`; a name without one is E317. |
+| `match` | string | required | `ecosystem/name`, or `ecosystem/glob`. The ecosystem is `cargo`, `npm` or `pypi`; a name without one is E317. |
 | `release-trigger` | string (`"changeset"` \| `"auto"`) | none — every field here is an `Option`; omitted means "use this package's own default", not a config-level default | What causes this package to be considered for release |
 | `publish-to` | array of strings (`"github-release"` \| `"none"`, or a registry name: `"crates-io"`, `"npm"`, `"pypi"` or a `kind = "cargo"` `[registries]` entry) | none | Where this package publishes. Any other value fails with E330 |
 | `tag-template` | string | none | Git tag template, e.g. `"callisto@{version}"` |
-| `previous-tag-templates` | array of strings | `[]` | `[[package]]` only (`[[package-set]]` rejects it). Earlier tag templates checked (in order) for this package's last release tag, only if `tag-template` finds none. They are matched by name only, so this is how a renamed package claims the tags it made under its old name |
+| `previous-tag-templates` | array of strings | `[]` | Exact `match` only; a glob is E338. Earlier tag templates checked (in order) for this package's last release tag, only if `tag-template` finds none. They are matched by name only, so this is how a renamed package claims the tags it made under its old name |
 | `changelog` | string | none | Changelog path, relative to the package's own root. Forward-slash-separated only; rejected if absolute or containing `..` (E113). |
 | `pre-major-inference` | string (`"off"` \| `"conservative"` \| `"conservative-feat"`) | `"off"` | Pre-1.0 severity-downgrade policy: `conservative` downgrades an inferred Major to Minor; `conservative-feat` also downgrades Minor to Patch |
 
