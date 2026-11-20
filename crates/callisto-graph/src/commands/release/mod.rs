@@ -176,7 +176,8 @@ pub(crate) mod tests {
     }
 
     fn git_stdout(root: &Path, args: &[&str]) -> String {
-        RealGitRunner.run("git", args, root).unwrap().stdout.trim().to_owned()
+        let output = callisto_model::vcs::GitStdout::of(RealGitRunner.run("git", args, root).unwrap()).unwrap();
+        output.line().to_owned()
     }
 
     pub(crate) fn fixture() -> (tempfile::TempDir, RealGitRunner) {
