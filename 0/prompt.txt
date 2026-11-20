@@ -1,0 +1,6 @@
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: good work. Two things before #587 leaves draft.
+(1) Add the uncovered paths to #587 as real-binary tests: a commit-inferred (release-trigger = "auto") package through a pre cycle via release PRs, and the decide "update" path, where an open release PR is refreshed by a new change. If a test exposes a defect, fix it in #587.
+(2) The race, which is older than H: confirm it before changing anything. Read the generated workflow templates and this repo's release workflow. On a merge push, can version-pr's decide run before execute has created the new tags? If so, with an auto-trigger package, would decide re-infer the just-released commits and propose another bump? Reproduce it with a test that runs decide against the post-merge tree with the tag not yet created. Report one of: confirmed (with the failing test), refuted (with the guard that prevents it, file:line), or depends on GitHub job timing. Don't fix it in #587; if it's confirmed, it becomes its own PR.
+Then re-run just ci on the final head, push (signed, merge main first, ls-remote) and report.
+</cross-session-message>

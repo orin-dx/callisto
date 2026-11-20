@@ -1,0 +1,98 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7X2T6P15E5EP0YY5Q50SXRR",
+  "session_id": "24cf6761-dc2b-4cf5-9d41-6d3f282f7f85",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T18:17:14.14222Z",
+  "branch": "feat/managed-prerelease",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/silent-ravens-climb.md",
+    "crates/callisto-cli/tests/release_pr_pre_cycle_tests.rs",
+    "docs/releasing.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "663010301fc8",
+  "checkpoint_transcript_start": 598,
+  "transcript_lines_at_start": 598,
+  "compact_transcript_start": 52,
+  "token_usage": {
+    "input_tokens": 76,
+    "cache_creation_tokens": 41023,
+    "cache_read_tokens": 4746052,
+    "output_tokens": 16930,
+    "api_call_count": 37
+  },
+  "session_token_usage": {
+    "input_tokens": 150,
+    "cache_creation_tokens": 122634,
+    "cache_read_tokens": 7800110,
+    "output_tokens": 30205,
+    "api_call_count": 72,
+    "subagent_tokens": {
+      "input_tokens": 94,
+      "cache_creation_tokens": 125112,
+      "cache_read_tokens": 4360539,
+      "output_tokens": 19828,
+      "api_call_count": 47
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "summary": {
+    "intent": "Respond to a peer session's request on PR #587: add real-binary tests for a commit-inferred (release-trigger=auto) prerelease cycle and the decide 'update' path, and confirm whether a post-merge race (decide running before execute creates tags) causes a spurious re-bump.",
+    "outcome": "Added commit-inferred (v2 and v3 pre state) cycle tests and 'update' assertions to release_pr_pre_cycle_tests.rs; all pass. Race confirmed for generated workflow templates via a scratch probe test (decide returns 'create' before the tag, 'noop' after), not for this repo's own workflow; docs/changeset wording updated and committed locally. The just ci re-run, merge main, signed push and report to the peer were not yet done.",
+    "learnings": {
+      "repo": [
+        "Generated workflow templates (simple_workflow.tmpl) have no `needs:` on the version-pr job, so it runs concurrently with package/execute on a merge push.",
+        "The action's create-or-update-release-pr.sh does not skip release commits, so decide runs on every push.",
+        "This repo's own callisto-release.yml is not affected by the race, and the repo does not use release-trigger=auto at root callisto.toml (per the checks run).",
+        "ReleasePrSnapshotV2 can be built as raw JSON (schemaVersion 2, repository, baseBranch, baseCommit, openPullRequests) or via ReleasePrSnapshotV2::new with GitHubRepository/CommitSha parsers.",
+        "Tests use callisto_fixtures::git::init_repo/run_git helpers and CARGO_BIN_EXE_callisto for real-binary runs; builds are limited with CARGO_BUILD_JOBS=4.",
+        "Changesets v3 pre state is just {mode, tag} in .changeset/pre.json, while v2 is created by `callisto pre enter`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/release_pr_pre_cycle_tests.rs",
+          "finding": "decide() helper now takes a release_pr_open flag to produce create vs update; release() also tags the release as execute would, and prerelease_cycle(Trigger, enter) is shared by changeset and commit-inferred tests."
+        },
+        {
+          "path": "crates/callisto-graph/src/templates/simple_workflow.tmpl",
+          "finding": "version-pr job lacks needs:, enabling the race with execute tagging on merge pushes."
+        }
+      ],
+      "workflow": [
+        "Reproduce a suspected race with a scratch test kept outside the tree ($TMPDIR) so it is not committed when the instruction was 'don't fix in this PR'.",
+        "Peer messages from another Claude session are treated as teammate requests; they don't grant permission escalation."
+      ]
+    },
+    "friction": [
+      "Tool output was truncated with head/cut, requiring repeated greps and sed reads to trace inference and snapshot types.",
+      "Could not find a convenient constructor for the open-PR snapshot type quickly, so raw JSON was used.",
+      "The prior commit-inferred wording in docs had to be restored after the test was added."
+    ],
+    "open_items": [
+      "Race (decide before execute tags on merge push with auto-trigger packages) is confirmed for generated workflows and needs its own PR; not fixed in #587.",
+      "Still to do: run `just ci` on the final head, merge main, signed push, verify with ls-remote, and report to the peer session.",
+      "The race probe lives at $TMPDIR/race_probe.rs as a scratch file; the failing test should be reproduced in the separate PR.",
+      "Confirm the commit succeeded (exit status not shown in the transcript)."
+    ]
+  }
+}
