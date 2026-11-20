@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use callisto_graph::commands::{
-    build_release_intent, build_release_intent_with_artifacts, ci_release_route, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release, origin_tag_probe, pending_releases, plan_loaded_release,
-    require_sealed_publishes, seal_npm_tarballs, seal_python_distributions, validate_local_release_intent,
-    validate_release_intent, verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, VersionOptions,
+    build_release_intent, ci_release_route, derive_release_commit_decision, derive_selected_release_decision,
+    execute_release, origin_tag_probe, pending_releases, plan_loaded_release, require_sealed_publishes,
+    seal_npm_tarballs, seal_python_distributions, validate_local_release_intent, validate_release_intent,
+    verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -666,17 +666,17 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                     from_flag: true,
                 });
             }
-            build_release_intent_with_artifacts(
+            build_release_intent(
                 &workspace.root,
                 &locator,
                 &runner,
                 &decision,
                 ExecutionTrustProfileV1::GitCommit,
-                callisto_graph::commands::ArtifactBuildPolicy {
+                Some(&callisto_graph::commands::ArtifactBuildPolicy {
                     repository,
                     workflow_path: callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH.to_owned(),
                     workflow_commit,
-                },
+                }),
             )?
         }
         (Some(_), _, _) => {
@@ -690,16 +690,14 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                     "notice: --orchestration-revision and --artifact-repository ignored: the source has no [release] section; planning with zero artifact slots",
                 )?;
             }
-            (
-                build_release_intent(
-                    &workspace.root,
-                    &locator,
-                    &runner,
-                    &decision,
-                    ExecutionTrustProfileV1::GitCommit,
-                )?,
-                Vec::new(),
-            )
+            build_release_intent(
+                &workspace.root,
+                &locator,
+                &runner,
+                &decision,
+                ExecutionTrustProfileV1::GitCommit,
+                None,
+            )?
         }
     };
     let out_path = out.path().to_path_buf();

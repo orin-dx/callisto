@@ -180,7 +180,7 @@ fn existing_config_is_already_initialized() {
     );
     let permit = ApplyPermit::force_for_tests();
     assert!(matches!(
-        write(dir.path(), empty_config(), &permit).unwrap_err(),
+        write(dir.path(), CONFIG_HEADER, &permit).unwrap_err(),
         GraphError::InitAlreadyInitialized { .. }
     ));
 }
@@ -444,10 +444,10 @@ fn preview_matches_release_dry_run_without_writing() {
     assert!(released.iter().any(|package| package.contains("app")), "{released:?}");
 
     std::fs::write(dir.path().join("callisto.toml"), &config).unwrap();
-    let dry_run =
-        crate::commands::plan_local_release(dir.path(), &locator, &RealGitRunner, &[], LocalReleaseSource::Preview)
-            .unwrap()
-            .unwrap();
+    let workspace = crate::Workspace::load(dir.path().canonicalize().unwrap(), &locator, &RealGitRunner).unwrap();
+    let dry_run = crate::commands::plan_loaded_release(&workspace, &[], LocalReleaseSource::Preview)
+        .unwrap()
+        .unwrap();
     assert_eq!(preview, dry_run);
 }
 
@@ -518,7 +518,7 @@ fn product_package_must_be_a_binary_workspace_package() {
 fn write_creates_the_readme_only_when_absent() {
     let dir = tempfile::tempdir().unwrap();
     let permit = ApplyPermit::force_for_tests();
-    let report = write(dir.path(), empty_config(), &permit).unwrap();
+    let report = write(dir.path(), CONFIG_HEADER, &permit).unwrap();
     assert!(report.initialized);
     assert_eq!(
         std::fs::read_to_string(dir.path().join(".changeset/README.md")).unwrap(),
@@ -528,7 +528,7 @@ fn write_creates_the_readme_only_when_absent() {
     let kept = tempfile::tempdir().unwrap();
     std::fs::create_dir(kept.path().join(".changeset")).unwrap();
     std::fs::write(kept.path().join(".changeset/README.md"), "mine\n").unwrap();
-    write(kept.path(), empty_config(), &permit).unwrap();
+    write(kept.path(), CONFIG_HEADER, &permit).unwrap();
     assert_eq!(
         std::fs::read_to_string(kept.path().join(".changeset/README.md")).unwrap(),
         "mine\n"

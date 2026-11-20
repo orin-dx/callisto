@@ -259,10 +259,16 @@ fn the_publish_plan_of_a_versioned_tree_lists_the_crates_io_release() {
     )
     .unwrap();
     let selections: Vec<callisto_model::ReleasePackageId> = stored
-        .release_selections()
-        .expect("every bumped package is nameable")
+        .packages
         .iter()
-        .map(|id| id.parse().unwrap())
+        .map(|package| {
+            package
+                .release_id
+                .as_deref()
+                .expect("every bumped package is nameable")
+                .parse()
+                .unwrap()
+        })
         .collect();
     assert_eq!(selections.len(), 1);
 

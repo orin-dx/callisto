@@ -90,10 +90,6 @@ pub enum LocateError {
     #[error("VCS error during workspace location: {0}")]
     #[diagnostic(code(E033))]
     Vcs(Box<callisto_model::vcs::VcsError>),
-
-    #[error(transparent)]
-    #[diagnostic(transparent)]
-    Graph(#[from] Box<crate::error::GraphError>),
 }
 
 impl From<callisto_model::vcs::VcsError> for LocateError {

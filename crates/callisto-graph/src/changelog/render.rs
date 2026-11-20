@@ -23,6 +23,13 @@ pub(crate) fn indent_changeset_summary(summary: &str) -> Option<String> {
     Some(indented)
 }
 
+/// The bump-group headings of a grouped section, highest first.
+pub(crate) const BUMP_GROUP_HEADINGS: [&str; 3] = ["### Major Changes", "### Minor Changes", "### Patch Changes"];
+/// The opening of the bullet saying a package was released with its group.
+pub(crate) const GROUP_UNION_PREFIX: &str = "- Released together with the `";
+/// The opening of the bullet saying a package joined a group.
+pub(crate) const GROUP_JOIN_PREFIX: &str = "- Joined the `";
+
 /// The bullet for one entry; `None` for a dependency update (rendered as one block) and for an empty summary.
 fn entry_bullet(source: &ChangeSource) -> Option<String> {
     match source {
@@ -41,9 +48,9 @@ fn entry_bullet(source: &ChangeSource) -> Option<String> {
                 GroupKind::Fixed => "fixed",
                 GroupKind::Linked => "linked",
             };
-            Some(format!("- Released together with the `{group}` {k_str} group.\n"))
+            Some(format!("{GROUP_UNION_PREFIX}{group}` {k_str} group.\n"))
         }
-        ChangeSource::NewGroupMember { group } => Some(format!("- Joined the `{group}` group at this version.\n")),
+        ChangeSource::NewGroupMember { group } => Some(format!("{GROUP_JOIN_PREFIX}{group}` group at this version.\n")),
     }
 }
 
@@ -122,11 +129,10 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
                 return Ok(out);
             }
             let mut groups = Vec::new();
-            for (severity, title) in [
-                (Severity::Major, "Major Changes"),
-                (Severity::Minor, "Minor Changes"),
-                (Severity::Patch, "Patch Changes"),
-            ] {
+            for (severity, heading) in [Severity::Major, Severity::Minor, Severity::Patch]
+                .into_iter()
+                .zip(BUMP_GROUP_HEADINGS)
+            {
                 let mut body: String = input
                     .entries
                     .iter()
@@ -138,7 +144,7 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
                     body.push_str(&dependency_block(&dep_updates));
                 }
                 if !body.is_empty() {
-                    groups.push(format!("### {title}\n\n{body}"));
+                    groups.push(format!("{heading}\n\n{body}"));
                 }
             }
             out.push_str(&groups.join("\n"));

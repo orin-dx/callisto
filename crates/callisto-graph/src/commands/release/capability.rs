@@ -295,50 +295,19 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
     }
 }
 
-/// Builds a release intent from a fresh root-bound observation.
+/// Builds a release intent from a fresh root-bound observation. With an `artifact_policy`, declared binary slots are
+/// bound to the current coordinator workflow; callers recovering an old release source must pass the current
+/// coordinator revision there, never substitute the source SHA.
+///
+/// Returns advisory diagnostics from derivation (e.g. an artifact owner selected without its product) alongside the
+/// intent, for a caller to surface.
 pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
     root: &Path,
     locator: &L,
     runner: &R,
     decision: &ReleaseDecisionV1,
     trust_profile: ExecutionTrustProfileV1,
-) -> Result<ReleaseIntentV1, GraphError> {
-    let root = canonical_root(root)?;
-    let workspace = Workspace::load(root.clone(), locator, runner)?;
-    let source = observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)?;
-    let intent = derive_release_intent(
-        &workspace,
-        decision,
-        source.clone(),
-        trust_profile,
-        None,
-        GitRemoteRequirement::Required,
-        &mut Vec::new(),
-    )?;
-
-    // Recheck after all input reads. A concurrent edit or checkout cannot be
-    // authorized merely because it happened after the first check.
-    if observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)? != source {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::source_identity_changed(),
-        });
-    }
-    Ok(intent)
-}
-
-/// Builds an intent whose declared binary slots are bound to the current
-/// coordinator workflow. Callers recovering an old release source must pass
-/// the current coordinator revision here, never substitute the source SHA.
-///
-/// Returns advisory diagnostics from derivation (e.g. an artifact owner selected
-/// without its product) alongside the intent, for a caller to surface.
-pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
-    root: &Path,
-    locator: &L,
-    runner: &R,
-    decision: &ReleaseDecisionV1,
-    trust_profile: ExecutionTrustProfileV1,
-    artifact_policy: ArtifactBuildPolicy,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<(ReleaseIntentV1, Vec<callisto_model::Diagnostic>), GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
@@ -349,10 +318,12 @@ pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
         decision,
         source.clone(),
         trust_profile,
-        Some(&artifact_policy),
+        artifact_policy,
         GitRemoteRequirement::Required,
         &mut diagnostics,
     )?;
+    // Recheck after all input reads. A concurrent edit or checkout cannot be
+    // authorized merely because it happened after the first check.
     if observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)? != source {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),

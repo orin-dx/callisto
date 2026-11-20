@@ -12,7 +12,7 @@ use callisto_model::{CommandRunner, CommitSha, PublishTarget, ReleaseDecisionV1,
 
 use super::github::{github_release_for_tag, GitHubReleaseLookup};
 use super::provider::ProviderContext;
-use crate::commands::release_decision::{has_dispatchable_target, tag_of_version, ReleaseOwners};
+use crate::commands::release_decision::{tag_of_version, ReleaseOwners};
 use crate::{DependencyResolver, GraphError, TagIndex, Workspace};
 
 /// A merged release the committed decision describes that has not finished.
@@ -102,7 +102,7 @@ fn release_gaps<R: CommandRunner, D: DependencyResolver>(
         let Some(package) = owners.get(&entry.package) else {
             continue;
         };
-        if !has_dispatchable_target(package) {
+        if !package.is_release_point() {
             continue;
         }
         let expected = tags.template(&package.id).render(&entry.target_version).to_string();

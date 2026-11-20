@@ -44,10 +44,6 @@ impl RegistryEcosystem for CargoRegistry {
             .flatten()
     }
 
-    fn can_observe_versions(&self) -> bool {
-        true
-    }
-
     /// Runs from the package's Cargo workspace directory, so the same `.cargo/config.toml`
     /// registry definitions and credentials the publish effect uses apply --
     /// private registries and their auth are cargo's business, not ours.

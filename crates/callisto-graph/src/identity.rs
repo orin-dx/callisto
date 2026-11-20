@@ -202,21 +202,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_native_unchanged_still_returns_cross_ecosystem_match() {
-        let mut index = IdentityIndex::default();
-        let cargo_serde = PackageId::Bare("serde".to_string());
-        index
-            .native
-            .insert(NativeName::new(Ecosystem::Cargo, "serde"), cargo_serde.clone());
-        let result = index.resolve_native(Ecosystem::Npm, "serde");
-        assert_eq!(
-            result,
-            Some(&cargo_serde),
-            "resolve_native's own permissive contract is unchanged by this spec"
-        );
-    }
-
-    #[test]
     fn python_native_lookup_normalizes_names_without_changing_registered_names() {
         let mut index = IdentityIndex::default();
         let owner = PackageId::Bare("My..Lib".to_string());
@@ -229,7 +214,6 @@ mod tests {
         );
 
         for name in ["my-lib", "my_lib", "MY.LIB", "my-._lib"] {
-            assert_eq!(index.resolve_native(Ecosystem::Pypi, name), Some(&owner));
             let mut diagnostics = Vec::new();
             assert_eq!(
                 index.resolve_native_with_fallback(Ecosystem::Pypi, name, &mut diagnostics),
@@ -242,35 +226,23 @@ mod tests {
     }
 
     #[test]
-    fn the_cross_ecosystem_fallback_needs_exactly_one_exact_spelling() {
-        let mut index = IdentityIndex::default();
-        let cargo = PackageId::Bare("cargo-owner".to_string());
-        index
-            .native
-            .insert(NativeName::new(Ecosystem::Cargo, "shared"), cargo.clone());
-        assert_eq!(index.resolve_native(Ecosystem::Npm, "shared"), Some(&cargo));
-        assert!(index.resolve_native(Ecosystem::Npm, "other").is_none());
-        index.native.insert(
-            NativeName::new(Ecosystem::Pypi, "shared"),
-            PackageId::Bare("pypi-owner".to_string()),
-        );
-        assert!(index.resolve_native(Ecosystem::Npm, "shared").is_none());
-    }
-
-    #[test]
     fn native_lookup_applies_only_the_registrys_own_equivalence() {
         let owner = PackageId::Bare("my-lib".to_string());
         let mut cargo = IdentityIndex::default();
         cargo
             .native
             .insert(NativeName::new(Ecosystem::Cargo, "my-lib"), owner.clone());
-        assert!(cargo.resolve_native(Ecosystem::Cargo, "My_Lib").is_some());
-        assert!(cargo.resolve_native(Ecosystem::Cargo, "my.lib").is_none());
+        let mut diagnostics = Vec::new();
+        assert!(cargo
+            .resolve_native_with_fallback(Ecosystem::Cargo, "My_Lib", &mut diagnostics)
+            .is_some());
+        assert!(cargo
+            .resolve_native_with_fallback(Ecosystem::Cargo, "my.lib", &mut diagnostics)
+            .is_none());
 
         let mut npm = IdentityIndex::default();
         npm.native.insert(NativeName::new(Ecosystem::Npm, "my-lib"), owner);
         for name in ["my_lib", "MY-LIB", "my.lib"] {
-            assert!(npm.resolve_native(Ecosystem::Npm, name).is_none());
             let mut diagnostics = Vec::new();
             assert!(npm
                 .resolve_native_with_fallback(Ecosystem::Npm, name, &mut diagnostics)
@@ -444,44 +416,6 @@ impl IdentityIndex {
     /// same-named package in another.
     pub fn identifies(&self, selector: &PackageId, candidate: &PackageId) -> bool {
         self.resolve_id(selector).is_ok_and(|resolved| &resolved == candidate)
-    }
-
-    /// Look up a package by its native (manifest-declared) name.
-    ///
-    /// Names equal under the ecosystem's registry rules ([`NativeName`]) match.
-    /// If no name matches within the ecosystem -- a
-    /// package in one ecosystem depending on a different ecosystem's
-    /// package by bare name (e.g. an npm package listing a cargo crate)
-    /// -- falls back to scanning all ecosystems for `name`.
-    ///
-    /// Fallback finds exactly one match: returns it. Finds more than one
-    /// (two ecosystems both have `name`): returns `None` to prevent
-    /// silent misresolution -- callers holding a `&mut Vec<Diagnostic>`
-    /// should use [`Self::resolve_native_with_fallback`] instead, to get
-    /// a diagnostic.
-    pub fn resolve_native(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {
-        if let Some(id) = self.native_in_ecosystem(eco, name) {
-            return Some(id);
-        }
-
-        // Cross-ecosystem fallback.
-        let mut candidates: Vec<&PackageId> = self
-            .native
-            .iter()
-            .filter(|(native, _)| native.ecosystem() != eco && native.as_str() == name)
-            .map(|(_, id)| id)
-            .collect();
-
-        // Deduplicate by pointer identity (multiple entries for the same ID
-        // across different ecosystems, e.g. a package that is both cargo and
-        // npm, should not be treated as ambiguous).
-        candidates.dedup_by(|a, b| a == b);
-
-        match candidates.len() {
-            1 => Some(candidates[0]),
-            // 0 = not found; >1 = true ambiguity → caller should diagnose.
-            _ => None,
-        }
     }
 
     /// Resolves within the declaring ecosystem, using PEP 503 equivalence for Python.

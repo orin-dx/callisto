@@ -149,10 +149,6 @@ impl RegistryEcosystem for NpmRegistry {
         output.success().then(|| npm_view_repository(&output.stdout)).flatten()
     }
 
-    fn can_observe_versions(&self) -> bool {
-        true
-    }
-
     /// `npm view` never reads the local package; its cwd is only where the project `.npmrc` supplying the registry is
     /// read from. That must be where publishing runs, or the two could address different registries, so it is the
     /// workspace that owns the package.

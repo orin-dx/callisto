@@ -136,11 +136,7 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
         };
         let reason = if !released.contains(*selection) {
             ReleaseSelectionInvalidReason::NotARelease
-        } else if package
-            .publish_to
-            .iter()
-            .all(|target| matches!(target, callisto_model::PublishTarget::None))
-        {
+        } else if !package.is_release_point() {
             ReleaseSelectionInvalidReason::NoDispatchableTarget
         } else {
             continue;
@@ -214,7 +210,7 @@ pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: Depende
     let tags = workspace.tags()?;
     let mut entries = Vec::new();
     for package in workspace.graph.packages() {
-        if !has_dispatchable_target(package) {
+        if !package.is_release_point() {
             continue;
         }
         let version = versions.get(&package.id).ok_or_else(|| GraphError::ReleaseInvariant {
@@ -256,7 +252,7 @@ pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: Depende
                 workspace.graph.packages().map(Package::canonical_id),
             ));
         };
-        if !has_dispatchable_target(package) {
+        if !package.is_release_point() {
             return Err(GraphError::ReleaseSelectionInvalid {
                 package: selection.clone(),
                 reason: ReleaseSelectionInvalidReason::NoDispatchableTarget,
@@ -313,7 +309,7 @@ pub(crate) fn releases_tagged_at<R: callisto_model::CommandRunner, D: Dependency
     let git = workspace.git_access();
     let mut entries = Vec::new();
     for package in workspace.graph.packages() {
-        if !has_dispatchable_target(package) {
+        if !package.is_release_point() {
             continue;
         }
         let Some(version) = versions.get(&package.id) else {
@@ -336,13 +332,6 @@ pub(crate) fn releases_tagged_at<R: callisto_model::CommandRunner, D: Dependency
         }
     }
     Ok(entries)
-}
-
-pub(crate) fn has_dispatchable_target(package: &Package) -> bool {
-    package
-        .publish_to
-        .iter()
-        .any(|target| !matches!(target, callisto_model::PublishTarget::None))
 }
 
 /// Each release identity's workspace package, built once so a lookup per entry does not rescan every package.

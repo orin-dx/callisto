@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use callisto_model::{CommandError, CommandOutput, CommandRunner, ProviderObservationV1, Version};
+use callisto_model::{CommandError, CommandOutput, CommandRunner, ProviderObservationV1};
 
 use crate::GraphError;
 
@@ -262,30 +262,9 @@ pub(crate) fn retry_observation_within<T>(
     Ok(exhausted.expect("at least one attempt always runs"))
 }
 
-/// A successful publish-client exit isn't a receipt: confirms the registry
-/// itself has caught up before treating the operation as done. If not, it
-/// stays `Attempting` for reconciliation, reported via its own variant
-/// rather than `ReleaseIntentStale`'s false "no operation was authorized".
-pub(crate) fn require_registry_confirmation(
-    is_published: bool,
-    package: &str,
-    version: &Version,
-    waited: Duration,
-) -> Result<(), GraphError> {
-    if is_published {
-        return Ok(());
-    }
-    Err(GraphError::RegistryPublishUnconfirmed {
-        package: package.to_string(),
-        version: version.clone(),
-        waited,
-    })
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use callisto_model::VersionGrammar;
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
@@ -453,40 +432,6 @@ pub(crate) mod tests {
         });
         assert_eq!(result, Ok(ok_output()));
         assert_eq!(sleeper.waits(), vec![Duration::from_secs(2)]);
-    }
-
-    /// A successful npm publish whose registry hasn't caught up reports `RegistryPublishUnconfirmed`, not
-    /// `ReleaseIntentStale`, whose help text says no operation was authorized.
-    #[test]
-    fn require_registry_confirmation_rejects_unconfirmed_publish_with_its_own_variant() {
-        let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
-        let waited = Duration::from_secs(360);
-        let err = require_registry_confirmation(false, "left-pad", &version, waited).unwrap_err();
-        match err {
-            GraphError::RegistryPublishUnconfirmed {
-                package,
-                version: v,
-                waited: w,
-            } => {
-                assert_eq!(package, "left-pad");
-                assert_eq!(v, version);
-                assert_eq!(w, waited);
-            }
-            other => panic!("expected RegistryPublishUnconfirmed, got {other:?}"),
-        }
-        assert!(
-            !matches!(
-                require_registry_confirmation(false, "left-pad", &version, Duration::ZERO),
-                Err(GraphError::ReleaseIntentStale { .. })
-            ),
-            "must not be reported as ReleaseIntentStale -- that help text would be false here"
-        );
-    }
-
-    #[test]
-    fn require_registry_confirmation_accepts_a_confirmed_publish() {
-        let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
-        assert!(require_registry_confirmation(true, "left-pad", &version, Duration::ZERO).is_ok());
     }
 
     fn transient_answer() -> Result<Attempt<&'static str>, GraphError> {

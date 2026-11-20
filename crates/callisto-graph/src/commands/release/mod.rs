@@ -75,16 +75,15 @@ use super::release_artifacts;
 pub(crate) use binding::optional_git_remote;
 pub(crate) use capability::canonical_root;
 pub use capability::{
-    build_release_intent, build_release_intent_with_artifacts, validate_local_release_intent, validate_release_intent,
-    ValidatedReleaseIntent,
+    build_release_intent, validate_local_release_intent, validate_release_intent, ValidatedReleaseIntent,
 };
 #[cfg(test)]
 pub(crate) use derive::canonical_operation_order;
 pub(crate) use derive::is_platform_package;
 pub use derive::ArtifactBuildPolicy;
 pub use local::{
-    ci_release_route, origin_tag_probe, plan_loaded_release, plan_local_release, plan_workspace_release,
-    plan_workspace_release_offline, CiReleaseRoute, LocalReleasePlan, LocalReleaseSource, OriginTagProbe,
+    ci_release_route, origin_tag_probe, plan_loaded_release, plan_workspace_release, plan_workspace_release_offline,
+    CiReleaseRoute, LocalReleasePlan, LocalReleaseSource, OriginTagProbe,
 };
 pub use pending::{pending_releases, PendingRelease};
 pub(crate) use provider::policy::{programs, timeouts};
@@ -307,8 +306,10 @@ pub(crate) mod tests {
             &runner,
             &decision,
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let intent_ids: std::collections::BTreeSet<_> = intent
             .snapshot
             .packages
@@ -588,8 +589,10 @@ pub(crate) mod tests {
             &runner,
             &decision,
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         let out = tempfile::tempdir().unwrap();
 
@@ -679,8 +682,10 @@ pub(crate) mod tests {
             &runner,
             &decision,
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let validated = validate_release_intent(dir.path(), &locator, &runner, intent.clone()).unwrap();
         let out = tempfile::tempdir().unwrap();
 
@@ -831,8 +836,10 @@ pub(crate) mod tests {
             &runner,
             &decision,
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         validated.package_cargo_crates().unwrap();
         let root = dir.path().canonicalize().unwrap();
@@ -915,8 +922,10 @@ pub(crate) mod tests {
             &runner,
             &decision(),
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         let out = tempfile::tempdir().unwrap();
         assert!(validated.pack_npm_tarballs(out.path()).unwrap().is_empty());
@@ -978,6 +987,7 @@ pub(crate) mod tests {
                 &RealGitRunner,
                 &decision,
                 ExecutionTrustProfileV1::GitCommit,
+                None,
             )
         };
         assert!(matches!(
@@ -999,8 +1009,10 @@ pub(crate) mod tests {
             &runner,
             &decision(),
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         validate_release_intent(dir.path(), &locator, &runner, intent.clone()).unwrap();
         std::fs::write(
             dir.path().join("Cargo.toml"),
@@ -1022,8 +1034,10 @@ pub(crate) mod tests {
             &runner,
             &decision(),
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         let inputs = validated.prepared();
         assert!(inputs.root.is_absolute());
@@ -1077,8 +1091,10 @@ pub(crate) mod tests {
             &runner,
             &decision(),
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         let tag_id = ReleaseProviderSet::intent(&validated)
             .operations
@@ -1132,8 +1148,10 @@ pub(crate) mod tests {
             &runner,
             &decision(),
             ExecutionTrustProfileV1::GitCommit,
+            None,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         let tag_id = ReleaseProviderSet::intent(&validated)
             .operations
