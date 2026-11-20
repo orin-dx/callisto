@@ -241,6 +241,7 @@ workflow-contracts: release-workflow-checks
     bash .github/tests/test_release_candidate_recovery.sh
     bash .github/tests/verify-action-pins.sh
     bash .github/tests/test-release-artifact-build-script.sh
+    bash .github/tests/test-macos-preflight-scope.sh
     bash .github/tests/test-move-floating-tag.sh
     bash .github/tests/test-hold-release-pr.sh
     env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
