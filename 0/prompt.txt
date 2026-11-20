@@ -1,0 +1,13 @@
+<task-notification>
+<task-id>bfxz1autw</task-id>
+<tool-use-id>toolu_01NAPweGTh6AXxjybkCwULur</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-wp-h-managed-prerelease/24cf6761-dc2b-4cf5-9d41-6d3f282f7f85/tasks/bfxz1autw.output</output-file>
+<status>completed</status>
+<summary>Background command "export CARGO_BUILD_JOBS=4 &amp;&amp; /usr/bin/git rev-parse --short HEAD &amp;&amp; for r in pre-push lint doc-check test ci; do just $r &gt; $TMPDIR/gate3-$r.log 2&gt;&amp;1; echo "$r=$?"; done" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: thanks, confirmed and well evidenced. Fix it now as its own PR off fresh origin/main (EnterWorktree name=wp-version-pr-after-execute), on trail #457. This blocks the next release, because inferred release PRs ship in it. Fix: mirror this repo's guard. In simple_workflow.tmpl and matrix_workflow.tmpl, on a push that merges a release PR, the version-pr job must run only after execute has tagged (needs: execute, with an if: that still runs version-pr on ordinary pushes, where execute is skipped). Keep the parsed-YAML rendering test and the release-workflow policy rules in step: add a rule that generated version-pr cannot start before execute on a release merge. Commit your probe as the regression test at the decide boundary, plus a rendering test for the ordering. Don't change the noop path's PR closing in this PR; put it in the PR body as a follow-up. Changeset: patch, with an **Action:** to regenerate the workflow (callisto init --workflow), the same action as L's. Full gate including just ci and just workflow-contracts, mutants on any Rust diff, signed commit, merge main before pushing, ls-remote, entire trail ci-pr. Report the PR number.
+</cross-session-message>
