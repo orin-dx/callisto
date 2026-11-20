@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_018JcciLVXFr1mqFkFyznZmf",
+  "agent_id": "a191dbf4a15fcc80b",
+  "subagent_type": "general-purpose",
+  "task_description": "Review managed prerelease diff",
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 125112,
+    "cache_read_tokens": 4360539,
+    "output_tokens": 19828,
+    "api_call_count": 47
+  },
+  "started_at": "2026-11-20T09:55:49.382471-08:00",
+  "completed_at": "2026-11-20T10:00:41.712768-08:00"
+}
