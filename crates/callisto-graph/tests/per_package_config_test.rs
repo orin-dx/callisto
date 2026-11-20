@@ -243,10 +243,10 @@ changelog = "RELEASES.md"
     );
 }
 
-/// When no [[package]] rule matches, the first matching [[package-set]]
-/// rule in declaration order is applied (first-match-wins within the set tier).
+/// When no exact [[package]] rule matches, the first matching glob rule
+/// in declaration order is applied (first-match-wins among globs).
 #[test]
-fn package_set_fallback_applies_first_match_wins() {
+fn glob_fallback_applies_first_match_wins() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
     write_cargo_workspace(root, "solo");
@@ -257,11 +257,11 @@ fn package_set_fallback_applies_first_match_wins() {
 match = "cargo/nomatch"
 changelog = "WRONG.md"
 
-[[package-set]]
+[[package]]
 match = "cargo/*"
 release-trigger = "auto"
 
-[[package-set]]
+[[package]]
 match = "cargo/solo*"
 changelog = "ALSO-WRONG.md"
 "#,
@@ -277,18 +277,18 @@ changelog = "ALSO-WRONG.md"
     assert_eq!(
         pkg.release_trigger,
         ReleaseTrigger::Auto,
-        "first [[package-set]] must win; got {:?}",
+        "first glob [[package]] must win; got {:?}",
         pkg.release_trigger,
     );
     if let Some(cl) = &pkg.changelog {
         assert!(
             !cl.ends_with("ALSO-WRONG.md"),
-            "second [[package-set]] must not win (first match wins); got {cl:?}",
+            "second glob [[package]] must not win (first match wins); got {cl:?}",
         );
     }
 }
 
-/// When neither [[package]] nor [[package-set]] rules match, the default
+/// When no [[package]] rule, exact or glob, matches, the default
 /// config is returned (no override).
 #[test]
 fn no_rule_match_returns_default_config() {
