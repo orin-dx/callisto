@@ -42,7 +42,7 @@ fuzz_target!(|data: &[u8]| {
     let Some(permit) = ApplyPermit::granted_unless_dry_run(false) else {
         return;
     };
-    if manifest.write_version(&target, &permit).is_err() || manifest.persist(&permit).is_err() {
+    if manifest.write_version(&target).is_err() || manifest.persist(&permit).is_err() {
         return;
     }
     let written = std::fs::read_to_string(&path).expect("a persisted manifest is readable");
