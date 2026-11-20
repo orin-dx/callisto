@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_019idStPVpPE4U3GVBYiTkhu",
+  "agent_id": "a4908b9d8f42740f1",
+  "subagent_type": "general-purpose",
+  "task_description": "Review glob pre-major fix",
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 89460,
+    "cache_read_tokens": 1791007,
+    "output_tokens": 9056,
+    "api_call_count": 24
+  },
+  "started_at": "2026-11-20T10:10:02.240534-08:00",
+  "completed_at": "2026-11-20T10:12:27.481525-08:00"
+}

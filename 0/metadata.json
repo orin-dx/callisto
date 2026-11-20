@@ -1,0 +1,68 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7X2JFZ9J443M0KQQ2037R94",
+  "session_id": "fc31e809-231d-454b-93ce-23eeb1c538ef",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T18:13:03.691281Z",
+  "branch": "worktree-cfg-glob-pre-major-fix",
+  "checkpoints_count": 4,
+  "save_step_count": 4,
+  "files_touched": [
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/src/walk.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "60717f59a037",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 124,
+    "cache_creation_tokens": 104899,
+    "cache_read_tokens": 6309607,
+    "output_tokens": 20449,
+    "api_call_count": 58,
+    "subagent_tokens": {
+      "input_tokens": 48,
+      "cache_creation_tokens": 89460,
+      "cache_read_tokens": 1791007,
+      "output_tokens": 9056,
+      "api_call_count": 24
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 124,
+    "cache_creation_tokens": 104899,
+    "cache_read_tokens": 6309607,
+    "output_tokens": 20449,
+    "api_call_count": 58,
+    "subagent_tokens": {
+      "input_tokens": 48,
+      "cache_creation_tokens": 89460,
+      "cache_read_tokens": 1791007,
+      "output_tokens": 9056,
+      "api_call_count": 24
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 4
+  }
+}
