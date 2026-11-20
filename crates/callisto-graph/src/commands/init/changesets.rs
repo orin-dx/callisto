@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use callisto_model::{BranchName, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem};
+use callisto_model::{BranchName, Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use globset::GlobBuilder;
 use serde_json::{Map, Value};
 
@@ -42,6 +42,23 @@ fn read(root: &Path) -> Option<Map<String, Value>> {
         Ok(Value::Object(config)) => Some(config),
         _ => None,
     }
+}
+
+/// Whether `pattern` means the same to a plain glob as to Changesets' micromatch: names, `*` and `?` only.
+fn is_plain(pattern: &str) -> bool {
+    !pattern.contains(['!', '{', '[', '('])
+}
+
+/// The primary ids of the packages whose npm name `pattern` matches.
+fn matching<'a>(pattern: &str, npm: &[(&str, &'a str)]) -> Vec<&'a str> {
+    let Ok(glob) = GlobBuilder::new(pattern).literal_separator(true).build() else {
+        return Vec::new();
+    };
+    let matcher = glob.compile_matcher();
+    npm.iter()
+        .filter(|(name, _)| matcher.is_match(name))
+        .map(|(_, id)| *id)
+        .collect()
 }
 
 fn branch(value: &Value) -> Option<BranchName> {
@@ -92,7 +109,7 @@ pub fn migrate(root: &Path, facts: &InitFacts) -> Migration {
             .packages
             .iter()
             .filter(|package| !package.platform && package.publishes_public_by_default())
-            .map(|package| package.id.clone())
+            .filter_map(|package| Some(format!("npm/{}", package.npm_name.as_deref()?)))
             .collect();
         if !migration.public_scoped.is_empty() {
             let packages = migration.public_scoped.join(", ");
@@ -130,38 +147,22 @@ impl Migration {
             self.warn("fixed", "is not a list of lists of package names and is not translated");
             return;
         };
+        // Every name in a Changesets config is an npm package name, whatever the package's primary id.
         let npm: Vec<(&str, &str)> = facts
             .packages
             .iter()
             .filter(|package| !package.platform)
-            .filter_map(|package| {
-                let name = package.id.strip_prefix(Ecosystem::Npm.prefix())?.strip_prefix('/')?;
-                Some((name, package.id.as_str()))
-            })
+            .filter_map(|package| Some((package.npm_name.as_deref()?, package.id.as_str())))
             .collect();
-        let matcher = |pattern: &str| {
-            GlobBuilder::new(pattern)
-                .literal_separator(true)
-                .build()
-                .ok()
-                .map(|glob| glob.compile_matcher())
-        };
         for (index, patterns) in groups.iter().enumerate() {
-            // A leading `!` removes names from the group, as in Changesets' micromatch.
-            let excluded: Vec<_> = patterns
-                .iter()
-                .filter_map(|pattern| matcher(pattern.strip_prefix('!')?))
-                .collect();
+            let name = format!("fixed-{}", index + 1);
+            if !patterns.iter().all(|pattern| is_plain(pattern)) {
+                self.hold_back(&name, patterns, &npm);
+                continue;
+            }
             let mut members: Vec<String> = Vec::new();
-            for pattern in patterns.iter().filter(|pattern| !pattern.starts_with('!')) {
-                let matched: Vec<&str> = match matcher(pattern) {
-                    Some(included) => npm
-                        .iter()
-                        .filter(|(name, _)| included.is_match(name) && !excluded.iter().any(|ex| ex.is_match(name)))
-                        .map(|(_, id)| *id)
-                        .collect(),
-                    None => Vec::new(),
-                };
+            for pattern in patterns {
+                let matched = matching(pattern, &npm);
                 if matched.is_empty() {
                     self.fixed_unmatched.push(pattern.clone());
                 }
@@ -172,12 +173,47 @@ impl Migration {
                 }
             }
             if !members.is_empty() {
-                self.fixed_groups.push(FixedGroup {
-                    name: format!("fixed-{}", index + 1),
-                    members,
-                });
+                self.fixed_groups.push(FixedGroup { name, members });
             }
         }
+    }
+
+    /// Warns that a group is not written, with the block to paste once its members are reviewed.
+    fn hold_back(&mut self, name: &str, patterns: &[String], npm: &[(&str, &str)]) {
+        let excluded: Vec<&str> = patterns
+            .iter()
+            .filter_map(|pattern| pattern.strip_prefix('!'))
+            .flat_map(|pattern| matching(pattern, npm))
+            .collect();
+        let included: Vec<&str> = if patterns.iter().all(|pattern| pattern.starts_with('!')) {
+            npm.iter().map(|(_, id)| *id).collect()
+        } else {
+            patterns
+                .iter()
+                .filter(|pattern| !pattern.starts_with('!'))
+                .flat_map(|pattern| matching(pattern, npm))
+                .collect()
+        };
+        let mut members: Vec<&str> = Vec::new();
+        for id in included.into_iter().filter(|id| !excluded.contains(id)) {
+            if !members.contains(&id) {
+                members.push(id);
+            }
+        }
+        members.sort_unstable();
+        let listed: Vec<String> = members.iter().map(|member| format!("\"{member}\"")).collect();
+        let shown: Vec<String> = patterns.iter().map(|pattern| format!("`{pattern}`")).collect();
+        self.warn(
+            "fixed",
+            &format!(
+                "group {} ({}) uses patterns that Changesets matches differently from a plain glob, so it is not \
+                 written. Check these members, then paste the block into callisto.toml:\n[[fixed-group]]\nname = \
+                 \"{name}\"\nmembers = [{}]",
+                name.trim_start_matches("fixed-"),
+                shown.join(", "),
+                listed.join(", ")
+            ),
+        );
     }
 
     /// Puts the carried-over `fixed` groups into `answers` and returns the warning that says what became of them.

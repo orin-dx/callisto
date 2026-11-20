@@ -213,28 +213,103 @@ fn fixed_globs_match_names_the_way_changesets_does() {
     );
 }
 
-// A `!` pattern removes names from its group, so the excluded package can sit in another group.
+// A group whose patterns micromatch reads differently from a plain glob is held back, never dropped silently: the
+// warning names the group and carries the block to paste after review. A plain group beside them still translates.
 #[test]
-fn negated_fixed_patterns_exclude_names_from_their_group() {
+fn groups_with_extglob_negation_brace_or_class_patterns_are_held_back_with_a_paste_block() {
     let dir = npm_workspace(Some(
-        r#"{"fixed":[["@acme/*","!@acme/utils","!@acme/site"],["@acme/utils","tool"]],"access":"public"}"#,
+        r#"{"fixed":[["@acme/@(cli|core)"],["!@acme/utils"],["@acme/{cli,core}"],["@acme/[cu]*"],["@acme/utils","tool"]],"access":"public"}"#,
     ));
     let migration = migrate_in(dir.path());
     let mut answers = INDEPENDENT;
-    let note = migration.apply_fixed_groups(&mut answers).unwrap().message;
-    let groups: Vec<Vec<&str>> = answers
-        .fixed_groups
-        .iter()
-        .map(|group| group.members.iter().map(String::as_str).collect())
-        .collect();
+    migration.apply_fixed_groups(&mut answers);
     assert_eq!(
-        groups,
-        [
-            vec!["npm/@acme/cli", "npm/@acme/core"],
-            vec!["npm/@acme/utils", "npm/tool"]
-        ]
+        answers.fixed_groups,
+        vec![FixedGroup {
+            name: "fixed-5".to_owned(),
+            members: ["npm/@acme/utils", "npm/tool"].map(str::to_owned).to_vec(),
+        }]
     );
-    assert!(!note.contains("No npm package matches"), "{note}");
+    let held: Vec<&str> = messages(&migration)
+        .into_iter()
+        .filter(|message| message.contains("`fixed`"))
+        .collect();
+    assert_eq!(held.len(), 4, "{held:?}");
+    for (message, pattern) in held
+        .iter()
+        .zip(["@acme/@(cli|core)", "!@acme/utils", "@acme/{cli,core}", "@acme/[cu]*"])
+    {
+        assert!(
+            message.contains(pattern) && message.contains("not written"),
+            "{message}"
+        );
+        assert!(message.contains("[[fixed-group]]\nname = \"fixed-"), "{message}");
+    }
+    // The block lists today's members, so a lone negation names every other package.
+    assert!(
+        held[1].contains(r#"members = ["npm/@acme/cli", "npm/@acme/core", "npm/@acme/site", "npm/tool"]"#),
+        "{}",
+        held[1]
+    );
+    assert!(
+        held[2].contains(r#"members = ["npm/@acme/cli", "npm/@acme/core"]"#),
+        "{}",
+        held[2]
+    );
+}
+
+// `?` stands for one character in both matchers, so a group using only it translates.
+#[test]
+fn a_question_mark_pattern_translates() {
+    let dir = npm_workspace(Some(r#"{"fixed":[["@acme/co?e","tool"]],"access":"public"}"#));
+    let mut answers = INDEPENDENT;
+    migrate_in(dir.path()).apply_fixed_groups(&mut answers);
+    assert_eq!(answers.fixed_groups[0].members, ["npm/@acme/core", "npm/tool"]);
+}
+
+/// A Cargo crate `native-lib` with an npm package `@scope/native-lib` beside it, and a plain `@scope/other`.
+fn colocated_workspace(config: &str) -> tempfile::TempDir {
+    repo(
+        &[
+            ("Cargo.toml", "[workspace]\nmembers = [\"native\"]\nresolver = \"2\"\n"),
+            ("package.json", r#"{"private":true,"workspaces":["native","other"]}"#),
+            (
+                "native/Cargo.toml",
+                "[package]\nname = \"native-lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            ("native/src/lib.rs", "\n"),
+            (
+                "native/package.json",
+                r#"{"name":"@scope/native-lib","version":"1.0.0"}"#,
+            ),
+            ("other/package.json", r#"{"name":"@scope/other","version":"1.0.0"}"#),
+            (".changeset/config.json", config),
+        ],
+        Some(ORIGIN),
+    )
+}
+
+// Every name in a Changesets config is an npm package name: a package whose primary id is Cargo's still answers to
+// its npm name, for groups and for the access check.
+#[test]
+fn colocated_cargo_and_npm_packages_are_found_by_their_npm_name() {
+    let dir = colocated_workspace(r#"{"fixed":[["@scope/*"]],"access":"restricted"}"#);
+    let facts = detect_in(dir.path()).unwrap();
+    let native = facts
+        .packages
+        .iter()
+        .find(|package| package.id == "cargo/native-lib")
+        .unwrap();
+    assert_eq!(native.npm_name.as_deref(), Some("@scope/native-lib"));
+
+    let migration = migrate(dir.path(), &facts);
+    let mut answers = INDEPENDENT;
+    migration.apply_fixed_groups(&mut answers);
+    assert_eq!(
+        answers.fixed_groups[0].members,
+        ["cargo/native-lib", "npm/@scope/other"]
+    );
+    assert_eq!(migration.public_scoped, ["npm/@scope/native-lib", "npm/@scope/other"]);
 }
 
 // No file, a file that is not a JSON object: silent, nothing written.

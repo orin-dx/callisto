@@ -237,11 +237,11 @@ pub fn run<R: CommandRunner>(
             }
             Err(error) => return Err(error),
         },
-        None => {
-            diagnostics.extend(migration.base_branch_unused());
-            None
-        }
+        None => None,
     };
+    if workflow.is_none() {
+        diagnostics.extend(migration.base_branch_unused());
+    }
 
     let config = scaffold::render_config(&facts, &answers);
     let plan = if facts.has_commit {

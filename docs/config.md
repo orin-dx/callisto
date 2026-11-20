@@ -175,7 +175,7 @@ members = ["cargo/callisto-model", "cargo/callisto-manifests", "cargo/callisto-g
 
 | Changesets key | `init` does |
 | --- | --- |
-| `fixed` | Writes `[[fixed-group]]` entries named `fixed-<n>`. Globs expand to the npm packages that exist now, so add packages created later by hand. |
+| `fixed` | Writes `[[fixed-group]]` entries named `fixed-<n>`. Names are npm package names. Globs expand to the npm packages that exist now, so add packages created later by hand. A group using `!`, `{`, `[` or `(` (negation, braces, classes, extglobs) is not written: the warning gives the block to paste once you have checked its members. |
 | `linked` | Warns and writes nothing. A callisto linked group bumps every member on each release, and Changesets bumps only members with changesets. |
 | `ignore` | Warns and writes nothing. An ignored package is still versioned; `publish-to = ["none"]` stops its publishing. |
 | `access` | Writes nothing. Without `--yes`, `init` refuses (E342) when `access` is `restricted` or absent and a scoped npm package has no `publishConfig.access`, because callisto publishes it as public. Set `publishConfig.access` in each package.json, or pass `--yes`. |

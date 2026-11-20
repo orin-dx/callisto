@@ -65,6 +65,8 @@ pub struct InitPackage {
     pub platform: bool,
     /// The `publishConfig.access` the package sets itself, if any.
     pub npm_access: Option<NpmAccess>,
+    /// The package's name in npm, whatever ecosystem its primary id is in.
+    pub npm_name: Option<String>,
 }
 
 impl InitPackage {
@@ -76,7 +78,10 @@ impl InitPackage {
     pub fn publishes_public_by_default(&self) -> bool {
         self.publish_to.iter().any(|target| target == "npm")
             && self.npm_access.is_none()
-            && npm_default_access(self.name(), None) == Some(NpmAccess::Public)
+            && self
+                .npm_name
+                .as_deref()
+                .is_some_and(|name| npm_default_access(name, None) == Some(NpmAccess::Public))
     }
 
     fn supports_artifact_builder(&self) -> bool {
@@ -350,6 +355,10 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
                 .filter(|target| target != PublishTarget::None.config_str())
                 .collect(),
             platform: is_platform_package(package),
+            npm_name: workspace
+                .identity
+                .native_name(&package.id, Ecosystem::Npm)
+                .map(str::to_owned),
             npm_access: package.publish_to.iter().find_map(|target| match target {
                 PublishTarget::Npm { access, .. } => *access,
                 _ => None,

@@ -1320,6 +1320,28 @@ fn yes_asks_nothing_for_several_packages_in_any_terminal_state() {
     }
 }
 
+// A workflow that cannot be built does not hide the `baseBranch` it would have used.
+#[test]
+fn base_branch_is_reported_when_the_default_workflow_cannot_be_built() {
+    let dir = npm_workspace_with_changesets(&CHANGESETS_V2.replace("restricted", "public"));
+    std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+    std::fs::write(
+        dir.path().join(".github/workflows/callisto-release.yml"),
+        "name: mine\n",
+    )
+    .unwrap();
+    let (out, err) = (Shared::default(), Shared::default());
+    run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
+    assert!(
+        err.text().contains("Skipping the GitHub Actions workflow"),
+        "{}",
+        err.text()
+    );
+    assert!(report_diagnostics(&out)
+        .iter()
+        .any(|d| d["message"].as_str().unwrap().contains("no workflow was generated")));
+}
+
 // A `fixed` group that names no npm package writes nothing and is reported.
 #[test]
 fn fixed_groups_naming_no_npm_package_are_reported_not_written() {

@@ -349,6 +349,7 @@ fn facts_for_render() -> InitFacts {
         publish_to: vec!["crates-io".to_owned()],
         platform,
         npm_access: None,
+        npm_name: None,
     };
     InitFacts {
         root: PathBuf::from("/ws"),
@@ -783,6 +784,7 @@ fn oxc_shaped_facts() -> InitFacts {
         publish_to: Vec::new(),
         platform: false,
         npm_access: None,
+        npm_name: None,
     };
     InitFacts {
         ecosystems: BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm]),

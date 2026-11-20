@@ -15,6 +15,7 @@ Switch an `@changesets/cli` 2.x or 3.x repository to Callisto without rewriting 
     - Any other non-empty key, such as `changelog` or `commit`.
 - **Limits:**
   - Add packages created after `init` to the fixed groups by hand.
+  - A fixed group that uses negation (`!`), braces, character classes or extglobs is not written: the warning gives the block to paste once you have checked its members.
   - `linked` is not translated: a Callisto linked group bumps every member on each release, while Changesets bumps only members with changesets.
 
 **Action:** if `access` is `restricted` or absent and a scoped npm package has no `publishConfig.access`, `init` refuses (E342) unless you pass `--yes`, because Callisto publishes such packages as public. Set `publishConfig.access` in each listed package.json, or pass `--yes`.
