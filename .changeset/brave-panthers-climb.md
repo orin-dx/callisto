@@ -20,8 +20,4 @@ callisto-cli: minor
 
 **Breaking:** `npm publish <tarball>` does not read a registry set in `.yarnrc.yml` or `bunfig.toml`, and Yarn and Bun token settings are not used either. A yarn workspace whose `.yarnrc.yml` sets `npmPublishRegistry` or `npmRegistryServer` (at the top level or under `npmScopes`), or a bun workspace whose `bunfig.toml` sets a registry, now fails with E168 before anything is published. Move the registry to `publishConfig.registry` in your package's `package.json`, or to `.npmrc`, and keep the publish token in `NPM_TOKEN`.
 
-**Action:** do these steps.
-
-- Delete `.github/workflows/callisto-release.yml`, regenerate it with `callisto init --workflow`, and close any stray release PR the regenerated workflow opened.
-- Yarn and Bun users: move the registry to `publishConfig.registry` or `.npmrc`.
-- Move work from `prepublishOnly`, `publish` or `postpublish` into `prepack` or a step after `execute`.
+**Action:** delete `.github/workflows/callisto-release.yml`, regenerate it with `callisto init --workflow`, and close any stray release PR it opened. Yarn and Bun users: move the registry to `publishConfig.registry` or `.npmrc`. Move work from `prepublishOnly`, `publish` or `postpublish` into `prepack` or a step after `execute`.
