@@ -31,33 +31,6 @@ pub struct Migration {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// A top-level `config.json` key, so each one is handled in one exhaustive match.
-enum Key<'a> {
-    Fixed,
-    Linked,
-    Ignore,
-    Access,
-    BaseBranch,
-    UpdateInternalDependencies,
-    Schema,
-    Other(&'a str),
-}
-
-impl<'a> From<&'a str> for Key<'a> {
-    fn from(key: &'a str) -> Self {
-        match key {
-            "fixed" => Self::Fixed,
-            "linked" => Self::Linked,
-            "ignore" => Self::Ignore,
-            "access" => Self::Access,
-            "baseBranch" => Self::BaseBranch,
-            "updateInternalDependencies" => Self::UpdateInternalDependencies,
-            "$schema" => Self::Schema,
-            other => Self::Other(other),
-        }
-    }
-}
-
 fn config_path(root: &Path) -> PathBuf {
     root.join(".changeset/config.json")
 }
@@ -86,31 +59,31 @@ pub fn migrate(root: &Path, facts: &InitFacts) -> Migration {
     };
     for (key, value) in &config {
         let nothing_to_drop = value.as_array().is_some_and(Vec::is_empty);
-        match Key::from(key.as_str()) {
-            Key::Fixed => migration.translate_fixed(value, facts),
-            Key::Linked if nothing_to_drop => {}
-            Key::Linked => migration.warn(
+        match key.as_str() {
+            "fixed" => migration.translate_fixed(value, facts),
+            "linked" if nothing_to_drop => {}
+            "linked" => migration.warn(
                 "linked",
                 "is not translated: callisto bumps every member of a linked group on each release, Changesets only \
                  the members with changesets; write a `[[linked-group]]` by hand to get that",
             ),
-            Key::Ignore if nothing_to_drop => {}
-            Key::Ignore => migration.warn(
+            "ignore" if nothing_to_drop => {}
+            "ignore" => migration.warn(
                 "ignore",
                 "is not translated: ignored packages are still versioned and released; set `publish-to = [\"none\"]` \
                  on a package to stop its publishing",
             ),
-            Key::Access => {}
-            Key::BaseBranch => match branch(value) {
+            // `access` is checked below; `$schema` is metadata.
+            "access" | "$schema" => {}
+            "baseBranch" => match branch(value) {
                 Some(base) => migration.base_branch = Some(base),
                 None => migration.warn("baseBranch", "is not a branch name and is ignored"),
             },
-            Key::UpdateInternalDependencies => migration.warn(
+            "updateInternalDependencies" => migration.warn(
                 "updateInternalDependencies",
                 "is not honoured; callisto always raises the ranges of dependents released with the dependency",
             ),
-            Key::Schema => {}
-            Key::Other(other) => migration.warn(other, "is not honoured; callisto has no equivalent"),
+            other => migration.warn(other, "is not honoured; callisto has no equivalent"),
         }
     }
     // Changesets publishes scoped packages as restricted unless `access` is `public`.

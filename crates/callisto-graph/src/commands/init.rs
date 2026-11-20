@@ -74,14 +74,8 @@ impl InitPackage {
 
     /// A scoped npm package that publishes, with no `publishConfig.access`: callisto publishes it as public.
     pub fn publishes_public_by_default(&self) -> bool {
-        self.publish_to.iter().any(|target| {
-            target
-                == PublishTarget::Npm {
-                    registry: None,
-                    access: None,
-                }
-                .config_str()
-        }) && self.npm_access.is_none()
+        self.publish_to.iter().any(|target| target == "npm")
+            && self.npm_access.is_none()
             && npm_default_access(self.name(), None) == Some(NpmAccess::Public)
     }
 

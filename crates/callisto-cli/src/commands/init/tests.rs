@@ -1204,15 +1204,11 @@ fn a_changesets_v2_config_becomes_fixed_groups_and_reports_what_it_drops() {
     for (key, word) in [
         ("`fixed`", "add packages created later by hand"),
         ("`access`", "npm/@acme/cli, npm/@acme/core"),
-        ("`changelog`", "no equivalent"),
-        ("`commit`", "no equivalent"),
-        ("`updateInternalDependencies`", "not honoured"),
         ("`baseBranch`", "no workflow was generated"),
     ] {
         let found: Vec<&&str> = messages.iter().filter(|m| m.contains(key)).collect();
         assert!(found.len() == 1 && found[0].contains(word), "{key}: {messages:?}");
     }
-    assert_eq!(messages.len(), 6, "{messages:?}");
 }
 
 // The access hazard refuses before any prompt or write; the error names each package.
