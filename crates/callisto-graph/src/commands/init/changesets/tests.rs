@@ -184,6 +184,10 @@ fn fixed_patterns_matching_nothing_are_named_and_write_no_group() {
     let fixed = migration.apply_fixed_groups(&mut answers).unwrap().message;
     assert!(answers.fixed_groups.is_empty());
     assert!(fixed.contains("@other/*") && fixed.contains("missing"), "{fixed}");
+    assert!(
+        fixed.contains("is not translated") && !fixed.contains("became"),
+        "{fixed}"
+    );
 }
 
 // A `*` stays inside one path segment, so `@acme/c*` never reaches `tool`; exact names match exactly.
@@ -207,6 +211,30 @@ fn fixed_globs_match_names_the_way_changesets_does() {
             ("fixed-2", vec!["npm/@acme/utils"])
         ]
     );
+}
+
+// A `!` pattern removes names from its group, so the excluded package can sit in another group.
+#[test]
+fn negated_fixed_patterns_exclude_names_from_their_group() {
+    let dir = npm_workspace(Some(
+        r#"{"fixed":[["@acme/*","!@acme/utils","!@acme/site"],["@acme/utils","tool"]],"access":"public"}"#,
+    ));
+    let migration = migrate_in(dir.path());
+    let mut answers = INDEPENDENT;
+    let note = migration.apply_fixed_groups(&mut answers).unwrap().message;
+    let groups: Vec<Vec<&str>> = answers
+        .fixed_groups
+        .iter()
+        .map(|group| group.members.iter().map(String::as_str).collect())
+        .collect();
+    assert_eq!(
+        groups,
+        [
+            vec!["npm/@acme/cli", "npm/@acme/core"],
+            vec!["npm/@acme/utils", "npm/tool"]
+        ]
+    );
+    assert!(!note.contains("No npm package matches"), "{note}");
 }
 
 // No file, a file that is not a JSON object: silent, nothing written.

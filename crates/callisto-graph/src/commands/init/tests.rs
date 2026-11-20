@@ -84,6 +84,15 @@ pub(in crate::commands::init) const INDEPENDENT: InitAnswers = InitAnswers {
     fixed_groups: Vec::new(),
 };
 
+// The default-branch line names where the branch came from.
+#[test]
+fn a_changesets_base_branch_names_its_source() {
+    assert_eq!(
+        DefaultBranchSource::ChangesetsBaseBranch.to_string(),
+        "`baseBranch` in .changeset/config.json"
+    );
+}
+
 // Facts report ecosystems, packages, origin, tags, and binaries.
 #[test]
 fn detect_reports_workspace_facts() {

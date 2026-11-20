@@ -290,7 +290,7 @@
     },
     {
       "id": "CLI-INIT-17",
-      "criterion": "When `.changeset/config.json` leaves `access` absent or `restricted` and an npm package named `@scope/name` that publishes has no `publishConfig.access`, init without --yes exits 1 with E342 naming each such package, before any prompt and without writing; with --yes it writes and emits a `changesets-config-key-dropped` warning naming the same packages; `--dry-run` previews with that warning instead of exiting. `access` set to `public` never triggers it.",
+      "criterion": "When `.changeset/config.json` leaves `access` absent or `restricted` and an npm package named `@scope/name` that publishes has no `publishConfig.access`, init without --yes exits 2 with E342 naming each such package, before any prompt and without writing; with --yes it writes and emits a `changesets-config-key-dropped` warning naming the same packages; `--dry-run` previews with that warning instead of exiting. `access` set to `public` never triggers it.",
       "is_error_case": true
     },
     {

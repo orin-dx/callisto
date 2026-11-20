@@ -1308,6 +1308,22 @@ fn base_branch_sets_the_generated_workflow_branch_filter() {
     assert!(workflow_file(dir.path()).contains(r#"branches: ["release"]"#));
 }
 
+// `--yes` never prompts, whether or not stdin is a terminal, even when several packages could be asked about.
+#[test]
+fn yes_asks_nothing_for_several_packages_in_any_terminal_state() {
+    for interactive in [true, false] {
+        let dir = npm_workspace_with_changesets(&CHANGESETS_V2.replace("restricted", "public"));
+        let args = InitArgs {
+            yes: true,
+            no_workflow: true,
+            ..Default::default()
+        };
+        let run = run_init(dir.path(), args, interactive, vec![], false);
+        assert_eq!(run.result.unwrap(), ExitCode::SUCCESS, "interactive: {interactive}");
+        assert!(run.prompter.prompts().is_empty(), "interactive: {interactive}");
+    }
+}
+
 // A `fixed` group that names no npm package writes nothing and is reported.
 #[test]
 fn fixed_groups_naming_no_npm_package_are_reported_not_written() {

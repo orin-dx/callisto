@@ -166,18 +166,28 @@ impl Migration {
                 Some((name, package.id.as_str()))
             })
             .collect();
+        let matcher = |pattern: &str| {
+            GlobBuilder::new(pattern)
+                .literal_separator(true)
+                .build()
+                .ok()
+                .map(|glob| glob.compile_matcher())
+        };
         for (index, patterns) in groups.iter().enumerate() {
+            // A leading `!` removes names from the group, as in Changesets' micromatch.
+            let excluded: Vec<_> = patterns
+                .iter()
+                .filter_map(|pattern| matcher(pattern.strip_prefix('!')?))
+                .collect();
             let mut members: Vec<String> = Vec::new();
-            for pattern in patterns {
-                let matched: Vec<&str> = match GlobBuilder::new(pattern).literal_separator(true).build() {
-                    Ok(glob) => {
-                        let matcher = glob.compile_matcher();
-                        npm.iter()
-                            .filter(|(name, _)| matcher.is_match(name))
-                            .map(|(_, id)| *id)
-                            .collect()
-                    }
-                    Err(_) => Vec::new(),
+            for pattern in patterns.iter().filter(|pattern| !pattern.starts_with('!')) {
+                let matched: Vec<&str> = match matcher(pattern) {
+                    Some(included) => npm
+                        .iter()
+                        .filter(|(name, _)| included.is_match(name) && !excluded.iter().any(|ex| ex.is_match(name)))
+                        .map(|(_, id)| *id)
+                        .collect(),
+                    None => Vec::new(),
                 };
                 if matched.is_empty() {
                     self.fixed_unmatched.push(pattern.clone());
