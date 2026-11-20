@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01TcsG19yAJQazdAy8XzUrGE",
+  "agent_id": "a126737acf816b1d9",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit graph release half",
+  "token_usage": {
+    "input_tokens": 152,
+    "cache_creation_tokens": 155983,
+    "cache_read_tokens": 8905917,
+    "output_tokens": 28109,
+    "api_call_count": 76
+  },
+  "started_at": "2026-11-20T14:19:36.532423-08:00",
+  "completed_at": "2026-11-20T14:26:46.698175-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

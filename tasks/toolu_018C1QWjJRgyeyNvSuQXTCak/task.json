@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_018C1QWjJRgyeyNvSuQXTCak",
+  "agent_id": "a87b7f635dc84823c",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit callisto-model",
+  "token_usage": {
+    "input_tokens": 130,
+    "cache_creation_tokens": 149120,
+    "cache_read_tokens": 7226094,
+    "output_tokens": 30745,
+    "api_call_count": 65
+  },
+  "started_at": "2026-11-20T14:19:36.522077-08:00",
+  "completed_at": "2026-11-20T14:26:44.863414-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_011YooZV7HZLnUmt1Btfro7a",
+  "agent_id": "a72c8ce0321c6feef",
+  "subagent_type": "general-purpose",
+  "task_description": "Config surface design note",
+  "token_usage": {
+    "input_tokens": 106,
+    "cache_creation_tokens": 203515,
+    "cache_read_tokens": 6843670,
+    "output_tokens": 47893,
+    "api_call_count": 53
+  },
+  "started_at": "2026-11-18T10:27:30.406131-08:00",
+  "completed_at": "2026-11-18T10:37:08.439928-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

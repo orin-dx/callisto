@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01GMxHAv2dgyAP8dcFhkzov9",
+  "agent_id": "a8832687599635471",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit graph core half",
+  "token_usage": {
+    "input_tokens": 142,
+    "cache_creation_tokens": 138311,
+    "cache_read_tokens": 7297326,
+    "output_tokens": 30919,
+    "api_call_count": 71
+  },
+  "started_at": "2026-11-20T14:19:36.532457-08:00",
+  "completed_at": "2026-11-20T14:28:28.702592-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

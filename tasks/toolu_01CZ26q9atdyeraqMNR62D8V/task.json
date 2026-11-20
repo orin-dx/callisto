@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01CZ26q9atdyeraqMNR62D8V",
+  "agent_id": "acacd1c4c7a5d86e6",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit cli and tooling",
+  "token_usage": {
+    "input_tokens": 178,
+    "cache_creation_tokens": 165161,
+    "cache_read_tokens": 10918609,
+    "output_tokens": 38569,
+    "api_call_count": 89
+  },
+  "started_at": "2026-11-20T14:19:36.582835-08:00",
+  "completed_at": "2026-11-20T14:28:36.661579-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

@@ -1,0 +1,125 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XJXCSFME67HK17QMW4DYDZ",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T22:58:43.385332Z",
+  "branch": "fix601",
+  "checkpoints_count": 160,
+  "save_step_count": 3,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "bbd01a93c031",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1584,
+    "cache_creation_tokens": 2678429,
+    "cache_read_tokens": 290369543,
+    "output_tokens": 384012,
+    "api_call_count": 673,
+    "subagent_tokens": {
+      "input_tokens": 862,
+      "cache_creation_tokens": 1159877,
+      "cache_read_tokens": 50385318,
+      "output_tokens": 212736,
+      "api_call_count": 431
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 1584,
+    "cache_creation_tokens": 2678429,
+    "cache_read_tokens": 290369543,
+    "output_tokens": 384012,
+    "api_call_count": 673,
+    "subagent_tokens": {
+      "input_tokens": 862,
+      "cache_creation_tokens": 1159877,
+      "cache_read_tokens": 50385318,
+      "output_tokens": 212736,
+      "api_call_count": 431
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 17,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 160
+  },
+  "summary": {
+    "intent": "Act as lead/coordinator session for the Callisto v1 alpha work: launch and watch background sessions, track per-work-package status in the plan file, manage PR merge order and overlaps, and only interrupt the user for merge-ready PRs or credential needs.",
+    "outcome": "Coordinated sessions across WPs A-N, merged #560 (deny.toml advisory fix) and unblocked a chain of PRs (#561-#569, #596). Also ran a five-area dead-code audit (~1,350 lines removable) that spawned cleanup PRs (#599-#604), and launched a differential test against the real Changesets CLI. The release is waiting on #599 and then release PR #558; the full v1 alpha 'done when' has not been reached.",
+    "learnings": {
+      "repo": [
+        "A new RUSTSEC advisory (RUSTSEC-2026-0542, humantime unmaintained via dev-dep trycmd) failed the cargo-deny audit on every PR; the fix is an ignore in deny.toml, owned by WP A (#560), and the other PRs rebase after it merges.",
+        "Entire gates (trails, changes, findings) are part of PR readiness: a PR can show red only because of a missing reviewer approval or open findings. Findings are resolved with `entire trail finding resolve`, and PRs are linked to trails with `entire trail link`.",
+        "Launch rules forbid `Claude-Session:` trailers in commits and require signed commits and no stacked PRs (branch from main). The auto-mode classifier refused a push that carried the trailer.",
+        "cargo-mutants output (`mutants.out.old/`) was committed in two PRs; .gitignore only covered `mutants.out/` and was widened to `mutants.out*/`.",
+        "Plan says tokenless publishing (J, #569) must merge after publish isolation (L), and L must wait on #565 (D) because both edit the workflow templates and init.rs.",
+        "Dead-code audit pattern: when a PR replaces an API, the old public function stays alive via tests and docs keep pointing at it. Proposed an AGENTS.md rule that a replacing PR deletes the old API and moves its tests.",
+        "cargo-machete does not flag unused dev-deps or [workspace.dependencies] entries.",
+        "An empty PYPI_TOKEN is passed to twine while npm filters an empty NPM_TOKEN, which can block the tokenless PyPI fallback (fixed in #599).",
+        "Changesets matching uses micromatch (extglobs, negation); Callisto's own glob matcher differs. Co-located packages must be resolved by their npm-native identity, not the primary Cargo package ID."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/benches/commands.rs",
+          "finding": "WP I (#563) conflicts with main here because #560 also edited this bench file, so it needs a manual merge rather than a plain rebase."
+        },
+        {
+          "path": "crates/callisto-graph/src/release/derive.rs",
+          "line": 303,
+          "end_line": 306,
+          "finding": "Inline copy of the 'publishes somewhere' predicate (also at :380-383 and :568-572 and in release_decision.rs). It duplicates callisto_model Package::is_release_point (package.rs:81); the plan is to keep is_release_point and delete the copies."
+        },
+        {
+          "path": "crates/callisto-graph/src/identity.rs",
+          "line": 462,
+          "end_line": 462,
+          "finding": "IdentityIndex::resolve_native has only test callers. Production uses resolve_native_with_fallback and native_in_ecosystem; it is slated for removal along with about 110 lines of tests."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "line": 361,
+          "end_line": 456,
+          "finding": "build_python, pack_npm and package_cargo are the same handler written three times and can be folded into one."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Sandbox blocked the session daemon socket, so `claude agents` had to be rerun outside the sandbox.",
+      "Session 2 stalled on a worktree permission prompt that only the user could answer; the lead eventually stopped it and resumed it inside the D worktree.",
+      "The first resume of Session 5 failed because of the short-id issue, which cost time before the fixes started.",
+      "Session 1's claimed push of the mutants cleanup never reached the remote because of a silent push failure.",
+      "Session 3 was blocked when the classifier refused its commit with a session trailer.",
+      "The user was frustrated when #563 (change #171) stayed red after the lead said PRs would go green, and again by the volume of findings on change #204 (#596).",
+      "Flaky tests appeared on full-workspace runs and pass on rerun: registry_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim and init::tests::an_existing_config_errors.",
+      "A git fetch timed out during the open-PR conflict check, so the first results were stale and had to be rerun.",
+      "`entire brain inspect dead-code` failed with 'search store not built for this commit', so the audits fell back to grep."
+    ],
+    "open_items": [
+      "Merge order: #599 (PyPI empty-token fix), then release PR #558. #600-#604 cleanup PRs await CI and approval; #601 was still in CI.",
+      "#596 (K, Changesets migration) has open findings: restrict glob translation to provably equivalent patterns, use npm-native identity, and report baseBranch after final workflow result.",
+      "Differential test #602 against real Changesets CLI; the fixed-group step is added by hand until #596 lands.",
+      "Session 4 (Q, verify-real) is not yet launched; it waits on E and F2 merging. G, H, L, then #569 (J) are still pending behind F1/F2 and #565.",
+      "Decide whether E's (#561) changeset is Breaking; the lead recommends yes.",
+      "Decisions pending or deferred: the actions' moon install step, the persisted executor state's unused block reasons, and the empty-TWINE handling.",
+      "Add the AGENTS.md rule that a PR replacing an API deletes the old API and moves its tests.",
+      "Status table in the plan file must be kept updated; the full 'every WP merged and just verify-real passes' condition is not yet met."
+    ]
+  }
+}

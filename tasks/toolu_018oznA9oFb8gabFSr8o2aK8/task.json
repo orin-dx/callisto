@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_018oznA9oFb8gabFSr8o2aK8",
+  "agent_id": "a1554db77dbea604f",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit manifests and fixtures",
+  "token_usage": {
+    "input_tokens": 100,
+    "cache_creation_tokens": 150417,
+    "cache_read_tokens": 6235085,
+    "output_tokens": 21731,
+    "api_call_count": 50
+  },
+  "started_at": "2026-11-20T14:19:36.533654-08:00",
+  "completed_at": "2026-11-20T14:24:40.782592-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
