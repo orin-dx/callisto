@@ -6,10 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::release_pr::REGULAR_FILE_MODE;
 use crate::{ApplyPermit, CommandOutput, CommandRunner, CommitSha, StagedChangeKindV1, StagedChangeV1, TagName};
 
-use crate::vcs::{GitCommit, TagSignPolicy, VcsError};
-
-/// `git log -z` ends each commit's record with NUL, which a commit message cannot hold.
-const RECORD_SEP: char = '\0';
+use crate::vcs::{GitCommit, GitStdout, LogEntry, Pathspec, TagSignPolicy, VcsError};
 
 /// Every Git read and write callisto performs, each one `git` subprocess
 /// run in `root` through a [`CommandRunner`].
@@ -134,15 +131,15 @@ impl<'r> GitAccess<'r> {
             &root,
             crate::LOCAL_GIT_TIMEOUT,
         )?;
-        if !output.success() {
-            return Err(VcsError::Git(format!(
+        let output = GitStdout::of(output).map_err(|output| {
+            VcsError::Git(format!(
                 "`git diff --cached --raw` against `{}` failed: {}",
                 base.as_str(),
                 output.redacted_stderr()
-            )));
-        }
+            ))
+        })?;
 
-        let entries = parse_raw_diff_z(&output.stdout)?;
+        let entries = parse_raw_diff_z(&output)?;
         let mut changes = Vec::with_capacity(entries.len());
         for entry in entries {
             let kind = staged_change_kind(entry.status);
@@ -190,13 +187,13 @@ impl<'r> GitAccess<'r> {
             &self.root,
             crate::LOCAL_GIT_TIMEOUT,
         )?;
-        if !output.success() {
-            return Err(VcsError::Git(format!(
+        let output = GitStdout::of(output).map_err(|output| {
+            VcsError::Git(format!(
                 "could not determine the Git repository root {context}: {}",
                 output.redacted_stderr()
-            )));
-        }
-        canonical_git_root(output.stdout_line())
+            ))
+        })?;
+        canonical_git_root(&output.path())
     }
 
     /// Confirms the worktree bytes just read for `path` hash to the same blob sha the index has staged, without
@@ -277,12 +274,9 @@ impl<'r> GitAccess<'r> {
             &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
             &self.root,
         )?;
-        if !status.success() {
-            return Err(VcsError::Git(
-                "could not inspect the worktree for release trust".to_string(),
-            ));
-        }
-        check_release_worktree_status(&status.stdout)?;
+        let status = GitStdout::of(status)
+            .map_err(|_failed| VcsError::Git("could not inspect the worktree for release trust".to_string()))?;
+        check_release_worktree_status(&status)?;
 
         Ok(GitCommitTrustEvidence::new(canonical_root, head, head_disposition))
     }
@@ -303,9 +297,9 @@ struct RawDiffEntry {
 /// `\0`-separated tokens: a `:<old-mode> <new-mode> <old-sha> <new-sha>
 /// <status>` metadata line, then the path. `--no-renames` guarantees at
 /// most one path per record (a rename or copy would otherwise emit two).
-fn parse_raw_diff_z(raw: &str) -> Result<Vec<RawDiffEntry>, VcsError> {
+fn parse_raw_diff_z(raw: &GitStdout) -> Result<Vec<RawDiffEntry>, VcsError> {
     let mut entries = Vec::new();
-    let mut tokens = raw.split('\0').filter(|token| !token.is_empty());
+    let mut tokens = raw.fields();
     while let Some(meta) = tokens.next() {
         let Some(meta) = meta.strip_prefix(':') else {
             return Err(VcsError::MalformedDiffOutput {
@@ -363,25 +357,20 @@ fn staged_change_kind(status: char) -> StagedChangeKindV1 {
     }
 }
 
-/// `path` as a pathspec Git matches literally, so a directory named with `*` or `?` selects only itself.
-pub fn literal_pathspec(path: &Path) -> String {
-    format!(":(literal){}", path.to_string_lossy())
-}
-
-fn canonical_git_root(raw_root: &str) -> Result<PathBuf, VcsError> {
-    if raw_root.is_empty() {
+fn canonical_git_root(raw_root: &Path) -> Result<PathBuf, VcsError> {
+    if raw_root.as_os_str().is_empty() {
         return Err(VcsError::InvalidRepositoryRoot {
             detail: "Git returned an empty repository root".to_string(),
         });
     }
     dunce::canonicalize(raw_root).map_err(|error| VcsError::InvalidRepositoryRoot {
-        detail: format!("could not canonicalize `{raw_root}`: {error}"),
+        detail: format!("could not canonicalize `{}`: {error}", raw_root.display()),
     })
 }
 
 /// Ignored paths are build output and never block; tracked or untracked changes do.
-fn check_release_worktree_status(status: &str) -> Result<(), VcsError> {
-    match status.split('\0').find(|record| !record.is_empty()) {
+fn check_release_worktree_status(status: &GitStdout) -> Result<(), VcsError> {
+    match status.fields().next() {
         None => Ok(()),
         Some(record) => Err(VcsError::DirtyWorktree {
             path: record.get(3..).unwrap_or(record).to_string(),
@@ -452,20 +441,22 @@ impl GitAccess<'_> {
     /// Files in `rev`'s tree matching one of `pathspecs` whose text contains `needle`, ignoring case.
     ///
     /// No match is an empty list; a revision that cannot be searched is an error.
-    pub fn files_containing_at(&self, rev: &str, needle: &str, pathspecs: &[&str]) -> Result<Vec<PathBuf>, VcsError> {
+    pub fn files_containing_at(
+        &self,
+        rev: &str,
+        needle: &str,
+        pathspecs: &[Pathspec],
+    ) -> Result<Vec<PathBuf>, VcsError> {
         let mut args = vec!["grep", "-l", "-z", "-F", "-i", "-e", needle, rev, "--"];
-        args.extend_from_slice(pathspecs);
+        args.extend(pathspecs.iter().map(Pathspec::as_str));
         let output = self.runner.run("git", &args, &self.root)?;
         if output.exit_code == Some(1) {
             return Ok(Vec::new());
         }
-        if !output.success() {
-            return Err(probe_failed(&args, &self.root, &output));
-        }
+        let output = GitStdout::of(output).map_err(|output| probe_failed(&args, &self.root, &output))?;
         let prefix = format!("{rev}:");
         Ok(output
-            .stdout
-            .split('\0')
+            .fields()
             .filter_map(|entry| entry.strip_prefix(&prefix))
             .map(PathBuf::from)
             .collect())
@@ -478,11 +469,9 @@ impl GitAccess<'_> {
         }
         let spec = format!("{rev}:./{}", path.display());
         let args = ["show", &spec];
-        let output = self.runner.run("git", &args, &self.root)?;
-        if !output.success() {
-            return Err(probe_failed(&args, &self.root, &output));
-        }
-        Ok(Some(output.stdout))
+        let output = GitStdout::of(self.runner.run("git", &args, &self.root)?)
+            .map_err(|output| probe_failed(&args, &self.root, &output))?;
+        Ok(Some(output.into_text()))
     }
 
     /// The most recent commit that added `path`, if it is committed.
@@ -491,7 +480,7 @@ impl GitAccess<'_> {
         if self.resolve_commit("HEAD")?.is_none() {
             return Ok(None);
         }
-        let path = literal_pathspec(path);
+        let path = Pathspec::literal(path);
         let args = [
             "log",
             "--no-show-signature",
@@ -499,7 +488,7 @@ impl GitAccess<'_> {
             "--format=%H",
             "-1",
             "--",
-            &path,
+            path.as_str(),
         ];
         let output = self.runner.run("git", &args, &self.root)?;
         if !output.success() {
@@ -515,13 +504,11 @@ impl GitAccess<'_> {
         let mut args: Vec<String> = ["log", "--no-show-signature", "--first-parent", "--format=%H", "--"]
             .map(str::to_owned)
             .into();
-        args.extend(pathspecs.iter().map(|path| literal_pathspec(path)));
+        args.extend(pathspecs.iter().map(|path| Pathspec::literal(path).as_str().to_owned()));
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let output = self.runner.run("git", &arg_refs, &self.root)?;
-        if !output.success() {
-            return Err(probe_failed(&arg_refs, &self.root, &output));
-        }
-        Ok(output.stdout_lines().map(str::to_owned).collect())
+        let output = GitStdout::of(self.runner.run("git", &arg_refs, &self.root)?)
+            .map_err(|output| probe_failed(&arg_refs, &self.root, &output))?;
+        Ok(output.lines().map(str::to_owned).collect())
     }
 
     /// [`Self::first_parent_commits_touching`] for many paths in one `git log`, so each path's commits cost no process
@@ -531,7 +518,7 @@ impl GitAccess<'_> {
         if paths.is_empty() {
             return Ok(touches);
         }
-        // `-z` keeps odd file names unquoted; `\x01` opens each commit's record, whose files follow NUL-separated.
+        // `-z` keeps odd file names unquoted and frames each commit's id and files with NUL.
         let mut args: Vec<String> = [
             "log",
             "--no-show-signature",
@@ -541,28 +528,19 @@ impl GitAccess<'_> {
             "-z",
             "--name-only",
             "--relative",
-            "--format=%x01%H",
+            &LogEntry::format(["%H"]),
             "--",
         ]
         .map(str::to_owned)
         .into();
-        args.extend(paths.iter().map(|path| literal_pathspec(path)));
+        args.extend(paths.iter().map(|path| Pathspec::literal(path).as_str().to_owned()));
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let output = self.runner.run("git", &arg_refs, &self.root)?;
-        if !output.success() {
-            return Err(probe_failed(&arg_refs, &self.root, &output));
-        }
-        for record in output.stdout.split('\u{1}').skip(1) {
-            let mut fields = record.split('\0');
-            let Some(commit) = fields.next() else {
-                continue;
-            };
+        let output = GitStdout::of(output).map_err(|output| probe_failed(&arg_refs, &self.root, &output))?;
+        for entry in output.log_entries::<1>()? {
             let index = touches.commits.len();
-            touches.commits.push(commit.to_owned());
-            for file in fields
-                .map(|file| file.trim_start_matches('\n'))
-                .filter(|file| !file.is_empty())
-            {
+            touches.commits.push(entry.header[0].to_owned());
+            for file in entry.files {
                 touches.by_path.entry(PathBuf::from(file)).or_default().push(index);
             }
         }
@@ -594,18 +572,16 @@ impl GitAccess<'_> {
     }
 
     pub fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
-        let output = self.runner.run("git", &["tag", "--list"], &self.root)?;
-        if !output.success() {
-            return Err(probe_failed(&["tag", "--list"], &self.root, &output));
-        }
-        let all = output.stdout_lines().map(|s| s.to_string());
+        let output = GitStdout::of(self.runner.run("git", &["tag", "--list"], &self.root)?)
+            .map_err(|output| probe_failed(&["tag", "--list"], &self.root, &output))?;
+        let all = output.lines();
 
         let matcher = glob.map(crate::vcs::compile_tag_glob).transpose()?;
 
         Ok(all
             .filter(|t| matcher.as_ref().is_none_or(|m| m.is_match(t)))
             // A legal Git ref is not necessarily safe as a bare CLI positional (a leading `-`).
-            .filter_map(|t| TagName::parse(&t).ok())
+            .filter_map(|t| TagName::parse(t).ok())
             .collect())
     }
 
@@ -617,12 +593,9 @@ impl GitAccess<'_> {
             "--format=%(refname:strip=2)%00%(objecttype)%00%(objectname)%00%(*objecttype)%00%(*objectname)",
             "refs/tags",
         ];
-        let output = self.runner.run("git", &args, &self.root)?;
-        if !output.success() {
-            return Err(probe_failed(&args, &self.root, &output));
-        }
+        let output = GitStdout::of(self.runner.run("git", &args, &self.root)?)
+            .map_err(|output| probe_failed(&args, &self.root, &output))?;
         Ok(output
-            .stdout
             .lines()
             .filter_map(|line| {
                 let mut fields = line.split('\0');
@@ -697,31 +670,32 @@ impl GitAccess<'_> {
 
         if !pathspecs.is_empty() {
             args.push("--".to_string());
-            args.extend(pathspecs.iter().map(|p| literal_pathspec(p)));
+            args.extend(pathspecs.iter().map(|p| Pathspec::literal(p).as_str().to_owned()));
         }
 
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let output = self.runner.run("git", &arg_refs, &self.root)?;
-
-        if !output.success() {
-            if let Some(r) = since_ref
-                && self.resolve_commit(r)?.is_none()
-            {
-                return Err(VcsError::RefNotFound {
-                    ref_name: r.to_string(),
-                });
+        let output = match GitStdout::of(self.runner.run("git", &arg_refs, &self.root)?) {
+            Ok(output) => output,
+            Err(output) => {
+                if let Some(r) = since_ref
+                    && self.resolve_commit(r)?.is_none()
+                {
+                    return Err(VcsError::RefNotFound {
+                        ref_name: r.to_string(),
+                    });
+                }
+                if self.head_is_unborn() {
+                    return Ok(Vec::new());
+                }
+                return Err(VcsError::Git(format!(
+                    "`git log` failed in `{}`: {}",
+                    self.root.display(),
+                    output.redacted_stderr()
+                )));
             }
-            if self.head_is_unborn() {
-                return Ok(Vec::new());
-            }
-            return Err(VcsError::Git(format!(
-                "`git log` failed in `{}`: {}",
-                self.root.display(),
-                output.redacted_stderr()
-            )));
-        }
+        };
 
-        parse_git_log_output(&output.stdout, &self.root)
+        parse_git_log_output(&output, &self.root)
     }
 
     /// A repository with no commits yet; a damaged one must not look empty, so HEAD is not peeled.
@@ -737,17 +711,20 @@ impl GitAccess<'_> {
         let revs: Vec<String> = refs.iter().map(|r| format!("{r}^{{commit}}")).collect();
         let mut args = vec!["rev-parse"];
         args.extend(revs.iter().map(String::as_str));
-        let output = self.runner.run("git", &args, &self.root)?;
-        if !output.success() {
-            // The batch exits 128 for a missing ref and for a broken repository alike; one probe each tells them apart.
-            for r in refs {
-                if self.resolve_commit(r)?.is_none() {
-                    return Ok(None);
+        let output = match GitStdout::of(self.runner.run("git", &args, &self.root)?) {
+            Ok(output) => output,
+            Err(output) => {
+                // The batch exits 128 for a missing ref and for a broken repository alike; one probe each tells them
+                // apart.
+                for r in refs {
+                    if self.resolve_commit(r)?.is_none() {
+                        return Ok(None);
+                    }
                 }
+                return Err(probe_failed(&args, &self.root, &output));
             }
-            return Err(probe_failed(&args, &self.root, &output));
-        }
-        let shas: Option<Vec<CommitSha>> = output.stdout_lines().map(|l| CommitSha::parse(l).ok()).collect();
+        };
+        let shas: Option<Vec<CommitSha>> = output.lines().map(|l| CommitSha::parse(l).ok()).collect();
         Ok(shas.filter(|shas| shas.len() == refs.len()))
     }
 
@@ -784,14 +761,12 @@ impl GitAccess<'_> {
         }
         let args = ["cat-file", "--batch-check"];
         let stdin = specs.join("\n") + "\n";
-        let output = self.runner.run_with_stdin("git", &args, &self.root, stdin.as_bytes())?;
-        if !output.success() {
-            return Err(probe_failed(&args, &self.root, &output));
-        }
+        let output = GitStdout::of(self.runner.run_with_stdin("git", &args, &self.root, stdin.as_bytes())?)
+            .map_err(|output| probe_failed(&args, &self.root, &output))?;
         let malformed = |detail: String| VcsError::MalformedLogOutput {
             detail: format!("in `{}`: {detail}", self.root.display()),
         };
-        let lines: Vec<&str> = output.stdout.lines().collect();
+        let lines: Vec<&str> = output.lines().collect();
         if lines.len() != specs.len() {
             return Err(malformed(format!(
                 "`git cat-file --batch-check` answered {} lines for {} objects",
@@ -815,22 +790,15 @@ impl GitAccess<'_> {
     }
 
     fn name_only(&self, args: &[&str]) -> Result<Vec<PathBuf>, VcsError> {
-        let output = self.runner.run("git", args, &self.root)?;
-        if !output.success() {
-            return Err(VcsError::Git(format!(
+        let output = GitStdout::of(self.runner.run("git", args, &self.root)?).map_err(|output| {
+            VcsError::Git(format!(
                 "`git {}` failed in `{}`: {}",
                 args[0],
                 self.root.display(),
                 output.redacted_stderr()
-            )));
-        }
-        Ok(output
-            .stdout
-            .split('\0')
-            .map(|path| path.trim_start_matches('\n'))
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect())
+            ))
+        })?;
+        Ok(output.fields().map(PathBuf::from).collect())
     }
 
     /// Creates the tag `name` at `target_sha`: annotated with `message`
@@ -905,14 +873,10 @@ impl GitAccess<'_> {
 
 /// Parses the `-z --format=%H%n%B` `git log` output produced by [`GitAccess::commits_since`] into [`GitCommit`]s,
 /// splitting each raw message on its first blank line into `summary`/`body`.
-fn parse_git_log_output(stdout: &str, cwd: &Path) -> Result<Vec<GitCommit>, VcsError> {
+fn parse_git_log_output(stdout: &GitStdout, cwd: &Path) -> Result<Vec<GitCommit>, VcsError> {
     let mut commits = Vec::new();
 
-    for record in stdout.split(RECORD_SEP) {
-        if record.is_empty() {
-            continue;
-        }
-
+    for record in stdout.fields() {
         // Split before trimming: an empty message leaves `<sha>\n`, which is a commit, not a malformed record.
         let Some((sha_str, message)) = record.split_once('\n') else {
             return Err(VcsError::MalformedLogOutput {
@@ -980,6 +944,10 @@ mod tests {
         ) -> Result<CommandOutput, CommandError> {
             self.run(program, args, cwd)
         }
+    }
+
+    fn stdout(text: &str) -> GitStdout {
+        GitStdout::of(ok(text)).unwrap()
     }
 
     fn ok(stdout: impl Into<String>) -> CommandOutput {
@@ -1294,12 +1262,14 @@ mod tests {
             Some("hello needle")
         );
         assert_eq!(git.read_at("HEAD", Path::new("nope.txt")).unwrap(), None);
+        let named_a = [Pathspec::named_anywhere("a.txt")];
         assert_eq!(
-            git.files_containing_at("HEAD", "NEEDLE", &["*.txt"]).unwrap(),
+            git.files_containing_at("HEAD", "NEEDLE", &named_a).unwrap(),
             [PathBuf::from("a.txt")]
         );
+        assert!(git.files_containing_at("HEAD", "absent", &named_a).unwrap().is_empty());
         assert!(git
-            .files_containing_at("HEAD", "absent", &["*.txt"])
+            .files_containing_at("HEAD", "needle", &[Pathspec::named_anywhere("[a].txt")])
             .unwrap()
             .is_empty());
         assert!(git.commit_adding(Path::new("a.txt")).unwrap().is_some());
@@ -1309,7 +1279,7 @@ mod tests {
         assert!(git.resolve_commits(&heads[..1]).unwrap().is_some());
 
         // A searched revision that does not exist is a failure, not "no matches".
-        assert!(git.files_containing_at("no-such-ref", "needle", &["*.txt"]).is_err());
+        assert!(git.files_containing_at("no-such-ref", "needle", &named_a).is_err());
     }
 
     #[test]
@@ -1321,7 +1291,9 @@ mod tests {
         assert!(git.resolve_commit("HEAD").is_err());
         assert!(git.path_exists_at("HEAD", Path::new("a.txt")).is_err());
         assert!(git.read_at("HEAD", Path::new("a.txt")).is_err());
-        assert!(git.files_containing_at("HEAD", "x", &["*"]).is_err());
+        assert!(git
+            .files_containing_at("HEAD", "x", &[Pathspec::named_anywhere("a")])
+            .is_err());
         assert!(git.commit_adding(Path::new("a.txt")).is_err());
         assert!(git.list_tags(None).is_err());
         assert!(git.resolve_commits(&["HEAD".to_string()]).is_err());
@@ -1363,7 +1335,7 @@ mod tests {
     /// [`VcsError::InvalidRepositoryRoot`] (E303), not the generic `VcsError::Git`.
     #[test]
     fn canonical_git_root_rejects_an_empty_root() {
-        let err = canonical_git_root("").expect_err("empty root must fail");
+        let err = canonical_git_root(Path::new("")).expect_err("empty root must fail");
         assert!(matches!(err, VcsError::InvalidRepositoryRoot { .. }), "got {err:?}");
         assert_eq!(
             miette::Diagnostic::code(&err).map(|c| c.to_string()),
@@ -1430,7 +1402,7 @@ mod tests {
     /// A `git log` record with no message after its sha is a distinct, typed [`VcsError::MalformedLogOutput`] (E301).
     #[test]
     fn commits_since_rejects_a_record_with_no_field_separator() {
-        let stdout = format!("{}{RECORD_SEP}", "a".repeat(40));
+        let stdout = format!("{}\0", "a".repeat(40));
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
             response: Box::new(move |_args| Ok(ok(stdout.clone()))),
@@ -1700,7 +1672,7 @@ mod tests {
         .join("\0")
             + "\0";
 
-        let entries = parse_raw_diff_z(&raw).unwrap();
+        let entries = parse_raw_diff_z(&stdout(&raw)).unwrap();
         assert_eq!(entries.len(), 5);
 
         assert_eq!(entries[0].path, "VERSION");
@@ -1740,7 +1712,7 @@ mod tests {
             ("not-a-metadata-line\0path\0", "missing leading colon"),
             (":bad M\0path\0", "too few metadata fields"),
         ] {
-            let err = parse_raw_diff_z(raw).err();
+            let err = parse_raw_diff_z(&stdout(raw)).err();
             assert!(
                 matches!(err, Some(VcsError::MalformedDiffOutput { .. })),
                 "{reason}: got {err:?}"
@@ -1753,7 +1725,7 @@ mod tests {
     #[test]
     fn parse_raw_diff_z_rejects_invalid_mode() {
         let raw = ":000000 zzzzzz 0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 A\0VERSION\0";
-        let err = parse_raw_diff_z(raw).err();
+        let err = parse_raw_diff_z(&stdout(raw)).err();
         assert!(matches!(err, Some(VcsError::MalformedDiffOutput { .. })), "got {err:?}");
         assert_eq!(
             err.and_then(|e| miette::Diagnostic::code(&e).map(|c| c.to_string())),
@@ -1861,7 +1833,9 @@ mod tests {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
             response: Box::new(|_| {
-                Ok(ok("\u{1}c3\0\na/Cargo.toml\0Cargo.toml\0\u{1}c2\0\nb/Cargo.toml\0\u{1}c1\0\nCargo.toml\0a/Cargo.toml\0"))
+                Ok(ok(
+                    "\0c3\0\na/Cargo.toml\0Cargo.toml\0\0c2\0\nb/Cargo.toml\0odd\u{1}name\0\0c1\0\nCargo.toml\0a/Cargo.toml\0",
+                ))
             }),
         };
         let git = GitAccess::new(temp.path(), &runner);
@@ -1876,6 +1850,7 @@ mod tests {
             ["c3", "c2", "c1"]
         );
         assert!(touches.touching(&[PathBuf::from("none/Cargo.toml")]).is_empty());
+        assert_eq!(touches.touching(&[PathBuf::from("odd\u{1}name")]), ["c2"]);
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls.len(), 1, "{calls:?}");
         assert!(calls[0].starts_with(&["log".to_owned()]), "{calls:?}");

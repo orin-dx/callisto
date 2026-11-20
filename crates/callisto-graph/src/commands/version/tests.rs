@@ -308,7 +308,12 @@ fn check_partial_run_propagates_fatal_historical_git_read_errors() {
                 "--quiet".to_string(),
                 changeset_spec.clone(),
             ],
-            "ls-tree" => vec!["ls-tree".to_string(), "--name-only".to_string(), changeset_spec.clone()],
+            "ls-tree" => vec![
+                "ls-tree".to_string(),
+                "-z".to_string(),
+                "--name-only".to_string(),
+                changeset_spec.clone(),
+            ],
             _ => vec!["show".to_string(), "HEAD:./pkg-a/Cargo.toml".to_string()],
         };
         let runner = IndexInspectionFailureRunner {

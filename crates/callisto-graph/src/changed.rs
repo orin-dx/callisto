@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use callisto_model::vcs::{GitAccess, VcsError};
+use callisto_model::vcs::{GitAccess, GitStdout, VcsError};
 use callisto_model::{Package, PackageId};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 
@@ -45,12 +45,10 @@ pub fn changed_since_ref(
         .runner()
         .run("git", &["merge-base", &target, "HEAD"], git.root())
         .map_err(VcsError::from)?;
-    if !output.success() {
-        return Err(GraphError::Vcs(VcsError::RefNotFound {
-            ref_name: since.to_string(),
-        }));
-    }
-    let mut paths = git.paths_differing_from(output.stdout.trim())?;
+    let base = GitStdout::of(output).map_err(|_failed| VcsError::RefNotFound {
+        ref_name: since.to_string(),
+    })?;
+    let mut paths = git.paths_differing_from(base.line())?;
     paths.extend(git.untracked_paths()?);
 
     let dirs: Vec<(PathBuf, &PackageId)> = packages

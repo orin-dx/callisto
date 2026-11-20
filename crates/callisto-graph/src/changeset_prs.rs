@@ -3,11 +3,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use callisto_model::vcs::{literal_pathspec, GitAccess, VcsError};
+use callisto_model::vcs::{GitAccess, GitStdout, LogEntry, Pathspec, VcsError};
 
 use crate::error::GraphError;
-
-const COMMIT_MARK: char = '\u{1}';
 
 /// Changeset file name to the number of the pull request that added it. One `git log`, however many changesets there
 /// are. A changeset whose commit subject names no pull request is left out.
@@ -15,16 +13,18 @@ pub fn changeset_pull_requests(
     git: &GitAccess<'_>,
     changesets_dir: &Path,
 ) -> Result<BTreeMap<String, u64>, GraphError> {
-    let dir = literal_pathspec(changesets_dir);
+    let dir = Pathspec::literal(changesets_dir);
     // A Changesets v3 pre cycle's archive gains notes in version commits; their pull request is not the author's.
-    let archive = format!(":(exclude,literal){}", changesets_dir.join("pre").to_string_lossy());
+    let archive = Pathspec::excluded(&changesets_dir.join("pre"));
+    let format = LogEntry::format(["%s"]);
     let args = [
         "log",
         "--first-parent",
         "-m",
         "--diff-filter=A",
+        "-z",
         "--name-only",
-        "--format=%x01%s",
+        format.as_str(),
         "--",
         dir.as_str(),
         archive.as_str(),
@@ -34,15 +34,14 @@ pub fn changeset_pull_requests(
     if !output.success() && output.stderr.contains("does not have any commits yet") {
         return Ok(BTreeMap::new());
     }
-    if !output.success() {
-        return Err(VcsError::Git(format!(
+    let log = GitStdout::of(output).map_err(|output| {
+        VcsError::Git(format!(
             "`git log` failed in `{}`: {}",
             git.root().display(),
             output.redacted_stderr()
         ))
-        .into());
-    }
-    Ok(parse_changeset_prs(&output.stdout))
+    })?;
+    Ok(changeset_prs(&log.log_entries::<1>()?))
 }
 
 /// The pull request number in a commit subject: `Merge pull request #12 from ...` or `Title (#12)`.
@@ -54,14 +53,13 @@ fn pull_request_of(subject: &str) -> Option<u64> {
     tail.rsplit_once("(#")?.1.parse().ok()
 }
 
-fn parse_changeset_prs(log: &str) -> BTreeMap<String, u64> {
+fn changeset_prs(log: &[LogEntry<'_, 1>]) -> BTreeMap<String, u64> {
     let mut found = BTreeMap::new();
-    for block in log.split(COMMIT_MARK).skip(1) {
-        let mut lines = block.lines();
-        let Some(pr) = lines.next().and_then(pull_request_of) else {
+    for entry in log {
+        let Some(pr) = pull_request_of(entry.header[0]) else {
             continue;
         };
-        for path in lines.filter(|line| !line.is_empty()) {
+        for path in &entry.files {
             // A changeset is known by its id, the file name without `.md`. The log is newest first and a released
             // changeset's name can be reused, so the first addition seen is the file that exists now.
             if let Some(id) = Path::new(path).file_stem().and_then(|stem| stem.to_str()) {
@@ -127,6 +125,32 @@ mod tests {
         assert_eq!(found.get("two"), None);
     }
 
+    /// Git quotes a non-ASCII or `"` file name unless `-z` is given, and a subject may hold any character but NUL.
+    #[test]
+    fn odd_subjects_and_file_names_keep_their_pull_request() {
+        use callisto_fixtures::git::{init_repo, run_git, GitRunner};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init_repo(root);
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(root.join("README.md"), "x\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "init"]);
+        std::fs::write(root.join(".changeset/brave-ü \"fox\".md"), "a\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: \u{1} odd (#8)"]);
+        std::fs::write(root.join(".changeset/calm-owl.md"), "b\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "fix: \u{1}\n\nbody (#2)"]);
+
+        let git = GitAccess::new(root, &GitRunner);
+        let found = changeset_pull_requests(&git, Path::new(".changeset")).unwrap();
+
+        assert_eq!(found.get("brave-ü \"fox\""), Some(&8));
+        assert_eq!(found.get("calm-owl"), None);
+    }
+
     #[test]
     fn a_repository_with_no_commit_has_no_pull_requests() {
         use callisto_fixtures::git::{init_repo, GitRunner};
@@ -142,19 +166,33 @@ mod tests {
 
     /// Versioning deletes a released changeset and `callisto add` can reuse its name, so the file that exists now is
     /// the newest addition, not the oldest.
+    fn entry<'a>(subject: &'a str, files: &[&'a str]) -> LogEntry<'a, 1> {
+        LogEntry {
+            header: [subject],
+            files: files.to_vec(),
+        }
+    }
+
     #[test]
     fn a_reused_changeset_name_keeps_the_newest_pull_request() {
-        let log = "\u{1}Merge pull request #90 from o/new\n\n.changeset/keen-cheetahs.md\n\
-                   \u{1}Merge pull request #12 from o/old\n\n.changeset/keen-cheetahs.md\n";
-        assert_eq!(parse_changeset_prs(log).get("keen-cheetahs"), Some(&90));
+        let log = [
+            entry("Merge pull request #90 from o/new", &[".changeset/keen-cheetahs.md"]),
+            entry("Merge pull request #12 from o/old", &[".changeset/keen-cheetahs.md"]),
+        ];
+        assert_eq!(changeset_prs(&log).get("keen-cheetahs"), Some(&90));
     }
 
     #[test]
     fn each_changeset_maps_to_the_pull_request_that_added_it() {
-        let log = "\u{1}Merge pull request #481 from o/b\n\n.changeset/a.md\n.changeset/b.md\n\
-                   \u{1}Merge pull request #480 from o/a\n\n.changeset/c.md\n\
-                   \u{1}Merge branch 'main' into x\n\n.changeset/d.md\n";
-        let found = parse_changeset_prs(log);
+        let log = [
+            entry(
+                "Merge pull request #481 from o/b",
+                &[".changeset/a.md", ".changeset/b.md"],
+            ),
+            entry("Merge pull request #480 from o/a", &[".changeset/c.md"]),
+            entry("Merge branch 'main' into x", &[".changeset/d.md"]),
+        ];
+        let found = changeset_prs(&log);
         assert_eq!(found.get("a"), Some(&481));
         assert_eq!(found.get("b"), Some(&481));
         assert_eq!(found.get("c"), Some(&480));
