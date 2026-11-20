@@ -11,7 +11,7 @@ use callisto_model::{
     ManifestRole, NativeName, Package, PackageId, PublishTarget,
 };
 
-use crate::config::resolve::{resolve_package_config, rule_applies};
+use crate::config::resolve::{resolve_package_config, resolve_package_rule, rule_applies};
 use crate::config::ResolvedConfig;
 use crate::error::GraphError;
 use crate::identity::IdentityIndex;
@@ -653,9 +653,9 @@ fn resolve_packages(
         // The ecosystems this package's manifests were found in; the only thing a prefixed [[package-set]] pattern can match.
         let package_ecosystems: Vec<Ecosystem> = decls.iter().map(|d| d.ecosystem()).collect();
 
-        // The first [[package]] rule, in declaration order, whose ecosystem this package has and whose name matches.
+        // The exact [[package]] rule, else the first [[package-set]] glob, that configures this package.
         let native_names: Vec<(Ecosystem, &str)> = index.native_names(&id).collect();
-        let pkg_override = resolve_package_config(&native_names, cfg);
+        let active_override = resolve_package_rule(&native_names, cfg);
 
         // Record matching patterns even when a [[package]] rule shadows them, for the zero-match diagnostic.
         for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
@@ -670,20 +670,6 @@ fn resolve_packages(
                 package_rule_hint[idx] = index.suggest_native(&rule_id.to_string());
             }
         }
-
-        // If no [[package]] rule matched, look for a [[package-set]] fallback.
-        // [[package-set]] uses glob patterns and can match many packages at once;
-        // [[package]] always takes priority over [[package-set]] for the same package.
-        let set_override = if pkg_override.is_none() {
-            cfg.package_sets
-                .iter()
-                .find(|(pattern, _)| pattern.matches_native(&native_names))
-                .map(|(_, cfg)| cfg)
-        } else {
-            None
-        };
-
-        let active_override = pkg_override.or(set_override);
 
         // Single source of truth for the default: ReleaseTrigger's #[default].
         let release_trigger = active_override.and_then(|o| o.release_trigger).unwrap_or_default();
