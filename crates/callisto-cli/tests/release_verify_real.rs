@@ -6,13 +6,17 @@
 //! binding and its https rule are exercised unchanged: the registries serve a self-signed certificate that the
 //! package managers trust through their own CA environment variables. A missing tool fails the test.
 //!
-//! Ignored by default because they need the registries `just verify-real-tools` installs.
+//! The Changesets scenarios run the real `@changesets/cli` 2.x and 3.x beside callisto and compare the versions
+//! each produces.
+//!
+//! Ignored by default because they need the registries and CLIs `just verify-real-tools` installs.
 
 #[path = "common/local_registries.rs"]
 mod local_registries;
 #[path = "common/release_harness.rs"]
 mod release_harness;
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -765,4 +769,256 @@ fn a_cargo_remote_tag_on_another_commit_stops_the_release_with_a_conflict() {
         other,
         "the foreign tag must be left as it was"
     );
+}
+
+// ----------------------------------------------------------------- Changesets
+
+/// A real `@changesets/cli`. The 3.x and 2.x lines differ in `init` (3.x asks questions on a TTY) and in `pre.json`.
+struct Changesets {
+    bin: PathBuf,
+    major: u32,
+}
+
+impl Changesets {
+    /// The pinned 3.x on `PATH` (installed by `just verify-real-tools`) and the pinned 2.x named by `VERIFY_REAL_CHANGESETS_2`.
+    fn pinned() -> [Self; 2] {
+        let v3 = find_on_path("changeset").expect("changeset 3.x must be on PATH: run `just verify-real-tools`");
+        let v2 = std::env::var_os("VERIFY_REAL_CHANGESETS_2")
+            .expect("VERIFY_REAL_CHANGESETS_2 must name the changeset 2.x binary: run `just verify-real`");
+        [Self::new(v3, 3), Self::new(PathBuf::from(v2), 2)]
+    }
+
+    fn new(bin: PathBuf, major: u32) -> Self {
+        let output = std::process::Command::new(&bin)
+            .arg("--version")
+            .output()
+            .unwrap_or_else(|error| panic!("{} must run: {error}", bin.display()));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let version = stdout.lines().last().unwrap_or_default().trim();
+        assert!(
+            version.starts_with(&format!("{major}.")),
+            "expected changeset {major}.x, got {version:?}"
+        );
+        Self { bin, major }
+    }
+
+    fn run(&self, root: &Path, args: &[&str]) {
+        let output = std::process::Command::new(&self.bin)
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("changeset must be runnable");
+        assert!(
+            output.status.success(),
+            "changeset {}.x {args:?} failed: {}{}",
+            self.major,
+            String::from_utf8_lossy(&output.stdout),
+            stderr_of(&output)
+        );
+    }
+
+    /// `changeset init`, then `fixed` set to `fixed`.
+    fn init(&self, root: &Path, fixed: &[&[&str]]) {
+        let path = root.join(".changeset/config.json");
+        if self.major == 2 {
+            self.run(root, &["init"]);
+        } else {
+            fs::create_dir_all(root.join(".changeset")).unwrap();
+            let defaults = serde_json::json!({
+                "changelog": "@changesets/cli/changelog",
+                "commit": false,
+                "fixed": [],
+                "linked": [],
+                "access": "restricted",
+                "baseBranch": "main",
+                "updateInternalDependencies": "patch",
+                "ignore": []
+            });
+            write_json(&path, &defaults);
+        }
+        let mut config: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        config["fixed"] = serde_json::json!(fixed);
+        write_json(&path, &config);
+    }
+}
+
+fn write_json(path: &Path, value: &serde_json::Value) {
+    fs::write(path, format!("{}\n", serde_json::to_string_pretty(value).unwrap())).unwrap();
+}
+
+fn commit(root: &Path, message: &str) {
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", message]);
+}
+
+/// A committed npm workspace of `(name, version, dependency)` packages. Changesets 3.x only sees the workspace
+/// when a lockfile is present.
+fn npm_workspace(packages: &[(&str, &str, Option<&str>)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    let name = "changesets-differential";
+    write_json(
+        &root.join("package.json"),
+        &serde_json::json!({"name": name, "private": true, "workspaces": ["packages/*"]}),
+    );
+    write_json(
+        &root.join("package-lock.json"),
+        &serde_json::json!({"name": name, "lockfileVersion": 3, "requires": true, "packages": {}}),
+    );
+    for (package, version, dependency) in packages {
+        let mut manifest = serde_json::json!({"name": package, "version": version});
+        if let Some(dependency) = dependency {
+            manifest["dependencies"][*dependency] = serde_json::json!("^1.0.0");
+        }
+        let directory = root.join("packages").join(package);
+        fs::create_dir_all(&directory).unwrap();
+        write_json(&directory.join("package.json"), &manifest);
+    }
+    commit(root, "workspace");
+    dir
+}
+
+fn note(root: &Path, id: &str, bumps: &[(&str, &str)]) {
+    let frontmatter: String = bumps
+        .iter()
+        .map(|(package, bump)| format!("\"{package}\": {bump}\n"))
+        .collect();
+    fs::write(
+        root.join(format!(".changeset/{id}.md")),
+        format!("---\n{frontmatter}---\n\n{id}\n"),
+    )
+    .unwrap();
+}
+
+fn copy_workspace(root: &Path) -> tempfile::TempDir {
+    let copy = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new("cp")
+        .arg("-R")
+        .arg(format!("{}/.", root.display()))
+        .arg(copy.path())
+        .status()
+        .unwrap();
+    assert!(status.success(), "copying the workspace failed");
+    copy
+}
+
+type Versions = BTreeMap<String, String>;
+
+fn manifest_versions(root: &Path) -> Versions {
+    fs::read_dir(root.join("packages"))
+        .unwrap()
+        .map(|entry| {
+            let manifest = fs::read_to_string(entry.unwrap().path().join("package.json")).unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+            (
+                manifest["name"].as_str().unwrap().to_owned(),
+                manifest["version"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// The versions `callisto version --dry-run` would leave: the manifests' versions with each planned bump applied.
+fn callisto_planned_versions(root: &Path) -> Versions {
+    let output = callisto(root, &["version", "--dry-run"]);
+    assert!(
+        output.status.success(),
+        "version --dry-run failed: {}",
+        stderr_of(&output)
+    );
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut versions = manifest_versions(root);
+    for bump in plan["bumps"].as_array().unwrap() {
+        let package = bump["package"].as_str().unwrap();
+        let package = package
+            .strip_prefix("npm/")
+            .expect("every package in the fixture is npm");
+        versions.insert(package.to_owned(), bump["to"].as_str().unwrap().to_owned());
+    }
+    versions
+}
+
+/// Changesets' own release plan for a fixed group, reproduced by callisto after `init` over the same workspace.
+/// `init` only warns about `fixed`, so the group is carried over by hand, as that warning says.
+#[test]
+#[ignore = "needs the real changeset CLI; run via `just verify-real`"]
+fn a_changesets_fixed_group_release_plan_is_reproduced_after_migration() {
+    for changesets in Changesets::pinned() {
+        let major = changesets.major;
+        let dir = npm_workspace(&[
+            ("alpha", "1.0.0", None),
+            ("beta", "1.2.0", None),
+            ("gamma", "0.3.0", Some("alpha")),
+        ]);
+        let root = dir.path();
+        changesets.init(root, &[&["alpha", "beta"]]);
+        note(root, "one", &[("alpha", "minor")]);
+        note(root, "two", &[("gamma", "patch")]);
+        commit(root, "changesets");
+
+        let init = callisto(root, &["init", "--yes"]);
+        assert!(init.status.success(), "init failed: {}", stderr_of(&init));
+        let report: serde_json::Value = serde_json::from_slice(&init.stdout).unwrap();
+        let warned_about_fixed = report["diagnostics"].as_array().unwrap().iter().any(|diagnostic| {
+            diagnostic["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("key `fixed`"))
+        });
+        assert!(
+            warned_about_fixed,
+            "init must report the group it did not translate: {report}"
+        );
+        let config = root.join("callisto.toml");
+        let mut text = fs::read_to_string(&config).unwrap();
+        text.push_str("\n[[fixed-group]]\nname = \"all\"\nmembers = [\"npm/alpha\", \"npm/beta\"]\n");
+        fs::write(&config, text).unwrap();
+        commit(root, "callisto");
+
+        let planned = callisto_planned_versions(root);
+        changesets.run(root, &["version"]);
+        let real = manifest_versions(root);
+        assert_ne!(real["beta"], "1.2.0", "changeset {major}.x must bump beta with alpha");
+        assert_eq!(planned, real, "callisto's plan differs from changeset {major}.x");
+    }
+}
+
+/// callisto continues a pre cycle Changesets started, and exits it, with the versions Changesets itself would give.
+#[test]
+#[ignore = "needs the real changeset CLI; run via `just verify-real`"]
+fn a_changesets_pre_cycle_is_continued_and_exited_by_callisto() {
+    for changesets in Changesets::pinned() {
+        let major = changesets.major;
+        let dir = npm_workspace(&[("alpha", "1.0.0", None), ("beta", "2.0.0", None)]);
+        let root = dir.path();
+        changesets.init(root, &[]);
+        commit(root, "changesets");
+        changesets.run(root, &["pre", "enter", "beta"]);
+        note(root, "one", &[("alpha", "minor")]);
+        changesets.run(root, &["version"]);
+        note(root, "two", &[("alpha", "patch"), ("beta", "minor")]);
+        commit(root, "mid-cycle");
+
+        let next = callisto_planned_versions(root);
+        let reference = copy_workspace(root);
+        changesets.run(reference.path(), &["version"]);
+        assert_eq!(next["alpha"], "1.1.0-beta.1", "callisto must continue the beta counter");
+        assert_eq!(
+            next,
+            manifest_versions(reference.path()),
+            "the next beta differs from changeset {major}.x"
+        );
+
+        let reference = copy_workspace(root);
+        changesets.run(reference.path(), &["pre", "exit"]);
+        changesets.run(reference.path(), &["version"]);
+        let exiting = copy_workspace(root);
+        let exit = callisto(exiting.path(), &["pre", "exit"]);
+        assert!(exit.status.success(), "pre exit failed: {}", stderr_of(&exit));
+        assert_eq!(
+            callisto_planned_versions(exiting.path()),
+            manifest_versions(reference.path()),
+            "the stable release after exit differs from changeset {major}.x"
+        );
+    }
 }
