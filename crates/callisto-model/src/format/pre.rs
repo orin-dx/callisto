@@ -125,22 +125,8 @@ impl PreState {
         self
     }
 
-    /// Applies each baseline owner's native grammar; unresolved entries retain their parsed value.
-    pub fn resolve_initial_versions(
-        &mut self,
-        mut ecosystem_for: impl FnMut(&str) -> Option<Ecosystem>,
-    ) -> Result<(), PreJsonError> {
-        let Some(initial_versions) = self.initial_versions() else {
-            return Ok(());
-        };
-        let raw_versions = initial_versions
-            .iter()
-            .map(|(key, version)| (key.clone(), version.raw().to_string()))
-            .collect();
-        self.resolve_initial_versions_from_raw(&raw_versions, &mut ecosystem_for)
-    }
-
-    /// Validates the original wire spelling after each baseline owner is known.
+    /// Applies each baseline owner's native grammar to the original wire spelling; unresolved entries retain their
+    /// parsed value.
     pub fn resolve_initial_versions_from_raw(
         &mut self,
         raw_versions: &IndexMap<String, String>,
@@ -470,8 +456,10 @@ mod tests {
     fn baseline_grammars_follow_their_owners_without_changing_the_wire_shape() {
         let json = r#"{"mode":"pre","tag":"beta","initialVersions":{"python":"1.2.3","cargo":"1.2.3","npm":"1.2.3","removed":"1.2.3"},"changesets":[]}"#;
         let mut state = parse_pre_json(json).unwrap();
+        let raw_versions =
+            IndexMap::from(["python", "cargo", "npm", "removed"].map(|k| (k.to_string(), "1.2.3".to_string())));
         state
-            .resolve_initial_versions(|key| match key {
+            .resolve_initial_versions_from_raw(&raw_versions, |key| match key {
                 "python" => Some(Ecosystem::Pypi),
                 "cargo" => Some(Ecosystem::Cargo),
                 "npm" => Some(Ecosystem::Npm),
@@ -503,7 +491,10 @@ mod tests {
                         .unwrap(),
                 )],
             );
-            let error = state.resolve_initial_versions(|_| Some(ecosystem)).unwrap_err();
+            let raw_versions = IndexMap::from([("package".to_string(), raw.to_string())]);
+            let error = state
+                .resolve_initial_versions_from_raw(&raw_versions, |_| Some(ecosystem))
+                .unwrap_err();
             assert!(
                 matches!(error, PreJsonError::InvalidInitialVersion { package, raw: found, source }
                 if package == "package" && found == raw && source.grammar == ecosystem.version_grammar())

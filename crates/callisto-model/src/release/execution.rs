@@ -36,8 +36,6 @@ pub enum OperationBlockReason {
 pub enum OperationOutcome {
     Published,
     AlreadySatisfied,
-    Failed,
-    Blocked { reason: OperationBlockReason },
 }
 
 /// The immutable identity of one release run, created and validated before
@@ -124,21 +122,8 @@ impl ReleaseRunEnvelopeV1 {
         &self.release_source_revision
     }
 
-    pub fn intent_digest(&self) -> &IntentDigest {
-        &self.intent_digest
-    }
-
-    pub fn artifact_manifest_digest(&self) -> Option<&ArtifactDigest> {
-        self.artifact_manifest_digest.as_ref()
-    }
-
     /// Cross-field validity against the exact intent this run releases.
     pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ReleaseRunEnvelopeError> {
-        if self.schema_version != Self::SCHEMA_VERSION {
-            return Err(ReleaseRunEnvelopeError::UnsupportedSchema {
-                found: self.schema_version,
-            });
-        }
         if self.intent_digest != intent.digest {
             return Err(ReleaseRunEnvelopeError::MismatchedIntent);
         }
@@ -472,11 +457,6 @@ impl ReleaseReceiptV1 {
 
     /// Validates exact intent and operation-roster binding before reconciliation.
     pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ReleaseReceiptError> {
-        if self.schema_version != Self::SCHEMA_VERSION {
-            return Err(ReleaseReceiptError::UnsupportedSchema {
-                found: self.schema_version,
-            });
-        }
         if self.intent_digest != intent.digest {
             return Err(ReleaseReceiptError::MismatchedIntent);
         }
@@ -510,14 +490,6 @@ impl ReleaseReceiptV1 {
         }
         let mut outcomes = BTreeMap::new();
         for entry in wire.outcomes {
-            if !matches!(
-                entry.outcome,
-                OperationOutcome::Published | OperationOutcome::AlreadySatisfied
-            ) {
-                return Err(ReleaseReceiptError::NonSuccessfulOperation {
-                    id: Box::new(entry.operation),
-                });
-            }
             if outcomes.insert(entry.operation.clone(), entry.outcome).is_some() {
                 return Err(ReleaseReceiptError::DuplicateOperation {
                     id: Box::new(entry.operation),

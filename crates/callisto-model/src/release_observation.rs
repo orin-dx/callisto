@@ -115,8 +115,6 @@ pub enum ProviderIndeterminateCause {
     CommandFailed,
     MalformedResponse,
     Timeout,
-    /// The version exists but its identity was not observed.
-    RegistryVersionUnverified,
     /// Asset identity needs the verified artifact manifest, which was absent.
     ArtifactManifestUnavailable,
 }
@@ -135,9 +133,6 @@ impl std::fmt::Display for ProviderIndeterminateCause {
             Self::CommandFailed => formatter.write_str("the observing command failed"),
             Self::MalformedResponse => formatter.write_str("the provider's answer could not be understood"),
             Self::Timeout => formatter.write_str("the observation timed out"),
-            Self::RegistryVersionUnverified => {
-                formatter.write_str("the version exists but its identity was not observed")
-            }
             Self::ArtifactManifestUnavailable => {
                 formatter.write_str("the asset's identity needs the verified artifact manifest, which was absent")
             }

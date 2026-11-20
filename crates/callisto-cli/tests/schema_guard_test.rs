@@ -513,7 +513,6 @@ fn diagnostic_code_enum_variants_match_expected_set() {
 
     let expected = set(&[
         "empty-changeset",
-        "empty-summary",
         "unknown-package",
         "invalid-package-name",
         "napi-target-added-not-in-members",
@@ -640,7 +639,6 @@ fn provider_observation_enums_carry_exactly_their_declared_variants() {
             "commandFailed",
             "malformedResponse",
             "timeout",
-            "registryVersionUnverified",
             "artifactManifestUnavailable",
         ])
     );
