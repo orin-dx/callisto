@@ -114,7 +114,7 @@ dependencies = [
     assert_eq!(current_v.render(), "0.3.1");
 
     let new_v = Version::parse("0.3.2", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated_content = fs::read_to_string(&pyproject_path).unwrap();
@@ -141,7 +141,7 @@ fn write_version_refuses_a_project_key_that_is_not_a_table() {
 
     let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
     let new_v = Version::parse("1.0.0", VersionGrammar::Pep440).unwrap();
-    let err = manifest.write_version(&new_v, &permit()).unwrap_err();
+    let err = manifest.write_version(&new_v).unwrap_err();
     assert!(matches!(err, ManifestError::MissingField { .. }), "{err:?}");
 }
 
@@ -166,7 +166,7 @@ fn write_version_does_not_touch_disk_until_persist_called() {
 
     let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
     let new_v = Version::parse("0.3.2", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
 
     let unchanged = fs::read_to_string(&pyproject_path).unwrap();
     assert_eq!(unchanged, content, "write_version alone must not write to disk");
@@ -230,7 +230,7 @@ fn preserves_bom_and_crlf_line_endings_on_write() {
     assert_eq!(manifest.package_name().unwrap(), "bom-crlf-lib");
 
     let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated_bytes = fs::read(&pyproject_path).unwrap();
@@ -279,7 +279,7 @@ fn preserves_crlf_line_endings_without_bom_on_write() {
     assert_eq!(manifest.package_name().unwrap(), "crlf-lib");
 
     let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated_bytes = fs::read(&pyproject_path).unwrap();
@@ -328,7 +328,7 @@ fn preserves_bom_without_crlf_on_write() {
     assert_eq!(manifest.package_name().unwrap(), "bom-lf-lib");
 
     let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated_bytes = fs::read(&pyproject_path).unwrap();
@@ -446,7 +446,7 @@ fn preserves_tab_indentation_pyproject_toml() {
     assert_eq!(manifest.package_name().unwrap(), "tabbed-lib");
 
     let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated = fs::read_to_string(&pyproject_path).unwrap();
@@ -1372,7 +1372,7 @@ docs = ["sphinx>=4.0.0"]
     let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
     let new_v = Version::parse("5.0.0", VersionGrammar::Pep440).unwrap();
     manifest
-        .update_optional_dependencies(&[("sphinx".to_string(), new_v)], &permit())
+        .update_optional_dependencies(&[("sphinx".to_string(), new_v)])
         .unwrap();
     manifest.persist(&permit()).unwrap();
 
@@ -1410,7 +1410,7 @@ fn update_optional_dependencies_matches_pep503_equivalent_separator_spelling() {
     // Caller passes the canonical hyphenated name; the manifest spells
     // the requirement with underscores.
     manifest
-        .update_optional_dependencies(&[("sphinx-rtd-theme".to_string(), new_v)], &permit())
+        .update_optional_dependencies(&[("sphinx-rtd-theme".to_string(), new_v)])
         .unwrap();
     manifest.persist(&permit()).unwrap();
 
@@ -1443,7 +1443,7 @@ fn update_optional_dependencies_does_not_touch_disk_until_persist_called() {
     let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
     let new_v = Version::parse("5.0.0", VersionGrammar::Pep440).unwrap();
     manifest
-        .update_optional_dependencies(&[("sphinx".to_string(), new_v)], &permit())
+        .update_optional_dependencies(&[("sphinx".to_string(), new_v)])
         .unwrap();
 
     let unchanged = fs::read_to_string(&pyproject_path).unwrap();
@@ -1653,7 +1653,7 @@ fn write_version_uses_poetry_section_when_project_table_has_no_version_field() {
     let mut manifest = open_pyproject(dir.path(), content);
 
     let new_v = Version::parse("1.1.0", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let on_disk = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
@@ -1677,6 +1677,16 @@ fn write_version_uses_poetry_section_when_project_table_has_no_version_field() {
 }
 
 #[test]
+fn identity_reads_a_flit_version() {
+    let source = "[tool.flit.metadata]\nmodule = \"mod\"\nversion = \"1.0.0\"\n";
+    let identity = identity_from_source(source, Path::new("pyproject.toml")).unwrap();
+    assert_eq!(
+        identity.version,
+        Some(crate::VersionSource::Literal("1.0.0".to_string()))
+    );
+}
+
+#[test]
 fn flit_version_is_read_and_written_in_tool_flit_metadata() {
     let dir = tempdir().unwrap();
     let mut manifest = open_pyproject(
@@ -1686,7 +1696,7 @@ fn flit_version_is_read_and_written_in_tool_flit_metadata() {
     assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
 
     let new_v = Version::parse("1.1.0", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
 
     assert_eq!(manifest.current_version().unwrap().render(), "1.1.0");
     assert!(manifest.document.get("project").is_none());
@@ -1698,7 +1708,7 @@ fn write_version_without_any_version_table_adds_project_version() {
     let mut manifest = open_pyproject(dir.path(), "[project]\nname = \"bare\"\n");
 
     let new_v = Version::parse("0.1.0", VersionGrammar::Pep440).unwrap();
-    manifest.write_version(&new_v, &permit()).unwrap();
+    manifest.write_version(&new_v).unwrap();
 
     assert_eq!(manifest.current_version().unwrap().render(), "0.1.0");
 }

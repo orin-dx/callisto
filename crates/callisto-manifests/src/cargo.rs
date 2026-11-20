@@ -349,27 +349,15 @@ fn set_dependency_version(item: &mut toml_edit::Item, new_str: String) -> Result
             *new_val.decor_mut() = decor;
             *value = new_val;
         } else if let Some(inline) = value.as_inline_table_mut() {
-            if let Some(existing_ver) = inline.get_mut("version") {
-                let decor = existing_ver.decor().clone();
-                let mut new_val = toml_edit::Value::from(new_str);
-                *new_val.decor_mut() = decor;
-                *existing_ver = new_val;
-            } else {
-                inline.insert("version", toml_edit::Value::from(new_str));
-            }
+            crate::common::set_scalar_preserving_decor(inline, "version", &new_str);
         } else {
             return Err(());
         }
     } else if let Some(tbl) = item.as_table_mut() {
-        if let Some(existing) = tbl.get_mut("version") {
-            let value = existing.as_value_mut().ok_or(())?;
-            let decor = value.decor().clone();
-            let mut new_val = toml_edit::Value::from(new_str);
-            *new_val.decor_mut() = decor;
-            *value = new_val;
-        } else {
-            tbl.insert("version", toml_edit::value(new_str));
+        if tbl.get("version").is_some_and(|existing| !existing.is_value()) {
+            return Err(());
         }
+        crate::common::set_scalar_preserving_decor(tbl, "version", &new_str);
     } else {
         return Err(());
     }
@@ -382,12 +370,7 @@ fn set_dependency_version(item: &mut toml_edit::Item, new_str: String) -> Result
 /// `version.workspace = true`, `Literal` when it's a bare string, `None`
 /// when the field or the whole `[package]` table is absent.
 pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::ManifestIdentity, ManifestError> {
-    let clean = source.strip_prefix('\u{FEFF}').unwrap_or(source);
-    let doc: toml_edit::DocumentMut = clean.parse().map_err(|e: toml_edit::TomlError| ManifestError::Parse {
-        path: path.to_path_buf(),
-        format: ManifestFormat::CargoToml,
-        message: e.to_string(),
-    })?;
+    let doc = parse_manifest(path, source)?;
 
     let name = cargo_package_name(&doc).map(str::to_string);
     let version = doc.get("package").and_then(|p| p.get("version")).and_then(|v| {
@@ -404,12 +387,7 @@ pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::M
 }
 
 pub(crate) fn workspace_version_from_source(source: &str, path: &Path) -> Result<Option<Version>, ManifestError> {
-    let clean = source.strip_prefix('\u{FEFF}').unwrap_or(source);
-    let doc: toml_edit::DocumentMut = clean.parse().map_err(|e: toml_edit::TomlError| ManifestError::Parse {
-        path: path.to_path_buf(),
-        format: ManifestFormat::CargoToml,
-        message: e.to_string(),
-    })?;
+    let doc = parse_manifest(path, source)?;
     workspace_package_version(&doc, path)
 }
 
@@ -464,6 +442,14 @@ impl Manifest for CargoToml {
             }
         }
         true
+    }
+
+    fn publish_targets(&self) -> Vec<callisto_model::PublishTarget> {
+        if self.is_publishable() {
+            vec![callisto_model::PublishTarget::CratesIo]
+        } else {
+            vec![callisto_model::PublishTarget::None]
+        }
     }
 
     fn role(&self) -> ManifestRole {
@@ -592,7 +578,7 @@ impl Manifest for CargoToml {
         })
     }
 
-    fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
         if self.inherited_version {
             // Routing the bump to [workspace.package] would change the version of every other member,
             // so write an explicit pinned version into this member's [package] instead.
@@ -735,7 +721,7 @@ impl Manifest for CargoToml {
                 });
             }
             let mut ws_res = WorkspaceCargoResolver::load_at(&self.workspace_root, &root_manifest)?;
-            ws_res.write_dependency(name, new, permit)?;
+            ws_res.write_dependency(name, new)?;
             return ws_res.persist(permit);
         }
 
@@ -748,11 +734,7 @@ impl Manifest for CargoToml {
         })
     }
 
-    fn update_optional_dependencies(
-        &mut self,
-        _updates: &[(String, Version)],
-        _permit: &ApplyPermit,
-    ) -> Result<(), ManifestError> {
+    fn update_optional_dependencies(&mut self, _updates: &[(String, Version)]) -> Result<(), ManifestError> {
         Err(ManifestError::UnsupportedOperation {
             path: self.path.clone(),
             format: ManifestFormat::CargoToml,
@@ -979,21 +961,6 @@ impl WorkspaceCargoResolver {
         Self::read_from(rel_path, absolute_path)
     }
 
-    pub fn load(root_manifest_path: &Path) -> Result<Self, ManifestError> {
-        let rel_path = if root_manifest_path.is_absolute() {
-            root_manifest_path
-                .file_name()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("Cargo.toml"))
-        } else {
-            workspace_relative(root_manifest_path).map_err(|e| ManifestError::Read {
-                path: root_manifest_path.to_path_buf(),
-                message: e.to_string(),
-            })?
-        };
-        Self::read_from(rel_path, root_manifest_path.to_path_buf())
-    }
-
     fn read_from(rel_path: PathBuf, absolute_path: PathBuf) -> Result<Self, ManifestError> {
         crate::record_resolver_load_call();
         let content = fs::read_to_string(&absolute_path).map_err(|e| ManifestError::Read {
@@ -1002,16 +969,7 @@ impl WorkspaceCargoResolver {
         })?;
 
         let fingerprint = crate::common::FormatFingerprint::detect(&content);
-        let doc: toml_edit::DocumentMut =
-            content
-                .strip_prefix('\u{FEFF}')
-                .unwrap_or(&content)
-                .parse()
-                .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
-                    path: rel_path.clone(),
-                    format: ManifestFormat::CargoToml,
-                    message: e.to_string(),
-                })?;
+        let doc = parse_manifest(&rel_path, &content)?;
 
         Ok(WorkspaceCargoResolver {
             root_path: rel_path,
@@ -1065,10 +1023,8 @@ impl WorkspaceCargoResolver {
     /// Pure in-memory mutation of `[workspace.package] version` -- no disk
     /// I/O. Mirrors `CargoToml`/`PackageJson`/`PyprojectToml`'s
     /// `write_version`, which likewise never touches disk; callers must
-    /// call [`Self::persist`] explicitly afterward. `_permit` is accepted
-    /// (unused) purely for call-site symmetry with `persist`, which does
-    /// require one.
-    pub fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
+    /// call [`Self::persist`] explicitly afterward.
+    pub fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
         let ws = self
             .document
             .get_mut("workspace")
@@ -1093,7 +1049,7 @@ impl WorkspaceCargoResolver {
 
     /// Pure in-memory mutation of a `[workspace.dependencies]` entry -- no
     /// disk I/O; callers must call [`Self::persist`] afterward.
-    pub fn write_dependency(&mut self, name: &str, new: DepSpec, _permit: &ApplyPermit) -> Result<(), ManifestError> {
+    pub fn write_dependency(&mut self, name: &str, new: DepSpec) -> Result<(), ManifestError> {
         let ws = self
             .document
             .get_mut("workspace")

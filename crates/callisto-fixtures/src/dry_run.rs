@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 /// A content-addressed snapshot of every file under a directory tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TreeSnapshot {
+struct TreeSnapshot {
     root: PathBuf,
     entries: BTreeMap<PathBuf, u64>,
 }
@@ -26,7 +26,7 @@ impl TreeSnapshot {
     /// The `.git` directory is included: `git add`, `git rm --cached`, and
     /// `git tag` are side effects this harness is explicitly meant to catch,
     /// and they land in `.git/index` and `.git/refs`.
-    pub fn capture(root: impl AsRef<Path>) -> Self {
+    fn capture(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref().to_path_buf();
         let mut entries = BTreeMap::new();
         collect(&root, &root, &mut entries);

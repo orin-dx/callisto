@@ -279,7 +279,7 @@ fn persisted(source: &str, change: impl FnOnce(&mut PackageJson)) -> String {
 
 fn bump(manifest: &mut PackageJson) {
     manifest
-        .write_version(&Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(), &permit())
+        .write_version(&Version::parse("1.1.0", VersionGrammar::SemVer).unwrap())
         .unwrap();
 }
 
@@ -345,7 +345,7 @@ fn a_second_persist_is_measured_against_what_the_first_wrote() {
     bump(&mut manifest);
     manifest.persist(&permit()).unwrap();
     manifest
-        .write_version(&Version::parse("1.2.0", VersionGrammar::SemVer).unwrap(), &permit())
+        .write_version(&Version::parse("1.2.0", VersionGrammar::SemVer).unwrap())
         .unwrap();
     manifest.persist(&permit()).unwrap();
     assert_eq!(
@@ -462,7 +462,7 @@ fn write_version_does_not_touch_disk_until_persist_called() {
     let mut manifest = open_manifest(&dir, content);
 
     let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
 
     let unchanged = fs::read_to_string(&manifest_path).unwrap();
     assert_eq!(unchanged, content, "write_version alone must not write to disk");
@@ -481,7 +481,7 @@ fn update_optional_dependencies_does_not_touch_disk_until_persist_called() {
 
     let new_v = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
     manifest
-        .update_optional_dependencies(&[("fsevents".to_string(), new_v)], &permit())
+        .update_optional_dependencies(&[("fsevents".to_string(), new_v)])
         .unwrap();
 
     let unchanged = fs::read_to_string(&manifest_path).unwrap();
@@ -550,7 +550,7 @@ fn parses_package_json_and_updates_version() {
     assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
 
     let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
-    manifest.write_version(&new_ver, &permit()).unwrap();
+    manifest.write_version(&new_ver).unwrap();
     manifest.persist(&permit()).unwrap();
 
     let updated_content = fs::read_to_string(&manifest_path).unwrap();
@@ -1127,11 +1127,8 @@ fn tab_indentation_is_preserved_after_version_write() {
     };
 
     let mut pj = PackageJson::open(&decl, &ctx).unwrap();
-    pj.write_version(
-        &callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer).unwrap(),
-        &permit(),
-    )
-    .unwrap();
+    pj.write_version(&callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer).unwrap())
+        .unwrap();
     pj.persist(&permit()).unwrap();
 
     let updated = fs::read_to_string(&path).unwrap();
@@ -1161,11 +1158,8 @@ fn preserves_crlf_line_endings_on_write() {
     };
 
     let mut pj = PackageJson::open(&decl, &ctx).unwrap();
-    pj.write_version(
-        &callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer).unwrap(),
-        &permit(),
-    )
-    .unwrap();
+    pj.write_version(&callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer).unwrap())
+        .unwrap();
     pj.persist(&permit()).unwrap();
 
     let updated_bytes = fs::read(&path).unwrap();

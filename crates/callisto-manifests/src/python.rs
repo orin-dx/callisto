@@ -80,14 +80,27 @@ pub fn python_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
         })
 }
 
+/// The static version string of a parsed `pyproject.toml`: PEP 621 `[project].version`, then Poetry
+/// `[tool.poetry].version`, then Flit `[tool.flit.metadata].version`.
+fn python_version(doc: &toml_edit::DocumentMut) -> Option<&str> {
+    fn string_at(item: Option<&toml_edit::Item>) -> Option<&str> {
+        item.and_then(|item| item.get("version")).and_then(|v| v.as_str())
+    }
+    let tool = doc.get("tool");
+    string_at(doc.get("project"))
+        .or_else(|| string_at(tool.and_then(|t| t.get("poetry"))))
+        .or_else(|| string_at(tool.and_then(|t| t.get("flit")).and_then(|f| f.get("metadata"))))
+}
+
 /// [`crate::read_identity`]'s `pyproject.toml` implementation: parses
 /// `source` and extracts a package name (PEP 621, falling back to Poetry
 /// then Flit -- see [`python_package_name`]) plus a
 /// [`crate::VersionSource::Literal`] version (PEP 621 `project.version`,
-/// falling back to Poetry's `tool.poetry.version`). Python has no
-/// workspace-inherited-version concept analogous to Cargo's, and a Flit or
-/// PEP 621 `dynamic = ["version"]` package has no static version to report
-/// at all, so both fall through to `None`.
+/// falling back to Poetry's `tool.poetry.version` and Flit's
+/// `tool.flit.metadata.version`; see [`python_version`]). Python has no
+/// workspace-inherited-version concept analogous to Cargo's, and a PEP 621
+/// `dynamic = ["version"]` package has no static version to report, so it
+/// falls through to `None`.
 pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::ManifestIdentity, ManifestError> {
     let clean = source.strip_prefix('\u{FEFF}').unwrap_or(source);
     let doc: toml_edit::DocumentMut = clean.parse().map_err(|e: toml_edit::TomlError| ManifestError::Parse {
@@ -97,17 +110,7 @@ pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::M
     })?;
 
     let name = python_package_name(&doc).map(str::to_string);
-    let version = doc
-        .get("project")
-        .and_then(|p| p.get("version"))
-        .and_then(|v| v.as_str())
-        .or_else(|| {
-            doc.get("tool")
-                .and_then(|t| t.get("poetry"))
-                .and_then(|p| p.get("version"))
-                .and_then(|v| v.as_str())
-        })
-        .map(|s| crate::VersionSource::Literal(s.to_string()));
+    let version = python_version(&doc).map(|raw| crate::VersionSource::Literal(raw.to_string()));
 
     Ok(crate::ManifestIdentity { name, version })
 }
@@ -223,12 +226,6 @@ impl Requirement {
             out.push_str(marker);
         }
         out
-    }
-}
-
-impl std::fmt::Display for Requirement {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.render())
     }
 }
 
@@ -407,29 +404,7 @@ impl Manifest for PyprojectToml {
     }
 
     fn current_version(&self) -> Result<Version, ManifestError> {
-        // 1. PEP 621 [project].version
-        let raw_ver = self
-            .document
-            .get("project")
-            .and_then(|p| p.get("version"))
-            .and_then(|v| v.as_str())
-            // 2. Poetry [tool.poetry].version
-            .or_else(|| {
-                self.document
-                    .get("tool")
-                    .and_then(|t| t.get("poetry"))
-                    .and_then(|p| p.get("version"))
-                    .and_then(|v| v.as_str())
-            })
-            // 3. Flit [tool.flit.metadata].version
-            .or_else(|| {
-                self.document
-                    .get("tool")
-                    .and_then(|t| t.get("flit"))
-                    .and_then(|f| f.get("metadata"))
-                    .and_then(|m| m.get("version"))
-                    .and_then(|v| v.as_str())
-            });
+        let raw_ver = python_version(&self.document);
 
         let raw = raw_ver.ok_or_else(|| ManifestError::MissingField {
             path: self.path.clone(),
@@ -443,7 +418,7 @@ impl Manifest for PyprojectToml {
         })
     }
 
-    fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
         let new_ver = v.render();
 
         let has_project_version = self.document.get("project").and_then(|p| p.get("version")).is_some();
@@ -668,11 +643,7 @@ impl Manifest for PyprojectToml {
         vec![PublishTarget::Pypi { index: None }]
     }
 
-    fn update_optional_dependencies(
-        &mut self,
-        updates: &[(String, Version)],
-        _permit: &ApplyPermit,
-    ) -> Result<(), ManifestError> {
+    fn update_optional_dependencies(&mut self, updates: &[(String, Version)]) -> Result<(), ManifestError> {
         if updates.is_empty() {
             return Ok(());
         }
