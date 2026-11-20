@@ -26,7 +26,7 @@
       "signature": "callisto release plan [--source-root DIR] (--from-release-commit SHA --decision FILE | --package ECOSYSTEM/NAME...) [--orchestration-revision SHA --artifact-repository OWNER/REPO] --out FILE",
       "description": "Writes a release plan file (JSON, schemaVersion 5) for a detached source checkout. With --from-release-commit it verifies the committed decision file. With --package it derives the roster from a fresh version plan.",
       "error_conditions": [
-        "--dry-run: E217.",
+        "--dry-run: E309.",
         "Commit verification failure: E165.",
         "[release] present without both orchestration flags: E231."
       ]
@@ -77,7 +77,7 @@
       "signature": "callisto release execute [--source-root DIR] --intent FILE [--artifact-manifest FILE --artifact-dir DIR] --receipt FILE --orchestration-revision SHA",
       "description": "Validates the plan file against a fresh derivation from the source checkout, runs every operation, and writes the receipt on full success.",
       "error_conditions": [
-        "--dry-run: E218.",
+        "--dry-run: E309.",
         "Stale plan: E124.",
         "Incomplete run: E172."
       ]
@@ -437,7 +437,7 @@
     },
     {
       "id": "REL-ERR-02",
-      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest`, `release execute`, `release build-python`, `release pack-npm` or `release package-cargo` fails with `E217`, `E216`, `E218` or `E309` and writes nothing.",
+      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest`, `release execute`, `release build-python`, `release pack-npm` or `release package-cargo` fails with `E309` and writes nothing.",
       "is_error_case": true
     },
     {

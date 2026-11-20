@@ -77,7 +77,7 @@ pub fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<T, CliError> {
     })
 }
 
-/// Which output flag a file is written for; it picks the existing dry-run refusal.
+/// Which output flag a file is written for; it names the command in the dry-run refusal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputKind {
     /// `release artifact-manifest --out`.
@@ -93,10 +93,18 @@ pub enum OutputKind {
 impl OutputKind {
     fn refusal(self) -> CliError {
         match self {
-            Self::ArtifactManifest => CliError::ReleaseArtifactManifestDryRun,
-            Self::Intent => CliError::ReleasePlanDryRun,
-            Self::Receipt => CliError::ReleaseExecuteDryRun,
-            Self::CommitPlan => CliError::ReleasePrCommitPlanDryRun,
+            Self::ArtifactManifest => CliError::DryRunRefused {
+                command: "release artifact-manifest",
+            },
+            Self::Intent => CliError::DryRunRefused {
+                command: "release plan",
+            },
+            Self::Receipt => CliError::DryRunRefused {
+                command: "release execute",
+            },
+            Self::CommitPlan => CliError::DryRunRefused {
+                command: "release-pr commit-plan",
+            },
         }
     }
 }

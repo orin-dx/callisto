@@ -40,7 +40,6 @@ fn test_changelog_content_uses_real_changeset_summary() {
     assert_eq!(
         commands::version::handle(
             VersionArgs {
-                refresh_lockfiles: false,
                 no_refresh_lockfiles: true,
                 strict: false,
                 allow_empty_changesets: false,
@@ -114,7 +113,6 @@ fn test_changelog_content_includes_all_changeset_summaries() {
     assert_eq!(
         commands::version::handle(
             VersionArgs {
-                refresh_lockfiles: false,
                 no_refresh_lockfiles: true,
                 strict: false,
                 allow_empty_changesets: false,
@@ -174,7 +172,6 @@ fn version_with_config(config: Option<&str>) -> String {
     assert_eq!(
         commands::version::handle(
             VersionArgs {
-                refresh_lockfiles: false,
                 no_refresh_lockfiles: true,
                 strict: false,
                 allow_empty_changesets: false,

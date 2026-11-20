@@ -69,6 +69,7 @@ Use the first rung that works:
 - N copies of one logic: unify to one implementation rather than patching each.
 - A deliberately deferred sibling gets an explicit record: changeset note, tracked follow-up or code comment.
 - A new shared helper migrates every call site in the same change, or the rest are tracked.
+- A PR that replaces an API deletes the old one and moves its tests to the replacement in the same change.
 
 ## Plugins
 

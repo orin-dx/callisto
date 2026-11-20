@@ -1,4 +1,0 @@
-# Dev-only non-publishable test corpus fixture crate.
-tasks:
-  publish:
-    script: "echo 'Skipping non-publishable crate callisto-fixtures'"

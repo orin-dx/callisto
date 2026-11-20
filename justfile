@@ -30,10 +30,6 @@ test-moon:
     moon run :test
     cargo test --doc --workspace
 
-# Exercise the Release-PR action's shell block with Git and GitHub faked; it never calls the real binary (see test-release-action-binary).
-test-release-action:
-    bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
-
 # Compiles callisto and runs the Release-PR action's jq extraction against
 # its real JSON output. Requires pending changesets to exercise update and
 # supersede decisions; skips cleanly otherwise.

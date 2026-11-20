@@ -50,7 +50,7 @@ const FLAGS: &[(&str, Role, &[&str])] = &[
     ("release plan --decision", WorkspaceDecision, &[]),
     (
         "release plan --out",
-        Out(Refused("E217")),
+        Out(Refused("E309")),
         &["release", "plan", "--package", "cargo/x"],
     ),
     ("release inspect --input", Input, &[]),
@@ -66,7 +66,7 @@ const FLAGS: &[(&str, Role, &[&str])] = &[
     ("release artifact-manifest --artifact-dir", Dir, &[]),
     (
         "release artifact-manifest --out",
-        Out(Refused("E216")),
+        Out(Refused("E309")),
         &[
             "release",
             "artifact-manifest",
@@ -82,7 +82,7 @@ const FLAGS: &[(&str, Role, &[&str])] = &[
     ("release execute --artifact-dir", Dir, &[]),
     (
         "release execute --receipt",
-        Out(Refused("E218")),
+        Out(Refused("E309")),
         &[
             "release",
             "execute",
@@ -94,7 +94,7 @@ const FLAGS: &[(&str, Role, &[&str])] = &[
     ),
     (
         "release-pr commit-plan --out",
-        Out(Refused("E282")),
+        Out(Refused("E309")),
         &["release-pr", "commit-plan", "--base-commit", SHA, "--message", "m"],
     ),
 ];
