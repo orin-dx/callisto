@@ -2,11 +2,20 @@
 callisto-cli: minor
 ---
 
-**The crates.io registry is configured as `[registries.crates-io]`, the same name `publish-to` uses.** Every `publish-to` value except `github-release` and `none` now names a registry, and `crates-io`, `npm` and `pypi` are predeclared.
+**Each registry has one name, used in both `[registries]` and `publish-to`.** You configure crates.io as `[registries.crates-io]`, the same name you publish to, and a mistyped registry kind is caught when the config loads instead of during a release.
 
-- Declaring `[registries.crates-io]`, `[registries.npm]` or `[registries.pypi]` configures that registry; `kind` may be left out.
-- A named `kind = "npm"` or `kind = "pypi"` registry cannot be a `publish-to` target yet. A named npm registry only approves a package's `publishConfig.registry`.
+- **How to adopt:** `crates-io`, `npm` and `pypi` always exist. Add `[registries.crates-io]`, `[registries.npm]` or `[registries.pypi]` only to change a setting such as `confirm-timeout`; `kind` can be left out.
+- **Limits:** a custom registry with `kind = "npm"` or `kind = "pypi"` cannot be named in `publish-to` yet.
+- **Limits:** a custom npm registry's `url` only approves a package's `publishConfig.registry`.
 
-**Breaking:** `[registries.cratesIo]` now fails at load with E325, whose message names `[registries.crates-io]`. A predeclared registry given another `kind` (for example `[registries.npm] kind = "cargo"`) now fails at load with E334 instead of at release time. `[registries.none]`, `[registries.github-release]` and a registry name other than letters, digits, `-` and `_` fail with E325. `nuget` is no longer a `publish-to` value (E330). A release plan written by an earlier version is refused with E215; run `release plan` again.
+**Breaking:** `[registries.cratesIo]` used to configure crates.io. It now fails when the config loads with E325, and the message names the new spelling. Rename it to `[registries.crates-io]`.
 
-**Action:** Rename `[registries.cratesIo]` to `[registries.crates-io]` and remove `nuget` from `publish-to`.
+**Breaking:** `crates-io`, `npm` or `pypi` given another `kind` (for example `[registries.npm] kind = "cargo"`) used to load and then fail during a release. It now fails when the config loads with E334. Remove the `kind`, or give a custom registry another name.
+
+**Breaking:** A registry named `none` or `github-release`, or with characters other than letters, digits, `-` and `_`, used to load. It now fails with E325. Rename the registry.
+
+**Breaking:** `publish-to = ["nuget"]` used to load and then fail during a release. It now fails when the config loads with E330. Remove `nuget` from `publish-to`.
+
+**Breaking:** A release plan saved by an earlier version used to be read. It is now refused with E215. Run `callisto release plan` again.
+
+**Action:** Rename `[registries.cratesIo]` to `[registries.crates-io]` and remove `nuget` from `publish-to` before upgrading.
