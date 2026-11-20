@@ -1,9 +1,8 @@
-//! Tests for ecosystem-prefixed `[[package-set]]` glob matching and the
+//! Tests for ecosystem-prefixed glob `[[package]]` matching and the
 //! zero-match diagnostic.
 //!
-//! `PackagePattern`'s doc comment promises that `"cargo:pkg-*"` matches only Cargo packages, so `matches()` must
-//! consider the ecosystem prefix, not just `PackageId::name()`. A rule matching nothing at the walk-time call site
-//! must raise `DiagnosticCode::PackageSetMatchedNothing`.
+//! `"cargo/pkg-*"` matches only Cargo packages, so matching must consider the ecosystem prefix, not just the name.
+//! A rule matching nothing at the walk-time call site must raise `DiagnosticCode::PackageRuleMatchedNothing`.
 
 use std::fs;
 use std::path::Path;
@@ -25,15 +24,15 @@ impl CommandRunner for NoopRunner {
     }
 }
 
-/// An ecosystem-prefixed `[[package-set]]` rule that matches zero real
-/// packages in the workspace must surface a `PackageSetMatchedNothing`
+/// An ecosystem-prefixed glob `[[package]]` rule that matches zero real
+/// packages in the workspace must surface a `PackageRuleMatchedNothing`
 /// diagnostic, not fail silently.
 ///
 /// The workspace has one Cargo-ecosystem package named "internal-foo". The
 /// rule `"npm/internal-*"` requires an npm-ecosystem package, which does not
 /// exist here, so it must match nothing and be surfaced.
 #[test]
-fn ecosystem_prefixed_package_set_matching_nothing_emits_diagnostic() {
+fn ecosystem_prefixed_glob_rule_matching_nothing_emits_diagnostic() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
 
@@ -52,7 +51,7 @@ fn ecosystem_prefixed_package_set_matching_nothing_emits_diagnostic() {
 
     fs::write(
         root.join("callisto.toml"),
-        "[[package-set]]\nmatch = \"npm/internal-*\"\nrelease-trigger = \"auto\"\n",
+        "[[package]]\nmatch = \"npm/internal-*\"\nrelease-trigger = \"auto\"\n",
     )
     .unwrap();
 
@@ -64,13 +63,13 @@ fn ecosystem_prefixed_package_set_matching_nothing_emits_diagnostic() {
         .graph
         .diagnostics()
         .iter()
-        .filter(|d| d.code == DiagnosticCode::PackageSetMatchedNothing)
+        .filter(|d| d.code == DiagnosticCode::PackageRuleMatchedNothing)
         .collect();
 
     assert_eq!(
         matching.len(),
         1,
-        "expected exactly 1 PackageSetMatchedNothing diagnostic, got {}; \
+        "expected exactly 1 PackageRuleMatchedNothing diagnostic, got {}; \
          all diagnostics: {:?}",
         matching.len(),
         ws.graph.diagnostics(),
@@ -83,11 +82,11 @@ fn ecosystem_prefixed_package_set_matching_nothing_emits_diagnostic() {
     );
 }
 
-/// An ecosystem-prefixed `[[package-set]]` rule that DOES match a real
+/// An ecosystem-prefixed glob `[[package]]` rule that DOES match a real
 /// package (correct ecosystem, matching name) must apply its override and
-/// must NOT emit a PackageSetMatchedNothing diagnostic.
+/// must NOT emit a PackageRuleMatchedNothing diagnostic.
 #[test]
-fn ecosystem_prefixed_package_set_matching_real_package_applies_and_is_silent() {
+fn ecosystem_prefixed_glob_rule_matching_real_package_applies_and_is_silent() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
 
@@ -106,7 +105,7 @@ fn ecosystem_prefixed_package_set_matching_real_package_applies_and_is_silent() 
 
     fs::write(
         root.join("callisto.toml"),
-        "[[package-set]]\nmatch = \"cargo/internal-*\"\nrelease-trigger = \"auto\"\n",
+        "[[package]]\nmatch = \"cargo/internal-*\"\nrelease-trigger = \"auto\"\n",
     )
     .unwrap();
 
@@ -118,13 +117,13 @@ fn ecosystem_prefixed_package_set_matching_real_package_applies_and_is_silent() 
         .graph
         .diagnostics()
         .iter()
-        .filter(|d| d.code == DiagnosticCode::PackageSetMatchedNothing)
+        .filter(|d| d.code == DiagnosticCode::PackageRuleMatchedNothing)
         .collect();
 
     assert!(
         matching.is_empty(),
         "'cargo/internal-*' matches the real Cargo package 'internal-foo'; \
-         no PackageSetMatchedNothing diagnostic expected, got: {:?}",
+         no PackageRuleMatchedNothing diagnostic expected, got: {:?}",
         matching,
     );
 
@@ -136,6 +135,6 @@ fn ecosystem_prefixed_package_set_matching_real_package_applies_and_is_silent() 
     assert_eq!(
         pkg.release_trigger,
         callisto_model::ReleaseTrigger::Auto,
-        "the cargo/internal-* [[package-set]] override must have applied"
+        "the cargo/internal-* [[package]] override must have applied"
     );
 }

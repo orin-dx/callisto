@@ -1019,7 +1019,7 @@ fn platform_candidate_beside_a_foreign_cargo_toml_is_never_attached() {
 /// A `[[package]]` rule naming an ecosystem the target package doesn't actually have (a
 /// `pypi:foo` rule when `foo` only exists as a Cargo crate) matches zero real packages --
 /// this must surface as a `PackageRuleMatchedNothing` diagnostic, the same as an empty
-/// `[[package-set]]` glob, not be silently absorbed.
+/// glob rule, not be silently absorbed.
 #[test]
 fn package_rule_matching_no_ecosystem_the_package_has_gets_a_matched_nothing_diagnostic() {
     let dir = tempfile::tempdir().expect("tempdir");

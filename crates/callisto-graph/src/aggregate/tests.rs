@@ -1593,6 +1593,80 @@ fn test_pre_major_inference_rule_for_another_ecosystem_does_not_shadow_the_packa
     );
 }
 
+/// Inference sees the policy of the glob that matches a pre-1.0 package no exact rule names; an exact rule beats it.
+#[test]
+fn test_pre_major_inference_policy_comes_from_a_glob_rule_unless_an_exact_rule_matches() {
+    use crate::config::resolve::PreMajorInferencePolicy;
+
+    struct PolicyCapturingInference {
+        seen: Mutex<Vec<(String, PreMajorInferencePolicy)>>,
+    }
+    impl SeverityInference for PolicyCapturingInference {
+        fn infer(
+            &self,
+            pkg: &Package,
+            _git: &GitAccess<'_>,
+            window: InferenceWindowSpec<'_>,
+        ) -> Result<Option<InferenceOutcome>, GraphError> {
+            self.seen.lock().unwrap().push((pkg.id.to_string(), window.policy));
+            Ok(None)
+        }
+    }
+
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+    init_repo(root);
+    std::fs::write(root.join("README.md"), "hello\n").unwrap();
+    run_git(root, &["add", "."]);
+    run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+    // The glob is declared first: the exact rule still wins for `pkg-b`, whatever the declaration order.
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"cargo/pkg-*\"\npre-major-inference = \"conservative\"\n\n\
+         [[package]]\nmatch = \"cargo/pkg-b\"\npre-major-inference = \"conservative-feat\"\n",
+    )
+    .unwrap();
+
+    let id_a = PackageId::parse("pkg-a").unwrap();
+    let id_b = PackageId::parse("pkg-b").unwrap();
+    let graph = TwoPackageGraph {
+        packages: vec![make_pkg(id_a.clone()), make_pkg(id_b.clone())],
+    };
+    let cfg = crate::config::load(root).unwrap();
+    let runner = RealGitRunner;
+    let git = GitAccess::new(root, &runner);
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+    let mut base_versions = BTreeMap::new();
+    base_versions.insert(id_a.clone(), Version::semver(0, 1, 0));
+    base_versions.insert(id_b.clone(), Version::semver(0, 1, 0));
+
+    let capturing = PolicyCapturingInference {
+        seen: Mutex::new(Vec::new()),
+    };
+    aggregate(
+        &graph,
+        &identity_for_all(graph.packages.iter()),
+        &cfg,
+        &git,
+        &tags,
+        &base_versions,
+        None,
+        &capturing,
+    )
+    .unwrap();
+
+    let mut seen = capturing.seen.into_inner().unwrap();
+    seen.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        seen,
+        vec![
+            ("pkg-a".to_owned(), PreMajorInferencePolicy::Conservative),
+            ("pkg-b".to_owned(), PreMajorInferencePolicy::ConservativeFeat),
+        ]
+    );
+}
+
 /// A changeset matched for the first time in pre mode is recorded into `new_pre_changesets`, not `consumed`.
 #[test]
 fn test_pre_mode_first_match_is_recorded_not_consumed() {

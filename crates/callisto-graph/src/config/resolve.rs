@@ -9,7 +9,7 @@ use callisto_model::{
 
 use crate::changelog::ChangelogLayout;
 use crate::config::groups::{GroupTable, RawGroupTable};
-use crate::config::pattern::PackagePattern;
+use crate::config::pattern::PackageMatch;
 use crate::config::raw::{RawConfig, RawProductReleaseConfig};
 use crate::error::ConfigError;
 
@@ -23,13 +23,8 @@ pub struct ResolvedConfig {
     pub product_release: Option<ProductReleaseConfig>,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
     /// Per-package override rules from `[[package]]` blocks, in TOML declaration order. Every rule is
-    /// ecosystem-qualified; the first one that applies to a package wins (see `resolve_package_config`).
-    pub packages: Vec<(PackageId, PackageConfig)>,
-    /// Bulk config-override rules from `[[package-set]]` blocks, in TOML declaration order.
-    /// Applied as a fallback when no `[[package]]` rule matches a package.
-    /// Unlike `[[package]]` (exact `PackageId` match, first-wins), each
-    /// `[[package-set]]` rule uses a glob pattern and can match many packages simultaneously.
-    pub package_sets: Vec<(PackagePattern, PackageConfig)>,
+    /// ecosystem-qualified (see `resolve_package_config` for which one applies to a package).
+    pub packages: Vec<(PackageMatch, PackageConfig)>,
     pub groups: GroupTable,
     /// Raw group declarations from `callisto.toml`, kept so that
     /// `Workspace::load` can call `GroupTable::resolve` once the
@@ -330,17 +325,29 @@ pub(crate) fn rule_applies(rule_id: &PackageId, native_names: &[(Ecosystem, &str
     })
 }
 
-/// The first `[[package]]` rule, in TOML declaration order, that applies to `id`; `None` if none does.
-///
-/// MUST NOT sort or partition `cfg.packages`: declaration order is the specificity.
+/// The first exact `[[package]]` rule, in declaration order, that applies to a package; `None` if none does.
+pub(crate) fn exact_package_config<'a>(
+    native_names: &[(Ecosystem, &str)],
+    cfg: &'a ResolvedConfig,
+) -> Option<&'a PackageConfig> {
+    cfg.packages.iter().find_map(|(rule, pcfg)| match rule {
+        PackageMatch::Exact(id) => rule_applies(id, native_names).then_some(pcfg),
+        PackageMatch::Glob(_) => None,
+    })
+}
+
+/// The rule that configures a package: the first exact `[[package]]` rule, else the first glob rule, each in
+/// declaration order. Selection is whole-rule; fields are never merged across rules.
 pub(crate) fn resolve_package_config<'a>(
     native_names: &[(Ecosystem, &str)],
     cfg: &'a ResolvedConfig,
 ) -> Option<&'a PackageConfig> {
-    cfg.packages
-        .iter()
-        .find(|(rule_id, _)| rule_applies(rule_id, native_names))
-        .map(|(_, pcfg)| pcfg)
+    exact_package_config(native_names, cfg).or_else(|| {
+        cfg.packages.iter().find_map(|(rule, pcfg)| match rule {
+            PackageMatch::Glob(pattern) => pattern.matches_native(native_names).then_some(pcfg),
+            PackageMatch::Exact(_) => None,
+        })
+    })
 }
 
 pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, ConfigError> {
@@ -352,11 +359,7 @@ pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, Config
     }
 }
 
-/// Parses the five override fields shared by `[[package]]` and
-/// `[[package-set]]` blocks (release-trigger, tag-template, changelog,
-/// pre-major-inference, publish-to) into a `PackageConfig`.
-///
-/// `previous_tag_templates` is `[[package]]`-only; `[[package-set]]` callers pass `None`.
+/// Parses a `[[package]]` block's override fields into a `PackageConfig`.
 #[allow(clippy::too_many_arguments)]
 fn parse_package_config_fields(
     callisto_toml: &Path,
@@ -631,17 +634,23 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         provenance.insert(ConfigKey::LINKED_GROUP, ConfigProvenance::Explicit);
     }
 
-    // Resolve [[package]] blocks into per-package override rules.
-    // Order is preserved: first matching rule wins during package construction.
-    let mut packages: Vec<(PackageId, PackageConfig)> = Vec::new();
+    // Resolve [[package]] blocks into per-package override rules, keeping declaration order.
+    let mut packages: Vec<(PackageMatch, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package.unwrap_or_default() {
         ConfigError::require_canonical_ecosystem(&raw_pkg.pattern, "[[package]] match")?;
-        let pattern = PackageId::parse(&raw_pkg.pattern).map_err(|e| ConfigError::InvalidPackageMatch {
+        let invalid_match = |reason: String| ConfigError::InvalidPackageMatch {
             path: callisto_toml.clone(),
             location: "[[package]] match".to_owned(),
             pattern: raw_pkg.pattern.clone(),
-            reason: e.to_string(),
-        })?;
+            reason,
+        };
+        let rule = PackageMatch::parse(&raw_pkg.pattern).map_err(invalid_match)?;
+        if matches!(rule, PackageMatch::Glob(_)) && raw_pkg.previous_tag_templates.is_some() {
+            return Err(invalid_match(
+                "the glob also sets previous-tag-templates, which names one package's old tags; give it an exact match or drop the key"
+                    .to_owned(),
+            ));
+        }
 
         if raw_pkg.release_trigger.is_some() {
             provenance.insert(ConfigKey::RELEASE_TRIGGER, ConfigProvenance::Explicit);
@@ -666,46 +675,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             &registries,
         )?;
 
-        packages.push((pattern, cfg));
-    }
-
-    // Resolve [[package-set]] blocks into bulk config-override rules.
-    // Semantics: each rule matches ALL packages whose PackageId matches the pattern.
-    // A [[package]] rule takes priority; [[package-set]] is the fallback (see walk.rs).
-    let mut package_sets: Vec<(PackagePattern, PackageConfig)> = Vec::new();
-    for raw_pkg in raw.package_set.unwrap_or_default() {
-        ConfigError::require_canonical_ecosystem(&raw_pkg.pattern, "[[package-set]] match")?;
-        let pattern = PackagePattern::parse(&raw_pkg.pattern).map_err(|e| ConfigError::InvalidPackageMatch {
-            path: callisto_toml.clone(),
-            location: "[[package-set]] match".to_owned(),
-            pattern: raw_pkg.pattern.clone(),
-            reason: e.to_string(),
-        })?;
-
-        if raw_pkg.release_trigger.is_some() {
-            provenance.insert(ConfigKey::RELEASE_TRIGGER, ConfigProvenance::Explicit);
-        }
-        if raw_pkg.tag_template.is_some() {
-            provenance.insert(ConfigKey::TAG_TEMPLATE, ConfigProvenance::Explicit);
-        }
-        if raw_pkg.pre_major_inference.is_some() {
-            provenance.insert(ConfigKey::PRE_MAJOR_INFERENCE, ConfigProvenance::Explicit);
-        }
-
-        let cfg = parse_package_config_fields(
-            &callisto_toml,
-            "[[package-set]]",
-            &raw_pkg.pattern,
-            raw_pkg.release_trigger.as_deref(),
-            raw_pkg.tag_template.as_deref(),
-            None,
-            raw_pkg.changelog.as_deref(),
-            raw_pkg.pre_major_inference.as_deref(),
-            raw_pkg.publish_to.as_deref(),
-            &registries,
-        )?;
-
-        package_sets.push((pattern, cfg));
+        packages.push((rule, cfg));
     }
 
     Ok(ResolvedConfig {
@@ -722,7 +692,6 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         product_release,
         registries,
         packages,
-        package_sets,
         groups: GroupTable::default(),
         raw_groups,
         provenance,
@@ -834,23 +803,26 @@ mod tests {
     }
 
     #[test]
-    fn test_package_set_is_parsed_into_resolved_config() {
+    fn test_glob_package_rule_is_parsed_into_resolved_config() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
-            "[[package-set]]\nmatch = \"cargo/pkg-*\"\npublish-to = [\"none\"]\nrelease-trigger = \"auto\"\n",
+            "[[package]]\nmatch = \"cargo/pkg-*\"\npublish-to = [\"none\"]\nrelease-trigger = \"auto\"\n",
         )
         .expect("write callisto.toml");
 
         let config = load(root).expect("load should succeed");
         assert_eq!(
-            config.package_sets.len(),
+            config.packages.len(),
             1,
-            "one [[package-set]] rule expected; got: {:?}",
-            config.package_sets
+            "one [[package]] rule expected; got: {:?}",
+            config.packages
         );
-        let (pattern, pkg_cfg) = &config.package_sets[0];
+        let (rule, pkg_cfg) = &config.packages[0];
+        let PackageMatch::Glob(pattern) = rule else {
+            panic!("'cargo/pkg-*' must parse as a glob, got {rule:?}");
+        };
         assert!(
             pattern.matches(&callisto_model::PackageId::parse("cargo/pkg-a").unwrap()),
             "pattern 'cargo/pkg-*' must match 'cargo/pkg-a'"
@@ -871,9 +843,9 @@ mod tests {
     fn a_rule_without_its_ecosystem_is_rejected_with_the_qualified_form_named() {
         for (block, context) in [
             ("[[package]]\nmatch = \"my-crate\"\n", "[[package]] match"),
-            ("[[package-set]]\nmatch = \"pkg-*\"\n", "[[package-set]] match"),
+            ("[[package]]\nmatch = \"pkg-*\"\n", "[[package]] match"),
             ("[[package]]\nmatch = \"go/my-mod\"\n", "[[package]] match"),
-            ("[[package-set]]\nmatch = \"maven/pkg-*\"\n", "[[package-set]] match"),
+            ("[[package]]\nmatch = \"maven/pkg-*\"\n", "[[package]] match"),
             (
                 "[release]\nproduct-package = \"app\"\n[[release.artifact]]\npackage = \"cargo/app\"\ntarget = \"t\"\nasset-name = \"a\"\n",
                 "product-package",
@@ -934,7 +906,7 @@ mod tests {
             ("changelog", "[changelog]\n"),
             ("registries", "[registries.r]\nkind = \"npm\"\n"),
             ("package", "[[package]]\nmatch = \"cargo/a\"\n"),
-            ("package-set", "[[package-set]]\nmatch = \"cargo/*\"\n"),
+            ("package glob", "[[package]]\nmatch = \"cargo/*\"\n"),
             ("fixed-group", "[[fixed-group]]\nname = \"g\"\nmembers = [\"cargo/a\"]\n"),
             ("linked-group", "[[linked-group]]\nname = \"g\"\nmembers = [\"cargo/a\"]\n"),
             ("release", "[release]\nproduct-package = \"cargo/a\"\n"),
@@ -1728,12 +1700,6 @@ mod tests {
     }
 
     #[test]
-    fn release_trigger_provenance_is_explicit_when_set_on_a_package_set_rule() {
-        let cfg = bare_resolve("[[package-set]]\nmatch = \"cargo/*\"\nrelease-trigger = \"auto\"\n");
-        assert_eq!(cfg.provenance(&ConfigKey::RELEASE_TRIGGER), ConfigProvenance::Explicit);
-    }
-
-    #[test]
     fn release_trigger_provenance_is_default_when_absent() {
         let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\n");
         assert_eq!(cfg.provenance(&ConfigKey::RELEASE_TRIGGER), ConfigProvenance::Default);
@@ -1742,12 +1708,6 @@ mod tests {
     #[test]
     fn tag_template_provenance_is_explicit_when_set_on_a_package_rule() {
         let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\ntag-template = \"v{version}\"\n");
-        assert_eq!(cfg.provenance(&ConfigKey::TAG_TEMPLATE), ConfigProvenance::Explicit);
-    }
-
-    #[test]
-    fn tag_template_provenance_is_explicit_when_set_on_a_package_set_rule() {
-        let cfg = bare_resolve("[[package-set]]\nmatch = \"cargo/*\"\ntag-template = \"v{version}\"\n");
         assert_eq!(cfg.provenance(&ConfigKey::TAG_TEMPLATE), ConfigProvenance::Explicit);
     }
 
@@ -1767,20 +1727,94 @@ mod tests {
     }
 
     #[test]
-    fn pre_major_inference_provenance_is_explicit_when_set_on_a_package_set_rule() {
-        let cfg = bare_resolve("[[package-set]]\nmatch = \"cargo/*\"\npre-major-inference = \"conservative\"\n");
-        assert_eq!(
-            cfg.provenance(&ConfigKey::PRE_MAJOR_INFERENCE),
-            ConfigProvenance::Explicit
-        );
-    }
-
-    #[test]
     fn pre_major_inference_provenance_is_default_when_absent() {
         let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\n");
         assert_eq!(
             cfg.provenance(&ConfigKey::PRE_MAJOR_INFERENCE),
             ConfigProvenance::Default
+        );
+    }
+
+    #[test]
+    fn a_match_with_any_glob_character_is_a_glob_and_any_other_is_exact() {
+        for exact in ["cargo/a", "npm/@scope/pkg", "pypi/my_pkg.x"] {
+            assert!(
+                matches!(PackageMatch::parse(exact), Ok(PackageMatch::Exact(_))),
+                "{exact}"
+            );
+        }
+        for glob in [
+            "cargo/a-*",
+            "cargo/a?",
+            "cargo/[ab]",
+            "cargo/a]",
+            "cargo/{a,b}",
+            "npm/@scope/*",
+        ] {
+            assert!(matches!(PackageMatch::parse(glob), Ok(PackageMatch::Glob(_))), "{glob}");
+        }
+        // A glob character makes it a glob, so an unbalanced one is refused rather than read as an exact name.
+        for malformed in ["cargo/[", "cargo/a}"] {
+            assert!(PackageMatch::parse(malformed).is_err(), "{malformed}");
+        }
+    }
+
+    /// Exact beats glob whatever the declaration order; among globs the first declared wins.
+    #[test]
+    fn the_exact_rule_wins_over_an_earlier_glob_and_the_first_glob_wins_among_globs() {
+        let cfg = bare_resolve(
+            "[[package]]\nmatch = \"cargo/*\"\npre-major-inference = \"conservative\"\n\n\
+             [[package]]\nmatch = \"cargo/pkg-*\"\npre-major-inference = \"off\"\n\n\
+             [[package]]\nmatch = \"cargo/pkg-a\"\npre-major-inference = \"conservative-feat\"\n",
+        );
+        let policy = |name: &str| {
+            resolve_package_config(&[(Ecosystem::Cargo, name)], &cfg).and_then(|rule| rule.pre_major_inference)
+        };
+        assert_eq!(policy("pkg-a"), Some(PreMajorInferencePolicy::ConservativeFeat));
+        assert_eq!(policy("pkg-b"), Some(PreMajorInferencePolicy::Conservative));
+        assert_eq!(policy("other"), Some(PreMajorInferencePolicy::Conservative));
+        assert_eq!(
+            resolve_package_config(&[(Ecosystem::Npm, "pkg-a")], &cfg).map(|_| ()),
+            None
+        );
+    }
+
+    #[test]
+    fn exact_package_config_ignores_glob_rules() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"npm/*\"\npre-major-inference = \"conservative\"\n");
+        let names = [(Ecosystem::Npm, "root")];
+        assert!(exact_package_config(&names, &cfg).is_none());
+        assert!(resolve_package_config(&names, &cfg).is_some());
+    }
+
+    #[test]
+    fn the_retired_package_set_table_is_refused_with_its_replacement_named() {
+        let error = parse_raw(Path::new("callisto.toml"), "[[package-set]]\nmatch = \"cargo/*\"\n")
+            .expect_err("[[package-set]] is retired");
+        assert!(
+            matches!(&error, ConfigError::UnknownField { message, .. } if message.contains("rename it to `[[package]]`")),
+            "{error:?}"
+        );
+        assert_eq!(
+            miette::Diagnostic::code(&error).map(|c| c.to_string()).as_deref(),
+            Some("E325")
+        );
+    }
+
+    #[test]
+    fn previous_tag_templates_on_a_glob_is_refused_because_it_names_one_packages_old_tags() {
+        let raw = toml::from_str::<RawConfig>(
+            "[[package]]\nmatch = \"cargo/*\"\nprevious-tag-templates = [\"old-{version}\"]\n",
+        )
+        .expect("parse");
+        let error = resolve(Path::new("/workspace"), raw).expect_err("a glob cannot carry previous-tag-templates");
+        assert!(
+            matches!(&error, ConfigError::InvalidPackageMatch { reason, .. } if reason.contains("give it an exact match")),
+            "{error:?}"
+        );
+        assert_eq!(
+            miette::Diagnostic::code(&error).map(|c| c.to_string()).as_deref(),
+            Some("E338")
         );
     }
 }

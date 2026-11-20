@@ -11,8 +11,8 @@ use callisto_model::{
     ManifestRole, NativeName, Package, PackageId, PublishTarget,
 };
 
-use crate::config::resolve::{resolve_package_config, rule_applies};
-use crate::config::ResolvedConfig;
+use crate::config::resolve::{exact_package_config, resolve_package_config};
+use crate::config::{PackageMatch, ResolvedConfig};
 use crate::error::GraphError;
 use crate::identity::IdentityIndex;
 use crate::locate::ProjectLocator;
@@ -242,12 +242,12 @@ fn discover<L: ProjectLocator>(
 ) -> Result<Discovered, GraphError> {
     let (located, platform_candidates) = locator.projects_and_platform_candidates()?;
 
-    // A private npm workspace root only holds scripts and tooling; a `[[package]]` block makes it a package.
+    // A private npm workspace root only holds scripts and tooling; an exact `[[package]]` block makes it a package.
     let mut projects = Vec::with_capacity(located.len());
     for proj in located {
         if proj.ecosystem == Ecosystem::Npm
             && proj.path == Path::new(".")
-            && resolve_package_config(&[(Ecosystem::Npm, proj.id.name())], cfg).is_none()
+            && exact_package_config(&[(Ecosystem::Npm, proj.id.name())], cfg).is_none()
             && crate::locate::is_private_workspace_root(root)?
         {
             crate::note::note_once(format!(
@@ -604,7 +604,7 @@ fn prewarm_manifests(
     }
 }
 
-/// Applies `[[package]]` and `[[package-set]]` rules to each identified package, then reports rules that matched
+/// Applies `[[package]]` rules, exact and glob, to each identified package, then reports rules that matched
 /// nothing or matched across ecosystems.
 fn resolve_packages(
     package_manifest_decls: BTreeMap<PackageId, (PathBuf, Vec<ManifestDecl>)>,
@@ -616,12 +616,7 @@ fn resolve_packages(
 ) -> Result<BTreeMap<PackageId, Package>, GraphError> {
     prewarm_manifests(&package_manifest_decls, manifest_cache, ctx);
 
-    // Tracks which `package_sets` entries matched a package; an unmatched rule is usually a typo and is surfaced.
-    let mut package_set_matched = vec![false; cfg.package_sets.len()];
-
-    // Same tracking, for `[[package]]` rules: an exact-id rule that matches zero real
-    // packages (e.g. an ecosystem prefix the package doesn't actually have) is just as
-    // likely a typo as an empty `[[package-set]]` glob, so it gets the same diagnostic.
+    // A rule that matches no package is usually a typo, so track which rules matched.
     let mut package_rule_matched = vec![false; cfg.packages.len()];
     let mut package_rule_hint: Vec<Option<String>> = vec![None; cfg.packages.len()];
 
@@ -650,40 +645,23 @@ fn resolve_packages(
             publish_to.push(PublishTarget::None);
         }
 
-        // The ecosystems this package's manifests were found in; the only thing a prefixed [[package-set]] pattern can match.
+        // The ecosystems this package's manifests were found in.
         let package_ecosystems: Vec<Ecosystem> = decls.iter().map(|d| d.ecosystem()).collect();
 
-        // The first [[package]] rule, in declaration order, whose ecosystem this package has and whose name matches.
+        // The exact [[package]] rule, else the first glob rule, that configures this package.
         let native_names: Vec<(Ecosystem, &str)> = index.native_names(&id).collect();
-        let pkg_override = resolve_package_config(&native_names, cfg);
+        let active_override = resolve_package_config(&native_names, cfg);
 
-        // Record matching patterns even when a [[package]] rule shadows them, for the zero-match diagnostic.
-        for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
-            if pattern.matches_native(&native_names) {
-                package_set_matched[idx] = true;
-            }
-        }
-        for (idx, (rule_id, _)) in cfg.packages.iter().enumerate() {
-            if rule_applies(rule_id, &native_names) {
+        // Record every matching rule, even a shadowed one, for the zero-match diagnostic.
+        for (idx, (rule, _)) in cfg.packages.iter().enumerate() {
+            if rule.applies(&native_names) {
                 package_rule_matched[idx] = true;
-            } else if package_rule_hint[idx].is_none() {
+            } else if let PackageMatch::Exact(rule_id) = rule
+                && package_rule_hint[idx].is_none()
+            {
                 package_rule_hint[idx] = index.suggest_native(&rule_id.to_string());
             }
         }
-
-        // If no [[package]] rule matched, look for a [[package-set]] fallback.
-        // [[package-set]] uses glob patterns and can match many packages at once;
-        // [[package]] always takes priority over [[package-set]] for the same package.
-        let set_override = if pkg_override.is_none() {
-            cfg.package_sets
-                .iter()
-                .find(|(pattern, _)| pattern.matches_native(&native_names))
-                .map(|(_, cfg)| cfg)
-        } else {
-            None
-        };
-
-        let active_override = pkg_override.or(set_override);
 
         // Single source of truth for the default: ReleaseTrigger's #[default].
         let release_trigger = active_override.and_then(|o| o.release_trigger).unwrap_or_default();
@@ -737,29 +715,14 @@ fn resolve_packages(
     }
 
     // Advisory, not an error: a monorepo-wide rule can match nothing on a partial checkout.
-    for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
-        if !package_set_matched[idx] {
-            diagnostics.push(Diagnostic {
-                code: DiagnosticCode::PackageSetMatchedNothing,
-                severity: DiagnosticSeverity::Warning,
-                message: format!("[[package-set]] `{}` matched no packages", pattern.as_str()),
-                package: None,
-                path: None,
-                escalated_by: None,
-                governed_by: None,
-            });
-        }
-    }
-
-    // Same advisory as an empty [[package-set]] match: a [[package]] rule matching nothing is usually a typo.
-    for (idx, (rule_id, _)) in cfg.packages.iter().enumerate() {
+    for (idx, (rule, _)) in cfg.packages.iter().enumerate() {
         if !package_rule_matched[idx] {
             diagnostics.push(Diagnostic {
                 code: DiagnosticCode::PackageRuleMatchedNothing,
                 severity: DiagnosticSeverity::Warning,
                 message: match &package_rule_hint[idx] {
-                    Some(hint) => format!("[[package]] `{rule_id}` matched no packages; did you mean `{hint}`?"),
-                    None => format!("[[package]] `{rule_id}` matched no packages"),
+                    Some(hint) => format!("[[package]] `{rule}` matched no packages; did you mean `{hint}`?"),
+                    None => format!("[[package]] `{rule}` matched no packages"),
                 },
                 package: None,
                 path: None,
