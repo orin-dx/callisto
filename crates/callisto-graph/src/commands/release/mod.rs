@@ -1058,7 +1058,7 @@ pub(crate) mod tests {
         assert_eq!(registry.0, &std::path::PathBuf::new());
         assert_eq!(registry.1, "release-fixture");
         assert_eq!(registry.2.render(), "1.2.3");
-        assert_eq!(registry.3.key.as_str(), "cratesIo");
+        assert_eq!(registry.3.key.as_str(), "crates-io");
         assert!(registry.3.endpoint.is_none());
         assert!(registry.4.is_none());
     }

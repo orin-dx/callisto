@@ -4,18 +4,6 @@ use super::*;
 
 pub(super) struct CargoRegistry;
 
-/// The name the *cargo* client knows this registry by. Callisto's logical
-/// `cratesIo` key is cargo's built-in `crates-io`; every other key is spelled
-/// the same in `.cargo/config.toml` as it is in `callisto.toml`.
-/// The cargo registry name for a logical registry key (`cratesIo` is cargo's `crates-io`).
-pub fn cargo_registry_name(key: &RegistryKey) -> &str {
-    if key.as_str() == RegistryKey::CRATES_IO {
-        "crates-io"
-    } else {
-        key.as_str()
-    }
-}
-
 /// The observation argv: `cargo info NAME@VERSION --registry REGISTRY`.
 ///
 /// `--registry` is never omitted. Without it `cargo info` resolves the local
@@ -37,7 +25,7 @@ impl RegistryEcosystem for CargoRegistry {
 
     fn repository(&self, context: &ProviderContext<'_>, operation: &RegistryPublishOperation) -> Option<String> {
         let spec = format!("{}@{}", operation.package_name, operation.version.render());
-        let registry = cargo_registry_name(&operation.registry.key);
+        let registry = operation.registry.key.as_str();
         let args = cargo_info_args(&spec, registry);
         let cwd = registry_argv::cargo_workspace_dir(context.root(), &operation.package_dir).ok()?;
         let output = run_observation(
@@ -69,7 +57,7 @@ impl RegistryEcosystem for CargoRegistry {
         operation: &RegistryPublishOperation,
     ) -> Result<Attempt<ProviderObservationV1>, GraphError> {
         let spec = format!("{}@{}", operation.package_name, operation.version.render());
-        let registry = cargo_registry_name(&operation.registry.key);
+        let registry = operation.registry.key.as_str();
         let args = cargo_info_args(&spec, registry);
         let cwd = registry_argv::cargo_workspace_dir(context.root(), &operation.package_dir)?;
         let output = match run_observation(

@@ -324,15 +324,6 @@ fn the_observation_argv_always_names_a_registry() {
             "crates-io"
         ]
     );
-    assert_eq!(
-        cargo_registry_name(&RegistryKey(RegistryKey::CRATES_IO.to_owned())),
-        "crates-io",
-        "callisto's logical cratesIo key is cargo's built-in crates-io registry"
-    );
-    assert_eq!(
-        cargo_registry_name(&RegistryKey("private-cargo".to_owned())),
-        "private-cargo"
-    );
 }
 
 // ------------------------------- captured real bytes fed to the classifier

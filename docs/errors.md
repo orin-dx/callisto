@@ -6,7 +6,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
-Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E216, E217, E218, E248, E253, E254, E257, E258, E282, E318. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338). E318 refused `release-pr decide` in pre mode; a release PR now runs a whole pre cycle.
+Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199, E216, E217, E218, E248, E253, E254, E257, E258, E282, E318, E339. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338). E318 refused `release-pr decide` in pre mode; a release PR now runs a whole pre cycle.
 
 ## callisto-model
 
@@ -153,11 +153,11 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E216,
 | E252 | Duplicate group name | Rename one of the two groups sharing this name. |
 | E255 | `cascade.bump-severity` is invalid | Set `cascade.bump-severity` to `patch` or `minor` in callisto.toml. |
 | E256 | `pre-major-inference` is invalid | Set `pre-major-inference` to `off`, `conservative`, or `conservative-feat` in callisto.toml. |
-| E330 | A `publish-to` entry in a `[[package]]` block is not a publish target | Set `<location>` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release`, `none` or the name of a `kind = "cargo"` registry in `[registries]`, in callisto.toml. |
+| E330 | A `publish-to` entry in a `[[package]]` block is not a publish target | Set `<location>` to a list of `crates-io`, `npm`, `pypi`, `github-release`, `none` or the name of a `kind = "cargo"` registry in `[registries]`, in callisto.toml. |
 | E331 | A `release-trigger` in a `[[package]]` block is not `changeset` or `auto` | Set `<location>` to `changeset` or `auto` in callisto.toml. |
 | E332 | `cascade.mode` is not `always` or `out-of-range` | Set `cascade.mode` to `always` or `out-of-range` in callisto.toml. |
 | E333 | `changelog.layout` is not `grouped` or `flat` | Set `changelog.layout` to `grouped` or `flat` in callisto.toml. |
-| E334 | A `[registries.<name>]` entry has a `kind` that is not `cargo`, `npm` or `pypi` | Set `kind` on `[registries.<registry>]` to `cargo`, `npm` or `pypi` in callisto.toml. |
+| E334 | A `[registries.<name>]` entry has a `kind` that is not `cargo`, `npm` or `pypi`, or a predeclared registry (`crates-io`, `npm`, `pypi`) has a kind other than its own | Set `kind` on `[registries.<registry>]` to the expected kind in callisto.toml. `crates-io`, `npm` and `pypi` are predeclared with their own kind: name a custom registry something else. |
 | E335 | A `[registries.<name>]` entry that is not `pypi` sets `publish-url` | Remove `publish-url` from `[registries.<registry>]`, or set `kind = "pypi"`. Only a `pypi` registry has a separate upload route. |
 | E336 | A `[registries.<name>]` entry of kind `cargo` sets `url` | Remove `url` from `[registries.<registry>]`; cargo takes its destination from `.cargo/config.toml`. |
 | E337 | A registry's `confirm-timeout` or `publish-timeout` is not a duration from 1s to 1h | Set `<field>` to a whole number followed by `s`, `m` or `h`, from `1s` to `1h`, such as `"90s"` or `"15m"`. |
@@ -218,7 +218,6 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E216,
 | E169 | Release `--package` selection is invalid. A version `callisto snapshot` wrote is never selectable. | Select each package at most once, only packages with a pending release and a publish target, and every unreleased platform package a selected npm package depends on. |
 | E170 | Release precondition is unmet (e.g. detached HEAD, missing GitHub remote, workspace below the repository root) | Satisfy the reported precondition (for example a detached HEAD or a configured GitHub remote) before retrying. |
 | E171 | Internal release invariant violated | This is an internal callisto defect, not an operator action; report it along with the full error detail. |
-| E339 | A `[registries.<name>]` entry's `kind` does not match the ecosystem of a package that publishes to it (for example `[registries.cratesIo]` with `kind = "npm"`) | Set `kind = "<expected>"` on `[registries.<registry>]`, or remove the entry to use the built-in registry. No registry was contacted. |
 | E340 | An interrupted `version` run left a checkpoint, and `HEAD`, the tags, the Callisto version, the workspace or a file the plan was derived from or writes (a manifest, `callisto.toml`, a changeset) is neither as recorded nor as a finished run would leave it, so it cannot resume | Run `callisto version` again only with the inputs it started from. To give up on the interrupted run, delete its checkpoint with `git update-ref -d refs/worktree/callisto/checkpoint/version`, then follow the E121 steps to finish or undo what it wrote. |
 | E341 | Another `version` run created the checkpoint between this run's check and its own | Wait for the other run to finish, then run `callisto version` again to resume or finish its work. |
 | E328 | `release pending --from` names a commit that is not a release commit on this branch | Pass a release commit from `callisto release pending` run without `--from`, on this branch's first-parent history. |
@@ -238,7 +237,6 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E216,
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
 | E196 | `--artifact-target` triple is invalid | Use distinct, non-empty Rust target triples. |
 | E198 | `[release]` has no forge repository: origin is not a GitHub repository and no `forge-repository` is set | Point origin at the GitHub repository, or set `[release] forge-repository`. |
-| E199 | Package configures a `publish-to` target that release cannot dispatch yet | Remove the target from `publish-to` for this package, or publish it outside `callisto release`. |
 | E200 | Generated workflow file already exists; `callisto init` refuses to overwrite it | Remove or edit the existing file directly; `callisto init` never merges into it. |
 | E201 | Couldn't resolve `callisto@{version}` to a commit on `orin-dx/callisto` | check network access to github.com, or run `callisto init --no-workflow` to skip workflow generation |
 | E202 | `callisto init` cannot generate a release workflow for this workspace | omit --workflow and write .github/workflows/callisto-release.yml by hand |
@@ -317,7 +315,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E216,
 | E317 | A package named in `callisto.toml`, or in `add --package` or `matrix --package`, has no ecosystem (`foo`). Those places accept no other form; changeset entries keep native names. | Write the ecosystem and name with a slash, such as `cargo/<given>`, `npm/<given>` or `pypi/<given>`. |
 | E319 | A dependency spec is out of range of the new version and cannot be rewritten mechanically (an npm range with spaces, `||`, a hyphen or a wildcard, or a Cargo range whose upper bound excludes the new version) | Edit the range in <manifest> so it covers <version> (Callisto rewrites only single-operator ranges), then re-run. |
 | E320 | A local release would tag a version the registry already holds on a commit whose files differ from the commit that set it, or whose version commit is not in this history. The fix names the commit to check out (`git checkout --detach <sha>`); `callisto release` then adopts the published version and tags that commit. When no commit is named, check out the commit that was published, or tag it by hand. | <fix> |
-| E321 | A `[registries.<name>]` entry for a custom registry has no `kind` | Add `kind = "cargo"`, `kind = "npm"` or `kind = "pypi"` to `[registries.<registry>]`. Only the built-in `cratesIo`, `npm` and `pypi` registries may leave it out. |
+| E321 | A `[registries.<name>]` entry for a custom registry has no `kind` | Add `kind = "cargo"`, `kind = "npm"` or `kind = "pypi"` to `[registries.<registry>]`. Only the predeclared `crates-io`, `npm` and `pypi` registries may leave it out. |
 | E322 | A first release's version is already on the registry under a different repository, so the name belongs to another project | This looks like another project's package: this repository has never released `<package>`, yet the registry holds that version for a different repository. Rename the package. If it is yours (it moved repositories), tag the commit that set this version by hand and run `callisto release` again. |
 | E323 | A first crates.io release of a crate with no `description`, or neither `license` nor `license-file` | Add <missing> to the package's Cargo.toml (or inherit it from `[workspace.package]`), commit it, and run `callisto release` again. Nothing has been published. |
 | E324 | A `snapshot --tag` is empty or has a character other than a letter, digit or `-`; a `pre enter` tag has an empty `.`-separated part or such a character | Pass a tag such as `canary` or `pr-42`; it becomes part of the pre-release version. |

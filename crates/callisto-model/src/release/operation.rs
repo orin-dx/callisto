@@ -447,10 +447,8 @@ pub enum ReleaseOperationError {
     UnsafePlatformPackage,
 }
 
-/// The one charset rule for a registry key, applied wherever a key is minted
-/// from configuration or from a durable intent: a key reaches argv (`cargo
-/// publish --registry <key>`), so it stays
-/// alphanumeric plus `-`/`_`.
+/// A registry key from `[registries.<name>]`, `publish-to` or a durable intent. It reaches argv (`cargo publish
+/// --registry <key>`), so it stays alphanumeric plus `-`/`_`.
 ///
 /// # Errors
 ///
@@ -634,7 +632,7 @@ mod tests {
         let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
         let version = Version::semver(1, 2, 3);
         let publish =
-            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry_binding("cratesIo"), vec![])
+            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry_binding("crates-io"), vec![])
                 .unwrap();
         let tag = ReleaseOperation::tag(package, version, vec![publish.id().clone()]).unwrap();
 

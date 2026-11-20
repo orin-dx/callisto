@@ -908,7 +908,7 @@ mod tests {
         let package = ReleasePackageId::new(callisto_model::Ecosystem::Cargo, "demo").unwrap();
         let version = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
         let binding =
-            RegistryBindingId::new("cratesIo", RegistryBindingDigest::parse(&"a".repeat(64)).unwrap()).unwrap();
+            RegistryBindingId::new("crates-io", RegistryBindingDigest::parse(&"a".repeat(64)).unwrap()).unwrap();
         let publish = ReleaseOperation::registry_publish(package.clone(), version.clone(), binding, vec![]).unwrap();
         let tag = ReleaseOperation::tag(package.clone(), version.clone(), vec![publish.id().clone()]).unwrap();
         let release =
@@ -985,13 +985,13 @@ mod tests {
     }
 
     /// A registry publish step names the registry's display name
-    /// (`crates.io`), not its internal wire key (`cratesIo`).
+    /// (`crates.io`), not its wire key (`crates-io`).
     #[test]
     fn plan_text_names_registries_by_display_name_not_wire_key() {
         let intent = sample();
         let text = render_release_plan(&intent, false);
         assert!(text.contains("publish to crates.io"), "{text}");
-        assert!(!text.contains("cratesIo"), "{text}");
+        assert!(!text.contains("crates-io"), "{text}");
     }
 
     /// `use_color: true` renders the release plan as a box-drawing table.
