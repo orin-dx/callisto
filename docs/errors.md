@@ -6,7 +6,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
-Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248, E253, E254, E257, E258. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338).
+Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248, E253, E254, E257, E258, E318. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338). E318 refused `release-pr decide` in pre mode; a release PR now runs a whole pre cycle.
 
 ## callisto-model
 
@@ -319,7 +319,6 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E315 | Commit-based version inference needs the full Git history, but this repository is a shallow clone | Fetch the full history (`git fetch --unshallow`, or `fetch-depth: 0` for actions/checkout), or give the packages that need no commit inference `release-trigger = "changeset"`. |
 | E316 | A package reference uses the colon form (`cargo:foo`). The slash form is the only qualified spelling in `callisto.toml`, changesets, `pre.json` and command-line arguments. | Write the ecosystem and name with a slash: `<canonical>`. |
 | E317 | A package named in `callisto.toml`, or in `add --package` or `matrix --package`, has no ecosystem (`foo`). Those places accept no other form; changeset entries keep native names. | Write the ecosystem and name with a slash, such as `cargo/<given>`, `npm/<given>` or `pypi/<given>`. |
-| E318 | `release-pr decide` was run while `.changeset/pre.json`'s mode is `pre` | release prereleases locally with `callisto version` and `callisto release`, or run `callisto pre exit` first |
 | E319 | A dependency spec is out of range of the new version and cannot be rewritten mechanically (an npm range with spaces, `||`, a hyphen or a wildcard, or a Cargo range whose upper bound excludes the new version) | Edit the range in <manifest> so it covers <version> (Callisto rewrites only single-operator ranges), then re-run. |
 | E320 | A local release would tag a version the registry already holds on a commit whose files differ from the commit that set it, or whose version commit is not in this history. The fix names the commit to check out (`git checkout --detach <sha>`); `callisto release` then adopts the published version and tags that commit. When no commit is named, check out the commit that was published, or tag it by hand. | <fix> |
 | E321 | A `[registries.<name>]` entry for a custom registry has no `kind` | Add `kind = "cargo"`, `kind = "npm"` or `kind = "pypi"` to `[registries.<registry>]`. Only the built-in `cratesIo`, `npm` and `pypi` registries may leave it out. |

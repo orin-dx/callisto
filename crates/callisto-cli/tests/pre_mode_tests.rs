@@ -409,46 +409,6 @@ fn test_pre_enter_rejects_empty_tag() {
     );
 }
 
-/// A release PR cannot release in pre mode, so it is refused before a pull request is opened.
-#[test]
-fn release_pr_decide_refuses_pre_mode_with_a_local_release_fix() {
-    let dir = setup_polyglot_git_repo();
-    let root = dir.path();
-    let callisto = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_callisto"))
-            .args(["--cwd", root.to_str().unwrap()])
-            .args(args)
-            .output()
-            .unwrap()
-    };
-    assert!(callisto(&["pre", "enter", "beta"]).status.success());
-    let repository = callisto_model::GitHubRepository::parse("example/widget").unwrap();
-    let snapshot = callisto_model::ReleasePrSnapshotV2::new(
-        repository,
-        "main".into(),
-        callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
-        vec![],
-    )
-    .unwrap();
-    let snapshot = serde_json::to_string(&snapshot).unwrap();
-    let output = callisto(&[
-        "release-pr",
-        "decide",
-        "--snapshot",
-        &snapshot,
-        "--repository",
-        "example/widget",
-        "--base-branch",
-        "main",
-        "--release-branch",
-        "release/widget",
-    ]);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success(), "{stderr}");
-    assert!(stderr.contains("E318") && stderr.contains("`beta`"), "{stderr}");
-    assert!(stderr.contains("callisto pre exit"), "{stderr}");
-}
-
 /// Bug 4: `pre enter` must stage `.changeset/pre.json` via `git add`.
 ///
 /// After a successful `pre enter`, `git status --porcelain` should show

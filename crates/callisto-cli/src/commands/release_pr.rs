@@ -7,9 +7,6 @@
 use std::process::ExitCode;
 
 use callisto_graph::commands::{plan_version, VersionOptions};
-use callisto_graph::resolver::ManifestWalkResolver;
-use callisto_graph::{GraphError, Workspace};
-use callisto_model::format::{parse_pre_json, PreMode};
 use callisto_model::vcs::GitAccess;
 use callisto_model::{
     CommitSha, GitHubRepository, ReleasePrActionV2, ReleasePrCommitPlanReport, ReleasePrCommitPlanV1,
@@ -107,7 +104,6 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
-    reject_pre_mode(&workspace)?;
     let inference = crate::workspace::select_inference();
     // The plan `version` would apply, so an unparseable changeset fails here instead of looking like nothing pending.
     let options = VersionOptions {
@@ -126,21 +122,6 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         OutputFormat::Text => render_decision(&decision)?,
     }
     Ok(ExitCode::SUCCESS)
-}
-
-/// A release PR merge must consume changesets, which pre mode keeps, so it fails before a PR is opened.
-fn reject_pre_mode(workspace: &Workspace<'_, CliCommandRunner, ManifestWalkResolver>) -> Result<(), CliError> {
-    let path = workspace.root.join(workspace.config.pre_json_path());
-    let text = callisto_model::strict_fs::read_optional(&path).map_err(|error| GraphError::PreJsonRead {
-        path: path.clone(),
-        message: error.to_string(),
-    })?;
-    let Some(text) = text else { return Ok(()) };
-    let state = parse_pre_json(&text).map_err(GraphError::PreJson)?;
-    match state.mode {
-        PreMode::Pre => Err(CliError::ReleasePrInPreMode { tag: state.tag }),
-        PreMode::Exit => Ok(()),
-    }
 }
 
 fn commit_plan(args: ReleasePrCommitPlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
