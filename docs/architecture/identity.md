@@ -31,7 +31,7 @@ A workspace can hold `cargo/foo` and `npm/foo` as separate packages; ambiguity i
 
 - `aggregate::resolve_target_package` resolves changeset entries through `IdentityIndex::resolve_id`, which maps qualified native distribution names to their owner and rejects ambiguous bare names. `status` attributes changeset entries and checks their well-formedness through the same resolver.
 - `[[package]]` rules use `config::resolve::resolve_package_config`: the first rule in declaration order whose ecosystem the package has and whose name matches. It never sorts the rules. Config rejects a rule without its ecosystem (E317), so every rule is ecosystem-qualified.
-- `[[package-set]]` is a fallback applied in `ManifestWalkResolver::build` (`crates/callisto-graph/src/walk.rs`) only when no `[[package]]` rule matched. Patterns (`config/pattern.rs`) are globs over the name with a required ecosystem prefix (a bare pattern is E317), tested against every ecosystem the package has a manifest in.
+- `[[package-set]]` is a fallback applied by `config::resolve::resolve_package_rule` only when no `[[package]]` rule matched, for the manifest walk, `pre-major-inference` and `previous-tag-templates` alike. Patterns (`config/pattern.rs`) are globs over the name with a required ecosystem prefix (a bare pattern is E317), tested against every ecosystem the package has a manifest in.
 
 ## Loading a workspace
 
