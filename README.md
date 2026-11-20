@@ -121,7 +121,6 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 - Dependencies across languages are not inferred; use groups to move packages together ([guide](docs/how-callisto-works.md#current-support)).
 - Python versions must be static (PEP 621) or Poetry. Maturin gets no generated workflow, and Cargo plus maturin in one directory fails with E007 ([publishing](docs/publishing.md#current-python-support-limits)).
 - Generated workflows are GitHub Actions only, and build only Cargo binaries and napi addons; other products need a manual workflow ([releasing](docs/releasing.md#generated-workflows)).
-- A bump inferred from commits shows in `status` and `version`, but the release PR reads changesets only, so add a changeset to release it ([spec](docs/specs/cli.json)).
 - A release across several registries is not atomic ([guide](docs/how-callisto-works.md#current-support)).
 - Registry credentials are tokens passed to the native tools. Native npm and twine handle tokenless publishing; see [Tokenless trusted publishing](docs/publishing.md#tokenless-trusted-publishing). It is not yet verified against real registries.
 - `release` requires the workspace to be at the repository root; `status` and `version` also work in a subdirectory ([releasing](docs/releasing.md#local-release-callisto-release)).

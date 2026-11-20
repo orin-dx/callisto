@@ -16,17 +16,14 @@ Canonical `ecosystem/name` references, historical tag ownership, one tag and rel
 | Item | State |
 | --- | --- |
 | Co-located Cargo/Maturin | After v1. Both a static and a dynamic Python version fail with E007. |
-| Production-path registry tests for Cargo and PyPI | The tests drive the publisher argv directly and bypass registry binding and observation. A path through binding is blocked because `registry_endpoint.rs` rejects non-https URLs, loopback included. Decide the approach, then build it or drop it. npm already goes through the real adapter. |
-| Native fixture evidence | Cargo and napi clean install and load, mixed workspaces and packed pnpm metadata are not recorded as a verification matrix. |
+| Native fixture evidence | Cargo and napi clean install and load, and platform packages, are not yet recorded against real registries. |
 | First-release onboarding time | The goal of under ten minutes from a fresh repo to a first published release has not been measured. |
-| Release target table | `matrix.rs` carries its own 18-triple table instead of reading rustc's target facts. |
 
 ## Owner decisions still open
 
 - Private and HTML-only PyPI indexes: [publishing](../publishing.md) says they need explicit support.
 - npm channel promotion. Prereleases already publish under their own dist-tag.
 - Universal checksums, and wrapper bump severity.
-- Inferred-only releases in managed CI: `status` warns, but whether inference may open the release PR is an ADR 2 question.
 - Release-commit provenance: ADR 2 documents the unkeyed digest.
 - Whether to add a workspace-wide check for discarded source errors. The lints deny `let_underscore_must_use`, `let_underscore_untyped` and `map_err_ignore`.
 - npm JSON layout normalization, and the scope of napi `.node` attestation.
@@ -34,4 +31,4 @@ Canonical `ecosystem/name` references, historical tag ownership, one tag and rel
 
 ## After 1.0
 
-OIDC trusted publishing ([plan](OIDC-TRUSTED-PUBLISHING.md)), `cargo-semver-checks` on the promised surfaces (schema output, config and report formats), and a review of the remaining `expect` calls.
+Generated OIDC trusted publishing ([plan](OIDC-TRUSTED-PUBLISHING.md)); the [tokenless recipe](../publishing.md#tokenless-trusted-publishing) is documented but unverified on real registries, `cargo-semver-checks` on the promised surfaces (schema output, config and report formats), and a review of the remaining `expect` calls.
