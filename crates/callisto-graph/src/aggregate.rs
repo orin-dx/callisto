@@ -9,7 +9,7 @@ use callisto_model::{
     BumpReason, CommitSha, Diagnostic, GroupKind, GroupName, Package, PackageId, ReleaseTrigger, Severity, Version,
 };
 
-use crate::config::resolve::resolve_package_config;
+use crate::config::resolve::resolve_package_rule;
 use crate::config::GroupTable;
 use crate::config::{PreMajorInferencePolicy, ResolvedConfig};
 use crate::error::{ConfigError, GraphError};
@@ -443,7 +443,7 @@ where
             })?;
 
         let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
-        let policy = resolve_package_config(&native_names, config)
+        let policy = resolve_package_rule(&native_names, config)
             .and_then(|pcfg| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::Off);
 

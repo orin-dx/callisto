@@ -343,6 +343,20 @@ pub(crate) fn resolve_package_config<'a>(
         .map(|(_, pcfg)| pcfg)
 }
 
+/// The rule that configures a package: the first exact `[[package]]` rule, else the first `[[package-set]]` glob, each
+/// in declaration order. Selection is whole-rule; fields are never merged across rules.
+pub(crate) fn resolve_package_rule<'a>(
+    native_names: &[(Ecosystem, &str)],
+    cfg: &'a ResolvedConfig,
+) -> Option<&'a PackageConfig> {
+    resolve_package_config(native_names, cfg).or_else(|| {
+        cfg.package_sets
+            .iter()
+            .find(|(pattern, _)| pattern.matches_native(native_names))
+            .map(|(_, pcfg)| pcfg)
+    })
+}
+
 pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, ConfigError> {
     match s {
         "off" => Ok(PreMajorInferencePolicy::Off),
@@ -671,7 +685,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
 
     // Resolve [[package-set]] blocks into bulk config-override rules.
     // Semantics: each rule matches ALL packages whose PackageId matches the pattern.
-    // A [[package]] rule takes priority; [[package-set]] is the fallback (see walk.rs).
+    // A [[package]] rule takes priority; [[package-set]] is the fallback (see `resolve_package_rule`).
     let mut package_sets: Vec<(PackagePattern, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package_set.unwrap_or_default() {
         ConfigError::require_canonical_ecosystem(&raw_pkg.pattern, "[[package-set]] match")?;

@@ -115,7 +115,7 @@ while IFS= read -r name; do applied_labels+=("$name"); done < <(jq -r '.labels[]
 unapplied_labels=()
 while IFS= read -r name; do unapplied_labels+=("$name"); done < <(jq -r '.labels[]? | select(.applied | not) | .name' <<< "$report")
 git add -A
-test -n "$(git status --porcelain)" || { echo '::error::pending changesets produced no release-PR delta'; exit 1; }
+test -n "$(git status --porcelain)" || { echo '::error::the release plan produced no release-PR delta'; exit 1; }
 
 plan_file=$(mktemp)
 callisto --format json release-pr commit-plan --base-commit "$base_commit" --message "$INPUT_COMMIT_MESSAGE" --out "$plan_file"

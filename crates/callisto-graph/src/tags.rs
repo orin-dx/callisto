@@ -341,7 +341,7 @@ impl TagIndex {
             };
             if chosen.is_none() {
                 let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
-                if let Some(previous) = crate::config::resolve::resolve_package_config(&native_names, cfg)
+                if let Some(previous) = crate::config::resolve::resolve_package_rule(&native_names, cfg)
                     .map(|package_config| package_config.previous_tag_templates.as_slice())
                 {
                     for template in previous {
