@@ -19,7 +19,7 @@ packages:
             name: "plugin",
         },
         fingerprint: SemanticInputDigest(
-            "cb2dc111a4a314e1c1eaaa63f43eaf8add9061bfb725d103d926421ea0409551",
+            "9c327f98450ab6675c3855ef7208573c63e7667ca6ad9252b9055f51918d6ed6",
         ),
     },
 ]
@@ -96,10 +96,10 @@ operations:
             role: RegistryPublish {
                 registry: RegistryBindingId {
                     registry_key: RegistryKey(
-                        "cratesIo",
+                        "crates-io",
                     ),
                     binding_digest: RegistryBindingDigest(
-                        "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                        "27c38e3a0425a6fdde2ad9f007cb0a0174e3c98a5ddb672b939a51b9a5adc3ff",
                     ),
                 },
             },
@@ -145,10 +145,10 @@ operations:
                 role: RegistryPublish {
                     registry: RegistryBindingId {
                         registry_key: RegistryKey(
-                            "cratesIo",
+                            "crates-io",
                         ),
                         binding_digest: RegistryBindingDigest(
-                            "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                            "27c38e3a0425a6fdde2ad9f007cb0a0174e3c98a5ddb672b939a51b9a5adc3ff",
                         ),
                     },
                 },
@@ -435,10 +435,10 @@ prepared:
         role: RegistryPublish {
             registry: RegistryBindingId {
                 registry_key: RegistryKey(
-                    "cratesIo",
+                    "crates-io",
                 ),
                 binding_digest: RegistryBindingDigest(
-                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                    "27c38e3a0425a6fdde2ad9f007cb0a0174e3c98a5ddb672b939a51b9a5adc3ff",
                 ),
             },
         },
@@ -470,12 +470,12 @@ prepared:
             },
             registry: PreparedRegistryBinding {
                 key: RegistryKey(
-                    "cratesIo",
+                    "crates-io",
                 ),
                 endpoint: None,
                 publish_endpoint: None,
                 identity: RegistryBindingDigest(
-                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                    "27c38e3a0425a6fdde2ad9f007cb0a0174e3c98a5ddb672b939a51b9a5adc3ff",
                 ),
                 confirm_timeout: None,
                 publish_timeout: None,

@@ -710,17 +710,6 @@ pub enum GraphError {
     )]
     ReleaseInvariant { detail: String },
 
-    #[error("`[registries.{registry}]` is a `{configured}` registry, but a `{expected}` package publishes to it")]
-    #[diagnostic(
-        code(E339),
-        help("Set `kind = \"{expected}\"` on `[registries.{registry}]`, or remove the entry to use the built-in registry. No registry was contacted.")
-    )]
-    RegistryKindMismatch {
-        registry: String,
-        configured: String,
-        expected: String,
-    },
-
     #[error("`--from` commit `{commit}` is not a release commit on this branch")]
     #[diagnostic(
         code(E328),
@@ -781,16 +770,6 @@ pub enum GraphError {
         help("Point origin at the GitHub repository, or set `[release] forge-repository`.")
     )]
     ReleaseForgeRepositoryMissing,
-
-    #[error("package `{package}` configures publish-to = [\"{target}\"], which release cannot dispatch yet")]
-    #[diagnostic(
-        code(E199),
-        help("Remove the target from `publish-to` for this package, or publish it outside `callisto release`.")
-    )]
-    PublishTargetNotImplemented {
-        package: callisto_model::ReleasePackageId,
-        target: String,
-    },
 
     #[error("`{}` already exists; this workspace is already initialized", .path.display())]
     #[diagnostic(
@@ -1236,7 +1215,7 @@ pub enum ConfigError {
     #[error("`[registries.{registry}]` does not say what kind of registry it is")]
     #[diagnostic(
         code(E321),
-        help("Add `kind = \"cargo\"`, `kind = \"npm\"` or `kind = \"pypi\"` to `[registries.{registry}]`. Only the built-in `cratesIo`, `npm` and `pypi` registries may leave it out.")
+        help("Add `kind = \"cargo\"`, `kind = \"npm\"` or `kind = \"pypi\"` to `[registries.{registry}]`. Only the predeclared `crates-io`, `npm` and `pypi` registries may leave it out.")
     )]
     RegistryKindMissing { registry: String },
 
@@ -1250,7 +1229,7 @@ pub enum ConfigError {
     #[error("`{path}`: `{location}` is `{value}`, which is not a publish target")]
     #[diagnostic(
         code(E330),
-        help("Set `{location}` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release`, `none` or the name of a `kind = \"cargo\"` registry in `[registries]`, in callisto.toml.")
+        help("Set `{location}` to a list of `crates-io`, `npm`, `pypi`, `github-release`, `none` or the name of a `kind = \"cargo\"` registry in `[registries]`, in callisto.toml.")
     )]
     InvalidPublishTarget {
         path: PathBuf,
@@ -1277,15 +1256,16 @@ pub enum ConfigError {
     #[diagnostic(code(E333), help("Set `changelog.layout` to `grouped` or `flat` in callisto.toml."))]
     InvalidChangelogLayout { path: PathBuf, found: String },
 
-    #[error("`{path}`: `[registries.{registry}]` has `kind = \"{found}\"`; expected `cargo`, `npm` or `pypi`")]
+    #[error("`{path}`: `[registries.{registry}]` has `kind = \"{found}\"`; expected {expected}")]
     #[diagnostic(
         code(E334),
-        help("Set `kind` on `[registries.{registry}]` to `cargo`, `npm` or `pypi` in callisto.toml.")
+        help("Set `kind` on `[registries.{registry}]` to {expected} in callisto.toml. `crates-io`, `npm` and `pypi` are predeclared with their own kind: name a custom registry something else.")
     )]
     InvalidRegistryKind {
         path: PathBuf,
         registry: String,
         found: String,
+        expected: String,
     },
 
     #[error("`{path}`: `[registries.{registry}]` is a `{kind}` registry but sets `publish-url`, which only a `pypi` registry has")]

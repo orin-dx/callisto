@@ -123,7 +123,7 @@ fn a_publish_url_on_a_registry_that_is_not_pypi_reports_e335() {
 #[test]
 fn a_url_on_a_cargo_registry_reports_e336() {
     assert_code(
-        &config_error("[registries.cratesIo]\nurl = \"https://corp.example.com/index\"\n"),
+        &config_error("[registries.crates-io]\nurl = \"https://corp.example.com/index\"\n"),
         "E336",
     );
 }
@@ -145,11 +145,6 @@ fn an_unparsable_package_match_reports_e338() {
 }
 
 #[test]
-fn a_registry_of_the_wrong_kind_for_the_publish_target_reports_e339() {
-    let (dir, _) = release_commit_fixture();
-    let config = dir.path().join("callisto.toml");
-    let mut text = std::fs::read_to_string(&config).unwrap();
-    text.push_str("\n[registries.cratesIo]\nkind = \"npm\"\n");
-    std::fs::write(config, text).unwrap();
-    assert_code(&stderr_of(dir.path(), &["release", "--dry-run"]), "E339");
+fn a_predeclared_registry_given_another_kind_reports_e334_at_load() {
+    assert_code(&config_error("[registries.crates-io]\nkind = \"npm\"\n"), "E334");
 }

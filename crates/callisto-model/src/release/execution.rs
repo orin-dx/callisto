@@ -685,9 +685,13 @@ mod tests {
     #[test]
     fn receipt_is_bound_to_intent_and_requires_terminal_outcomes() {
         let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
-        let operation =
-            ReleaseOperation::registry_publish(package, Version::semver(1, 2, 3), registry_binding("cratesIo"), vec![])
-                .unwrap();
+        let operation = ReleaseOperation::registry_publish(
+            package,
+            Version::semver(1, 2, 3),
+            registry_binding("crates-io"),
+            vec![],
+        )
+        .unwrap();
         let intent = test_intent(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("c".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
@@ -728,7 +732,7 @@ mod tests {
         let operation = ReleaseOperation::registry_publish(
             ReleasePackageId::parse("cargo/callisto-model").unwrap(),
             Version::semver(1, 2, 3),
-            registry_binding("cratesIo"),
+            registry_binding("crates-io"),
             vec![],
         )
         .unwrap();
@@ -760,7 +764,7 @@ mod tests {
         let operation = ReleaseOperation::registry_publish(
             ReleasePackageId::parse("cargo/callisto-model").unwrap(),
             Version::semver(1, 2, 3),
-            registry_binding("cratesIo"),
+            registry_binding("crates-io"),
             vec![],
         )
         .unwrap();
