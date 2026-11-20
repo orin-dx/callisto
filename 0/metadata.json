@@ -1,0 +1,93 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7X12BYR5672100DBED0ERA1",
+  "session_id": "a13aa0e4-0339-4110-b86c-f2ef9e9bbb48",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T17:46:40.436675Z",
+  "branch": "worktree-wp-j-twine-env2",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/actions/callisto-action/scripts/run-release.sh",
+    "README.md",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+    "crates/callisto-graph/src/templates/simple_workflow.tmpl",
+    "crates/callisto-model/src/ecosystem.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "0cc783afe38e",
+  "checkpoint_transcript_start": 2201,
+  "transcript_lines_at_start": 2201,
+  "compact_transcript_start": 283,
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 3856,
+    "cache_read_tokens": 2309586,
+    "output_tokens": 1771,
+    "api_call_count": 6
+  },
+  "session_token_usage": {
+    "input_tokens": 566,
+    "cache_creation_tokens": 618719,
+    "cache_read_tokens": 58008077,
+    "output_tokens": 110869,
+    "api_call_count": 254,
+    "subagent_tokens": {
+      "input_tokens": 602,
+      "cache_creation_tokens": 4066183,
+      "cache_read_tokens": 108568477,
+      "output_tokens": 287275,
+      "api_call_count": 287
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 17,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 0,
+      "entropy": 9,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 24
+  },
+  "summary": {
+    "intent": "Bring PR #578 (WP L, publish isolation) up to date with latest main, verify the merged tree passes the full gate, and push it without rebasing or force-pushing.",
+    "outcome": "Merged latest main into the WP L branch with one docs conflict resolved in docs/architecture/release.md, ran pre-push, lint, doc-check, test, workflow-contracts and ci (all exit 0), and pushed at a151d249 with the remote ref matching. The lead was notified and work is idle until #578 merges.",
+    "learnings": {
+      "repo": [
+        "The project uses `just` recipes as gates: pre-push, lint, doc-check, test, workflow-contracts, and ci. workflow-contracts checks that workflow templates and policy rules agree.",
+        "Changes to workflow-related code on main (#576, #577, #581) warrant re-running the full gate on the merged tree, even when they merge without conflicts.",
+        "docs/architecture/release.md is a conflict hotspot: #582 changed `[release] targets` and `asset-name` wording, while L changed text about registry publishing running each npm package manager's `pack`.",
+        "The matrix `execute` job template is shared between #578 and the pending token-mapping PR (finding 01M7QS45H578), so the two PRs must be sequenced rather than stacked.",
+        "Builds are run with CARGO_PROFILE_DEV_DEBUG=0, CARGO_PROFILE_TEST_DEBUG=0 and CARGO_BUILD_JOBS=4 to reduce build cost."
+      ],
+      "code": [],
+      "workflow": [
+        "Merge main into the branch and push normally, with no rebase or force-push. Verify the push by comparing `git rev-parse HEAD` to `git ls-remote` output.",
+        "When a long gate (`just ci`) outlasts the foreground timeout, wait for the background task's exit code rather than starting a second copy.",
+        "Mutation tests can be skipped after a merge when the merge brought in no new code from the branch's own work package.",
+        "Use a worktree-per-work-package flow where PRs on the same template are not stacked and the next one starts after the previous merges. Report the pushed sha to the lead via SendMessage."
+      ]
+    },
+    "friction": [
+      "`just ci` exceeded the foreground command timeout and had to be handled as a background task.",
+      "Merge conflict in docs/architecture/release.md required manually reconciling wording from #582 and WP L."
+    ],
+    "open_items": [
+      "Token-mapping PR for the matrix `execute` job (finding 01M7QS45H578), including trusted-publishing docs and a changeset, is blocked until #578 merges.",
+      "docs/publishing.md wording about `url` and `@scope:registry` is to be added in the token-mapping PR.",
+      "Mutation tests were not re-run after the merge; they were judged unnecessary because no new L code came in.",
+      "Waiting for #578 to merge before any further work."
+    ]
+  }
+}
