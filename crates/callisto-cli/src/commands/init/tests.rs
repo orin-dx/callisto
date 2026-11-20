@@ -1128,10 +1128,216 @@ fn written_workflow_notes_that_merging_publishes() {
     );
 }
 
-// A pre-existing `.changeset/config.json` warns per unhonoured key it declares, naming
-// `fixed`'s callisto.toml replacement; init still writes normally alongside the warning.
+/// `@changesets/cli` 2.x's `changeset init` output with `fixed` filled in, in a workspace of `@acme/{cli,core}`.
+const CHANGESETS_V2: &str = r#"{
+  "$schema": "https://unpkg.com/@changesets/config@2.3.1/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [["@acme/*"]],
+  "linked": [],
+  "access": "restricted",
+  "baseBranch": "release",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}"#;
+
+fn npm_workspace_with_changesets(config: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    for (path, content) in [
+        ("package.json", r#"{"private":true,"workspaces":["packages/*"]}"#),
+        ("packages/cli/package.json", r#"{"name":"@acme/cli","version":"1.0.0"}"#),
+        (
+            "packages/core/package.json",
+            r#"{"name":"@acme/core","version":"1.0.0"}"#,
+        ),
+        (".changeset/config.json", config),
+    ] {
+        std::fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+        std::fs::write(root.join(path), content).unwrap();
+    }
+    callisto_fixtures::git::init_repo(root);
+    git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/tools.git"],
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "fixture"]);
+    dir
+}
+
+fn report_diagnostics(out: &Shared) -> Vec<serde_json::Value> {
+    let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+    report["diagnostics"].as_array().cloned().unwrap_or_default()
+}
+
+// A real v2 config carries `fixed` into `[[fixed-group]]`, and with `--yes` accepting the public publish, reports
+// the access hazard and every other key it dropped.
 #[test]
-fn preexisting_changesets_config_json_warns_per_unhonoured_key() {
+fn a_changesets_v2_config_becomes_fixed_groups_and_reports_what_it_drops() {
+    let dir = npm_workspace_with_changesets(CHANGESETS_V2);
+    let (out, err) = (Shared::default(), Shared::default());
+    let args = InitArgs {
+        no_workflow: true,
+        ..yes(InitVersioning::Independent)
+    };
+    run_with_json(dir.path(), args, false, &out, &err);
+
+    let written = config(dir.path());
+    assert!(
+        written.contains("[[fixed-group]]\nname = \"fixed-1\"\nmembers = [\"npm/@acme/cli\", \"npm/@acme/core\"]"),
+        "{written}"
+    );
+
+    let diagnostics = report_diagnostics(&out);
+    assert!(diagnostics
+        .iter()
+        .all(|d| d["code"] == "changesets-config-key-dropped" && d["severity"] == "warning"));
+    let messages: Vec<&str> = diagnostics.iter().map(|d| d["message"].as_str().unwrap()).collect();
+    for (key, word) in [
+        ("`fixed`", "add packages created later by hand"),
+        ("`access`", "npm/@acme/cli, npm/@acme/core"),
+        ("`baseBranch`", "no workflow was generated"),
+    ] {
+        let found: Vec<&&str> = messages.iter().filter(|m| m.contains(key)).collect();
+        assert!(found.len() == 1 && found[0].contains(word), "{key}: {messages:?}");
+    }
+}
+
+// The access hazard refuses before any prompt or write; the error names each package.
+#[test]
+fn restricted_access_refuses_without_yes_naming_each_public_package() {
+    let dir = npm_workspace_with_changesets(CHANGESETS_V2);
+    let args = InitArgs {
+        versioning: Some(InitVersioning::Independent),
+        no_workflow: true,
+        ..Default::default()
+    };
+    let run = run_init(dir.path(), args, true, vec![], false);
+    let error = run.result.unwrap_err();
+    assert!(
+        matches!(&error, CliError::InitChangesetsAccess { packages } if packages == &["npm/@acme/cli", "npm/@acme/core"]),
+        "{error}"
+    );
+    assert!(miette::Diagnostic::help(&error)
+        .unwrap()
+        .to_string()
+        .contains("publishConfig.access"));
+    assert_eq!(miette::Diagnostic::code(&error).unwrap().to_string(), "E342");
+    assert!(run.prompter.prompts().is_empty());
+    assert!(!dir.path().join("callisto.toml").exists());
+}
+
+// A dry run writes nothing, so it previews with the warning instead of refusing.
+#[test]
+fn a_dry_run_reports_the_access_hazard_instead_of_refusing() {
+    let dir = npm_workspace_with_changesets(CHANGESETS_V2);
+    let args = InitArgs {
+        versioning: Some(InitVersioning::Independent),
+        no_workflow: true,
+        ..Default::default()
+    };
+    let run = run_init(dir.path(), args, true, vec![], true);
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert!(run.out.contains("npm/@acme/cli, npm/@acme/core"), "{}", run.out);
+    assert!(!dir.path().join("callisto.toml").exists());
+}
+
+// `baseBranch` is the workflow's branch filter, for a fresh init and for a later `--workflow` alike.
+#[test]
+fn base_branch_sets_the_generated_workflow_branch_filter() {
+    let dir = npm_workspace_with_changesets(&CHANGESETS_V2.replace("restricted", "public"));
+    let (out, err) = (Shared::default(), Shared::default());
+    let args = InitArgs {
+        workflow: true,
+        ..yes(InitVersioning::Independent)
+    };
+    assert_eq!(
+        run(
+            args,
+            &global(dir.path(), OutputFormat::Json, false),
+            false,
+            &mut Scripted::new(vec![], &out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .unwrap(),
+        ExitCode::SUCCESS
+    );
+    assert!(
+        workflow_file(dir.path()).contains(r#"branches: ["release"]"#),
+        "{}",
+        workflow_file(dir.path())
+    );
+    assert!(
+        err.text()
+            .contains("default branch: release (from `baseBranch` in .changeset/config.json)"),
+        "{}",
+        err.text()
+    );
+    assert!(!report_diagnostics(&out)
+        .iter()
+        .any(|d| d["message"].as_str().unwrap().contains("`baseBranch`")));
+
+    std::fs::remove_file(scaffold::workflow_path(dir.path())).unwrap();
+    let retry = InitArgs {
+        workflow: true,
+        ..Default::default()
+    };
+    let run = run_init_with_runner(
+        dir.path(),
+        retry,
+        false,
+        vec![],
+        false,
+        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+    );
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert!(workflow_file(dir.path()).contains(r#"branches: ["release"]"#));
+}
+
+// `--yes` never prompts, whether or not stdin is a terminal, even when several packages could be asked about.
+#[test]
+fn yes_asks_nothing_for_several_packages_in_any_terminal_state() {
+    for interactive in [true, false] {
+        let dir = npm_workspace_with_changesets(&CHANGESETS_V2.replace("restricted", "public"));
+        let args = InitArgs {
+            yes: true,
+            no_workflow: true,
+            ..Default::default()
+        };
+        let run = run_init(dir.path(), args, interactive, vec![], false);
+        assert_eq!(run.result.unwrap(), ExitCode::SUCCESS, "interactive: {interactive}");
+        assert!(run.prompter.prompts().is_empty(), "interactive: {interactive}");
+    }
+}
+
+// A workflow that cannot be built does not hide the `baseBranch` it would have used.
+#[test]
+fn base_branch_is_reported_when_the_default_workflow_cannot_be_built() {
+    let dir = npm_workspace_with_changesets(&CHANGESETS_V2.replace("restricted", "public"));
+    std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+    std::fs::write(
+        dir.path().join(".github/workflows/callisto-release.yml"),
+        "name: mine\n",
+    )
+    .unwrap();
+    let (out, err) = (Shared::default(), Shared::default());
+    run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
+    assert!(
+        err.text().contains("Skipping the GitHub Actions workflow"),
+        "{}",
+        err.text()
+    );
+    assert!(report_diagnostics(&out)
+        .iter()
+        .any(|d| d["message"].as_str().unwrap().contains("no workflow was generated")));
+}
+
+// A `fixed` group that names no npm package writes nothing and is reported.
+#[test]
+fn fixed_groups_naming_no_npm_package_are_reported_not_written() {
     let dir = workspace(0);
     std::fs::create_dir_all(dir.path().join(".changeset")).unwrap();
     std::fs::write(
@@ -1139,37 +1345,21 @@ fn preexisting_changesets_config_json_warns_per_unhonoured_key() {
         r#"{"fixed": [["core"]], "linked": [["core"]]}"#,
     )
     .unwrap();
-
-    let out = Shared::default();
-    let err = Shared::default();
+    let (out, err) = (Shared::default(), Shared::default());
     let args = InitArgs {
         no_workflow: true,
         ..yes(InitVersioning::Independent)
     };
     run_with_json(dir.path(), args, false, &out, &err);
-    let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
-    let diagnostics = report["diagnostics"].as_array().unwrap();
-    assert_eq!(diagnostics.len(), 2, "{report}");
+    let diagnostics = report_diagnostics(&out);
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
     assert!(diagnostics
         .iter()
-        .all(|d| d["code"] == "changesets-config-key-dropped" && d["severity"] == "warning"));
-    let fixed = diagnostics
+        .any(|d| d["message"].as_str().unwrap().contains("No npm package matches `core`")));
+    assert!(diagnostics
         .iter()
-        .find(|d| d["message"].as_str().unwrap().contains("`fixed`"))
-        .unwrap();
-    assert!(
-        fixed["message"].as_str().unwrap().contains("[[fixed-group]]"),
-        "{fixed}"
-    );
-    let linked = diagnostics
-        .iter()
-        .find(|d| d["message"].as_str().unwrap().contains("`linked`"))
-        .unwrap();
-    assert!(
-        linked["message"].as_str().unwrap().contains("no equivalent"),
-        "{linked}"
-    );
-    assert!(dir.path().join("callisto.toml").exists());
+        .any(|d| d["message"].as_str().unwrap().contains("`linked` is not translated")));
+    assert!(!config(dir.path()).contains("fixed-group"));
 }
 
 fn run_with_json(root: &Path, args: InitArgs, dry_run: bool, out: &Shared, err: &Shared) {

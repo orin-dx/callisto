@@ -154,13 +154,6 @@ impl GitAccess<'_> {
             .map(|listed| listed.fields().next().is_some())
     }
 
-    /// Whether `path` (relative to this root) is on disk as `rev` recorded it, compared as Git compares: through its
-    /// line-ending and attribute filters, so a checkout with CRLF endings matches the blob it was written from. Absent
-    /// on both sides matches.
-    pub fn path_matches_at(&self, rev: &str, path: &Path) -> Result<bool, VcsError> {
-        Ok(self.blob_hash_at(rev, path)? == self.file_hash(path)?)
-    }
-
     /// The object id of `path` (relative to this root) in `rev`'s tree, or `None` when it is absent there.
     pub fn blob_hash_at(&self, rev: &str, path: &Path) -> Result<Option<String>, VcsError> {
         if !self.path_exists_at(rev, path)? {

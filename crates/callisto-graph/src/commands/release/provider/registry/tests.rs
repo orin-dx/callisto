@@ -1209,6 +1209,15 @@ fn publisher_environment_maps_only_the_selected_native_tool() {
     assert!(pypi_publisher_environment(None, None).is_empty());
 }
 
+#[test]
+fn pypi_publisher_environment_drops_empty_credentials() {
+    assert!(pypi_publisher_environment(Some(""), Some("")).is_empty());
+    assert_eq!(
+        pypi_publisher_environment(Some(""), Some("pypi-secret")),
+        [("TWINE_PASSWORD", "pypi-secret")]
+    );
+}
+
 /// The staged name of `name`'s tarball at 1.0.0.
 fn staged(name: &str) -> String {
     callisto_model::npm_tarball_filename(name, &Version::parse("1.0.0", VersionGrammar::SemVer).unwrap())

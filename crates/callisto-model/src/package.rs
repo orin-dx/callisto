@@ -47,12 +47,6 @@ impl Package {
         self.manifests.iter().filter(|m| m.role == ManifestRole::Canonical)
     }
 
-    pub fn platform_manifests(&self) -> impl Iterator<Item = &ManifestDecl> {
-        self.manifests
-            .iter()
-            .filter(|m| matches!(m.role, ManifestRole::Platform { .. }))
-    }
-
     pub fn lockfiles(&self) -> impl Iterator<Item = &ManifestDecl> {
         self.manifests.iter().filter(|m| m.role == ManifestRole::Lockfile)
     }
@@ -187,19 +181,6 @@ impl ManifestFormat {
         )
     }
 
-    pub fn is_writable(&self) -> bool {
-        !matches!(
-            self,
-            ManifestFormat::SetupCfg
-                | ManifestFormat::CargoLock
-                | ManifestFormat::PackageLockJson
-                | ManifestFormat::PnpmLockYaml
-                | ManifestFormat::YarnLock
-                | ManifestFormat::SettingsGradle
-                | ManifestFormat::VersionSbt
-        )
-    }
-
     pub const fn file_name(&self) -> &'static str {
         match self {
             ManifestFormat::CargoToml => "Cargo.toml",
@@ -325,26 +306,6 @@ mod tests {
     }
 
     #[test]
-    fn platform_manifests_filters_to_platform_role_only() {
-        let canonical =
-            ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
-        let platform = ManifestDecl::new(
-            "npm/darwin-arm64/package.json",
-            ManifestRole::Platform {
-                platform: "darwin".to_string(),
-                arch: "arm64".to_string(),
-                abi: None,
-            },
-            ManifestFormat::PackageJson,
-        )
-        .unwrap();
-        let pkg = test_package(vec![canonical, platform.clone()], vec![]);
-
-        let found: Vec<_> = pkg.platform_manifests().collect();
-        assert_eq!(found, vec![&platform]);
-    }
-
-    #[test]
     fn lockfiles_filters_to_lockfile_role_only() {
         let canonical = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let lockfile = ManifestDecl::new("Cargo.lock", ManifestRole::Lockfile, ManifestFormat::CargoLock).unwrap();
@@ -387,30 +348,25 @@ mod tests {
     }
 
     #[test]
-    fn manifest_format_file_name_and_is_writable_cover_every_variant() {
-        let cases: &[(ManifestFormat, &str, bool)] = &[
-            (ManifestFormat::CargoToml, "Cargo.toml", true),
-            (ManifestFormat::PackageJson, "package.json", true),
-            (ManifestFormat::PyprojectToml, "pyproject.toml", true),
-            (ManifestFormat::SetupCfg, "setup.cfg", false),
-            (ManifestFormat::GoMod, "go.mod", true),
-            (ManifestFormat::PomXml, "pom.xml", true),
-            (ManifestFormat::GradleVersionCatalog, "libs.versions.toml", true),
-            (ManifestFormat::SettingsGradle, "settings.gradle", false),
-            (ManifestFormat::VersionSbt, "build.sbt", false),
-            (ManifestFormat::DenoJson, "deno.json", true),
-            (ManifestFormat::CargoLock, "Cargo.lock", false),
-            (ManifestFormat::PackageLockJson, "package-lock.json", false),
-            (ManifestFormat::PnpmLockYaml, "pnpm-lock.yaml", false),
-            (ManifestFormat::YarnLock, "yarn.lock", false),
+    fn manifest_format_file_name_covers_every_variant() {
+        let cases: &[(ManifestFormat, &str)] = &[
+            (ManifestFormat::CargoToml, "Cargo.toml"),
+            (ManifestFormat::PackageJson, "package.json"),
+            (ManifestFormat::PyprojectToml, "pyproject.toml"),
+            (ManifestFormat::SetupCfg, "setup.cfg"),
+            (ManifestFormat::GoMod, "go.mod"),
+            (ManifestFormat::PomXml, "pom.xml"),
+            (ManifestFormat::GradleVersionCatalog, "libs.versions.toml"),
+            (ManifestFormat::SettingsGradle, "settings.gradle"),
+            (ManifestFormat::VersionSbt, "build.sbt"),
+            (ManifestFormat::DenoJson, "deno.json"),
+            (ManifestFormat::CargoLock, "Cargo.lock"),
+            (ManifestFormat::PackageLockJson, "package-lock.json"),
+            (ManifestFormat::PnpmLockYaml, "pnpm-lock.yaml"),
+            (ManifestFormat::YarnLock, "yarn.lock"),
         ];
-        for &(format, expected_name, expected_writable) in cases {
+        for &(format, expected_name) in cases {
             assert_eq!(format.file_name(), expected_name, "file_name mismatch for {format:?}");
-            assert_eq!(
-                format.is_writable(),
-                expected_writable,
-                "is_writable mismatch for {format:?}"
-            );
         }
     }
 

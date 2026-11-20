@@ -172,8 +172,7 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
     fn recheck_trust(&self) -> Result<(), GraphError> {
         let evidence =
             callisto_model::vcs::GitAccess::new(&self.prepared.root, self.runner).observe_git_commit_trust()?;
-        if evidence.identity() != self.prepared.trust.identity() || source_from_trust(&evidence) != self.prepared.source
-        {
+        if evidence != self.prepared.trust || source_from_trust(&evidence) != self.prepared.source {
             return Err(GraphError::ReleaseIntentStale {
                 reason: StaleReason::trust_evidence_changed(),
             });
@@ -405,7 +404,7 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
         &mut Vec::new(),
     )?;
     let final_trust = observe_git_trust(&workspace, received.trust_profile, checkout)?;
-    if expected != received || final_trust.identity() != trust.identity() {
+    if expected != received || final_trust != trust {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::intent_differs_from_fresh_derivation(),
         });
