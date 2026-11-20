@@ -45,9 +45,11 @@ pub fn changed_since_ref(
         .runner()
         .run("git", &["merge-base", &target, "HEAD"], git.root())
         .map_err(VcsError::from)?;
-    let base = GitStdout::of(output).map_err(|_failed| VcsError::RefNotFound {
-        ref_name: since.to_string(),
-    })?;
+    let Ok(base) = GitStdout::of(output) else {
+        return Err(GraphError::Vcs(VcsError::RefNotFound {
+            ref_name: since.to_string(),
+        }));
+    };
     let mut paths = git.paths_differing_from(base.line())?;
     paths.extend(git.untracked_paths()?);
 

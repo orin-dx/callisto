@@ -274,8 +274,11 @@ impl<'r> GitAccess<'r> {
             &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
             &self.root,
         )?;
-        let status = GitStdout::of(status)
-            .map_err(|_failed| VcsError::Git("could not inspect the worktree for release trust".to_string()))?;
+        let Ok(status) = GitStdout::of(status) else {
+            return Err(VcsError::Git(
+                "could not inspect the worktree for release trust".to_string(),
+            ));
+        };
         check_release_worktree_status(&status)?;
 
         Ok(GitCommitTrustEvidence::new(canonical_root, head, head_disposition))

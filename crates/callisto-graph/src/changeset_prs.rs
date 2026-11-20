@@ -19,6 +19,7 @@ pub fn changeset_pull_requests(
     let format = LogEntry::format(["%s"]);
     let args = [
         "log",
+        "--no-show-signature",
         "--first-parent",
         "-m",
         "--diff-filter=A",
