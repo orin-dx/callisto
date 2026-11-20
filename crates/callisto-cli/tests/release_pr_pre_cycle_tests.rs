@@ -89,8 +89,29 @@ fn add(root: &Path, bump: &str, summary: &str) {
     git(root, &["commit", "-q", "-m", summary]);
 }
 
+/// Changesets v2 pre state: `pre enter` records the cycle's initial versions and applied changesets in `pre.json`.
 #[test]
-fn a_prerelease_cycle_runs_end_to_end_through_release_pull_requests() {
+fn a_changesets_v2_prerelease_cycle_runs_end_to_end_through_release_pull_requests() {
+    prerelease_cycle(|root| {
+        let enter = callisto(root, &["pre", "enter", "beta"]);
+        assert!(enter.status.success(), "{}", String::from_utf8_lossy(&enter.stderr));
+    });
+}
+
+/// Changesets v3 pre state: `pre.json` holds only `mode` and `tag`, and applied notes move to `.changeset/pre/`.
+#[test]
+fn a_changesets_v3_prerelease_cycle_runs_end_to_end_through_release_pull_requests() {
+    prerelease_cycle(|root| {
+        fs::create_dir_all(root.join(".changeset")).unwrap();
+        fs::write(
+            root.join(".changeset/pre.json"),
+            "{\"mode\":\"pre\",\"tag\":\"beta\"}\n",
+        )
+        .unwrap();
+    });
+}
+
+fn prerelease_cycle(enter: impl Fn(&Path)) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     callisto_fixtures::git::init_repo(root);
@@ -113,9 +134,9 @@ fn a_prerelease_cycle_runs_end_to_end_through_release_pull_requests() {
     git(root, &["add", "-A"]);
     git(root, &["commit", "-q", "-m", "initial"]);
 
-    let enter = callisto(root, &["pre", "enter", "beta"]);
-    assert!(enter.status.success(), "{}", String::from_utf8_lossy(&enter.stderr));
-    git(root, &["commit", "-q", "-am", "enter beta"]);
+    enter(root);
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "enter beta"]);
     assert_eq!(decide(root), "noop", "entering a cycle releases nothing on its own");
 
     add(root, "minor", "Add a feature");
@@ -128,7 +149,8 @@ fn a_prerelease_cycle_runs_end_to_end_through_release_pull_requests() {
 
     let exit = callisto(root, &["pre", "exit"]);
     assert!(exit.status.success(), "{}", String::from_utf8_lossy(&exit.stderr));
-    git(root, &["commit", "-q", "-am", "exit beta"]);
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "exit beta"]);
     assert_eq!(release(root), "1.1.0");
     assert!(!root.join(".changeset/pre.json").exists());
 
