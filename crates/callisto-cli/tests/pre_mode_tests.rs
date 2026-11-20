@@ -602,12 +602,13 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
 
     let pre_json = fs::read_to_string(root.join(".changeset/pre.json")).unwrap();
     let pre_state = callisto_model::format::parse_pre_json(&pre_json).unwrap();
+    let recorded = pre_state.changesets().expect("a v2 pre.json records changesets");
     assert_eq!(
-        pre_state.changesets.len(),
+        recorded.len(),
         1,
         "pre.json must record exactly one changeset id (the one `add` created), not zero and not \
          duplicated across two `version` runs; got: {:?}",
-        pre_state.changesets
+        recorded
     );
 
     let changelog = fs::read_to_string(root.join("crates/core/CHANGELOG.md")).unwrap();

@@ -74,7 +74,11 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     let mut packages = Vec::new();
     let ids = ws.report_ids();
     let base_versions = ws.base_versions()?;
-    let (loaded_changesets, changeset_load_failures) = crate::load_changesets_permissive(&ws.root, &ws.config)?;
+    let (loaded_changesets, mut changeset_load_failures) = crate::load_changesets_permissive(&ws.root, &ws.config)?;
+    // An unparseable archived note fails the cycle's exit just as a root one fails `version`.
+    let (archived_changesets, archive_failures) =
+        crate::aggregate::load_archived_changesets_permissive(&ws.root, &ws.config)?;
+    changeset_load_failures.extend(archive_failures);
     let tags = ws.tags()?;
 
     let all_packages: Vec<&Package> = ws.graph.packages().collect();
@@ -129,10 +133,11 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     diagnostics.extend(tags.diagnostics.iter().cloned());
     // Fold in every changeset well-formedness diagnostic (EmptyChangeset, UnknownPackage, AmbiguousPackageName,
     // InvalidPackageName).
+    // Archived notes are released at the cycle's exit, so a name that stopped resolving fails there too.
     diagnostics.extend(changeset_wellformedness_diagnostics(
         all_packages.iter().copied(),
         &ws.identity,
-        &loaded_changesets,
+        &[loaded_changesets.as_slice(), archived_changesets.as_slice()].concat(),
     )?);
     for failure in &changeset_load_failures {
         diagnostics.push(Diagnostic {
@@ -335,6 +340,7 @@ mod tests {
                 }],
                 summary: "test summary".to_string(),
             },
+            text: String::new(),
         }
     }
 

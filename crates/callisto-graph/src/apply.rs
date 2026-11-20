@@ -182,6 +182,42 @@ pub fn apply_version_plan<R: CommandRunner>(
         for cs_path in &plan.consumed_changesets {
             deferred_deletions.push(cs_path.clone());
         }
+        for archived in &plan.archived_changesets {
+            if archived.duplicate {
+                crate::note::note_once(format!(
+                    "note: removing `{}`: it duplicates `{}`, which this pre cycle already released",
+                    archived.from.display(),
+                    archived.to.display()
+                ));
+                deferred_deletions.push(archived.from.clone());
+                continue;
+            }
+            let from = root.join(&archived.from);
+            let to = root.join(&archived.to);
+            if !path_exists(root, &archived.from)? {
+                // A resumed run finds the move done when the archive holds exactly the planned note.
+                let archived_text = fs::read_to_string(&to).ok();
+                if archived_text.as_deref() != Some(archived.text.as_str()) {
+                    return Err(GraphError::ApplyIo {
+                        path: archived.from.clone(),
+                        message: format!(
+                            "{} is missing and `{}` does not hold the note it would be archived as",
+                            from.display(),
+                            archived.to.display()
+                        ),
+                    });
+                }
+                modified_paths.push(archived.to.clone());
+                deferred_deletions.push(archived.from.clone());
+                continue;
+            }
+            callisto_model::atomic::atomic_write(&to, &archived.text, permit).map_err(|e| GraphError::ApplyIo {
+                path: archived.to.clone(),
+                message: e.to_string(),
+            })?;
+            modified_paths.push(archived.to.clone());
+            deferred_deletions.push(archived.from.clone());
+        }
 
         if let Some(ref pre_state) = plan.pre_state_update {
             // Written from `plan.pre_json_path`, not derived from `consumed_changesets` (always empty in pre mode).

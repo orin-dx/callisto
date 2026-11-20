@@ -72,7 +72,8 @@ fn resolve(pypi: bool, initial: &[(&str, &str)]) -> Result<PreState, GraphError>
 
 fn versions(state: &PreState) -> Vec<(String, String)> {
     state
-        .initial_versions
+        .initial_versions()
+        .expect("a v2 state carries a baseline")
         .iter()
         .map(|(key, version)| (key.clone(), version.render().to_string()))
         .collect()

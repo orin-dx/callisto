@@ -70,10 +70,11 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let text = callisto_model::format::write_changeset(&changeset)?;
 
     let changeset_dir = ws.root.join(&ws.config.changesets_dir);
+    let archive_dir = ws.root.join(ws.config.pre_archive_dir());
 
     let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) else {
         // Compute what WOULD be written, but never touch disk.
-        let filename = unused_changeset_filename(&changeset_dir)?;
+        let filename = unused_changeset_filename(&changeset_dir, &archive_dir)?;
         let rel_path = ws.config.changesets_dir.join(&filename).to_string_lossy().into_owned();
         match global.format {
             OutputFormat::Json => {
@@ -95,7 +96,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     };
 
     fs::create_dir_all(&changeset_dir)?;
-    let filename = create_changeset(&changeset_dir, &text, &permit, generate_human_slug)?;
+    let filename = create_changeset(&changeset_dir, &archive_dir, &text, &permit, generate_human_slug)?;
     let rel_path = ws.config.changesets_dir.join(&filename).to_string_lossy().into_owned();
 
     match global.format {
@@ -260,6 +261,7 @@ fn collect_package_names<'a>(packages: impl Iterator<Item = &'a callisto_model::
 /// by a changeset another process created after this one looked. Nothing already in `dir` is ever replaced.
 fn create_changeset(
     dir: &std::path::Path,
+    archive: &std::path::Path,
     text: &str,
     permit: &ApplyPermit,
     mut next_slug: impl FnMut() -> String,
@@ -267,6 +269,9 @@ fn create_changeset(
     // 8,000 possible slugs: more than a few attempts only happens when nearly all of them are taken.
     for _ in 0..64 {
         let filename = format!("{}.md", next_slug());
+        if archived(archive, &filename)? {
+            continue;
+        }
         let path = dir.join(&filename);
         match callisto_model::atomic::atomic_write_new(&path, text, permit) {
             Ok(()) => return Ok(filename),
@@ -288,8 +293,17 @@ fn create_changeset(
     })
 }
 
+/// Whether a Changesets v3 pre cycle archived a note under `filename`; a new note there would read as its duplicate.
+fn archived(archive: &std::path::Path, filename: &str) -> Result<bool, CliError> {
+    let path = archive.join(filename);
+    callisto_model::strict_fs::exists(&path).map_err(|source| CliError::Io {
+        source,
+        path: Some(path),
+    })
+}
+
 /// Picks a changeset filename that does not exist yet, so a slug collision never overwrites a pending changeset.
-fn unused_changeset_filename(dir: &std::path::Path) -> Result<String, CliError> {
+fn unused_changeset_filename(dir: &std::path::Path, archive: &std::path::Path) -> Result<String, CliError> {
     // 8,000 possible slugs: more than a few attempts only happens when nearly all of them are taken.
     for _ in 0..64 {
         let filename = format!("{}.md", generate_human_slug());
@@ -298,7 +312,7 @@ fn unused_changeset_filename(dir: &std::path::Path) -> Result<String, CliError> 
             source,
             path: Some(path.clone()),
         })?;
-        if !taken {
+        if !taken && !archived(archive, &filename)? {
             return Ok(filename);
         }
     }
@@ -599,7 +613,7 @@ mod tests {
         for slug in &taken {
             fs::write(dir.path().join(format!("{slug}.md")), "x").unwrap();
         }
-        let chosen = unused_changeset_filename(dir.path()).unwrap();
+        let chosen = unused_changeset_filename(dir.path(), &dir.path().join("pre")).unwrap();
         assert!(!dir.path().join(&chosen).exists(), "{chosen} already exists");
     }
 
@@ -608,9 +622,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("taken.md"), "someone else's").unwrap();
         let mut slugs = ["taken", "taken", "free"].into_iter().map(String::from);
-        let chosen = create_changeset(dir.path(), "mine", &ApplyPermit::force_for_tests(), || {
-            slugs.next().unwrap()
-        })
+        let chosen = create_changeset(
+            dir.path(),
+            &dir.path().join("pre"),
+            "mine",
+            &ApplyPermit::force_for_tests(),
+            || slugs.next().unwrap(),
+        )
         .unwrap();
         assert_eq!(chosen, "free.md");
         assert_eq!(
@@ -621,13 +639,28 @@ mod tests {
     }
 
     #[test]
+    fn a_name_a_pre_cycle_archived_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("pre");
+        fs::create_dir_all(&archive).unwrap();
+        fs::write(archive.join("taken.md"), "released this cycle").unwrap();
+        let mut slugs = ["taken", "free"].into_iter().map(String::from);
+        let chosen = create_changeset(dir.path(), &archive, "mine", &ApplyPermit::force_for_tests(), || {
+            slugs.next().unwrap()
+        })
+        .unwrap();
+        assert_eq!(chosen, "free.md");
+        assert!(!dir.path().join("taken.md").exists());
+    }
+
+    #[test]
     fn a_directory_with_every_slug_taken_is_an_error_not_an_overwrite() {
         let dir = tempfile::tempdir().unwrap();
         for slug in every_slug() {
             fs::write(dir.path().join(format!("{slug}.md")), "x").unwrap();
         }
         assert!(matches!(
-            unused_changeset_filename(dir.path()),
+            unused_changeset_filename(dir.path(), &dir.path().join("pre")),
             Err(CliError::Io { .. })
         ));
     }
@@ -636,7 +669,9 @@ mod tests {
     fn a_changesets_directory_that_does_not_exist_yet_gives_a_filename() {
         let dir = tempfile::tempdir().unwrap();
         let missing = dir.path().join("not-created");
-        assert!(unused_changeset_filename(&missing).unwrap().ends_with(".md"));
+        assert!(unused_changeset_filename(&missing, &missing.join("pre"))
+            .unwrap()
+            .ends_with(".md"));
     }
 
     /// When a polyglot workspace contains `cargo/foo` and `npm/foo`, the

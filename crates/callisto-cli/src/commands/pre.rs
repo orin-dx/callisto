@@ -372,8 +372,8 @@ mod tests {
         let state = callisto_model::format::parse_pre_json(&written).unwrap();
         assert_eq!(state.mode, callisto_model::format::PreMode::Pre);
         assert_eq!(state.tag, "rc");
-        assert_eq!(state.changesets, vec!["cool-dragons-fly".to_string()]);
-        assert_eq!(state.initial_versions["a"].raw(), "1.0.0");
+        assert_eq!(state.changesets(), Some(&vec!["cool-dragons-fly".to_string()]));
+        assert_eq!(state.initial_versions().unwrap()["a"].raw(), "1.0.0");
     }
 
     /// `pre enter` while `pre.json`'s mode is already `pre` must fail with the typed

@@ -184,8 +184,8 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E107 | Group's members use incompatible version grammars | Use the same version grammar for every member of the group. |
 | E108 | Group lists a member not found in the workspace. A member is a package's name in that ecosystem, so a dual Cargo and npm package whose npm name is `@orin-dx/michi` is `npm/@orin-dx/michi`, not `npm/michi-node`; the message suggests the name when one package has it under another ecosystem or directory. | Remove the member from the group, or add its manifest to the workspace.<hint> |
 | E109 | Package is listed in more than one conflicting group | List the package in only one fixed or linked group. |
-| E114 | Failed to parse `.changeset/pre.json` | Check that .changeset/pre.json is valid JSON and was not partially written. Delete the file and re-run `callisto pre enter` to recover. |
-| E115 | Failed to read `.changeset/pre.json` | Check that the file named above is readable. Delete it and re-run `callisto pre enter` to recover. |
+| E114 | Failed to parse `.changeset/pre.json` | Restore .changeset/pre.json from Git or correct it. Callisto reads the shape @changesets/cli 2.x writes (`mode`, `tag`, `initialVersions`, `changesets`) and the one 3.x writes (`mode`, `tag`). |
+| E115 | Failed to read `.changeset/pre.json` | Check that the file named above is readable. |
 | E117 | Manifest's on-disk version doesn't match the version plan's expected from/to version | The manifest version does not match the plan's from or to version. This may indicate the manifest was modified outside of callisto after the plan was generated. |
 | E118 | Package declares platform targets through both `napi.targets` and `[tool.maturin].targets` | Remove one of the two target declarations -- either napi.targets in package.json or [tool.maturin].targets in pyproject.toml -- from the package's manifest. |
 | E119 | Package's `publish-to` target ecosystem doesn't match its detected ecosystem | Remove the mismatched target from publish-to, or fix the [[package]]/[[package-set]] rule so it only matches packages in that ecosystem. |
@@ -291,7 +291,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E240 | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
 | E241 | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |
 | E242 | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
-| E243 | `pre enter` was run while `.changeset/pre.json`'s mode is already `pre` | run `callisto pre exit` first, or delete .changeset/pre.json manually to reset |
+| E243 | `pre enter` was run while `.changeset/pre.json`'s mode is already `pre` | run `callisto pre exit` first |
 | E244 | `pre exit` was run with no `.changeset/pre.json` on disk | callisto pre enter <tag> |
 | E269 | An interactive prompt (selection, confirmation, or text input) failed | pass flags explicitly to skip interactive prompts, or run in a terminal |
 | E270 | `add --package` value is not a `name:severity` pair | pass a colon-separated pair, for example `cargo/foo:patch` |

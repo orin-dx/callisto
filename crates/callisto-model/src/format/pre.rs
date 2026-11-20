@@ -3,14 +3,49 @@ use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// Which Changesets `pre.json` shape a file uses; rewrites keep the shape that was read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreStateShape {
+    /// `mode`, `tag`, `initialVersions` and the `changesets` id list.
+    V2,
+    /// `mode` and `tag` only; consumed notes live in `.changeset/pre/`.
+    V3,
+}
+
+/// The shape-specific fields of a `pre.json`; v3 has no baseline and no id list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged, rename_all = "camelCase")]
+pub enum PreLayout {
+    #[serde(rename_all = "camelCase")]
+    V2 {
+        initial_versions: IndexMap<String, Version>,
+        changesets: Vec<String>,
+    },
+    V3 {},
+}
+
+/// The wire shape of a `pre.json` for schema reports: v3 omits both trailing fields.
+#[derive(JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct PreStateWire {
+    mode: PreMode,
+    tag: String,
+    initial_versions: Option<std::collections::BTreeMap<String, Version>>,
+    changesets: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(with = "PreStateWire")]
 pub struct PreState {
     pub mode: PreMode,
     pub tag: String,
-    #[schemars(with = "std::collections::BTreeMap<String, Version>")]
-    pub initial_versions: IndexMap<String, Version>,
-    pub changesets: Vec<String>,
+    #[serde(flatten)]
+    pub layout: PreLayout,
+    /// Keys this version of callisto does not know, kept in file order across rewrites.
+    #[serde(flatten)]
+    pub extra: IndexMap<String, serde_json::Value>,
 }
 
 impl PreState {
@@ -19,11 +54,69 @@ impl PreState {
         for (pkg, ver) in initial_versions {
             map.entry(pkg).or_insert(ver);
         }
+        Self::v2(PreMode::Pre, tag, map, Vec::new())
+    }
+
+    pub fn v2(
+        mode: PreMode,
+        tag: impl Into<String>,
+        initial_versions: IndexMap<String, Version>,
+        changesets: Vec<String>,
+    ) -> Self {
         PreState {
-            mode: PreMode::Pre,
+            mode,
             tag: tag.into(),
-            initial_versions: map,
-            changesets: Vec::new(),
+            layout: PreLayout::V2 {
+                initial_versions,
+                changesets,
+            },
+            extra: IndexMap::new(),
+        }
+    }
+
+    pub fn v3(mode: PreMode, tag: impl Into<String>) -> Self {
+        PreState {
+            mode,
+            tag: tag.into(),
+            layout: PreLayout::V3 {},
+            extra: IndexMap::new(),
+        }
+    }
+
+    pub fn shape(&self) -> PreStateShape {
+        match self.layout {
+            PreLayout::V2 { .. } => PreStateShape::V2,
+            PreLayout::V3 {} => PreStateShape::V3,
+        }
+    }
+
+    /// The `enter`-time baseline; `None` for v3, which records none.
+    pub fn initial_versions(&self) -> Option<&IndexMap<String, Version>> {
+        match &self.layout {
+            PreLayout::V2 { initial_versions, .. } => Some(initial_versions),
+            PreLayout::V3 {} => None,
+        }
+    }
+
+    pub fn initial_versions_mut(&mut self) -> Option<&mut IndexMap<String, Version>> {
+        match &mut self.layout {
+            PreLayout::V2 { initial_versions, .. } => Some(initial_versions),
+            PreLayout::V3 {} => None,
+        }
+    }
+
+    /// Ids consumed in this cycle; `None` for v3, where retained notes live in `.changeset/pre/`.
+    pub fn changesets(&self) -> Option<&Vec<String>> {
+        match &self.layout {
+            PreLayout::V2 { changesets, .. } => Some(changesets),
+            PreLayout::V3 {} => None,
+        }
+    }
+
+    pub fn changesets_mut(&mut self) -> Option<&mut Vec<String>> {
+        match &mut self.layout {
+            PreLayout::V2 { changesets, .. } => Some(changesets),
+            PreLayout::V3 {} => None,
         }
     }
 
@@ -37,8 +130,10 @@ impl PreState {
         &mut self,
         mut ecosystem_for: impl FnMut(&str) -> Option<Ecosystem>,
     ) -> Result<(), PreJsonError> {
-        let raw_versions = self
-            .initial_versions
+        let Some(initial_versions) = self.initial_versions() else {
+            return Ok(());
+        };
+        let raw_versions = initial_versions
             .iter()
             .map(|(key, version)| (key.clone(), version.raw().to_string()))
             .collect();
@@ -51,7 +146,10 @@ impl PreState {
         raw_versions: &IndexMap<String, String>,
         mut ecosystem_for: impl FnMut(&str) -> Option<Ecosystem>,
     ) -> Result<(), PreJsonError> {
-        for (package, version) in &mut self.initial_versions {
+        let Some(initial_versions) = self.initial_versions_mut() else {
+            return Ok(());
+        };
+        for (package, version) in initial_versions {
             if let Some(ecosystem) = ecosystem_for(package) {
                 let raw = raw_versions.get(package).map(String::as_str).unwrap_or(version.raw());
                 *version = Version::parse_for_ecosystem(raw, ecosystem).map_err(|source| {
@@ -103,51 +201,64 @@ pub fn parse_pre_json(input: &str) -> Result<PreState, PreJsonError> {
         .ok_or(PreJsonError::WrongFieldType { field: "tag" })?
         .to_string();
 
-    let init_val = obj.get("initialVersions").ok_or(PreJsonError::MissingField {
-        field: "initialVersions",
-    })?;
-    let init_obj = init_val.as_object().ok_or(PreJsonError::WrongFieldType {
-        field: "initialVersions",
-    })?;
-
-    let mut initial_versions = IndexMap::new();
-    for (pkg, v_val) in init_obj {
-        let v_str = v_val.as_str().ok_or(PreJsonError::WrongFieldType {
-            field: "initialVersions",
-        })?;
-        let ver = Version::parse(v_str, VersionGrammar::SemVer)
-            .or_else(|_| Version::parse(v_str, VersionGrammar::Pep440))
-            .map_err(|source| PreJsonError::InvalidInitialVersion {
-                package: pkg.clone(),
-                raw: v_str.to_string(),
-                source,
+    let layout = match (obj.get("initialVersions"), obj.get("changesets")) {
+        (None, None) => PreLayout::V3 {},
+        (None, Some(_)) => {
+            return Err(PreJsonError::MissingField {
+                field: "initialVersions",
+            })
+        }
+        (Some(_), None) => return Err(PreJsonError::MissingField { field: "changesets" }),
+        (Some(init_val), Some(cs_val)) => {
+            let init_obj = init_val.as_object().ok_or(PreJsonError::WrongFieldType {
+                field: "initialVersions",
             })?;
-        initial_versions.insert(pkg.clone(), ver);
-    }
+            let mut initial_versions = IndexMap::new();
+            for (pkg, v_val) in init_obj {
+                let v_str = v_val.as_str().ok_or(PreJsonError::WrongFieldType {
+                    field: "initialVersions",
+                })?;
+                let ver = Version::parse(v_str, VersionGrammar::SemVer)
+                    .or_else(|_| Version::parse(v_str, VersionGrammar::Pep440))
+                    .map_err(|source| PreJsonError::InvalidInitialVersion {
+                        package: pkg.clone(),
+                        raw: v_str.to_string(),
+                        source,
+                    })?;
+                initial_versions.insert(pkg.clone(), ver);
+            }
 
-    let cs_val = obj
-        .get("changesets")
-        .ok_or(PreJsonError::MissingField { field: "changesets" })?;
-    let cs_arr = cs_val
-        .as_array()
-        .ok_or(PreJsonError::WrongFieldType { field: "changesets" })?;
+            let cs_arr = cs_val
+                .as_array()
+                .ok_or(PreJsonError::WrongFieldType { field: "changesets" })?;
+            let mut changesets = Vec::new();
+            for (index, c_val) in cs_arr.iter().enumerate() {
+                let c_str = c_val.as_str().ok_or(PreJsonError::InvalidChangesetId { index })?;
+                changesets.push(c_str.to_string());
+            }
+            PreLayout::V2 {
+                initial_versions,
+                changesets,
+            }
+        }
+    };
 
-    let mut changesets = Vec::new();
-    for (index, c_val) in cs_arr.iter().enumerate() {
-        let c_str = c_val.as_str().ok_or(PreJsonError::InvalidChangesetId { index })?;
-        changesets.push(c_str.to_string());
-    }
+    let extra = obj
+        .iter()
+        .filter(|(key, _)| !matches!(key.as_str(), "mode" | "tag" | "initialVersions" | "changesets"))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
 
     Ok(PreState {
         mode,
         tag,
-        initial_versions,
-        changesets,
+        layout,
+        extra,
     })
 }
 
 pub fn write_pre_json(state: &PreState) -> String {
-    render_pre_json(state, "  ")
+    render_pre_json(state, "  ", &[])
 }
 
 /// Renders `state`, then reapplies `existing`'s on-disk formatting (BOM, CRLF vs LF, indent width) instead of the
@@ -155,11 +266,16 @@ pub fn write_pre_json(state: &PreState) -> String {
 /// is not reformatted on a `pre exit` or mid-cycle `version` rewrite.
 pub fn write_pre_json_preserving(state: &PreState, existing: &str) -> String {
     let fp = PreJsonFingerprint::detect(existing);
-    let rendered = render_pre_json(state, &fp.indent_str());
+    let order: Vec<String> =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(existing.trim_start_matches('\u{FEFF}'))
+            .map(|keys| keys.keys().cloned().collect())
+            .unwrap_or_default();
+    let rendered = render_pre_json(state, &fp.indent_str(), &order);
     fp.apply(&rendered)
 }
 
-fn render_pre_json(state: &PreState, indent_str: &str) -> String {
+/// Keys present in `order` come first, in that order, so a rewrite keeps the file's own key order.
+fn render_pre_json(state: &PreState, indent_str: &str, order: &[String]) -> String {
     let mut map = IndexMap::new();
     map.insert(
         "mode".to_string(),
@@ -170,21 +286,36 @@ fn render_pre_json(state: &PreState, indent_str: &str) -> String {
         serde_json::to_value(&state.tag).expect("a tag is a JSON string"),
     );
 
-    let mut init_map = IndexMap::new();
-    for (pkg, ver) in &state.initial_versions {
-        init_map.insert(
-            pkg.clone(),
-            serde_json::to_value(ver).expect("a version is a JSON string"),
-        );
+    match &state.layout {
+        PreLayout::V2 {
+            initial_versions,
+            changesets,
+        } => {
+            let mut init_map = IndexMap::new();
+            for (pkg, ver) in initial_versions {
+                init_map.insert(
+                    pkg.clone(),
+                    serde_json::to_value(ver).expect("a version is a JSON string"),
+                );
+            }
+            map.insert(
+                "initialVersions".to_string(),
+                serde_json::to_value(init_map).expect("a map of strings is a JSON object"),
+            );
+            map.insert(
+                "changesets".to_string(),
+                serde_json::to_value(changesets).expect("a list of strings is a JSON array"),
+            );
+        }
+        PreLayout::V3 {} => {}
     }
-    map.insert(
-        "initialVersions".to_string(),
-        serde_json::to_value(init_map).expect("a map of strings is a JSON object"),
-    );
-    map.insert(
-        "changesets".to_string(),
-        serde_json::to_value(&state.changesets).expect("a list of strings is a JSON array"),
-    );
+    for (key, value) in &state.extra {
+        map.entry(key.clone()).or_insert_with(|| value.clone());
+    }
+    let mut ordered: IndexMap<String, serde_json::Value> =
+        order.iter().filter_map(|key| map.shift_remove_entry(key)).collect();
+    ordered.extend(map);
+    let map = ordered;
 
     let formatter = serde_json::ser::PrettyFormatter::with_indent(indent_str.as_bytes());
     let mut buf = Vec::new();
@@ -317,7 +448,7 @@ mod tests {
 }
 "#;
         let state = parse_pre_json(json).unwrap();
-        assert_eq!(state.initial_versions["my-python-pkg"].raw(), "0.3.2a1");
+        assert_eq!(state.initial_versions().unwrap()["my-python-pkg"].raw(), "0.3.2a1");
     }
 
     #[test]
@@ -332,7 +463,7 @@ mod tests {
         );
         let written = write_pre_json(&state);
         let reparsed = parse_pre_json(&written).unwrap();
-        assert_eq!(reparsed.initial_versions["pkg"].raw(), "1.0.0a1");
+        assert_eq!(reparsed.initial_versions().unwrap()["pkg"].raw(), "1.0.0a1");
     }
 
     #[test]
@@ -347,9 +478,12 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        assert_eq!(state.initial_versions["python"].grammar(), VersionGrammar::Pep440);
+        assert_eq!(
+            state.initial_versions().unwrap()["python"].grammar(),
+            VersionGrammar::Pep440
+        );
         for key in ["cargo", "npm", "removed"] {
-            assert_eq!(state.initial_versions[key].grammar(), VersionGrammar::SemVer);
+            assert_eq!(state.initial_versions().unwrap()[key].grammar(), VersionGrammar::SemVer);
         }
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&write_pre_json(&state)).unwrap(),
@@ -501,5 +635,84 @@ mod tests {
         // The BOM-stripped body must still parse back to the same state.
         let reparsed = parse_pre_json(&rewritten).unwrap();
         assert_eq!(reparsed, state);
+    }
+
+    const V3_JSON: &str = "{\n  \"mode\": \"pre\",\n  \"tag\": \"next\"\n}\n";
+
+    #[test]
+    fn v3_pre_json_parses_without_baseline_or_id_list() {
+        let state = parse_pre_json(V3_JSON).unwrap();
+        assert_eq!(state.shape(), PreStateShape::V3);
+        assert_eq!(state.tag, "next");
+        assert!(state.initial_versions().is_none());
+        assert!(state.changesets().is_none());
+    }
+
+    #[test]
+    fn v3_pre_json_round_trips_as_mode_and_tag_only() {
+        let state = parse_pre_json(V3_JSON).unwrap();
+        assert_eq!(write_pre_json(&state), V3_JSON);
+        assert_eq!(write_pre_json_preserving(&state, V3_JSON), V3_JSON);
+    }
+
+    #[test]
+    fn v2_pre_json_reports_v2_shape() {
+        let state = parse_pre_json(r#"{"mode":"pre","tag":"a","initialVersions":{},"changesets":[]}"#).unwrap();
+        assert_eq!(state.shape(), PreStateShape::V2);
+        assert_eq!(PreState::entering("a", []).shape(), PreStateShape::V2);
+    }
+
+    #[test]
+    fn unknown_keys_survive_a_rewrite_in_original_order() {
+        for json in [
+            r#"{"mode":"pre","tag":"a","zeta":1,"alpha":{"k":[true]}}"#,
+            r#"{"mode":"pre","tag":"a","initialVersions":{},"zeta":1,"changesets":[],"alpha":{"k":[true]}}"#,
+        ] {
+            let state = parse_pre_json(json).unwrap();
+            let written = write_pre_json(&state);
+            let value: serde_json::Value = serde_json::from_str(&written).unwrap();
+            assert_eq!(value["zeta"], 1);
+            assert_eq!(value["alpha"]["k"][0], true);
+            assert!(written.find("\"zeta\"").unwrap() < written.find("\"alpha\"").unwrap());
+            assert_eq!(parse_pre_json(&written).unwrap(), state);
+        }
+    }
+
+    #[test]
+    fn a_rewrite_keeps_the_files_own_key_order() {
+        let json = "{\n  \"zeta\": 1,\n  \"tag\": \"a\",\n  \"mode\": \"pre\"\n}\n";
+        let state = parse_pre_json(json).unwrap();
+        assert_eq!(write_pre_json_preserving(&state, json), json);
+    }
+
+    #[test]
+    fn half_v3_files_are_rejected() {
+        let only_baseline = r#"{"mode":"pre","tag":"a","initialVersions":{}}"#;
+        assert!(matches!(
+            parse_pre_json(only_baseline).unwrap_err(),
+            PreJsonError::MissingField { field: "changesets" }
+        ));
+        let only_ids = r#"{"mode":"pre","tag":"a","changesets":[]}"#;
+        assert!(matches!(
+            parse_pre_json(only_ids).unwrap_err(),
+            PreJsonError::MissingField {
+                field: "initialVersions"
+            }
+        ));
+    }
+
+    #[test]
+    fn exiting_a_v3_state_writes_v3() {
+        let exited = parse_pre_json(V3_JSON).unwrap().exiting();
+        assert_eq!(exited.shape(), PreStateShape::V3);
+        let written = write_pre_json(&exited);
+        assert_eq!(written, "{\n  \"mode\": \"exit\",\n  \"tag\": \"next\"\n}\n");
+    }
+
+    #[test]
+    fn v3_rewrite_keeps_bom_crlf_and_tab_indent() {
+        let existing = "\u{FEFF}{\r\n\t\"mode\": \"pre\",\r\n\t\"tag\": \"next\"\r\n}\r\n";
+        let state = parse_pre_json(existing).unwrap();
+        assert_eq!(write_pre_json_preserving(&state, existing), existing);
     }
 }
