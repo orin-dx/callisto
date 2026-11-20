@@ -459,7 +459,7 @@ mod tests {
         let (dir, runner) = super::super::tests::fixture();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[registries.crates-io]\nkind = \"cargo\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "[registries.crates-io]\nkind = \"cargo\"\nconfirm-timeout = \"3m\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
@@ -468,25 +468,6 @@ mod tests {
         let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, &package).unwrap();
         assert_eq!(binding.key.as_str(), "crates-io");
         assert_eq!(binding.endpoint, None);
-    }
-
-    /// `[registries.crates-io]` configures the registry that `publish-to = ["crates-io"]` names.
-    #[test]
-    fn the_crates_io_entry_configures_what_publish_to_crates_io_binds() {
-        let (dir, runner) = super::super::tests::fixture();
-        std::fs::write(
-            dir.path().join("callisto.toml"),
-            "[registries.crates-io]\nconfirm-timeout = \"3m\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
-        )
-        .unwrap();
-        let locator = crate::IgnoreWalkLocator::new(dir.path());
-        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
-        let package = workspace.graph.packages().next().expect("the fixture package").clone();
-        let [target] = package.publish_to.as_slice() else {
-            panic!("one publish target: {:?}", package.publish_to);
-        };
-        let binding = prepared_registry_binding(&workspace, target, &package.id).unwrap();
-        assert_eq!(binding.key.as_str(), "crates-io");
         assert_eq!(binding.confirm_timeout, Some(std::time::Duration::from_secs(180)));
     }
 

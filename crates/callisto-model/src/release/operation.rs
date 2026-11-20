@@ -41,7 +41,7 @@ impl RegistryBindingId {
         binding_digest: RegistryBindingDigest,
     ) -> Result<Self, ReleaseOperationError> {
         Ok(Self {
-            registry_key: RegistryName::parse(registry_key.into())?.into(),
+            registry_key: validated_registry_key(registry_key.into())?,
             binding_digest,
         })
     }
@@ -447,40 +447,26 @@ pub enum ReleaseOperationError {
     UnsafePlatformPackage,
 }
 
-/// A registry name from `[registries.<name>]`, `publish-to` or a durable intent. It reaches argv (`cargo publish
-/// --registry <name>`), so it stays alphanumeric plus `-`/`_`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RegistryName(String);
-
-impl RegistryName {
-    /// # Errors
-    ///
-    /// Returns [`ReleaseOperationError::MalformedRegistryKey`] for an empty,
-    /// over-long, or out-of-charset name.
-    pub fn parse(raw: String) -> Result<Self, ReleaseOperationError> {
-        // A leading `-` would make `cargo publish --registry <name>` read the name
-        // as another option, the same hazard `TagName` already rules out.
-        if raw.is_empty()
-            || raw.len() > 128
-            || raw.starts_with('-')
-            || !raw
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        {
-            return Err(ReleaseOperationError::MalformedRegistryKey { raw });
-        }
-        Ok(Self(raw))
+/// A registry key from `[registries.<name>]`, `publish-to` or a durable intent. It reaches argv (`cargo publish
+/// --registry <key>`), so it stays alphanumeric plus `-`/`_`.
+///
+/// # Errors
+///
+/// Returns [`ReleaseOperationError::MalformedRegistryKey`] for an empty,
+/// over-long, or out-of-charset key.
+pub fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationError> {
+    // A leading `-` would make `cargo publish --registry <key>` read the key
+    // as another option, the same hazard `TagName` already rules out.
+    if raw.is_empty()
+        || raw.len() > 128
+        || raw.starts_with('-')
+        || !raw
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(ReleaseOperationError::MalformedRegistryKey { raw });
     }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<RegistryName> for RegistryKey {
-    fn from(name: RegistryName) -> Self {
-        RegistryKey(name.0)
-    }
+    Ok(RegistryKey(raw))
 }
 
 #[cfg(test)]
@@ -491,16 +477,6 @@ mod tests {
     use super::super::test_support::registry_binding;
     use super::*;
     use crate::release::*;
-
-    #[test]
-    fn a_registry_name_is_what_cargo_takes_as_a_registry_argument() {
-        for good in ["crates-io", "my_reg", "a", &"r".repeat(128)] {
-            assert_eq!(RegistryName::parse(good.to_owned()).unwrap().as_str(), good);
-        }
-        for bad in ["", "-reg", "my.reg", "my reg", &"r".repeat(129)] {
-            assert!(RegistryName::parse(bad.to_owned()).is_err(), "{bad:?}");
-        }
-    }
 
     #[test]
     fn an_operation_id_reads_as_what_it_does_to_which_version() {

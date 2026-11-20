@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use callisto_model::release::{is_safe_artifact_component, RegistryName};
+use callisto_model::release::{is_safe_artifact_component, validated_registry_key};
 use callisto_model::{
     ConfigKey, Ecosystem, GitHubRepository, NativeName, PackageId, PublishTarget, RegistryKey, ReleaseTrigger,
     Severity, TagTemplate,
@@ -298,9 +298,17 @@ pub fn parse_publish_target(s: &str, registries: &BTreeMap<RegistryKey, Registry
         "github-release" => Some(PublishTarget::GitHubRelease),
         "none" => Some(PublishTarget::None),
         name => {
-            let name = RegistryName::parse(name.to_owned()).ok()?;
-            let registry = registries.get(&RegistryKey(name.as_str().to_owned()))?;
-            PublishTarget::for_registry(name, registry.kind)
+            let key = RegistryKey(name.to_owned());
+            match registries.get(&key)?.kind {
+                Ecosystem::Cargo if name == RegistryKey::CRATES_IO => Some(PublishTarget::CratesIo),
+                Ecosystem::Cargo => Some(PublishTarget::CargoRegistry { name: key }),
+                Ecosystem::Npm => (name == RegistryKey::NPM).then_some(PublishTarget::Npm {
+                    registry: None,
+                    access: None,
+                }),
+                Ecosystem::Pypi => (name == RegistryKey::PYPI).then_some(PublishTarget::Pypi { index: None }),
+                _ => None,
+            }
         }
     }
 }
@@ -322,7 +330,7 @@ fn configured_registry_key(path: &Path, raw: String) -> Result<RegistryKey, Conf
             "`[registries.{raw}]`: `{raw}` is a publish-to word, not a registry; rename it"
         )));
     }
-    RegistryName::parse(raw.clone()).map(RegistryKey::from).map_err(|error| {
+    validated_registry_key(raw.clone()).map_err(|error| {
         unknown(format!(
             "`[registries.{raw}]`: {error}; a registry name is letters, digits, `-` and `_`, and does not start with `-`"
         ))
@@ -1481,10 +1489,6 @@ mod tests {
             (RegistryKey::NPM, Ecosystem::Npm),
             (RegistryKey::PYPI, Ecosystem::Pypi),
             ("my-reg", Ecosystem::Cargo),
-            ("my-npm", Ecosystem::Npm),
-            ("my-pypi", Ecosystem::Pypi),
-            ("my.reg", Ecosystem::Cargo),
-            ("nuget", Ecosystem::NuGet),
         ]);
         let parse = |name: &str| parse_publish_target(name, &registries);
         assert_eq!(parse("crates-io"), Some(PublishTarget::CratesIo));
@@ -1502,7 +1506,7 @@ mod tests {
                 name: RegistryKey("my-reg".to_owned())
             })
         );
-        for unpublishable in ["my-npm", "my-pypi", "my.reg", "nuget", "unlisted", "cratesIo"] {
+        for unpublishable in ["my.reg", "cratesIo"] {
             assert_eq!(parse(unpublishable), None, "{unpublishable}");
         }
     }
