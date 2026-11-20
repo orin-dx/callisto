@@ -73,24 +73,6 @@ impl GitCommitTrustEvidence {
     pub fn head_disposition(&self) -> GitHeadDisposition {
         self.head_disposition
     }
-
-    /// The checkout facts a durable release intent is bound to.
-    pub fn identity(&self) -> GitCommitTrustIdentity<'_> {
-        GitCommitTrustIdentity {
-            canonical_root: &self.canonical_root,
-            head: &self.head,
-            head_disposition: self.head_disposition,
-        }
-    }
-}
-
-/// Borrowed identity view of a [`GitCommitTrustEvidence`]; see
-/// [`GitCommitTrustEvidence::identity`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GitCommitTrustIdentity<'a> {
-    pub canonical_root: &'a Path,
-    pub head: &'a CommitSha,
-    pub head_disposition: GitHeadDisposition,
 }
 
 /// Whether `HEAD` was attached to a symbolic reference when it was observed.
@@ -708,29 +690,6 @@ impl GitAccess<'_> {
             .is_ok_and(|output| output.exit_code == Some(1))
     }
 
-    /// Resolves every ref in `refs` to its commit with one `git rev-parse`.
-    /// `None` when any of them does not resolve.
-    pub fn resolve_commits(&self, refs: &[String]) -> Result<Option<Vec<CommitSha>>, VcsError> {
-        let revs: Vec<String> = refs.iter().map(|r| format!("{r}^{{commit}}")).collect();
-        let mut args = vec!["rev-parse"];
-        args.extend(revs.iter().map(String::as_str));
-        let output = match GitStdout::of(self.runner.run("git", &args, &self.root)?) {
-            Ok(output) => output,
-            Err(output) => {
-                // The batch exits 128 for a missing ref and for a broken repository alike; one probe each tells them
-                // apart.
-                for r in refs {
-                    if self.resolve_commit(r)?.is_none() {
-                        return Ok(None);
-                    }
-                }
-                return Err(probe_failed(&args, &self.root, &output));
-            }
-        };
-        let shas: Option<Vec<CommitSha>> = output.lines().map(|l| CommitSha::parse(l).ok()).collect();
-        Ok(shas.filter(|shas| shas.len() == refs.len()))
-    }
-
     /// Tracked paths, relative to the root and limited to it, whose worktree
     /// contents differ from `since_ref`.
     pub fn paths_differing_from(&self, since_ref: &str) -> Result<Vec<PathBuf>, VcsError> {
@@ -1277,9 +1236,6 @@ mod tests {
             .is_empty());
         assert!(git.commit_adding(Path::new("a.txt")).unwrap().is_some());
         assert_eq!(git.commit_adding(Path::new("nope.txt")).unwrap(), None);
-        let heads = ["HEAD".to_string(), "no-such-ref".to_string()];
-        assert_eq!(git.resolve_commits(&heads).unwrap(), None);
-        assert!(git.resolve_commits(&heads[..1]).unwrap().is_some());
 
         // A searched revision that does not exist is a failure, not "no matches".
         assert!(git.files_containing_at("no-such-ref", "needle", &named_a).is_err());
@@ -1299,7 +1255,6 @@ mod tests {
             .is_err());
         assert!(git.commit_adding(Path::new("a.txt")).is_err());
         assert!(git.list_tags(None).is_err());
-        assert!(git.resolve_commits(&["HEAD".to_string()]).is_err());
     }
 
     #[test]

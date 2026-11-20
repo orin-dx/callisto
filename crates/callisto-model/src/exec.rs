@@ -151,10 +151,6 @@ impl CommandOutput {
         self.stdout.trim()
     }
 
-    pub fn stdout_lines(&self) -> impl Iterator<Item = &str> {
-        self.stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty())
-    }
-
     /// Redacts known registry/VCS credential env-var values and any URL
     /// userinfo component from this command's raw stderr before it's
     /// embedded in a caller's user-facing error -- a failing subprocess

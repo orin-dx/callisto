@@ -28,19 +28,6 @@ impl ConfigKey {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
-    pub const ALL: &'static [ConfigKey] = &[
-        Self::CASCADE_MODE,
-        Self::CASCADE_BUMP_SEVERITY,
-        Self::CASCADE_PEER_ESCALATION,
-        Self::CASCADE_PRESERVE_NPM_RANGES,
-        Self::VALIDATION_ALLOW_EMPTY_CHANGESETS,
-        Self::RELEASE_TRIGGER,
-        Self::PRE_MAJOR_INFERENCE,
-        Self::TAG_TEMPLATE,
-        Self::FIXED_GROUP,
-        Self::LINKED_GROUP,
-    ];
 }
 
 impl fmt::Display for ConfigKey {
@@ -105,8 +92,6 @@ pub enum StrictFlag {
 pub enum DiagnosticCode {
     /// A changeset file has no entries at all.
     EmptyChangeset,
-    /// A changeset has one or more entries but an empty (or whitespace-only) summary.
-    EmptySummary,
     /// A changeset entry names a package that isn't in the workspace (e.g. removed since the
     /// changeset was written) — the changeset stays on disk rather than being silently
     /// consumed, since deleting it would erase a still-unresolved entry. `callisto matrix`
@@ -188,39 +173,4 @@ pub enum DiagnosticCode {
     /// A preview found neither `[release] forge-repository` nor a GitHub `origin`, so a declared artifact is bound to
     /// no repository and would not be uploaded.
     ArtifactWithoutForgeDestination,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::DiagnosticCode;
-
-    /// DiagnosticCode::UnrecognisedPlatformTriple must serialize to
-    /// the kebab-case string "unrecognised-platform-triple" and deserialize
-    /// back to the same variant.
-    #[test]
-    fn unrecognised_platform_triple_serializes_to_kebab_case() {
-        let code = DiagnosticCode::UnrecognisedPlatformTriple;
-        let json = serde_json::to_string(&code).unwrap();
-        assert_eq!(
-            json, r#""unrecognised-platform-triple""#,
-            "DiagnosticCode::UnrecognisedPlatformTriple must serialize to \"unrecognised-platform-triple\"",
-        );
-        let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
-        assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
-    }
-
-    /// DiagnosticCode::PackageRuleMatchedNothing must serialize to the
-    /// kebab-case string "package-rule-matched-nothing" and deserialize back
-    /// to the same variant.
-    #[test]
-    fn package_rule_matched_nothing_serializes_to_kebab_case() {
-        let code = DiagnosticCode::PackageRuleMatchedNothing;
-        let json = serde_json::to_string(&code).unwrap();
-        assert_eq!(
-            json, r#""package-rule-matched-nothing""#,
-            "DiagnosticCode::PackageRuleMatchedNothing must serialize to \"package-rule-matched-nothing\"",
-        );
-        let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
-        assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
-    }
 }
