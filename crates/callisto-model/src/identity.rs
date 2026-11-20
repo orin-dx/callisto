@@ -361,8 +361,6 @@ impl RegistryKey {
     pub const NPM: &'static str = "npm";
     /// Well-known registry key for PyPI.
     pub const PYPI: &'static str = "pypi";
-    /// Well-known registry key for NuGet.
-    pub const NUGET: &'static str = "nuget";
 
     /// User-facing registry name for help text and rendered output, e.g. `crates.io` for `crates-io`.
     pub fn display_name(&self) -> &str {
@@ -370,7 +368,6 @@ impl RegistryKey {
             Self::CRATES_IO => "crates.io",
             Self::NPM => "npm",
             Self::PYPI => "PyPI",
-            Self::NUGET => "NuGet",
             other => other,
         }
     }

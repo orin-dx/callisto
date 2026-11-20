@@ -117,7 +117,7 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 
 ### Limits
 
-- Cargo, npm and PyPI only. `nuget` is accepted in `publish-to`, but there is no NuGet publisher or package discovery ([config](docs/config.md#registries)).
+- Cargo, npm and PyPI only.
 - Dependencies across languages are not inferred; use groups to move packages together ([guide](docs/how-callisto-works.md#current-support)).
 - Python versions must be static (PEP 621) or Poetry. Maturin gets no generated workflow, and Cargo plus maturin in one directory fails with E007 ([publishing](docs/publishing.md#current-python-support-limits)).
 - Generated workflows are GitHub Actions only, and build only Cargo binaries and napi addons; other products need a manual workflow ([releasing](docs/releasing.md#generated-workflows)).

@@ -69,16 +69,6 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
         .ok_or_else(|| GraphError::ReleaseInvariant {
             detail: format!("unknown registry `{}`", key.as_str()),
         })?;
-    if Some(registry.kind) != target.ecosystem() {
-        return Err(GraphError::RegistryKindMismatch {
-            registry: key.as_str().to_owned(),
-            configured: registry.kind.prefix().to_owned(),
-            expected: target
-                .ecosystem()
-                .map_or("none", |ecosystem| ecosystem.prefix())
-                .to_owned(),
-        });
-    }
     let explicit = target.registry_override();
     // An explicit per-package index names both routes, so the registry entry's upload route does not apply.
     let publish_raw = match explicit {
@@ -604,32 +594,6 @@ mod tests {
                 "{unsafe_url}: {error:?}"
             );
         }
-    }
-
-    #[test]
-    fn registry_errors_name_the_key_and_ecosystem_but_no_profile() {
-        let (dir, runner) = super::super::tests::fixture();
-        let locator = crate::IgnoreWalkLocator::new(dir.path());
-        let mut workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
-        // Load refuses a predeclared registry of another kind, so the mismatch is built here.
-        workspace
-            .config
-            .registries
-            .get_mut(&RegistryKey(RegistryKey::CRATES_IO.to_owned()))
-            .expect("crates-io is predeclared")
-            .kind = callisto_model::Ecosystem::Npm;
-        let package = PackageId::parse("release-fixture").unwrap();
-        let Err(error @ GraphError::RegistryKindMismatch { .. }) =
-            prepared_registry_binding(&workspace, &PublishTarget::CratesIo, &package)
-        else {
-            panic!("an npm-kind registry must not bind a cargo target");
-        };
-        let detail = error.to_string();
-        assert!(
-            detail.contains("[registries.crates-io]") && detail.contains("`npm`"),
-            "{detail}"
-        );
-        assert!(!detail.contains("profile"), "{detail}");
     }
 
     fn npm_workspace(registries: &str) -> (tempfile::TempDir, super::super::tests::RealGitRunner) {

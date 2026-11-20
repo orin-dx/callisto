@@ -710,17 +710,6 @@ pub enum GraphError {
     )]
     ReleaseInvariant { detail: String },
 
-    #[error("`[registries.{registry}]` is a `{configured}` registry, but a `{expected}` package publishes to it")]
-    #[diagnostic(
-        code(E339),
-        help("Set `kind = \"{expected}\"` on `[registries.{registry}]`, or remove the entry to use the built-in registry. No registry was contacted.")
-    )]
-    RegistryKindMismatch {
-        registry: String,
-        configured: String,
-        expected: String,
-    },
-
     #[error("`--from` commit `{commit}` is not a release commit on this branch")]
     #[diagnostic(
         code(E328),
@@ -781,16 +770,6 @@ pub enum GraphError {
         help("Point origin at the GitHub repository, or set `[release] forge-repository`.")
     )]
     ReleaseForgeRepositoryMissing,
-
-    #[error("package `{package}` configures publish-to = [\"{target}\"], which release cannot dispatch yet")]
-    #[diagnostic(
-        code(E199),
-        help("Remove the target from `publish-to` for this package, or publish it outside `callisto release`.")
-    )]
-    PublishTargetNotImplemented {
-        package: callisto_model::ReleasePackageId,
-        target: String,
-    },
 
     #[error("`{}` already exists; this workspace is already initialized", .path.display())]
     #[diagnostic(

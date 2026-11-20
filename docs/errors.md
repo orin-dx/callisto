@@ -6,7 +6,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
-Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248, E253, E254, E257, E258, E318. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338). E318 refused `release-pr decide` in pre mode; a release PR now runs a whole pre cycle.
+Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199, E248, E253, E254, E257, E258, E318, E339. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338). E318 refused `release-pr decide` in pre mode; a release PR now runs a whole pre cycle.
 
 ## callisto-model
 
@@ -218,7 +218,6 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E169 | Release `--package` selection is invalid. A version `callisto snapshot` wrote is never selectable. | Select each package at most once, only packages with a pending release and a publish target, and every unreleased platform package a selected npm package depends on. |
 | E170 | Release precondition is unmet (e.g. detached HEAD, missing GitHub remote, workspace below the repository root) | Satisfy the reported precondition (for example a detached HEAD or a configured GitHub remote) before retrying. |
 | E171 | Internal release invariant violated | This is an internal callisto defect, not an operator action; report it along with the full error detail. |
-| E339 | A `[registries.<name>]` entry's `kind` does not match the ecosystem of a package that publishes to it (only reachable if the loaded configuration and the publish target disagree) | Set `kind = "<expected>"` on `[registries.<registry>]`, or remove the entry to use the built-in registry. No registry was contacted. |
 | E340 | An interrupted `version` run left a checkpoint, and `HEAD`, the tags, the Callisto version, the workspace or a file the plan was derived from or writes (a manifest, `callisto.toml`, a changeset) is neither as recorded nor as a finished run would leave it, so it cannot resume | Run `callisto version` again only with the inputs it started from. To give up on the interrupted run, delete its checkpoint with `git update-ref -d refs/worktree/callisto/checkpoint/version`, then follow the E121 steps to finish or undo what it wrote. |
 | E341 | Another `version` run created the checkpoint between this run's check and its own | Wait for the other run to finish, then run `callisto version` again to resume or finish its work. |
 | E328 | `release pending --from` names a commit that is not a release commit on this branch | Pass a release commit from `callisto release pending` run without `--from`, on this branch's first-parent history. |
@@ -238,7 +237,6 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
 | E196 | `--artifact-target` triple is invalid | Use distinct, non-empty Rust target triples. |
 | E198 | `[release]` has no forge repository: origin is not a GitHub repository and no `forge-repository` is set | Point origin at the GitHub repository, or set `[release] forge-repository`. |
-| E199 | Package configures a `publish-to` target that release cannot dispatch yet | Remove the target from `publish-to` for this package, or publish it outside `callisto release`. |
 | E200 | Generated workflow file already exists; `callisto init` refuses to overwrite it | Remove or edit the existing file directly; `callisto init` never merges into it. |
 | E201 | Couldn't resolve `callisto@{version}` to a commit on `orin-dx/callisto` | check network access to github.com, or run `callisto init --no-workflow` to skip workflow generation |
 | E202 | `callisto init` cannot generate a release workflow for this workspace | omit --workflow and write .github/workflows/callisto-release.yml by hand |
