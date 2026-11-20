@@ -13,6 +13,9 @@ use crate::identity::IdentityIndex;
 use crate::resolver::DependencyResolver;
 use crate::tags::TagIndex;
 
+mod converged;
+pub use converged::{ConvergedTarget, ConvergedTargets};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CascadeDecision {
     pub severity: Severity,
@@ -143,7 +146,7 @@ pub struct CascadeInput<'a, D: DependencyResolver> {
 #[derive(Clone, Debug, Default)]
 pub struct CascadeOutcome {
     pub severities: BTreeMap<PackageId, Severity>,
-    pub targets: BTreeMap<PackageId, Version>,
+    pub targets: ConvergedTargets,
     pub reasons: BTreeMap<PackageId, BumpReason>,
     pub governed_by: BTreeMap<PackageId, ConfigKey>,
     pub rewrites: BTreeMap<RewriteKey, SpecRewrite>,
@@ -198,7 +201,7 @@ pub(crate) fn dependency_rewrite_key(edge: &DepEdge) -> RewriteKey {
 /// unconditionally), so they can't block anything -- `Catalog` gets
 /// [`DiagnosticCode::CatalogSpecNotRewritten`], `Opaque` gets no
 /// diagnostic. [`DiagnosticCode::RangeNotRoundTrippable`]'s real trigger
-/// is a different step: [`rewrite_spec`], when a mechanical range rewrite
+/// is a different step: `rewrite_spec`, when a mechanical range rewrite
 /// (not a coverage test) fails on an otherwise-known-coverage spec.
 pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError> {
     let mut out = CascadeOutcome {
@@ -207,12 +210,14 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
         ..Default::default()
     };
 
+    // Provisional: the loop below may still move them, so nothing here may rewrite a range from them.
+    let mut targets: BTreeMap<PackageId, Version> = BTreeMap::new();
     for (id, &sev) in input.seed {
         let t = bump_target(id, sev, &input)?;
-        out.targets.insert(id.clone(), t);
+        targets.insert(id.clone(), t);
     }
 
-    let mut worklist: BTreeSet<PackageId> = out.targets.keys().cloned().collect();
+    let mut worklist: BTreeSet<PackageId> = targets.keys().cloned().collect();
     let mut iterations = 0;
     let bound = convergence_bound(input.graph.packages().count());
     // Edges already run through rewrite_spec, so the floor-raise pass below doesn't re-diagnose them.
@@ -228,7 +233,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 return Err(GraphError::CascadeNotConverged { iterations });
             }
 
-            let new_version = out.targets[&pkg].clone();
+            let new_version = targets[&pkg].clone();
             let src_sev = out.severities[&pkg];
 
             let dependents: Vec<DepEdge> = input.graph.dependents_of(&pkg).cloned().collect();
@@ -271,6 +276,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                         &edge,
                         &new_version,
                         &mut out,
+                        &mut targets,
                         input.groups,
                         &mut worklist,
                         &input,
@@ -325,7 +331,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                                 group: g.name.clone(),
                                 members: live_members
                                     .iter()
-                                    .filter_map(|m| out.targets.get(m).map(|v| (m.clone(), v.clone())))
+                                    .filter_map(|m| targets.get(m).map(|v| (m.clone(), v.clone())))
                                     .collect(),
                             }
                         })?;
@@ -340,8 +346,8 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             let Some(winner) = winner else { continue };
 
             for id in live_members {
-                if out.targets.get(&id) != Some(&winner) {
-                    out.targets.insert(id.clone(), winner.clone());
+                if targets.get(&id) != Some(&winner) {
+                    targets.insert(id.clone(), winner.clone());
                     out.reasons
                         .insert(id.clone(), BumpReason::LinkedGroupUnion { group: g.name.clone() });
                     worklist.insert(id.clone());
@@ -389,8 +395,8 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 crate::groups::fixed_group_target(&g.name, &live_members, input.base, max_sev, input.tags, input.pre)?;
 
             for id in live_members {
-                if out.targets.get(&id) != Some(&winner) {
-                    out.targets.insert(id.clone(), winner.clone());
+                if targets.get(&id) != Some(&winner) {
+                    targets.insert(id.clone(), winner.clone());
                     out.reasons
                         .insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
                     worklist.insert(id.clone());
@@ -400,14 +406,14 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
         }
     }
 
+    out.targets = ConvergedTargets::settle(targets);
+
     // Group alignment can move a target after the worklist first visited it, so rewrites and rejections are derived
     // from the converged targets only.
-    for pkg in out.targets.keys().cloned().collect::<Vec<_>>() {
-        let new_version = out.targets[&pkg].clone();
-        let src_sev = out.severities[&pkg];
-        let dependents: Vec<DepEdge> = input.graph.dependents_of(&pkg).cloned().collect();
-        for edge in dependents {
-            let cov = coverage(&edge.spec, &new_version).map_err(|source| GraphError::GrammarMismatch {
+    for (pkg, new_version) in out.targets.iter() {
+        let src_sev = out.severities[pkg];
+        for edge in input.graph.dependents_of(pkg) {
+            let cov = coverage(&edge.spec, new_version.version()).map_err(|source| GraphError::GrammarMismatch {
                 from: edge.from.clone(),
                 to: edge.to.clone(),
                 source,
@@ -422,9 +428,9 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             }
 
             if d.rewrite {
-                match rewrite_edge(&edge, &new_version, input.cfg)? {
+                match rewrite_edge(edge, new_version, input.cfg)? {
                     RewriteOutcome::Rewritten(to_spec) => {
-                        let key = dependency_rewrite_key(&edge);
+                        let key = dependency_rewrite_key(edge);
                         rewrite_attempted.insert(key.clone());
                         out.rewrites.insert(
                             key.clone(),
@@ -437,7 +443,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                         );
                     }
                     RewriteOutcome::LeftAlone(dg) => {
-                        rewrite_attempted.insert(dependency_rewrite_key(&edge));
+                        rewrite_attempted.insert(dependency_rewrite_key(edge));
                         out.diagnostics.push(dg);
                     }
                 }
@@ -458,11 +464,11 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             ) {
                 continue;
             }
-            let Some(new_version) = out.targets.get(&edge.to).cloned() else {
+            let Some(new_version) = out.targets.get(&edge.to) else {
                 continue;
             };
             if matches!(edge.spec, DepSpec::WorkspaceProtocol(_))
-                && coverage(&edge.spec, &new_version).map_err(|source| GraphError::GrammarMismatch {
+                && coverage(&edge.spec, new_version.version()).map_err(|source| GraphError::GrammarMismatch {
                     from: edge.from.clone(),
                     to: edge.to.clone(),
                     source,
@@ -477,11 +483,11 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             }
 
             // A floor that cannot be raised (`*`, a bare Python requirement, `||` sets) is harmless while it covers.
-            if matches!(coverage(&edge.spec, &new_version), Ok(Coverage::Covers))
+            if matches!(coverage(&edge.spec, new_version.version()), Ok(Coverage::Covers))
                 && matches!(
                     rewrite_spec(
                         &edge.spec,
-                        &new_version,
+                        new_version,
                         manifest_ecosystem(&edge.from_manifest),
                         input.cfg
                     ),
@@ -491,7 +497,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 continue;
             }
 
-            match rewrite_edge(&edge, &new_version, input.cfg)? {
+            match rewrite_edge(&edge, new_version, input.cfg)? {
                 RewriteOutcome::Rewritten(to_spec) => {
                     out.rewrites.entry(key.clone()).or_insert_with(|| SpecRewrite {
                         key,
@@ -547,6 +553,7 @@ fn raise<D: DependencyResolver>(
     edge: &DepEdge,
     dependency_to: &Version,
     out: &mut CascadeOutcome,
+    targets: &mut BTreeMap<PackageId, Version>,
     groups: &GroupTable,
     worklist: &mut BTreeSet<PackageId>,
     input: &CascadeInput<'_, D>,
@@ -578,7 +585,7 @@ fn raise<D: DependencyResolver>(
     }
 
     let new_t = bump_target(pkg, sev, input)?;
-    out.targets.insert(pkg.clone(), new_t);
+    targets.insert(pkg.clone(), new_t);
     worklist.insert(pkg.clone());
 
     for sib in groups.fixed_siblings(pkg) {
@@ -596,12 +603,77 @@ fn raise<D: DependencyResolver>(
                 },
             );
             let sib_t = bump_target(sib, sev, input)?;
-            out.targets.insert(sib.clone(), sib_t);
+            targets.insert(sib.clone(), sib_t);
             worklist.insert(sib.clone());
         }
     }
 
     Ok(true)
+}
+
+/// Each dependency range that excludes its package's snapshot version, rewritten; a snapshot has no cascade or groups.
+pub(crate) fn snapshot_rewrites<D: DependencyResolver>(
+    graph: &D,
+    versions: BTreeMap<PackageId, Version>,
+    cfg: &CascadeConfig,
+) -> Result<(Vec<SpecRewrite>, Vec<Diagnostic>), GraphError> {
+    let settled = ConvergedTargets::settle(versions);
+    let mut rewrites: BTreeMap<RewriteKey, SpecRewrite> = BTreeMap::new();
+    let mut diagnostics = Vec::new();
+
+    for pkg in graph.packages() {
+        for edge in graph.dependencies_of(&pkg.id) {
+            if matches!(edge.spec, DepSpec::Workspace(_) | DepSpec::Catalog(_)) {
+                if matches!(edge.spec, DepSpec::Catalog(_)) {
+                    diagnostics.push(Diagnostic {
+                        code: DiagnosticCode::CatalogSpecNotRewritten,
+                        severity: DiagnosticSeverity::Warning,
+                        message: format!(
+                            "spec `{}` for `{}` could not be tested for coverage",
+                            edge.spec.render(),
+                            edge.to.display_name()
+                        ),
+                        package: Some(edge.from.clone()),
+                        path: Some(edge.from_manifest.clone()),
+                        governed_by: Some(ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
+                        escalated_by: None,
+                    });
+                }
+                continue;
+            }
+            if matches!(edge.spec, DepSpec::Opaque(_)) {
+                continue;
+            }
+            let Some(snap_to) = settled.get(&edge.to) else {
+                continue;
+            };
+            // A spec in another grammar than the snapshot version surfaces as a GrammarMismatch, not silently.
+            let covers = coverage(&edge.spec, snap_to.version()).map_err(|source| GraphError::GrammarMismatch {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                source,
+            })?;
+            if matches!(covers, Coverage::Covers) {
+                continue;
+            }
+
+            match rewrite_edge(edge, snap_to, cfg)? {
+                RewriteOutcome::Rewritten(to_spec) => {
+                    let key = dependency_rewrite_key(edge);
+                    rewrites.entry(key.clone()).or_insert_with(|| SpecRewrite {
+                        key,
+                        dependency: edge.to.clone(),
+                        from: edge.spec.clone(),
+                        to: to_spec,
+                    });
+                }
+                RewriteOutcome::LeftAlone(dg) => {
+                    diagnostics.push(dg);
+                }
+            }
+        }
+    }
+    Ok((rewrites.into_values().collect(), diagnostics))
 }
 
 pub(crate) fn convergence_bound(package_count: usize) -> usize {
@@ -637,21 +709,31 @@ pub enum RewriteOutcome {
 
 /// Rewrites one dependency edge toward `new`. A range a consumer's published manifest would keep excluding `new`
 /// stops the run; only a dev dependency, which consumers never install, is left alone with a warning.
-pub(crate) fn rewrite_edge(edge: &DepEdge, new: &Version, cfg: &CascadeConfig) -> Result<RewriteOutcome, GraphError> {
+pub(crate) fn rewrite_edge(
+    edge: &DepEdge,
+    new: ConvergedTarget<'_>,
+    cfg: &CascadeConfig,
+) -> Result<RewriteOutcome, GraphError> {
     let eco = manifest_ecosystem(&edge.from_manifest);
     match rewrite_spec(&edge.spec, new, eco, cfg) {
         RewriteOutcome::LeftAlone(_) if edge.kind != DepKind::Dev => Err(GraphError::UnrewritableRange {
             dependent: edge.from.display_name(),
             dependency: edge.to.display_name(),
             spec: edge.spec.render(),
-            version: new.render().to_string(),
+            version: new.version().render().to_string(),
             manifest: edge.from_manifest.display().to_string(),
         }),
         outcome => Ok(outcome),
     }
 }
 
-pub fn rewrite_spec(original: &DepSpec, new: &Version, eco: Ecosystem, cfg: &CascadeConfig) -> RewriteOutcome {
+pub(crate) fn rewrite_spec(
+    original: &DepSpec,
+    new: ConvergedTarget<'_>,
+    eco: Ecosystem,
+    cfg: &CascadeConfig,
+) -> RewriteOutcome {
+    let new = new.version();
     if !cfg.preserve_npm_ranges && eco == Ecosystem::Npm && !matches!(original, DepSpec::WorkspaceProtocol(_)) {
         return RewriteOutcome::Rewritten(DepSpec::Exact(new.clone()));
     }

@@ -1,11 +1,45 @@
 use callisto_model::{Ecosystem, PackageId};
 use globset::{Glob, GlobMatcher};
 
-/// A glob pattern for matching package names in `[[package-set]]` blocks.
+/// What a `[[package]]` rule's `match` names: one package, or every package whose name fits a glob.
+#[derive(Clone, Debug)]
+pub enum PackageMatch {
+    /// `ecosystem/name`: the package's own name in that ecosystem.
+    Exact(PackageId),
+    Glob(PackagePattern),
+}
+
+impl PackageMatch {
+    /// A `match` is a glob when it contains any of `*?[]{}`: no npm, Cargo or PyPI name can.
+    pub(super) fn parse(raw: &str) -> Result<Self, String> {
+        if raw.contains(['*', '?', '[', ']', '{', '}']) {
+            PackagePattern::parse(raw).map(Self::Glob).map_err(|e| e.to_string())
+        } else {
+            PackageId::parse(raw).map(Self::Exact).map_err(|e| e.to_string())
+        }
+    }
+
+    /// Whether the rule applies to a package with these native names, one per ecosystem it has a manifest in.
+    pub(crate) fn applies(&self, native_names: &[(Ecosystem, &str)]) -> bool {
+        match self {
+            Self::Exact(id) => super::resolve::rule_applies(id, native_names),
+            Self::Glob(pattern) => pattern.matches_native(native_names),
+        }
+    }
+}
+
+impl std::fmt::Display for PackageMatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Exact(id) => id.fmt(f),
+            Self::Glob(pattern) => pattern.fmt(f),
+        }
+    }
+}
+
+/// A glob over package names, the glob form of a `[[package]]` `match`.
 ///
-/// Unlike `[[package]]` which uses an exact `PackageId` match,
-/// `[[package-set]]` allows a single rule to target many packages at once
-/// via a glob (e.g. `"pkg-*"` matches `pkg-a`, `pkg-b`, etc.).
+/// One rule can target many packages at once (e.g. `"pkg-*"` matches `pkg-a`, `pkg-b`, etc.).
 ///
 /// The ecosystem prefix is respected: `"cargo/pkg-*"` only matches Cargo packages. Config loading requires the
 /// prefix; a bare pattern parses here but matches every ecosystem.
@@ -73,10 +107,6 @@ impl PackagePattern {
         names.iter().any(|(ecosystem, name)| {
             self.ecosystem.is_none_or(|want| want == *ecosystem) && self.matcher.is_match(name)
         })
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.raw
     }
 }
 

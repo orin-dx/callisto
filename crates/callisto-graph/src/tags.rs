@@ -70,7 +70,7 @@ fn matching_tags<'a>(all_tags: &SortedTags<'a>, template: &TagTemplate) -> Resul
 /// compiled a fresh `globset::Glob`. Production code never reads this; it
 /// exists so tests can assert `TagIndex::build` compiles/scans at most once
 /// per *distinct* tag-template glob, not once per package -- a
-/// `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template` can
+/// glob `[[package]]` rule with a fixed (non-`{name}`) `tag-template` can
 /// apply the identical template string to many packages at once.
 static GLOB_COMPILE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -93,7 +93,7 @@ pub fn glob_compile_count() -> usize {
 /// Selects the highest-versioned tag matching `template` out of a full tag
 /// list obtained via [`fetch_all_tags`], reusing a `cache` of
 /// already-compiled/already-scanned candidates keyed by `template.glob()`
-/// -- a `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template`
+/// -- a glob `[[package]]` rule with a fixed (non-`{name}`) `tag-template`
 /// string applies the identical template to every matching package, so
 /// without this cache `TagIndex::build`'s per-package loop would recompile
 /// the same `globset::Glob` and rescan the full tag list once per package
@@ -341,7 +341,7 @@ impl TagIndex {
             };
             if chosen.is_none() {
                 let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
-                if let Some(previous) = crate::config::resolve::resolve_package_rule(&native_names, cfg)
+                if let Some(previous) = crate::config::resolve::resolve_package_config(&native_names, cfg)
                     .map(|package_config| package_config.previous_tag_templates.as_slice())
                 {
                     for template in previous {

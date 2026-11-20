@@ -30,8 +30,10 @@ How the workspace names packages, why bare names match across ecosystems, and wh
 A workspace can hold `cargo/foo` and `npm/foo` as separate packages; ambiguity is resolved where a lookup happens. Qualified selectors work before and after promotion, and the colon form is rejected with E316. Config and CLI selectors must be canonical (`ecosystem/name`); a bare name is E317 (see [ADR 12](../adr/0012-canonical-distribution-release-ownership.md)).
 
 - `aggregate::resolve_target_package` resolves changeset entries through `IdentityIndex::resolve_id`, which maps qualified native distribution names to their owner and rejects ambiguous bare names. `status` attributes changeset entries and checks their well-formedness through the same resolver.
-- `[[package]]` rules use `config::resolve::resolve_package_config`: the first rule in declaration order whose ecosystem the package has and whose name matches. It never sorts the rules. Config rejects a rule without its ecosystem (E317), so every rule is ecosystem-qualified.
-- `[[package-set]]` is a fallback applied by `config::resolve::resolve_package_rule` only when no `[[package]]` rule matched, for the manifest walk, `pre-major-inference` and `previous-tag-templates` alike. Patterns (`config/pattern.rs`) are globs over the name with a required ecosystem prefix (a bare pattern is E317), tested against every ecosystem the package has a manifest in.
+- `[[package]]` rules are `(PackageMatch, PackageConfig)` pairs in declaration order. `PackageMatch` (`config/pattern.rs`) is `Exact` or `Glob`, built only by `PackageMatch::parse`: a match containing any of `*?[]{}` is a glob.
+- `config::resolve::resolve_package_config` is the one resolver: the first exact rule whose ecosystem the package has and whose name matches, else the first glob that matches, each in declaration order. The walk, `aggregate` and `tags` all call it, so a field applies the same through a glob. It never sorts the rules. Config rejects a rule without its ecosystem (E317), so every rule is ecosystem-qualified.
+- `exact_package_config` is the exact-only form: a private npm workspace root is versioned only when an exact rule names it, so `npm/*` never starts versioning one.
+- A glob has a required ecosystem prefix (a bare pattern is E317) and is tested against every ecosystem the package has a manifest in.
 
 ## Loading a workspace
 

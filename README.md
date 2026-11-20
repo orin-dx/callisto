@@ -78,13 +78,13 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 ### Control over what moves together
 
 - `[[fixed-group]]` members bump in lock-step. `[[linked-group]]` members share the highest severity and align to the highest target version ([config](docs/config.md#fixed-group-and-linked-group)).
-- `[[package]]` (exact) and `[[package-set]]` (glob) rules override per package: `release-trigger`, `publish-to`, `tag-template`, `previous-tag-templates` for renamed packages, `changelog` and `pre-major-inference` ([config](docs/config.md#package-and-package-set)).
+- `[[package]]` rules, matched by exact name or by glob, override per package: `release-trigger`, `publish-to`, `tag-template`, `previous-tag-templates` for renamed packages, `changelog` and `pre-major-inference` ([config](docs/config.md#package)).
 - `[registries]` adds private or alternate cargo, npm and PyPI registries, each with its own `url`, `publish-timeout` and `confirm-timeout` ([config](docs/config.md#registries)).
 - An unknown key in `callisto.toml` is an error, so a typo fails instead of being ignored ([config](docs/config.md)).
 
 ### Beyond changesets
 
-- `release-trigger = "auto"` infers bumps from conventional commits. `pre-major-inference` softens them for `0.y` packages that have a prior release: `conservative` turns a major into a minor, and `conservative-feat` also turns a minor into a patch ([config](docs/config.md#package-and-package-set)).
+- `release-trigger = "auto"` infers bumps from conventional commits. `pre-major-inference` softens them for `0.y` packages that have a prior release: `conservative` turns a major into a minor, and `conservative-feat` also turns a minor into a patch ([config](docs/config.md#package)).
 - `callisto pre enter <tag>` and `pre exit` run prerelease mode; the tag must be a valid SemVer prerelease ([errors](docs/errors.md)).
 - `callisto snapshot --tag <tag>` writes throwaway versions, such as `0.0.0-<tag>-<sha>` in a Cargo workspace, without writing changelogs or consuming changesets, and `release` refuses to publish them (E169) ([versioning](docs/architecture/versioning.md)).
 - `[changelog] layout` chooses `grouped` (Major, Minor and Patch Changes under a dated heading, with a compare link when the GitHub repository is known) or `flat` ([config](docs/config.md#changelog)).
@@ -121,7 +121,6 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 - Dependencies across languages are not inferred; use groups to move packages together ([guide](docs/how-callisto-works.md#current-support)).
 - Python versions must be static (PEP 621) or Poetry. Maturin gets no generated workflow, and Cargo plus maturin in one directory fails with E007 ([publishing](docs/publishing.md#current-python-support-limits)).
 - Generated workflows are GitHub Actions only, and build only Cargo binaries and napi addons; other products need a manual workflow ([releasing](docs/releasing.md#generated-workflows)).
-- A bump inferred from commits shows in `status` and `version`, but the release PR reads changesets only, so add a changeset to release it ([spec](docs/specs/cli.json)).
 - A release across several registries is not atomic ([guide](docs/how-callisto-works.md#current-support)).
 - Registry credentials are tokens passed to the native tools. Native npm and twine handle tokenless publishing; see [Tokenless trusted publishing](docs/publishing.md#tokenless-trusted-publishing). It is not yet verified against real registries.
 - `release` requires the workspace to be at the repository root; `status` and `version` also work in a subdirectory ([releasing](docs/releasing.md#local-release-callisto-release)).

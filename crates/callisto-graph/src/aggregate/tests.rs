@@ -1623,7 +1623,7 @@ fn test_pre_major_inference_policy_comes_from_a_glob_rule_unless_an_exact_rule_m
     // The glob is declared first: the exact rule still wins for `pkg-b`, whatever the declaration order.
     std::fs::write(
         root.join("callisto.toml"),
-        "[[package-set]]\nmatch = \"cargo/pkg-*\"\npre-major-inference = \"conservative\"\n\n\
+        "[[package]]\nmatch = \"cargo/pkg-*\"\npre-major-inference = \"conservative\"\n\n\
          [[package]]\nmatch = \"cargo/pkg-b\"\npre-major-inference = \"conservative-feat\"\n",
     )
     .unwrap();

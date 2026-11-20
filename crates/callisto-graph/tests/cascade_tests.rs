@@ -72,7 +72,7 @@ fn promoted_dual_dependent_preserves_aliases_across_cascade_and_release_floor() 
         .unwrap();
 
         let target = if co_release { "1.1.0" } else { "2.0.0" };
-        assert_eq!(outcome.targets[&core].render(), target);
+        assert_eq!(outcome.targets.get(&core).unwrap().version().render(), target);
         assert_eq!(outcome.severities[&app], Severity::Patch);
         assert!(
             !outcome.targets.contains_key(&tools),
@@ -409,8 +409,14 @@ fn test_linked_group_converges_shared_version() {
     // (pkg-a 1.0.1, pkg-b 2.0.1), so both land on 2.0.1.
     assert_eq!(outcome.severities.get(&pkg_a), Some(&Severity::Patch));
     assert_eq!(outcome.severities.get(&pkg_b), Some(&Severity::Patch));
-    assert_eq!(outcome.targets.get(&pkg_a), Some(&Version::semver(2, 0, 1)));
-    assert_eq!(outcome.targets.get(&pkg_b), Some(&Version::semver(2, 0, 1)));
+    assert_eq!(
+        outcome.targets.get(&pkg_a).unwrap().version(),
+        &Version::semver(2, 0, 1)
+    );
+    assert_eq!(
+        outcome.targets.get(&pkg_b).unwrap().version(),
+        &Version::semver(2, 0, 1)
+    );
 }
 
 #[test]
@@ -467,8 +473,8 @@ fn test_linked_group_version_convergence() {
     };
 
     let outcome = run_cascade(input).unwrap();
-    let target_a = outcome.targets.get(&pkg_a).unwrap().render();
-    let target_b = outcome.targets.get(&pkg_b).unwrap().render();
+    let target_a = outcome.targets.get(&pkg_a).unwrap().version().render();
+    let target_b = outcome.targets.get(&pkg_b).unwrap().version().render();
 
     // Linked group members sync release severity (Minor) AND
     // converge on the single winning target version: pkg_a's candidate is
@@ -545,7 +551,11 @@ fn test_pep440_package_bump_succeeds() {
 
     // SemVerVersioning would reject PEP 440 versions here.
     let outcome = run_cascade(input).expect("cascade must succeed for a PEP 440 package");
-    let target = outcome.targets.get(&pkg_py).expect("target version must be present");
+    let target = outcome
+        .targets
+        .get(&pkg_py)
+        .expect("target version must be present")
+        .version();
     assert_eq!(
         target.render(),
         "1.0.1",
