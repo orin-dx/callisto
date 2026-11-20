@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_01Eu2aVEzknmWXroWA3PCAh1",
+  "agent_id": "aa486932e53c1192c",
+  "task_description": "Review CI macOS scope diff",
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 69062,
+    "cache_read_tokens": 823130,
+    "output_tokens": 7794,
+    "api_call_count": 14
+  },
+  "started_at": "2026-11-20T13:17:51.322174-08:00",
+  "completed_at": "2026-11-20T13:20:05.065748-08:00"
+}
