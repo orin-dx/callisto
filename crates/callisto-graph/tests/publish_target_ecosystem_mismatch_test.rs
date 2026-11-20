@@ -1,15 +1,13 @@
 //! Regression test for the silent publish-target/ecosystem-mismatch bug:
 //!
-//! `PublishTarget` is a closed enum with variants for ecosystems callisto
-//! does not actually dispatch to (`NuGet`, `GitHubRelease`). Before this fix,
-//! `[[package]] publish-to = ["nuget"]` on an ordinary Cargo crate was
+//! Before this fix, `[[package]] publish-to = ["npm"]` on an ordinary Cargo crate was
 //! accepted silently at config-load / workspace-walk time: nothing validated
 //! that the configured target's ecosystem matched the package's real,
 //! detected ecosystem. The crate then silently dropped out of every actual
 //! registry publish while the release-tag gate still fired, because that
 //! gate only checked `publish_to` was non-empty and not all `None`.
 //!
-//! This test asserts that a Cargo-only package configured with a `nuget`
+//! This test asserts that a Cargo-only package configured with an `npm`
 //! publish target fails workspace load with an explicit ecosystem-mismatch
 //! error, instead of silently accepting the mismatched configuration.
 
@@ -37,12 +35,12 @@ fn git_init(root: &Path) {
     callisto_fixtures::git::init_repo(root);
 }
 
-/// A Cargo-only crate configured with `publish-to = ["nuget"]` (a NuGet
-/// target — Ecosystem::NuGet, not Ecosystem::Cargo) must fail workspace load
+/// A Cargo-only crate configured with `publish-to = ["npm"]` (an npm
+/// target — Ecosystem::Npm, not Ecosystem::Cargo) must fail workspace load
 /// with an explicit ecosystem-mismatch error rather than silently accepting
 /// the mismatched target.
 #[test]
-fn cargo_package_with_mismatched_nuget_publish_target_is_rejected() {
+fn cargo_package_with_mismatched_npm_publish_target_is_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     git_init(root);
@@ -57,7 +55,7 @@ fn cargo_package_with_mismatched_nuget_publish_target_is_rejected() {
 
     fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"cargo/some-cargo-crate\"\npublish-to = [\"nuget\"]\n",
+        "[[package]]\nmatch = \"cargo/some-cargo-crate\"\npublish-to = [\"npm\"]\n",
     )
     .unwrap();
 
@@ -68,7 +66,7 @@ fn cargo_package_with_mismatched_nuget_publish_target_is_rejected() {
 
     let err = match ws {
         Ok(_) => panic!(
-            "workspace load must fail for a Cargo package configured with a NuGet \
+            "workspace load must fail for a Cargo package configured with an npm \
              publish target (ecosystem mismatch); silently accepting it means the \
              crate is dropped from every real publish with zero diagnostic"
         ),
