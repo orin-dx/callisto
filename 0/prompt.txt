@@ -1,0 +1,27 @@
+Task: config PR 3, item 1 of .claude/plans/DESIGN-config-surface.md (main checkout): read the whole note and the owner decisions at its top, all accepted. Worktree name wp-config-registry-names, trail #463. This ships in the NEXT release together with #590 (the [[package-set]] rename), so it is a release blocker: keep scope exactly to the note. publish-to always names a registry; crates-io, npm and pypi are predeclared registries and declaring one configures it; github-release and none are reserved publish-to words, not registries; the camelCase key cratesIo becomes crates-io everywhere, including the wire value, with ReleaseIntentV1::SCHEMA_VERSION 5 -> 6 so an old intent is refused with E215; a predeclared registry given another kind fails at load with E334 and a help line; [registries.cratesIo] fails with E325 naming crates-io; nuget leaves publish-to (E330); named kind = \"pypi\" or \"npm\" registries are documented as inert. A RegistryName newtype with a private constructor holds the name rule (from #575 validated_registry_key) and is used for both [registries.<name>] and publish-to. Boundary test first, as in the note. Changeset: **Breaking:** and **Action:** paragraphs. PR #590 also edits crates/callisto-graph/src/config/resolve.rs (package rules); you edit the registry parts. Whichever merges second merges main and resolves. Run git merge-tree against origin/refactor/fold-package-set-into-package before pushing and report overlap. Our own callisto.toml must still load with the released binary: it has no [registries.cratesIo]; confirm. Rules (from the lead session close-gap-for-alpha): Read AGENTS.md first and follow its invariant ladder: a type or private constructor first, then exhaustive match, then an existing lint, then one test at the real boundary; delete per-call-site checks the new type makes redundant and migrate every sibling call site in the same PR. No new traits, async, journals or frameworks; no new error codes, JSON keys or flags without asking the lead first. Work in a named worktree off fresh origin/main (EnterWorktree name=<given>). Write the failing test first. Gate by exit code: just pre-push, just lint, just doc-check, just test, just ci; cargo mutants --in-place --in-diff on the Rust diff with zero missed or argued equivalents in the PR body; never commit mutants.out* (restore mutants.out.old from HEAD only if tracked). Run one fresh Opus reviewer subagent on the diff and apply what holds up. Changeset via `cargo run -p callisto-cli -- add --package cargo/callisto-cli:<bump> --summary "..."` only for user-visible changes, written for users. Signed commits, no session trailer. Right before pushing, merge the latest origin/main (no rebase, no force-push) and re-run the gates if it moved. Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link to the given Entire trail and open with entire trail ci-pr. If Entire raises findings, fix the ones that cause a wrong result, broken recovery, a security issue or a check that cannot fail; report the rest to the lead. Resolve a finding only after the fix is on the remote. When done, send the lead (close-gap-for-alpha) one report: PR number, sha, gates run, and anything not verified. CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: owner says cut the ceremony, and this PR blocks the release. Locally run only `cargo test -p <touched crate>`, `just lint` and `just doc-check`. Skip local `just ci` and the fresh reviewer, since GitHub CI runs the full suite. Run cargo mutants only on the new registry-name resolution logic. Push as soon as the tests for the crates you touched pass, then fix only what CI reports. Keep reports under 5 lines.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bfp6obwp9</task-id>
+<tool-use-id>toolu_01RbstYZoCtosTPyAzJ4jnos</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b33a0b3a-3153-4118-9aa5-fbc0b80fa37e/tasks/bfp6obwp9.output</output-file>
+<status>completed</status>
+<summary>Background command "Run callisto-cli tests" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8n4wr2wf</task-id>
+<tool-use-id>toolu_0148oPVm4M4qfZ4QGWYWZPrF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b33a0b3a-3153-4118-9aa5-fbc0b80fa37e/tasks/b8n4wr2wf.output</output-file>
+<status>completed</status>
+<summary>Background command "Run cargo mutants on the new logic" completed (exit code 0)</summary>
+</task-notification>
