@@ -37,8 +37,8 @@ If a local release tags a version but fails before pushing the tag or completing
 
 Init never overwrites an existing file. This repo's [release workflow](../.github/workflows/callisto-release.yml) is a worked example.
 
-- **Simple shape** (no artifact slots or napi platform packages): `version-pr` maintains the release PR. On each default-branch push, `package` (no secrets) checks whether the commit adds or modifies the release decision, and if so plans the release, builds Python distributions and packs npm packages, and hands them to `execute`, which publishes exactly those files. A push that merely contains an untagged version publishes nothing; recovery is "Re-run failed jobs".
-- **Build-matrix shape** (artifact slots or napi platform packages): a release PR, then plan, build (read-only), attest (no checkout, no commands), optional Python build, crate packaging and npm pack jobs (no credentials), and execute. The build covers configured targets and artifact slots.
+- **Simple shape** (no artifact slots or napi platform packages): `version-pr` maintains the release PR. On each default-branch push, `package` (no secrets) checks whether the commit adds or modifies the release decision, and if so plans the release, builds Python distributions and packs npm packages, and hands them to `execute`, which publishes exactly those files. On that push `version-pr` waits for `execute`, so the next release PR is built from the new tags. A push that merely contains an untagged version publishes nothing; recovery is "Re-run failed jobs".
+- **Build-matrix shape** (artifact slots or napi platform packages): a release PR, then plan, build (read-only), attest (no checkout, no commands), optional Python build, crate packaging and npm pack jobs (no credentials), and execute. As in the simple shape, `version-pr` waits for `execute` on a release push. The build covers configured targets and artifact slots.
 - Maturin builds, and platform packages without `napi.targets`, get no generated workflow.
 
 Generated actions configure npm and Twine authentication during execution. Manual workflows must configure native authentication as described in [publishing.md](publishing.md).
@@ -67,6 +67,8 @@ Build-matrix limits:
 ## Release PR and approval
 
 The generated workflow keeps a release PR current. Merging that PR to the protected default branch authorizes publication; Callisto adds no approval step. Require reviews and CI checks in branch protection. A CODEOWNERS file alone does not enforce review.
+
+During a pre cycle (`callisto pre enter <tag>`) the release PR works the same way: a new changeset, or a new conventional commit to a `release-trigger = "auto"` package, opens or updates the release PR for the next prerelease, a cycle with nothing new since its last prerelease needs none, and after `callisto pre exit` the release PR releases the stable versions.
 
 The action's `version-pr` mode updates the PR; `release` runs `callisto release` for a hand-written local workflow, and `execute` runs `callisto release execute` on the intent and files a credential-free job prepared. Generated workflows use plan/build/execute (build-matrix) or package/execute (simple). See the [action inputs](../.github/actions/callisto-action/action.yml).
 
@@ -116,7 +118,7 @@ Recover each one with the dispatch below, oldest first.
 
 Callisto's workflow rebuilds the release PR on every push to `main`. While that rebuild is pending the PR is stale: if changesets changed on `main` since it was built, merging it releases the wrong set. So a second workflow, `Hold release PR`, turns the open release PR into a draft the moment `main` moves, and the release workflow marks it ready only after a rebuild from the new tip. If the rebuild fails, the PR stays a draft and cannot be merged. Re-run that `Release` workflow run, and the PR becomes ready when it succeeds. A transient GitHub error during the rebuild is attempted up to four times in all before it fails.
 
-If a stale release PR whose changesets were already consumed on `main` was merged anyway, the release fails with [E165](errors.md) because the changesets the merge deleted are not the ones its decision recorded, and every later push to `main` retries it. A stale PR that releases only bumps inferred from commits deletes no changesets, so E165 does not catch it: keep `Hold release PR` enabled, which keeps a stale PR in draft. Nothing was published. Revert the merge's release payload (the version bumps, changelog entries and `.callisto/release-decision.json`, not the changeset files) in a pull request to `main`. The next push rebuilds the release PR from the changesets that are really pending.
+If a stale release PR whose changesets were already consumed on `main` was merged anyway, the release fails with [E165](errors.md) because the changesets the merge deleted are not the ones its decision recorded, and every later push to `main` retries it. A stale PR that deletes no changesets, one that releases only bumps inferred from commits or a prerelease PR of a Changesets v2 pre cycle, gets no E165 from its changesets. E165 still refuses it when `main` already holds its versions, and `Hold release PR` keeps a stale PR in draft. Nothing was published. Revert the merge's release payload (the version bumps, changelog entries and `.callisto/release-decision.json`, not the changeset files) in a pull request to `main`. The next push rebuilds the release PR from the changesets that are really pending.
 
 ## Recovering an older release
 
