@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_manifests::{open, Manifest, OpenContext, WorkspaceCargoResolver};
-use callisto_model::vcs::literal_pathspec;
+use callisto_model::vcs::Pathspec;
 use callisto_model::{
     ApplyPermit, CommandError, CommandRunner, DepKind, Ecosystem, LockfileRefreshResult, ManifestFormat, ManifestRole,
     Version,
@@ -649,9 +649,9 @@ fn run_git_on_paths<R: CommandRunner>(
     prefix: &[&str],
     paths: &[&PathBuf],
 ) -> Result<(), GraphError> {
-    let rendered: Vec<String> = paths.iter().map(|p| literal_pathspec(p)).collect();
+    let rendered: Vec<Pathspec> = paths.iter().map(|p| Pathspec::literal(p)).collect();
     let mut args: Vec<&str> = prefix.to_vec();
-    args.extend(rendered.iter().map(String::as_str));
+    args.extend(rendered.iter().map(Pathspec::as_str));
     let output = runner.run("git", &args, root)?;
     if !output.success() {
         return Err(GraphError::Command(CommandError::Failed {
