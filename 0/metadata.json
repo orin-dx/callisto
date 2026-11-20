@@ -1,0 +1,116 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XDF5YFMEYNPRW0HH6DPHEQ",
+  "session_id": "b73e9c93-b5ed-44e6-ad04-cdaa221b3675",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T21:23:28.411945Z",
+  "branch": "worktree-wp-git-boundary-types",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/changed.rs",
+    "crates/callisto-graph/src/changeset_prs.rs",
+    "crates/callisto-model/src/vcs/access.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "f9d962ebec1d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 188,
+    "cache_creation_tokens": 202307,
+    "cache_read_tokens": 15626749,
+    "output_tokens": 69148,
+    "api_call_count": 93,
+    "subagent_tokens": {
+      "input_tokens": 42,
+      "cache_creation_tokens": 91557,
+      "cache_read_tokens": 1824824,
+      "output_tokens": 14983,
+      "api_call_count": 21
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 188,
+    "cache_creation_tokens": 202307,
+    "cache_read_tokens": 15626749,
+    "output_tokens": 69148,
+    "api_call_count": 93,
+    "subagent_tokens": {
+      "input_tokens": 42,
+      "cache_creation_tokens": 91557,
+      "cache_read_tokens": 1824824,
+      "output_tokens": 14983,
+      "api_call_count": 21
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 2,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Introduce a single Git output boundary in callisto-model (typed line/path/NUL-framed records plus a Pathspec newtype), migrate all Git-reading callers, and fix the changeset PR link bug for subjects containing U+0001 or non-ASCII/quoted file names, with a patch changeset, gated and pushed as a PR.",
+    "outcome": "Added vcs/boundary.rs (GitStdout, LogEntry, Pathspec), migrated callers in model and graph, removed literal_pathspec and CommandOutput::stdout_line, fixed changeset_prs with a test-first approach, and added a patch changeset. Lint, test, doc-check and pre-push were run; the reviewer's --no-show-signature finding was fixed and committed. Mutants left 19 survivors that were not addressed, and the merge of origin/main, push, trail link, ci-pr and lead report were not completed.",
+    "learnings": {
+      "repo": [
+        "AGENTS.md invariant ladder: type or private constructor first, then exhaustive match, lint, then one boundary test; delete redundant per-call-site checks and migrate all siblings.",
+        "An architecture test (release_modules_never_discard_error_sources in callisto-graph/tests/architecture.rs) rejects `|_|` error-discarding closures in release modules; `|_failed|` also tripped it, so failed-command branches had to stay explicit.",
+        "git log -z --name-only emits no blank field between commits, so a leading %x00 per commit (built by LogEntry::format) is needed to frame records; U+0001 framing was the cause of the dropped PR links.",
+        "Git log honors log.showSignature, so changeset PR reads need --no-show-signature or the output is corrupted.",
+        "cargo-mutants tests only the mutated crate, so functions whose only callers are in other crates survive unless real-Git tests live in the same crate.",
+        "Version tests mock git args, so adding -z to ls-tree required updating the expected args in commands/version/tests.rs."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/boundary.rs",
+          "finding": "New module holding GitStdout (of, fields, path, into_text, log_entries), LogEntry with format(), and Pathspec::literal; the single Git output boundary."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "finding": "literal_pathspec and RECORD_SEP removed; files_containing_at now takes &[Pathspec]; readers use GitStdout::of with error mapping."
+        },
+        {
+          "path": "crates/callisto-graph/src/changeset_prs.rs",
+          "finding": "Rewritten to use LogEntry::format([\"%s\"]) with NUL framing instead of U+0001, fixing the dropped link bug."
+        }
+      ],
+      "workflow": [
+        "Python edit scripts with assert on match counts made large multi-site migrations safe.",
+        "Writing scripts to files under target/ avoided worktree-guard issues with inline shell.",
+        "Sandbox blocks gpg keybox access, so signed commits needed retrying outside the sandbox.",
+        "Running a fresh reviewer subagent early surfaced a real regression (showSignature) before gates finished.",
+        "Long gates run with output redirected to log files and checked by exit code."
+      ]
+    },
+    "friction": [
+      "Signed commit initially failed because the sandbox blocked gpg's keybox.",
+      "Initial -z log format assumption was wrong and required experiments with real git and a redesign of the framing.",
+      "The architecture test failed on the `|_failed|` closure rename, costing a lint/test rerun cycle.",
+      "One npm test is blocked by the sandbox.",
+      "cargo mutants left 19 survivors, mostly in functions called only from other crates.",
+      "Concurrent cargo build limits (CARGO_BUILD_JOBS=3) slowed gates."
+    ],
+    "open_items": [
+      "19 surviving mutants were not killed; the task requires zero missed or argued equivalents in the PR body.",
+      "The origin/main merge, gate re-run if it moved, push, ls-remote confirmation, trail link, ci-pr, handling of Entire findings and the final report to close-gap-for-alpha remain undone.",
+      "The transcript indicates the lead cut ceremony, so the mutants requirement should be confirmed with the lead.",
+      "The npm test blocked by the sandbox is unverified and should be reported.",
+      "just ci was not run."
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_013CYcVFMGExpMu6VJTfkcNQ",
+  "agent_id": "a93eb92af931ce071",
+  "subagent_type": "general-purpose",
+  "task_description": "Review Git boundary diff",
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 91557,
+    "cache_read_tokens": 1824824,
+    "output_tokens": 14983,
+    "api_call_count": 21
+  },
+  "started_at": "2026-11-20T12:47:51.259674-08:00",
+  "completed_at": "2026-11-20T12:50:42.573107-08:00"
+}
