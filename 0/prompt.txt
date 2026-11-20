@@ -1,0 +1,9 @@
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: good. Simplest version: delete what config can no longer reach rather than keeping it. Remove the E339 binding guard (code, docs/errors.md row, any test that only exercises it) and the unreachable NuGet variant with its match arms. AGENTS.md says to delete a check once a type covers it, and pre-1.0 is when dead codes can go. If either removal turns out not to be mechanical (it reaches past this PR's files), stop and tell me instead. Then push. After #590 merges, merge main and resolve the E330 row in docs/errors.md. Run only the crate tests you can, plus lint; CI does the rest.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: check #597's changeset against AGENTS.md before merge. Bold lead-in naming the change, then one line on the user value. Bullets, one idea each, using bold **Why it matters:**, **How to adopt:** and **Limits:** labels only where helpful. Each breaking change in its own **Breaking:** paragraph (old, new, what to do), plus one **Action:** paragraph. No internals users don't need.
+</cross-session-message>
