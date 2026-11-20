@@ -1,0 +1,86 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XF531NM9EKT9177G10VNVQ",
+  "session_id": "7dfcbbe3-9096-4a69-bd83-eb6e8d710a6a",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T21:52:53.485126Z",
+  "branch": "worktree-wp-changeset-tidy",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/brave-lynxes-jump.md",
+    ".changeset/brave-panthers-climb.md",
+    ".changeset/brave-tigers-bound.md",
+    ".changeset/clever-hawks-soar.md",
+    ".changeset/mighty-lynxes-sprint.md",
+    ".changeset/noble-foxes-fly.md",
+    ".changeset/noble-leopards-run.md",
+    ".changeset/proud-stags-glide.md",
+    ".changeset/radiant-bears-chase.md",
+    ".changeset/swift-cheetahs-sprint.md",
+    ".changeset/swift-foxes-sprint.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "9da004419e39",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 61463,
+    "cache_read_tokens": 1279171,
+    "output_tokens": 7445,
+    "api_call_count": 17
+  },
+  "session_token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 61463,
+    "cache_read_tokens": 1279171,
+    "output_tokens": 7445,
+    "api_call_count": 17
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Open a docs-only PR (trail #357) in a fresh worktree off origin/main that tidies pending .changeset/*.md bodies so the next changelog is scannable: delete one changeset for unreleased behaviour, trim and split others, and make bullet labels consistent, without touching bump frontmatter.",
+    "outcome": "Deleted brave-tigers-bound.md, rewrote brave-panthers-climb, noble-leopards-run and swift-foxes-sprint, normalised labels across other changesets via sed, ran just doc-check and just pre-push, and retried the signed commit outside the sandbox. The transcript ends at the commit; merge, push, ls-remote, entire trail ci-pr and the 3-line report are not shown as done, and the exit codes of the checks are not recorded.",
+    "learnings": {
+      "repo": [
+        "AGENTS.md changeset rules: a fix to unreleased behaviour gets no changeset (e.g. the #589 race only exists with inferred release PRs, which are new in this release), so such changesets are deleted.",
+        "Changeset bodies use a fixed label vocabulary: bold **Why it matters:**, **How to adopt:**, **Limits:** in that order when a bullet's role is not obvious, otherwise plain bullets; **Scripting:**, **Breaking:** and **Action:** are separate paragraphs.",
+        "Breaking changes get one **Breaking:** paragraph per change with old behaviour, new behaviour and what to do, plus a single consolidated **Action:** paragraph.",
+        "The workflow regeneration Action (callisto init --workflow, close stray release PR) belongs in brave-panthers-climb.md, not in other changesets.",
+        "The repo has 24 changesets in .changeset/; the task requires editing bodies only, never bump frontmatter.",
+        "Tokenless publishing is documented in docs/publishing.md (needs Node 22.14+ and npm 11.5.1+, not yet verified on real registries)."
+      ],
+      "code": [],
+      "workflow": [
+        "Commit signing (git commit -S) needs access to ~/.gnupg, which the sandbox blocks; retry the commit outside the sandbox rather than dropping the signature.",
+        "BSD sed on macOS requires `sed -i ''`; multi-line edits and appends via printf/cat were fragile, and writing the whole file with the Write tool was more reliable.",
+        "Delivery order for this task: signed commit with no trailer, merge origin/main, push to HEAD:refs/heads/docs/changeset-tidy, verify with git ls-remote, then run entire trail ci-pr."
+      ]
+    },
+    "friction": [
+      "Several git fetch/reset and cat commands were issued repeatedly at the start, suggesting early calls were blocked or produced no output.",
+      "A multi-command Bash edit on swift-cheetahs-sprint.md did not run, so the file had to be rewritten with Write.",
+      "The sandbox blocked GPG signing, forcing a retry of the commit outside the sandbox.",
+      "A stray double-space in noble-foxes-fly.md bullets (`-  \\`==\\``) needed a separate sed fix, which was run twice."
+    ],
+    "open_items": [
+      "Merge origin/main, push to HEAD:refs/heads/docs/changeset-tidy, verify with ls-remote and run entire trail ci-pr (not shown in the transcript).",
+      "Confirm just doc-check and just pre-push exit codes; the transcript does not show results.",
+      "Send the 3-line report to the lead session.",
+      "Tokenless publishing (Node 22.14+, npm 11.5.1+) is still unverified on real registries."
+    ]
+  }
+}
