@@ -6,7 +6,7 @@ use super::*;
 use crate::commands::release::tests::RealGitRunner;
 use crate::IgnoreWalkLocator;
 
-const ORIGIN: &str = "https://github.com/example/tools.git";
+pub(in crate::commands::init) const ORIGIN: &str = "https://github.com/example/tools.git";
 
 fn git(root: &Path, args: &[&str]) {
     let status = std::process::Command::new("git")
@@ -17,7 +17,7 @@ fn git(root: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?}");
 }
 
-fn repo(files: &[(&str, &str)], origin: Option<&str>) -> tempfile::TempDir {
+pub(in crate::commands::init) fn repo(files: &[(&str, &str)], origin: Option<&str>) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     for (path, content) in files {
         let path = dir.path().join(path);
@@ -59,7 +59,7 @@ fn workspace() -> tempfile::TempDir {
     )
 }
 
-fn detect_in(root: &Path) -> Result<InitFacts, GraphError> {
+pub(in crate::commands::init) fn detect_in(root: &Path) -> Result<InitFacts, GraphError> {
     detect(root, &IgnoreWalkLocator::new(root), &RealGitRunner)
 }
 
@@ -74,13 +74,24 @@ fn release(targets: &[&str]) -> InitAnswers {
             product: "cargo/app".to_owned(),
             targets: targets.iter().map(|target| (*target).to_owned()).collect(),
         }),
+        fixed_groups: Vec::new(),
     }
 }
 
-const INDEPENDENT: InitAnswers = InitAnswers {
+pub(in crate::commands::init) const INDEPENDENT: InitAnswers = InitAnswers {
     versioning: Versioning::Independent,
     binaries: None,
+    fixed_groups: Vec::new(),
 };
+
+// The default-branch line names where the branch came from.
+#[test]
+fn a_changesets_base_branch_names_its_source() {
+    assert_eq!(
+        DefaultBranchSource::ChangesetsBaseBranch.to_string(),
+        "`baseBranch` in .changeset/config.json"
+    );
+}
 
 // Facts report ecosystems, packages, origin, tags, and binaries.
 #[test]
@@ -337,6 +348,8 @@ fn facts_for_render() -> InitFacts {
         last_tag: None,
         publish_to: vec!["crates-io".to_owned()],
         platform,
+        npm_access: None,
+        npm_name: None,
     };
     InitFacts {
         root: PathBuf::from("/ws"),
@@ -356,7 +369,7 @@ fn facts_for_render() -> InitFacts {
     }
 }
 
-fn parse(config: &str) -> toml::Table {
+pub(in crate::commands::init) fn parse(config: &str) -> toml::Table {
     toml::from_str(config).unwrap()
 }
 
@@ -368,6 +381,7 @@ fn fixed_versioning_writes_one_all_group_of_qualified_non_platform_members() {
         &InitAnswers {
             versioning: Versioning::Fixed,
             binaries: None,
+            fixed_groups: Vec::new(),
         },
     ));
     let groups = fixed["fixed-group"].as_array().unwrap();
@@ -769,6 +783,8 @@ fn oxc_shaped_facts() -> InitFacts {
         last_tag: None,
         publish_to: Vec::new(),
         platform: false,
+        npm_access: None,
+        npm_name: None,
     };
     InitFacts {
         ecosystems: BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm]),
@@ -1588,70 +1604,6 @@ fn write_workflow_refuses_an_existing_file_and_writes_nothing() {
     let error = write_workflow(dir.path(), "other\n", &permit).unwrap_err();
     assert!(matches!(&error, GraphError::InitWorkflowExists { .. }), "{error}");
     assert_eq!(std::fs::read_to_string(workflow_path(dir.path())).unwrap(), "content\n");
-}
-
-// Every unhonoured `@changesets/cli` key present warns once; `fixed` names its
-// callisto.toml replacement, the rest have none to name.
-#[test]
-fn changesets_config_diagnostics_warns_per_unhonoured_key_present() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".changeset")).unwrap();
-    std::fs::write(
-        dir.path().join(".changeset/config.json"),
-        r#"{
-                "fixed": [["pkg-a", "pkg-b"]],
-                "linked": [["pkg-c", "pkg-d"]],
-                "access": "public",
-                "changelog": false
-            }"#,
-    )
-    .unwrap();
-
-    let diagnostics = changesets_config_diagnostics(dir.path());
-    let codes: Vec<_> = diagnostics.iter().map(|d| d.code).collect();
-    assert_eq!(
-        codes,
-        vec![DiagnosticCode::ChangesetsConfigKeyDropped; 3],
-        "only fixed, linked and access are present among the known keys; changelog is out of scope"
-    );
-    assert!(diagnostics.iter().all(|d| d.severity == DiagnosticSeverity::Warning));
-    assert!(diagnostics
-        .iter()
-        .all(|d| d.path.as_deref() == Some(dir.path().join(".changeset/config.json").as_path())));
-
-    let fixed = diagnostics.iter().find(|d| d.message.contains("`fixed`")).unwrap();
-    assert!(
-        fixed.message.contains("[[fixed-group]]"),
-        "fixed must name its callisto.toml equivalent: {}",
-        fixed.message
-    );
-    let linked = diagnostics.iter().find(|d| d.message.contains("`linked`")).unwrap();
-    assert!(
-        linked.message.contains("no equivalent"),
-        "linked has no callisto.toml equivalent: {}",
-        linked.message
-    );
-}
-
-// No config.json, or one that isn't a JSON object, is silently ignored -- not every
-// workspace has opted into `@changesets/cli` compatibility.
-#[test]
-fn changesets_config_diagnostics_is_empty_without_a_config_object() {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(changesets_config_diagnostics(dir.path()).is_empty(), "no file at all");
-
-    std::fs::create_dir_all(dir.path().join(".changeset")).unwrap();
-    std::fs::write(dir.path().join(".changeset/config.json"), "[1, 2, 3]").unwrap();
-    assert!(
-        changesets_config_diagnostics(dir.path()).is_empty(),
-        "not a JSON object"
-    );
-
-    std::fs::write(dir.path().join(".changeset/config.json"), "{\"commit\": true}").unwrap();
-    assert!(
-        changesets_config_diagnostics(dir.path()).is_empty(),
-        "no unhonoured key present"
-    );
 }
 
 /// An existing `callisto.toml` that cannot be looked up must not read as "not initialized", or init overwrites it.
