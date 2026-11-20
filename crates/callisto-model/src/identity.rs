@@ -350,13 +350,13 @@ pub enum GroupKind {
 }
 
 string_newtype! {
-    /// Registry key string e.g. "cratesIo", "npm".
+    /// Registry key string e.g. "crates-io", "npm".
     RegistryKey
 }
 
 impl RegistryKey {
     /// Well-known registry key for crates.io.
-    pub const CRATES_IO: &'static str = "cratesIo";
+    pub const CRATES_IO: &'static str = "crates-io";
     /// Well-known registry key for the npm registry.
     pub const NPM: &'static str = "npm";
     /// Well-known registry key for PyPI.
@@ -364,9 +364,7 @@ impl RegistryKey {
     /// Well-known registry key for NuGet.
     pub const NUGET: &'static str = "nuget";
 
-    /// User-facing registry name for help text and rendered output --
-    /// distinct from `as_str()`'s wire key (e.g. `"cratesIo"`), which stays
-    /// internal.
+    /// User-facing registry name for help text and rendered output, e.g. `crates.io` for `crates-io`.
     pub fn display_name(&self) -> &str {
         match self.as_str() {
             Self::CRATES_IO => "crates.io",

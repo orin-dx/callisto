@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use callisto_model::release::{is_safe_artifact_component, validated_registry_key};
+use callisto_model::release::{is_safe_artifact_component, RegistryName};
 use callisto_model::{
     ConfigKey, Ecosystem, GitHubRepository, NativeName, PackageId, PublishTarget, RegistryKey, ReleaseTrigger,
     Severity, TagTemplate,
@@ -285,27 +285,48 @@ pub enum PreMajorInferencePolicy {
     ConservativeFeat,
 }
 
-/// `registries` supplies the names a cargo package may publish to besides crates.io.
+/// Registries every workspace has; a `[registries]` entry of the same name configures one.
+const PREDECLARED_REGISTRIES: [(&str, Ecosystem); 3] = [
+    (RegistryKey::CRATES_IO, Ecosystem::Cargo),
+    (RegistryKey::NPM, Ecosystem::Npm),
+    (RegistryKey::PYPI, Ecosystem::Pypi),
+];
+
+/// A `publish-to` value: `github-release`, `none`, or the name of a registry in `registries`.
 pub fn parse_publish_target(s: &str, registries: &BTreeMap<RegistryKey, RegistryConfig>) -> Option<PublishTarget> {
     match s {
-        "crates-io" => Some(PublishTarget::CratesIo),
-        "npm" => Some(PublishTarget::Npm {
-            registry: None,
-            access: None,
-        }),
-        "pypi" => Some(PublishTarget::Pypi { index: None }),
-        "nuget" => Some(PublishTarget::NuGet { source: None }),
         "github-release" => Some(PublishTarget::GitHubRelease),
         "none" => Some(PublishTarget::None),
         name => {
-            let key = validated_registry_key(name.to_owned()).ok()?;
-            let is_cargo = registries
-                .get(&key)
-                .is_some_and(|registry| registry.kind == Ecosystem::Cargo);
-            // The built-in crates.io key has one spelling, `crates-io`.
-            (is_cargo && name != RegistryKey::CRATES_IO).then_some(PublishTarget::CargoRegistry { name: key })
+            let name = RegistryName::parse(name.to_owned()).ok()?;
+            let registry = registries.get(&RegistryKey(name.as_str().to_owned()))?;
+            PublishTarget::for_registry(name, registry.kind)
         }
     }
+}
+
+/// A `[registries]` table name as a registry key, or E325 for a name that cannot be one.
+fn configured_registry_key(path: &Path, raw: String) -> Result<RegistryKey, ConfigError> {
+    let unknown = |message: String| ConfigError::UnknownField {
+        path: path.to_path_buf(),
+        message,
+    };
+    // The spelling before the crates.io key matched `publish-to`.
+    if raw == "cratesIo" {
+        return Err(unknown(
+            "`[registries.cratesIo]` is now `[registries.crates-io]`".to_owned(),
+        ));
+    }
+    if parse_publish_target(&raw, &BTreeMap::new()).is_some() {
+        return Err(unknown(format!(
+            "`[registries.{raw}]`: `{raw}` is a publish-to word, not a registry; rename it"
+        )));
+    }
+    RegistryName::parse(raw.clone()).map(RegistryKey::from).map_err(|error| {
+        unknown(format!(
+            "`[registries.{raw}]`: {error}; a registry name is letters, digits, `-` and `_`, and does not start with `-`"
+        ))
+    })
 }
 
 pub fn parse_release_trigger(s: &str) -> Option<ReleaseTrigger> {
@@ -546,42 +567,31 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         }
     };
 
-    let mut registries = BTreeMap::new();
-    registries.insert(
-        RegistryKey(RegistryKey::CRATES_IO.to_string()),
-        RegistryConfig {
-            kind: Ecosystem::Cargo,
-            url: None,
-            publish_url: None,
-            confirm_timeout: None,
-            publish_timeout: None,
-        },
-    );
-    registries.insert(
-        RegistryKey(RegistryKey::NPM.to_string()),
-        RegistryConfig {
-            kind: Ecosystem::Npm,
-            url: None,
-            publish_url: None,
-            confirm_timeout: None,
-            publish_timeout: None,
-        },
-    );
+    let mut registries: BTreeMap<RegistryKey, RegistryConfig> = PREDECLARED_REGISTRIES
+        .into_iter()
+        .map(|(name, kind)| {
+            let registry = RegistryConfig {
+                kind,
+                url: None,
+                publish_url: None,
+                confirm_timeout: None,
+                publish_timeout: None,
+            };
+            (RegistryKey(name.to_owned()), registry)
+        })
+        .collect();
 
     if let Some(raw_regs) = raw.registries {
         for (k_str, reg) in raw_regs {
-            let key = RegistryKey(k_str);
-            let built_in_kind = match key.as_str() {
-                RegistryKey::CRATES_IO => Some(Ecosystem::Cargo),
-                RegistryKey::NPM => Some(Ecosystem::Npm),
-                RegistryKey::PYPI => Some(Ecosystem::Pypi),
-                _ => None,
-            };
+            let key = configured_registry_key(&callisto_toml, k_str)?;
+            let predeclared_kind = PREDECLARED_REGISTRIES
+                .into_iter()
+                .find_map(|(name, kind)| (name == key.as_str()).then_some(kind));
             let kind = match reg.kind.as_deref() {
                 Some("cargo") => Ecosystem::Cargo,
                 Some("npm") => Ecosystem::Npm,
                 Some("pypi") => Ecosystem::Pypi,
-                None => built_in_kind.ok_or_else(|| ConfigError::RegistryKindMissing {
+                None => predeclared_kind.ok_or_else(|| ConfigError::RegistryKindMissing {
                     registry: key.as_str().to_owned(),
                 })?,
                 Some(other) => {
@@ -589,9 +599,20 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
                         path: callisto_toml.clone(),
                         registry: key.as_str().to_owned(),
                         found: other.to_owned(),
+                        expected: "`cargo`, `npm` or `pypi`".to_owned(),
                     })
                 }
             };
+            if let Some(predeclared) = predeclared_kind
+                && predeclared != kind
+            {
+                return Err(ConfigError::InvalidRegistryKind {
+                    path: callisto_toml.clone(),
+                    registry: key.as_str().to_owned(),
+                    found: kind.prefix().to_owned(),
+                    expected: format!("`{}`", predeclared.prefix()),
+                });
+            }
             if reg.publish_url.is_some() && kind != Ecosystem::Pypi {
                 return Err(ConfigError::RegistryPublishUrlNotPypi {
                     path: callisto_toml.clone(),
@@ -1042,7 +1063,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
-            "[registries.cratesIo]\nconfirm-timeout = \"3m\"\n\n[registries.npm]\npublish-timeout = \"5m\"\n\n[registries.pypi]\nurl = \"https://pypi.example.com/simple\"\n",
+            "[registries.crates-io]\nconfirm-timeout = \"3m\"\n\n[registries.npm]\npublish-timeout = \"5m\"\n\n[registries.pypi]\nurl = \"https://pypi.example.com/simple\"\n",
         )
         .expect("write callisto.toml");
         let config = load(tmp.path()).expect("load should succeed");
@@ -1050,6 +1071,70 @@ mod tests {
         assert_eq!(kind(RegistryKey::CRATES_IO), Ecosystem::Cargo);
         assert_eq!(kind(RegistryKey::NPM), Ecosystem::Npm);
         assert_eq!(kind(RegistryKey::PYPI), Ecosystem::Pypi);
+    }
+
+    fn load_error(toml: &str) -> (String, String) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(tmp.path().join("callisto.toml"), toml).expect("write callisto.toml");
+        let error = load(tmp.path()).expect_err(toml);
+        let code = miette::Diagnostic::code(&error)
+            .map(|code| code.to_string())
+            .unwrap_or_default();
+        let help = miette::Diagnostic::help(&error)
+            .map(|help| help.to_string())
+            .unwrap_or_default();
+        (code, format!("{error}\n{help}"))
+    }
+
+    #[test]
+    fn the_old_crates_io_key_names_its_new_spelling() {
+        let (code, text) = load_error("[registries.cratesIo]\nconfirm-timeout = \"3m\"\n");
+        assert_eq!(code, "E325");
+        assert!(text.contains("[registries.crates-io]"), "{text}");
+    }
+
+    #[test]
+    fn a_publish_to_word_is_not_a_registry() {
+        for word in ["none", "github-release"] {
+            let (code, text) = load_error(&format!("[registries.{word}]\nkind = \"cargo\"\n"));
+            assert_eq!(code, "E325", "{word}");
+            assert!(text.contains(&format!("[registries.{word}]")), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_registry_name_cargo_cannot_take_is_rejected() {
+        let (code, text) = load_error("[registries.\"my.reg\"]\nkind = \"npm\"\n");
+        assert_eq!(code, "E325");
+        assert!(text.contains("[registries.my.reg]"), "{text}");
+    }
+
+    #[test]
+    fn a_predeclared_registry_keeps_its_kind() {
+        for (name, kind) in [("npm", "cargo"), ("crates-io", "npm"), ("pypi", "npm")] {
+            let (code, text) = load_error(&format!("[registries.{name}]\nkind = \"{kind}\"\n"));
+            assert_eq!(code, "E334", "{name}");
+            assert!(text.contains("name a custom registry something else"), "{text}");
+        }
+    }
+
+    #[test]
+    fn publish_to_names_only_a_registry_callisto_can_publish_to() {
+        for (registries, target) in [
+            ("", "nuget"),
+            ("", "unlisted"),
+            (
+                "[registries.corp-npm]\nkind = \"npm\"\nurl = \"https://npm.example.com/\"\n",
+                "corp-npm",
+            ),
+            (
+                "[registries.corp-pypi]\nkind = \"pypi\"\nurl = \"https://pypi.example.com/simple\"\n",
+                "corp-pypi",
+            ),
+        ] {
+            let toml = format!("{registries}\n[[package]]\nmatch = \"cargo/a\"\npublish-to = [\"{target}\"]\n");
+            assert_eq!(load_error(&toml).0, "E330", "{target}");
+        }
     }
 
     #[test]
@@ -1379,67 +1464,47 @@ mod tests {
     }
 
     #[test]
-    fn parse_publish_target_parses_all_known_variants() {
+    fn publish_to_words_need_no_registry() {
         let none = BTreeMap::new();
         assert_eq!(
-            parse_publish_target("crates-io", &none).unwrap(),
-            PublishTarget::CratesIo
+            parse_publish_target("github-release", &none),
+            Some(PublishTarget::GitHubRelease)
         );
-        assert_eq!(
-            parse_publish_target("npm", &none).unwrap(),
-            PublishTarget::Npm {
-                registry: None,
-                access: None
-            }
-        );
-        assert_eq!(
-            parse_publish_target("pypi", &none).unwrap(),
-            PublishTarget::Pypi { index: None }
-        );
-        assert_eq!(
-            parse_publish_target("nuget", &none).unwrap(),
-            PublishTarget::NuGet { source: None }
-        );
-        assert_eq!(
-            parse_publish_target("github-release", &none).unwrap(),
-            PublishTarget::GitHubRelease
-        );
-        assert_eq!(parse_publish_target("none", &none).unwrap(), PublishTarget::None);
+        assert_eq!(parse_publish_target("none", &none), Some(PublishTarget::None));
+        assert_eq!(parse_publish_target("crates-io", &none), None);
     }
 
     #[test]
-    fn parse_publish_target_rejects_unknown_string() {
-        assert!(parse_publish_target("bogus-registry", &BTreeMap::new()).is_none());
-    }
-
-    #[test]
-    fn parse_publish_target_accepts_only_a_cargo_registry_name() {
+    fn publish_to_names_a_cargo_registry_or_a_predeclared_one() {
         let registries = registry_table(&[
+            (RegistryKey::CRATES_IO, Ecosystem::Cargo),
+            (RegistryKey::NPM, Ecosystem::Npm),
+            (RegistryKey::PYPI, Ecosystem::Pypi),
             ("my-reg", Ecosystem::Cargo),
             ("my-npm", Ecosystem::Npm),
-            (RegistryKey::CRATES_IO, Ecosystem::Cargo),
+            ("my-pypi", Ecosystem::Pypi),
             ("my.reg", Ecosystem::Cargo),
+            ("nuget", Ecosystem::NuGet),
         ]);
-        assert!(
-            parse_publish_target("my.reg", &registries).is_none(),
-            "a name cargo cannot take as `--registry` fails at load"
-        );
+        let parse = |name: &str| parse_publish_target(name, &registries);
+        assert_eq!(parse("crates-io"), Some(PublishTarget::CratesIo));
         assert_eq!(
-            parse_publish_target("my-reg", &registries),
+            parse("npm"),
+            Some(PublishTarget::Npm {
+                registry: None,
+                access: None
+            })
+        );
+        assert_eq!(parse("pypi"), Some(PublishTarget::Pypi { index: None }));
+        assert_eq!(
+            parse("my-reg"),
             Some(PublishTarget::CargoRegistry {
                 name: RegistryKey("my-reg".to_owned())
             })
         );
-        assert!(parse_publish_target("my-npm", &registries).is_none());
-        assert!(parse_publish_target("unlisted", &registries).is_none());
-        assert!(
-            parse_publish_target(RegistryKey::CRATES_IO, &registries).is_none(),
-            "the built-in key has one spelling"
-        );
-        assert_eq!(
-            parse_publish_target("crates-io", &registries),
-            Some(PublishTarget::CratesIo)
-        );
+        for unpublishable in ["my-npm", "my-pypi", "my.reg", "nuget", "unlisted", "cratesIo"] {
+            assert_eq!(parse(unpublishable), None, "{unpublishable}");
+        }
     }
 
     #[test]
@@ -1476,24 +1541,23 @@ mod tests {
         );
     }
 
-    /// End-to-end: `[[package]] publish-to = ["npm"|"pypi"|"nuget"|"github-release"]`
+    /// End-to-end: `[[package]] publish-to = ["npm"|"pypi"|"github-release"]`
     /// must actually reach `PackageConfig.publish_to` through the full TOML load path,
     /// not just through calling `parse_publish_target` directly.
     #[test]
-    fn package_block_parses_npm_pypi_nuget_github_release_publish_targets() {
+    fn package_block_parses_npm_pypi_github_release_publish_targets() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
             "[[package]]\nmatch = \"npm/pkg-a\"\npublish-to = [\"npm\"]\n\n\
              [[package]]\nmatch = \"pypi/pkg-b\"\npublish-to = [\"pypi\"]\n\n\
-             [[package]]\nmatch = \"cargo/pkg-c\"\npublish-to = [\"nuget\"]\n\n\
              [[package]]\nmatch = \"cargo/pkg-d\"\npublish-to = [\"github-release\"]\n",
         )
         .expect("write callisto.toml");
 
         let cfg = load(root).expect("load should succeed");
-        assert_eq!(cfg.packages.len(), 4);
+        assert_eq!(cfg.packages.len(), 3);
         assert_eq!(
             cfg.packages[0].1.publish_to,
             Some(vec![PublishTarget::Npm {
@@ -1509,11 +1573,6 @@ mod tests {
         );
         assert_eq!(
             cfg.packages[2].1.publish_to,
-            Some(vec![PublishTarget::NuGet { source: None }]),
-            "cargo/pkg-c publish-to = [\"nuget\"] must resolve to PublishTarget::NuGet"
-        );
-        assert_eq!(
-            cfg.packages[3].1.publish_to,
             Some(vec![PublishTarget::GitHubRelease]),
             "cargo/pkg-d publish-to = [\"github-release\"] must resolve to PublishTarget::GitHubRelease"
         );

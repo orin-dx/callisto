@@ -307,7 +307,7 @@ fn receipt() -> ReleaseReceiptV1 {
     let package = ReleasePackageId::parse("cargo/widget-core").unwrap();
     let version = Version::semver(1, 3, 0);
     let revision = CommitSha::parse(&"a".repeat(40)).unwrap();
-    let registry = RegistryBindingId::new("cratesIo", RegistryBindingDigest::parse(&"b".repeat(64)).unwrap()).unwrap();
+    let registry = RegistryBindingId::new("crates-io", RegistryBindingDigest::parse(&"b".repeat(64)).unwrap()).unwrap();
     let publish = ReleaseOperation::registry_publish(package.clone(), version.clone(), registry, vec![]).unwrap();
     let tag = ReleaseOperation::tag(package.clone(), version.clone(), vec![publish.id().clone()]).unwrap();
     let decision = ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
@@ -827,7 +827,7 @@ fn release_operation_roles_have_no_snake_case_keys() {
     let package = ReleasePackageId::parse("cargo/widget-core").unwrap();
     let version = Version::semver(1, 3, 0);
     let registry =
-        || RegistryBindingId::new("cratesIo", RegistryBindingDigest::parse(&"b".repeat(64)).unwrap()).unwrap();
+        || RegistryBindingId::new("crates-io", RegistryBindingDigest::parse(&"b".repeat(64)).unwrap()).unwrap();
     let slot = ArtifactSlotId::new(
         package.clone(),
         version.clone(),

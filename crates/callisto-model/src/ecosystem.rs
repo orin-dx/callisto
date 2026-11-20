@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::release::RegistryName;
 use crate::{ManifestFormat, NpmAccess, RegistryKey, Version, VersionGrammar};
 
 /// Ecosystem supported by callisto.
@@ -126,6 +127,22 @@ pub enum PublishTarget {
 }
 
 impl PublishTarget {
+    /// The target for registry `name` of `kind`: crates.io, any cargo registry, or the predeclared `npm` and `pypi`.
+    /// `None` for a registry Callisto cannot publish to yet.
+    pub fn for_registry(name: RegistryName, kind: Ecosystem) -> Option<Self> {
+        let name = RegistryKey::from(name);
+        match kind {
+            Ecosystem::Cargo if name.as_str() == RegistryKey::CRATES_IO => Some(PublishTarget::CratesIo),
+            Ecosystem::Cargo => Some(PublishTarget::CargoRegistry { name }),
+            Ecosystem::Npm => (name.as_str() == RegistryKey::NPM).then_some(PublishTarget::Npm {
+                registry: None,
+                access: None,
+            }),
+            Ecosystem::Pypi => (name.as_str() == RegistryKey::PYPI).then_some(PublishTarget::Pypi { index: None }),
+            Ecosystem::Go | Ecosystem::Maven | Ecosystem::NuGet | Ecosystem::Deno | Ecosystem::Jsr => None,
+        }
+    }
+
     pub fn registry_key(&self) -> Option<RegistryKey> {
         match self {
             PublishTarget::CratesIo => Some(RegistryKey(RegistryKey::CRATES_IO.to_string())),
@@ -458,6 +475,34 @@ mod tests {
         );
         assert_eq!(PublishTarget::GitHubRelease.registry_override(), None);
         assert_eq!(PublishTarget::None.registry_override(), None);
+    }
+
+    #[test]
+    fn a_publish_target_exists_for_cargo_registries_and_the_predeclared_npm_and_pypi() {
+        let target = |name: &str, kind| {
+            PublishTarget::for_registry(crate::release::RegistryName::parse(name.to_owned()).unwrap(), kind)
+        };
+        assert_eq!(target("crates-io", Ecosystem::Cargo), Some(PublishTarget::CratesIo));
+        assert_eq!(
+            target("corp", Ecosystem::Cargo),
+            Some(PublishTarget::CargoRegistry {
+                name: RegistryKey("corp".to_owned())
+            })
+        );
+        assert_eq!(
+            target("npm", Ecosystem::Npm),
+            Some(PublishTarget::Npm {
+                registry: None,
+                access: None
+            })
+        );
+        assert_eq!(
+            target("pypi", Ecosystem::Pypi),
+            Some(PublishTarget::Pypi { index: None })
+        );
+        assert_eq!(target("corp", Ecosystem::Npm), None);
+        assert_eq!(target("corp", Ecosystem::Pypi), None);
+        assert_eq!(target("nuget", Ecosystem::NuGet), None);
     }
 
     #[test]

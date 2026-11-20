@@ -1,6 +1,6 @@
 //! The one canonical registry endpoint, shared by config validation and release binding.
 
-use callisto_model::{CanonicalTranscript, RegistryBindingDigest, RegistryKey};
+use callisto_model::{CanonicalTranscript, RegistryBindingDigest};
 
 /// Credential-free URL projection used only inside a digest transcript.
 #[derive(Debug, PartialEq, Eq)]
@@ -99,17 +99,6 @@ pub(crate) fn canonical_registry_url(raw: &str) -> Result<RegistryBindingV1, &'s
         effective_port: parsed.port_or_known_default(),
         path: parsed.path().to_string(),
     })
-}
-
-/// The URL a built-in registry key stands for when no `url` is configured.
-pub(crate) fn builtin_registry_url(key: &str) -> Option<&'static str> {
-    match key {
-        RegistryKey::CRATES_IO => Some("https://index.crates.io/"),
-        RegistryKey::NPM => Some("https://registry.npmjs.org/"),
-        RegistryKey::PYPI => Some("https://pypi.org/"),
-        RegistryKey::NUGET => Some("https://api.nuget.org/v3/index.json"),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

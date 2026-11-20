@@ -1592,9 +1592,21 @@ mod tests {
                 package
             })
             .collect();
+        // Config cannot name nuget, so its registry is added the way the target is.
+        let mut config = crate::config::load(dir.path()).unwrap();
+        config.registries.insert(
+            callisto_model::RegistryKey(callisto_model::RegistryKey::NUGET.to_owned()),
+            crate::config::RegistryConfig {
+                kind: Ecosystem::NuGet,
+                url: None,
+                publish_url: None,
+                confirm_timeout: None,
+                publish_timeout: None,
+            },
+        );
         let workspace = Workspace {
             root,
-            config: crate::config::load(dir.path()).unwrap(),
+            config,
             graph: Retargeted {
                 packages,
                 edges: Vec::new(),

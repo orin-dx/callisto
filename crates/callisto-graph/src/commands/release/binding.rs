@@ -11,7 +11,7 @@ use callisto_model::{
 };
 
 use crate::registry_endpoint::{
-    builtin_registry_url, canonical_registry_url, split_routes_digest, url_parse_error_reason, RegistryBindingV1,
+    canonical_registry_url, split_routes_digest, url_parse_error_reason, RegistryBindingV1,
 };
 use crate::{DependencyResolver, GraphError, Workspace};
 
@@ -62,18 +62,14 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     let key = target.registry_key().ok_or_else(|| GraphError::ReleaseInvariant {
         detail: format!("publish target `{}` has no registry key", target.config_str()),
     })?;
-    // Built-in keys (pypi, nuget) need no [registries] entry; an unknown key still fails.
-    let builtin_unconfigured = builtin_registry_url(key.as_str()).is_some();
-    let configured_registry = match workspace.config.registries.get(&key) {
-        Some(registry) => Some(registry),
-        None if builtin_unconfigured => None,
-        None => {
-            return Err(GraphError::ReleaseInvariant {
-                detail: format!("unknown registry `{}`", key.as_str()),
-            })
-        }
-    };
-    if let Some(registry) = configured_registry.filter(|registry| Some(registry.kind) != target.ecosystem()) {
+    let registry = workspace
+        .config
+        .registries
+        .get(&key)
+        .ok_or_else(|| GraphError::ReleaseInvariant {
+            detail: format!("unknown registry `{}`", key.as_str()),
+        })?;
+    if Some(registry.kind) != target.ecosystem() {
         return Err(GraphError::RegistryKindMismatch {
             registry: key.as_str().to_owned(),
             configured: registry.kind.prefix().to_owned(),
@@ -84,13 +80,12 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
         });
     }
     let explicit = target.registry_override();
-    let configured = configured_registry.and_then(|registry| registry.url.as_deref());
     // An explicit per-package index names both routes, so the registry entry's upload route does not apply.
     let publish_raw = match explicit {
         Some(_) => None,
-        None => configured_registry.and_then(|registry| registry.publish_url.as_deref()),
+        None => registry.publish_url.as_deref(),
     };
-    let raw = explicit.or(configured);
+    let raw = explicit.or(registry.url.as_deref());
     let index = raw
         .map(|raw| canonical_registry_binding(key.as_str(), raw))
         .transpose()?;
@@ -116,8 +111,8 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
         endpoint: index.as_ref().map(RegistryBindingV1::endpoint),
         publish_endpoint: publish.as_ref().map(RegistryBindingV1::endpoint),
         identity,
-        confirm_timeout: configured_registry.and_then(|registry| registry.confirm_timeout),
-        publish_timeout: configured_registry.and_then(|registry| registry.publish_timeout),
+        confirm_timeout: registry.confirm_timeout,
+        publish_timeout: registry.publish_timeout,
     })
 }
 
@@ -474,15 +469,35 @@ mod tests {
         let (dir, runner) = super::super::tests::fixture();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[registries.cratesIo]\nkind = \"cargo\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "[registries.crates-io]\nkind = \"cargo\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
         let package = PackageId::parse("release-fixture").unwrap();
         let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, &package).unwrap();
-        assert_eq!(binding.key.as_str(), "cratesIo");
+        assert_eq!(binding.key.as_str(), "crates-io");
         assert_eq!(binding.endpoint, None);
+    }
+
+    /// `[registries.crates-io]` configures the registry that `publish-to = ["crates-io"]` names.
+    #[test]
+    fn the_crates_io_entry_configures_what_publish_to_crates_io_binds() {
+        let (dir, runner) = super::super::tests::fixture();
+        std::fs::write(
+            dir.path().join("callisto.toml"),
+            "[registries.crates-io]\nconfirm-timeout = \"3m\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
+        )
+        .unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let package = workspace.graph.packages().next().expect("the fixture package").clone();
+        let [target] = package.publish_to.as_slice() else {
+            panic!("one publish target: {:?}", package.publish_to);
+        };
+        let binding = prepared_registry_binding(&workspace, target, &package.id).unwrap();
+        assert_eq!(binding.key.as_str(), "crates-io");
+        assert_eq!(binding.confirm_timeout, Some(std::time::Duration::from_secs(180)));
     }
 
     /// A cargo registry has no endpoint override: cargo takes its destination from `.cargo/config.toml`, so a `url`
@@ -492,7 +507,7 @@ mod tests {
         let (dir, runner) = super::super::tests::fixture();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[registries.cratesIo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
+            "[registries.crates-io]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
         )
         .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
@@ -500,12 +515,12 @@ mod tests {
             .err()
             .expect("a cargo registry url must be rejected");
         assert!(
-            matches!(&error, GraphError::Config(crate::error::ConfigError::CargoRegistryUrl { registry, .. }) if registry == "cratesIo"),
+            matches!(&error, GraphError::Config(crate::error::ConfigError::CargoRegistryUrl { registry, .. }) if registry == "crates-io"),
             "{error}"
         );
     }
 
-    /// An unconfigured built-in key binds its own default.
+    /// A predeclared registry with no entry binds its own default.
     #[test]
     fn an_unconfigured_builtin_key_binds_itself() {
         let (dir, runner) = super::super::tests::fixture();
@@ -594,13 +609,15 @@ mod tests {
     #[test]
     fn registry_errors_name_the_key_and_ecosystem_but_no_profile() {
         let (dir, runner) = super::super::tests::fixture();
-        std::fs::write(
-            dir.path().join("callisto.toml"),
-            "[registries.cratesIo]\nkind = \"npm\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
-        )
-        .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
-        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let mut workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        // Load refuses a predeclared registry of another kind, so the mismatch is built here.
+        workspace
+            .config
+            .registries
+            .get_mut(&RegistryKey(RegistryKey::CRATES_IO.to_owned()))
+            .expect("crates-io is predeclared")
+            .kind = callisto_model::Ecosystem::Npm;
         let package = PackageId::parse("release-fixture").unwrap();
         let Err(error @ GraphError::RegistryKindMismatch { .. }) =
             prepared_registry_binding(&workspace, &PublishTarget::CratesIo, &package)
@@ -609,7 +626,7 @@ mod tests {
         };
         let detail = error.to_string();
         assert!(
-            detail.contains("[registries.cratesIo]") && detail.contains("`npm`"),
+            detail.contains("[registries.crates-io]") && detail.contains("`npm`"),
             "{detail}"
         );
         assert!(!detail.contains("profile"), "{detail}");

@@ -62,14 +62,14 @@ fn done_state(i: &ReleaseIntentV1) -> ReleaseExecutionStateV1 {
 fn intent_has_no_profile_and_rejects_one_on_the_wire() {
     let mut v = serde_json::to_value(intent()).unwrap();
     assert!(v.get("profile").is_none());
-    assert_eq!(v["schemaVersion"], 5);
+    assert_eq!(v["schemaVersion"], 6);
     v["profile"] = "production".into();
     assert!(serde_json::from_value::<ReleaseIntentV1>(v).is_err());
 }
 
 #[test]
 fn intent_of_another_schema_version_names_the_found_version() {
-    for found in [4u8, 6] {
+    for found in [5u8, 7] {
         let mut v = serde_json::to_value(intent()).unwrap();
         v["schemaVersion"] = found.into();
         let error = serde_json::from_value::<ReleaseIntentV1>(v).unwrap_err().to_string();
