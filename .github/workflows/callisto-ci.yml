@@ -173,36 +173,9 @@ jobs:
           CALLISTO_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/release-artifact-preflight
         run: bash .github/scripts/build-release-artifact.sh
 
-  macos-preflight-scope:
-    name: macOS Preflight Scope
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      run: ${{ steps.scope.outputs.run }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Decide whether the macOS preflights run
-        id: scope
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          if [[ "$EVENT_NAME" == pull_request ]]; then
-            # The checkout is the PR merge commit; its first parent is the base, so this is exactly the PR's changes.
-            run=$(git diff --name-only --no-renames HEAD^1 HEAD | bash .github/scripts/macos-preflight-scope.sh)
-          else
-            run=true
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-
-  # A skipped job counts as passing for branch protection. Pull requests run it only when a release or build path changed.
   release-artifact-preflight-macos:
     name: Release Artifact Preflight (${{ matrix.id }})
-    needs: macos-preflight-scope
-    if: needs.macos-preflight-scope.outputs.run == 'true'
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
