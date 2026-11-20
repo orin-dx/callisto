@@ -57,7 +57,7 @@ pub use identity::IdentityIndex;
 pub use infer::{InferenceOutcome, InferenceWindowSpec, NoInference, SeverityInference};
 pub use locate::{find_workspace_root, IgnoreWalkLocator, LocateError, ProjectLocator};
 pub use napi::{napi_drift, role_to_triple, triple_to_role, NapiTargetsIndex};
-pub use plan::{PlannedBump, VersionPlan, VersionWriteTarget};
+pub use plan::{ArchivedChangeset, PlannedBump, VersionPlan, VersionWriteTarget};
 pub use resolver::{DependencyResolver, ManifestWalkResolver};
 pub use tags::TagIndex;
 pub use toposort::toposort_impl;
@@ -289,7 +289,7 @@ pub fn pre_json_key(id: &PackageId) -> String {
 
 /// `id`'s pinned pre-release baseline.
 pub fn pre_initial_version<'a>(pre: &'a callisto_model::format::PreState, id: &PackageId) -> Option<&'a Version> {
-    pre.initial_versions.get(&pre_json_key(id))
+    pre.initial_versions()?.get(&pre_json_key(id))
 }
 
 /// The commit that added `pre_json`, asked of Git once however many keys need it.
@@ -332,7 +332,10 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
     mut state: callisto_model::format::PreState,
     raw_versions: &indexmap::IndexMap<String, String>,
 ) -> Result<callisto_model::format::PreState, GraphError> {
-    let keys: Vec<String> = state.initial_versions.keys().cloned().collect();
+    let Some(initial_versions) = state.initial_versions() else {
+        return Ok(state);
+    };
+    let keys: Vec<String> = initial_versions.keys().cloned().collect();
     let mut owners = BTreeMap::new();
     let mut rosters = history::Rosters::default();
     let mut added = None;
@@ -344,7 +347,9 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
                 owners.insert(key.clone(), owner);
             } else {
                 // Another package's baseline: it must not pin this package's version either.
-                state.initial_versions.shift_remove(key);
+                if let Some(initial) = state.initial_versions_mut() {
+                    initial.shift_remove(key);
+                }
             }
             continue;
         }
@@ -400,16 +405,19 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
             }
         }
     }
+    let Some(initial) = state.initial_versions_mut() else {
+        return Ok(state);
+    };
     // Every key for one package must agree before anything moves.
     for (owner_key, legacy_keys) in &legacy_by_owner_key {
-        let reference = if state.initial_versions.contains_key(owner_key) {
+        let reference = if initial.contains_key(owner_key) {
             owner_key
         } else {
             &legacy_keys[0]
         };
-        let reference_version = &state.initial_versions[reference];
+        let reference_version = &initial[reference];
         for key in legacy_keys.iter().filter(|key| *key != reference) {
-            let version = &state.initial_versions[key];
+            let version = &initial[key];
             if version.compare(reference_version) != Ok(std::cmp::Ordering::Equal) {
                 return Err(GraphError::ConflictingPreJsonBaselines {
                     key: key.clone(),
@@ -422,8 +430,8 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
     }
     for (owner_key, legacy_keys) in legacy_by_owner_key {
         for key in legacy_keys {
-            if let Some(version) = state.initial_versions.shift_remove(&key) {
-                state.initial_versions.entry(owner_key.clone()).or_insert(version);
+            if let Some(version) = initial.shift_remove(&key) {
+                initial.entry(owner_key.clone()).or_insert(version);
             }
         }
     }

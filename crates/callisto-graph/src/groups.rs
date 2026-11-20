@@ -338,12 +338,12 @@ mod tests {
 
         let mut initial_versions = indexmap::IndexMap::new();
         initial_versions.insert("core".to_string(), Version::semver(1, 0, 0));
-        let pre = callisto_model::format::PreState {
-            mode: callisto_model::format::PreMode::Pre,
-            tag: "beta".to_string(),
+        let pre = callisto_model::format::PreState::v2(
+            callisto_model::format::PreMode::Pre,
+            "beta".to_string(),
             initial_versions,
-            changesets: Vec::new(),
-        };
+            Vec::new(),
+        );
 
         let target = fixed_group_target(&group, &live_members, &base, Severity::Minor, &tags, Some(&pre))
             .expect("must compute a pre-release target");
@@ -361,12 +361,12 @@ mod tests {
         let pkg = PackageId::Bare("core".to_string());
         let mut initial_versions = indexmap::IndexMap::new();
         initial_versions.insert("core".to_string(), Version::semver(1, 0, 0));
-        let pre = callisto_model::format::PreState {
-            mode: callisto_model::format::PreMode::Pre,
-            tag: "beta".to_string(),
+        let pre = callisto_model::format::PreState::v2(
+            callisto_model::format::PreMode::Pre,
+            "beta".to_string(),
             initial_versions,
-            changesets: Vec::new(),
-        };
+            Vec::new(),
+        );
         let live = Version::parse("1.1.0-beta.0", callisto_model::VersionGrammar::SemVer).unwrap();
 
         let next = versioned_bump(&pkg, &live, Severity::Patch, Some(&pre)).unwrap();

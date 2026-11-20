@@ -1624,12 +1624,12 @@ fn test_pre_mode_first_match_is_recorded_not_consumed() {
 
     let mut initial_versions = indexmap::IndexMap::new();
     initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
-    let pre_state = callisto_model::format::PreState {
-        mode: callisto_model::format::PreMode::Pre,
-        tag: "beta".to_string(),
+    let pre_state = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Pre,
+        "beta".to_string(),
         initial_versions,
-        changesets: Vec::new(),
-    };
+        Vec::new(),
+    );
 
     let inference = crate::infer::NoInference;
     let agg = aggregate(
@@ -1692,13 +1692,13 @@ fn test_pre_mode_already_recorded_changeset_plans_nothing_on_rerun() {
 
     let mut initial_versions = indexmap::IndexMap::new();
     initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
-    let pre_state = callisto_model::format::PreState {
-        mode: callisto_model::format::PreMode::Pre,
-        tag: "beta".to_string(),
+    let pre_state = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Pre,
+        "beta".to_string(),
         initial_versions,
         // Simulates a prior `version` run already having recorded this id.
-        changesets: vec!["cool-thing".to_string()],
-    };
+        vec!["cool-thing".to_string()],
+    );
 
     let inference = crate::infer::NoInference;
     let agg = aggregate(
@@ -1772,12 +1772,12 @@ fn test_pre_mode_new_changeset_counts_the_recorded_ones_toward_severity() {
 
     let mut initial_versions = indexmap::IndexMap::new();
     initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
-    let pre_state = callisto_model::format::PreState {
-        mode: callisto_model::format::PreMode::Pre,
-        tag: "beta".to_string(),
+    let pre_state = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Pre,
+        "beta".to_string(),
         initial_versions,
-        changesets: vec!["cool-thing".to_string()],
-    };
+        vec!["cool-thing".to_string()],
+    );
 
     let inference = crate::infer::NoInference;
     let agg = aggregate(
@@ -1828,12 +1828,12 @@ fn test_pre_mode_no_changesets_at_all_has_no_active_changeset() {
 
     let mut initial_versions = indexmap::IndexMap::new();
     initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
-    let pre_state = callisto_model::format::PreState {
-        mode: callisto_model::format::PreMode::Pre,
-        tag: "beta".to_string(),
+    let pre_state = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Pre,
+        "beta".to_string(),
         initial_versions,
-        changesets: Vec::new(),
-    };
+        Vec::new(),
+    );
 
     let inference = crate::infer::NoInference;
     let agg = aggregate(
@@ -1952,13 +1952,15 @@ fn aggregate_pre_cycle<I: SeverityInference>(
     let git = GitAccess::new(root, &runner);
     let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let base_versions: BTreeMap<_, _> = ids.iter().map(|id| (id.clone(), Version::semver(1, 0, 0))).collect();
-    let pre_state = callisto_model::format::PreState {
-        changesets: recorded.iter().map(|id| id.to_string()).collect(),
-        ..callisto_model::format::PreState::entering(
-            "beta",
-            packages.iter().map(|name| (name.to_string(), Version::semver(1, 0, 0))),
-        )
-    };
+    let pre_state = callisto_model::format::PreState::v2(
+        callisto_model::format::PreMode::Pre,
+        "beta".to_string(),
+        packages
+            .iter()
+            .map(|name| (name.to_string(), Version::semver(1, 0, 0)))
+            .collect(),
+        recorded.iter().map(|id| id.to_string()).collect(),
+    );
     aggregate(
         &graph,
         &identity_for_all(&graph.packages),

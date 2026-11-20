@@ -23,6 +23,8 @@ pub struct LoadedChangeset {
     pub path: PathBuf,
     pub id: String,
     pub changeset: Changeset,
+    /// The file's text as read, which an archive move writes and a resumed one recognizes.
+    pub text: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -36,6 +38,8 @@ pub struct Aggregation {
     /// caller records these into `pre.json` so a rerun recognizes them as already-applied and skips re-adding
     /// their changelog entry, without deleting the file.
     pub new_pre_changesets: Vec<String>,
+    /// Changeset files a Changesets v3 pre cycle moves into `.changeset/pre/` this run, marking them applied.
+    pub archived: Vec<crate::plan::ArchivedChangeset>,
     pub changelog_inputs: BTreeMap<PackageId, ChangelogInput>,
     pub inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>,
     pub diagnostics: Vec<Diagnostic>,
@@ -232,7 +236,14 @@ pub fn load_changesets_permissive(
     root: &Path,
     cfg: &ResolvedConfig,
 ) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
-    let dir = root.join(&cfg.changesets_dir);
+    load_changesets_in(root, &cfg.changesets_dir)
+}
+
+fn load_changesets_in(
+    root: &Path,
+    dir: &Path,
+) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
+    let dir = root.join(dir);
     let files = list_changeset_files(&dir).map_err(|e| callisto_model::ManifestError::Read {
         path: dir.clone(),
         message: e.to_string(),
@@ -256,6 +267,7 @@ pub fn load_changesets_permissive(
                     path: rel_path,
                     id: stem,
                     changeset,
+                    text: content,
                 });
             }
             Err(source) => failures.push(ChangesetLoadFailure { path: rel_path, source }),
@@ -266,7 +278,33 @@ pub fn load_changesets_permissive(
 }
 
 pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
-    let (loaded, mut failures) = load_changesets_permissive(root, cfg)?;
+    strict(load_changesets_permissive(root, cfg)?)
+}
+
+/// The changesets a Changesets v3 pre cycle archived in `.changeset/pre/`, which earlier prereleases already applied.
+/// Prefixes the id of a changeset loaded from a v3 pre cycle's archive.
+pub(crate) const ARCHIVED_ID_PREFIX: &str = "pre/";
+
+/// [`load_archived_changesets`] with each unparseable archived note returned beside the parsed ones.
+pub(crate) fn load_archived_changesets_permissive(
+    root: &Path,
+    cfg: &ResolvedConfig,
+) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
+    load_changesets_in(root, &cfg.pre_archive_dir())
+}
+
+pub fn load_archived_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
+    let mut archived = strict(load_changesets_in(root, &cfg.pre_archive_dir())?)?;
+    // A new note may reuse an archived note's name; the two are distinct changes.
+    for cs in &mut archived {
+        cs.id = format!("{ARCHIVED_ID_PREFIX}{}", cs.id);
+    }
+    Ok(archived)
+}
+
+fn strict(
+    (loaded, mut failures): (Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>),
+) -> Result<Vec<LoadedChangeset>, GraphError> {
     if !failures.is_empty() {
         let failure = failures.remove(0);
         return Err(GraphError::ParseChangeset {
@@ -275,6 +313,28 @@ pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedCh
         });
     }
     Ok(loaded)
+}
+
+/// The first of `<stem>.md`, `<stem>-2.md`, ... in the archive that is free or already holds `note`, and whether it does.
+fn archive_slot(
+    archive_dir: &Path,
+    from: &Path,
+    note: &Changeset,
+    taken: &BTreeMap<std::ffi::OsString, Changeset>,
+) -> (PathBuf, bool) {
+    let stem = from.file_stem().and_then(|stem| stem.to_str()).unwrap_or("changeset");
+    let mut name = format!("{stem}.md");
+    let mut n = 2;
+    loop {
+        match taken.get(std::ffi::OsStr::new(&name)) {
+            None => return (archive_dir.join(name), false),
+            Some(archived) if archived == note => return (archive_dir.join(name), true),
+            Some(_) => {
+                name = format!("{stem}-{n}.md");
+                n += 1;
+            }
+        }
+    }
 }
 
 pub fn apply_pre_major(
@@ -349,7 +409,20 @@ where
     D: DependencyResolver,
     I: SeverityInference,
 {
-    let loaded = load_changesets(&config.root, config)?;
+    let mut loaded = load_changesets(&config.root, config)?;
+    // A v3 cycle archives applied changesets in `pre/`: retained while the cycle runs, consumed with the rest at exit.
+    let archived = match pre.map(callisto_model::format::PreState::shape) {
+        Some(callisto_model::format::PreStateShape::V3) => load_archived_changesets(&config.root, config)?,
+        Some(callisto_model::format::PreStateShape::V2) | None => Vec::new(),
+    };
+    let archived_paths: std::collections::HashSet<PathBuf> = archived.iter().map(|cs| cs.path.clone()).collect();
+    let mut archive_names: BTreeMap<std::ffi::OsString, Changeset> = archived
+        .iter()
+        .filter_map(|cs| Some((cs.path.file_name()?.to_os_string(), cs.changeset.clone())))
+        .collect();
+    let archive_dir = config.pre_archive_dir();
+    let is_v3 = pre.map(callisto_model::format::PreState::shape) == Some(callisto_model::format::PreStateShape::V3);
+    loaded.extend(archived);
     let mut agg = Aggregation::default();
     // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
     if graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
@@ -412,16 +485,32 @@ where
     let is_pre_mode = pre
         .map(|s| s.mode == callisto_model::format::PreMode::Pre)
         .unwrap_or(false);
+    let is_exiting = pre.is_some_and(|s| s.mode == callisto_model::format::PreMode::Exit);
     // Ids already recorded in pre.json still resolve for severity, but are not re-added to the changelog.
     let already_recorded: std::collections::HashSet<&str> = pre
-        .map(|s| s.changesets.iter().map(String::as_str).collect())
+        .and_then(|s| s.changesets())
+        .map(|ids| ids.iter().map(String::as_str).collect())
         .unwrap_or_default();
 
     for cs in loaded {
-        let is_already_recorded = is_pre_mode && already_recorded.contains(cs.id.as_str());
+        // Where this note goes in the archive; already there means it duplicates a note this cycle released.
+        let slot = (is_pre_mode && is_v3 && !archived_paths.contains(&cs.path))
+            .then(|| archive_slot(&archive_dir, &cs.path, &cs.changeset, &archive_names));
+        let unfinished_move = slot.as_ref().is_some_and(|(_, present)| *present);
+        let is_already_recorded = is_pre_mode
+            && (already_recorded.contains(cs.id.as_str()) || archived_paths.contains(&cs.path) || unfinished_move);
+        if let Some((to, true)) = &slot {
+            agg.archived.push(crate::plan::ArchivedChangeset {
+                from: cs.path.clone(),
+                to: to.clone(),
+                duplicate: true,
+                text: cs.text.clone(),
+            });
+        }
         // Consume a changeset only once an entry resolves; a mixed or fully unresolved one stays on disk and is ignored whole.
         let mut has_unresolved = false;
         let mut resolved = Vec::new();
+        let note = cs.changeset.clone();
         for entry in cs.changeset.entries {
             let unresolved = match PackageId::parse(&entry.name) {
                 Err(_) => Some("contains invalid package name"),
@@ -429,6 +518,16 @@ where
                     Some(target_pkg) => {
                         resolved.push((entry, target_pkg));
                         continue;
+                    }
+                    // Exit deletes pre.json, so an archived note skipped here would never be released.
+                    None if is_exiting && archived_paths.contains(&cs.path) => {
+                        return Err(GraphError::UnknownPackage {
+                            id,
+                            hint: format!(
+                                "\nThe archived changeset `{}` names it; remove that entry or restore the package, then run `version` again.",
+                                cs.path.display()
+                            ),
+                        });
                     }
                     None => Some("references a package that is not in the workspace:"),
                 },
@@ -506,6 +605,17 @@ where
                 // Records newly-seen ids so a rerun treats them as already-applied and skips the changelog entry.
                 if !is_already_recorded {
                     agg.new_pre_changesets.push(cs.id.clone());
+                    if let Some((to, false)) = slot {
+                        if let Some(name) = to.file_name() {
+                            archive_names.insert(name.to_os_string(), note.clone());
+                        }
+                        agg.archived.push(crate::plan::ArchivedChangeset {
+                            from: cs.path.clone(),
+                            to,
+                            duplicate: false,
+                            text: cs.text.clone(),
+                        });
+                    }
                 }
             } else {
                 agg.consumed.push(cs.path.clone());

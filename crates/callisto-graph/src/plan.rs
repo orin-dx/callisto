@@ -53,6 +53,8 @@ pub struct VersionPlan {
     pub optional_dep_updates: Vec<OptionalDepUpdate>,
     pub changelog_writes: Vec<ChangelogWrite>,
     pub consumed_changesets: Vec<PathBuf>,
+    /// Changesets a Changesets v3 pre cycle moves into its archive: applied, kept for the cycle's exit.
+    pub archived_changesets: Vec<ArchivedChangeset>,
     /// Packages with a bump inferred from commits this run, whichever source decides their severity.
     pub inferred: std::collections::BTreeSet<PackageId>,
     pub pre_state_update: Option<PreState>,
@@ -65,6 +67,17 @@ pub struct VersionPlan {
     pub pre_json_original_text: Option<String>,
     pub delete_pre_json: Option<PathBuf>,
     pub diagnostics: Vec<Diagnostic>,
+}
+
+/// One workspace-relative changeset file and where the v3 archive keeps it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArchivedChangeset {
+    pub from: PathBuf,
+    pub to: PathBuf,
+    /// `to` already holds this note, so only `from` is removed.
+    pub duplicate: bool,
+    /// The note's text when planned: what `to` receives, and what lets a resumed run accept a move already made.
+    pub text: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
