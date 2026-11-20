@@ -940,7 +940,7 @@ fn callisto_planned_versions(root: &Path) -> Versions {
 }
 
 /// Changesets' own release plan for a fixed group, reproduced by callisto after `init` over the same workspace.
-/// `init` only warns about `fixed`, so the group is carried over by hand, as that warning says.
+/// `init` carries the `fixed` group over into `callisto.toml`.
 #[test]
 #[ignore = "needs the real changeset CLI; run via `just verify-real`"]
 fn a_changesets_fixed_group_release_plan_is_reproduced_after_migration() {
@@ -959,20 +959,11 @@ fn a_changesets_fixed_group_release_plan_is_reproduced_after_migration() {
 
         let init = callisto(root, &["init", "--yes"]);
         assert!(init.status.success(), "init failed: {}", stderr_of(&init));
-        let report: serde_json::Value = serde_json::from_slice(&init.stdout).unwrap();
-        let warned_about_fixed = report["diagnostics"].as_array().unwrap().iter().any(|diagnostic| {
-            diagnostic["message"]
-                .as_str()
-                .is_some_and(|m| m.contains("key `fixed`"))
-        });
+        let config = fs::read_to_string(root.join("callisto.toml")).unwrap();
         assert!(
-            warned_about_fixed,
-            "init must report the group it did not translate: {report}"
+            config.contains("[[fixed-group]]") && config.contains("npm/alpha") && config.contains("npm/beta"),
+            "init must write the fixed group: {config}"
         );
-        let config = root.join("callisto.toml");
-        let mut text = fs::read_to_string(&config).unwrap();
-        text.push_str("\n[[fixed-group]]\nname = \"all\"\nmembers = [\"npm/alpha\", \"npm/beta\"]\n");
-        fs::write(&config, text).unwrap();
         commit(root, "callisto");
 
         let planned = callisto_planned_versions(root);
