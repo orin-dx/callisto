@@ -1,0 +1,129 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7X122P9AGQ6C6S6T7Q9BFHD",
+  "session_id": "07bc9eb1-2176-490a-9f96-dfb59c776e3e",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T17:46:31.976201Z",
+  "branch": "feat/peer-default-patch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "test.out"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b91ed51b045c",
+  "checkpoint_transcript_start": 1302,
+  "transcript_lines_at_start": 1302,
+  "compact_transcript_start": 127,
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 4339,
+    "cache_read_tokens": 2068474,
+    "output_tokens": 3138,
+    "api_call_count": 8
+  },
+  "session_token_usage": {
+    "input_tokens": 262,
+    "cache_creation_tokens": 350676,
+    "cache_read_tokens": 21811376,
+    "output_tokens": 69173,
+    "api_call_count": 127,
+    "subagent_tokens": {
+      "input_tokens": 14,
+      "cache_creation_tokens": 75069,
+      "cache_read_tokens": 381493,
+      "output_tokens": 6744,
+      "api_call_count": 7
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 4,
+    "layers": {
+      "betterleaks": 4,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01SvrZxCtEgCSLfs1aZ7vFfe",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b91ed51b045c",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 29,
+        "end": 30,
+        "entry_ids": [
+          "dbc89fb4-71da-4179-bc3e-567d58ea713b"
+        ],
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SvrZxCtEgCSLfs1aZ7vFfe"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Finish work package X: fix fixed-group version alignment so a provisional bump version of an unreleased member no longer leaks into dependency range rewrites and E319 errors, then push it as a PR with checks and overlap verification.",
+    "outcome": "Pushed PR #580 on fix/fixed-group-final-rewrites, linked to trail #462. GAP-02 reproduced and was fixed in cascade.rs. just pre-push, lint, doc-check and test pass, commits are signed, mutants show 0 missed, and merge-tree shows no conflicts with #576 and #571.",
+    "learnings": {
+      "repo": [
+        "Fixed-group members that have not been released get a provisional bump version, which leaked into dependency range rewrites and E319 checks in Cargo, npm and Python. The aligned group target must be used instead.",
+        "Dependency rewrites, E319 and the dependency-update list must be derived after cascade convergence from final targets, not from intermediate ones.",
+        "If bump_target still reports a dependent as released because of the provisional version, fixing only the rewrite turns the E319 abort into a successful but wrong release.",
+        "Python and the other ecosystems should leave a satisfied range such as <=2.0.0 as written, and the dependent must not be released.",
+        "cargo mutants --in-diff output goes to mutants.out*. Do not commit these directories; mutants.out.old needs to be restored from HEAD.",
+        "Pushes use an explicit refspec (HEAD:refs/heads/<branch>), checked afterwards with git ls-remote. Overlap with other PRs is checked using git merge-tree --write-tree --name-only.",
+        "Commit signature status can be verified through gh api repos/.../commits/<sha> --jq .commit.verification.reason.",
+        "Trail linking is done with `entire trail link <n>` and `entire trail ci-pr`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "finding": "bump_target now returns the group's aligned target for any fixed-group member, and rewrites, E319 and dependency-update listing are computed after convergence from final targets."
+        }
+      ],
+      "workflow": [
+        "A fresh reviewer model caught a missed half of the bug (the dependent being released because of the provisional version), so independent review is worth running.",
+        "Mutation testing first missed 5 mutants. Adding targeted unit tests in cascade/tests.rs killed them. Black-box tests alone were not enough.",
+        "Running merge-tree against sibling PRs before pushing detects overlap early.",
+        "Work is sequenced across work packages and sessions, so a later one (K) is held until another session merges G."
+      ]
+    },
+    "friction": [
+      "The first mutation run missed 5 mutants and needed extra unit tests.",
+      "The initial fix missed that the dependent was still released, which was found only at review.",
+      "just ci and just bench were not run, so coverage of the checks is partial."
+    ],
+    "open_items": [
+      "WP K is on hold until Session 1 merges G (#571).",
+      "just ci and just bench were not run for PR #580.",
+      "The PR body flags a lead-visible behavior note about Python leaving <=2.0.0 as written."
+    ]
+  }
+}
