@@ -68,7 +68,7 @@ Build-matrix limits:
 
 The generated workflow keeps a release PR current. Merging that PR to the protected default branch authorizes publication; Callisto adds no approval step. Require reviews and CI checks in branch protection. A CODEOWNERS file alone does not enforce review.
 
-During a pre cycle (`callisto pre enter <tag>`) the release PR works the same way: a new changeset opens or updates the release PR for the next prerelease, a cycle with nothing new since its last prerelease needs none, and after `callisto pre exit` the release PR releases the stable versions.
+During a pre cycle (`callisto pre enter <tag>`) the release PR works the same way: a new changeset, or a new conventional commit to a `release-trigger = "auto"` package, opens or updates the release PR for the next prerelease, a cycle with nothing new since its last prerelease needs none, and after `callisto pre exit` the release PR releases the stable versions.
 
 The action's `version-pr` mode updates the PR; `release` runs `callisto release` for a hand-written local workflow, and `execute` runs `callisto release execute` on the intent and files a credential-free job prepared. Generated workflows use plan/build/execute (build-matrix) or package/execute (simple). See the [action inputs](../.github/actions/callisto-action/action.yml).
 
