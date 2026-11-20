@@ -43,8 +43,10 @@ fn workspace_rewrites_keep_protocol_and_alias_even_when_npm_range_preservation_i
         kind: callisto_model::WorkspaceKind::Pnpm,
         suffix: "@scope/lib@^0.2.3".into(),
     });
-    let RewriteOutcome::Rewritten(rewritten) = rewrite_spec(&spec, &Version::semver(0, 3, 0), Ecosystem::Npm, &cfg)
-    else {
+    let lib = PackageId::parse("lib").unwrap();
+    let targets = ConvergedTargets::settle(BTreeMap::from([(lib.clone(), Version::semver(0, 3, 0))]));
+    let new = targets.get(&lib).unwrap();
+    let RewriteOutcome::Rewritten(rewritten) = rewrite_spec(&spec, new, Ecosystem::Npm, &cfg) else {
         panic!("an explicit workspace range must be safely rewritten");
     };
     assert_eq!(rewritten.render(), "workspace:@scope/lib@^0.3.0");
@@ -55,7 +57,7 @@ fn workspace_rewrites_keep_protocol_and_alias_even_when_npm_range_preservation_i
         });
         assert!(
             matches!(
-                rewrite_spec(&spec, &Version::semver(0, 3, 0), Ecosystem::Npm, &cfg),
+                rewrite_spec(&spec, new, Ecosystem::Npm, &cfg),
                 RewriteOutcome::LeftAlone(_)
             ),
             "{suffix}"
@@ -550,8 +552,8 @@ fn test_linked_group_propagates_severity_to_unseeded_member_and_converges() {
     assert_eq!(outcome.severities.get(&pkg_a), Some(&Severity::Major));
     assert_eq!(outcome.severities.get(&pkg_b), Some(&Severity::Major));
 
-    let target_a = outcome.targets.get(&pkg_a).unwrap();
-    let target_b = outcome.targets.get(&pkg_b).unwrap();
+    let target_a = outcome.targets.get(&pkg_a).unwrap().version();
+    let target_b = outcome.targets.get(&pkg_b).unwrap().version();
 
     // Both members share the same base version, so convergence must
     // land them on the exact same target version.
@@ -623,8 +625,8 @@ fn test_linked_group_converges_target_version_across_divergent_bases() {
 
     let outcome = run_cascade(input).unwrap();
 
-    let target_a = outcome.targets.get(&pkg_a).unwrap();
-    let target_b = outcome.targets.get(&pkg_b).unwrap();
+    let target_a = outcome.targets.get(&pkg_a).unwrap().version();
+    let target_b = outcome.targets.get(&pkg_b).unwrap().version();
 
     // pkg_a at minor from 1.4.0 -> 1.5.0; pkg_b at minor from 2.7.3 -> 2.8.0.
     // The winner (max by Version::compare) is 2.8.0 and both must converge on it.
@@ -892,7 +894,7 @@ fn test_prerelease_cascade_stable_spec_out_of_range_triggers_cascade() {
     let outcome = run_cascade(input).unwrap();
 
     // D bumps to a pre-release version.
-    let d_target = outcome.targets.get(&pkg_d).expect("D must have a target");
+    let d_target = outcome.targets.get(&pkg_d).expect("D must have a target").version();
     assert!(
         d_target.is_prerelease(),
         "D must bump to a pre-release version in PreMode::Pre; got {}",
@@ -909,7 +911,7 @@ fn test_prerelease_cascade_stable_spec_out_of_range_triggers_cascade() {
         outcome.severities.contains_key(&pkg_b),
         "B must be cascaded when D's pre-release version is out of range for ^1.0.0"
     );
-    let b_target = outcome.targets.get(&pkg_b).expect("B must have a target");
+    let b_target = outcome.targets.get(&pkg_b).expect("B must have a target").version();
     assert!(
         b_target.is_prerelease(),
         "B's cascade target in PreMode::Pre must also be a pre-release; got {}",
@@ -1163,8 +1165,8 @@ fn test_fixed_group_seeded_siblings_converge_on_shared_target() {
 
     let outcome = run_cascade(input).unwrap();
 
-    let target_a = outcome.targets.get(&pkg_a).unwrap();
-    let target_b = outcome.targets.get(&pkg_b).unwrap();
+    let target_a = outcome.targets.get(&pkg_a).unwrap().version();
+    let target_b = outcome.targets.get(&pkg_b).unwrap().version();
 
     assert_eq!(
         target_a.render(),
@@ -1375,7 +1377,8 @@ fn test_fixed_group_target_ignores_stale_tagged_member_alignment_base() {
     let target_live = outcome
         .targets
         .get(&pkg_live)
-        .expect("live member must receive a converged target");
+        .expect("live member must receive a converged target")
+        .version();
 
     assert_eq!(
         target_live.render(),
@@ -1558,7 +1561,7 @@ fn run_cascade_bump_severity_minor_sets_dependent_severity_to_minor() {
         outcome.severities
     );
     assert_eq!(
-        outcome.targets.get(&dependent).map(|v| v.render()),
+        outcome.targets.get(&dependent).map(|v| v.version().render()),
         Some("1.1.0"),
         "a Minor bump from base 1.0.0 must target 1.1.0, got {:?}",
         outcome.targets
@@ -1730,8 +1733,8 @@ fn test_fixed_group_release_raises_in_range_internal_spec_to_new_version() {
 
     let outcome = run_cascade(input).unwrap();
 
-    assert_eq!(outcome.targets.get(&pkg_a).unwrap().render(), "0.7.2");
-    assert_eq!(outcome.targets.get(&pkg_b).unwrap().render(), "0.7.2");
+    assert_eq!(outcome.targets.get(&pkg_a).unwrap().version().render(), "0.7.2");
+    assert_eq!(outcome.targets.get(&pkg_b).unwrap().version().render(), "0.7.2");
 
     let rewrite = outcome
         .rewrites
@@ -1993,18 +1996,18 @@ mod properties {
                 prop_assert!(outcome.severities.get(id).is_some_and(|got| got >= wanted), "{id} lost its severity");
             }
             // A version only moves forward.
-            for (id, target) in &outcome.targets {
+            for (id, target) in outcome.targets.iter() {
                 prop_assert_eq!(
-                    target.compare(&base[id]).unwrap(),
+                    target.version().compare(&base[id]).unwrap(),
                     std::cmp::Ordering::Greater,
                     "{} went from {} to {}",
                     id,
                     base[id].render(),
-                    target.render()
+                    target.version().render()
                 );
             }
             for edge in &graph.edges {
-                let released = outcome.targets.get(&edge.to).unwrap_or(&base[&edge.to]);
+                let released = outcome.targets.get(&edge.to).map_or(&base[&edge.to], ConvergedTarget::version);
                 // No dependent is left declaring a range its dependency has left.
                 let declared = outcome.rewrites.get(&dependency_rewrite_key(edge)).map_or(&edge.spec, |rewrite| &rewrite.to);
                 prop_assert_eq!(
@@ -2147,7 +2150,7 @@ fn a_linked_group_member_that_is_not_in_the_workspace_is_skipped_with_a_warning(
         identity: &IdentityIndex::default(),
     })
     .unwrap();
-    assert_eq!(outcome.targets.get(&kept).map(Version::render), Some("1.1.0"));
+    assert_eq!(outcome.targets.get(&kept).map(|t| t.version().render()), Some("1.1.0"));
     assert!(!outcome.targets.contains_key(&stale));
     let warning = outcome
         .diagnostics
@@ -2278,7 +2281,7 @@ fn a_fixed_group_member_is_never_visible_at_its_own_provisional_version() {
     })
     .unwrap();
 
-    assert_eq!(outcome.targets[&lib_b].render(), "1.0.1");
+    assert_eq!(outcome.targets.get(&lib_b).unwrap().version().render(), "1.0.1");
     assert!(
         !outcome.severities.contains_key(&app),
         "the dependent is not released: {:?} {:?}",

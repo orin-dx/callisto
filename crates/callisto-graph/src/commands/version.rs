@@ -41,7 +41,10 @@ fn map_reason_to_change_source(
         // Listed from `CascadeOutcome::dependency_updates`, which covers every bumped dependency, not just the first.
         BumpReason::Cascade { .. } => None,
         BumpReason::PeerEscalation { via, .. } => {
-            let dep_to = outcome.targets.get(via).cloned().unwrap_or_else(|| to.clone());
+            let dep_to = outcome
+                .targets
+                .get(via)
+                .map_or_else(|| to.clone(), |t| t.version().clone());
             Some(ChangeSource::PeerEscalation {
                 dependency: via.clone(),
                 to: dep_to,
@@ -73,7 +76,7 @@ fn dependency_update_entries(
     updates
         .iter()
         .filter_map(|(dependency, dep_kind)| {
-            let to = outcome.targets.get(dependency)?.clone();
+            let to = outcome.targets.get(dependency)?.version().clone();
             Some(ChangelogEntry {
                 severity,
                 source: ChangeSource::DependencyUpdate {
@@ -224,7 +227,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
                 field: "version",
             })
         })?;
-        let to = outcome.targets.get(id).cloned().ok_or_else(|| {
+        let to = outcome.targets.get(id).map(|t| t.version().clone()).ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
                 path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
                 field: "version",
