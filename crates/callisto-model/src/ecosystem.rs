@@ -88,10 +88,6 @@ impl Ecosystem {
             Ecosystem::Maven => VersionGrammar::Maven,
         }
     }
-
-    pub fn is_implemented(&self) -> bool {
-        matches!(self, Ecosystem::Cargo | Ecosystem::Npm | Ecosystem::Pypi)
-    }
 }
 
 /// Target registry or release location.
@@ -118,9 +114,6 @@ pub enum PublishTarget {
     Pypi {
         index: Option<String>,
     },
-    NuGet {
-        source: Option<String>,
-    },
     GitHubRelease,
     None,
 }
@@ -132,7 +125,6 @@ impl PublishTarget {
             PublishTarget::CargoRegistry { name } => Some(name.clone()),
             PublishTarget::Npm { .. } => Some(RegistryKey(RegistryKey::NPM.to_string())),
             PublishTarget::Pypi { .. } => Some(RegistryKey(RegistryKey::PYPI.to_string())),
-            PublishTarget::NuGet { .. } => Some(RegistryKey(RegistryKey::NUGET.to_string())),
             PublishTarget::GitHubRelease | PublishTarget::None => None,
         }
     }
@@ -142,7 +134,6 @@ impl PublishTarget {
             PublishTarget::CratesIo | PublishTarget::CargoRegistry { .. } => Some(Ecosystem::Cargo),
             PublishTarget::Npm { .. } => Some(Ecosystem::Npm),
             PublishTarget::Pypi { .. } => Some(Ecosystem::Pypi),
-            PublishTarget::NuGet { .. } => Some(Ecosystem::NuGet),
             PublishTarget::GitHubRelease | PublishTarget::None => None,
         }
     }
@@ -160,21 +151,19 @@ impl PublishTarget {
             PublishTarget::CargoRegistry { name } => name.as_str(),
             PublishTarget::Npm { .. } => "npm",
             PublishTarget::Pypi { .. } => "pypi",
-            PublishTarget::NuGet { .. } => "nuget",
             PublishTarget::GitHubRelease => "github-release",
             PublishTarget::None => "none",
         }
     }
 
-    /// The operator's explicit registry/index/source override carried by
-    /// this variant's payload, if any -- `Npm.registry`, `Pypi.index`, and
-    /// `NuGet.source` are all "the same field" for this purpose. `CratesIo`,
-    /// `GitHubRelease`, and `None` carry no such override.
+    /// The operator's explicit registry/index override carried by this
+    /// variant's payload, if any -- `Npm.registry` and `Pypi.index` are "the
+    /// same field" for this purpose. `CratesIo`, `GitHubRelease`, and `None`
+    /// carry no such override.
     pub fn registry_override(&self) -> Option<&str> {
         match self {
             PublishTarget::Npm { registry, .. } => registry.as_deref(),
             PublishTarget::Pypi { index } => index.as_deref(),
-            PublishTarget::NuGet { source } => source.as_deref(),
             PublishTarget::CratesIo
             | PublishTarget::CargoRegistry { .. }
             | PublishTarget::GitHubRelease
@@ -187,9 +176,8 @@ impl PublishTarget {
     /// e.g. npm's `publishConfig.access`/`registry`, which an override
     /// naming only `"npm"` doesn't itself specify. Fields the override
     /// *does* set are never touched: config wins when explicit, the
-    /// manifest only fills what the override left blank. Other ecosystems
-    /// (`Pypi.index`, `NuGet.source`) have no manifest reader populating
-    /// them yet, so there is nothing to fill in for them today.
+    /// manifest only fills what the override left blank. `Pypi.index` has no
+    /// manifest reader populating it yet, so there is nothing to fill in for it today.
     pub fn merge_manifest_gaps(self, manifest_derived: &PublishTarget) -> PublishTarget {
         match (self, manifest_derived) {
             (
@@ -203,25 +191,6 @@ impl PublishTarget {
                 access: access.or(*manifest_access),
             },
             (target, _) => target,
-        }
-    }
-
-    /// Whether this target has a real dispatch implementation today.
-    ///
-    /// `PublishTarget` and `Ecosystem` are not 1:1: `GitHubRelease` is a VCS
-    /// release action with no backing package `Ecosystem` (the release path
-    /// dispatches it), and `None` is the "not configured to publish" sentinel,
-    /// not a real target -- neither can defer to `Ecosystem::is_implemented()`. Every other
-    /// variant carries a package ecosystem ([`Self::ecosystem`]) and defers
-    /// to that ecosystem's own implementedness.
-    pub fn is_implemented(&self) -> bool {
-        match self {
-            PublishTarget::None | PublishTarget::GitHubRelease => true,
-            PublishTarget::CratesIo
-            | PublishTarget::CargoRegistry { .. }
-            | PublishTarget::Npm { .. }
-            | PublishTarget::Pypi { .. }
-            | PublishTarget::NuGet { .. } => self.ecosystem().is_some_and(|ecosystem| ecosystem.is_implemented()),
         }
     }
 }
@@ -374,13 +343,6 @@ mod tests {
     }
 
     #[test]
-    fn identifies_implemented_ecosystems() {
-        assert!(Ecosystem::Cargo.is_implemented());
-        assert!(Ecosystem::Npm.is_implemented());
-        assert!(Ecosystem::Pypi.is_implemented());
-    }
-
-    #[test]
     fn canonical_ecosystems_each_have_a_canonical_manifest_format() {
         assert_eq!(Ecosystem::CANONICAL.len(), 3);
         assert_eq!(
@@ -449,30 +411,7 @@ mod tests {
             .registry_override(),
             Some("https://pypi.example.com")
         );
-        assert_eq!(
-            PublishTarget::NuGet {
-                source: Some("https://nuget.example.com".to_string())
-            }
-            .registry_override(),
-            Some("https://nuget.example.com")
-        );
         assert_eq!(PublishTarget::GitHubRelease.registry_override(), None);
         assert_eq!(PublishTarget::None.registry_override(), None);
-    }
-
-    #[test]
-    fn publish_target_is_implemented_matches_dispatchable_variants() {
-        assert!(PublishTarget::CratesIo.is_implemented());
-        assert!(PublishTarget::Npm {
-            registry: None,
-            access: None
-        }
-        .is_implemented());
-        assert!(PublishTarget::Pypi { index: None }.is_implemented());
-        assert!(!PublishTarget::NuGet { source: None }.is_implemented());
-        assert!(PublishTarget::GitHubRelease.is_implemented());
-        // `None` is vacuously "implemented" -- there is nothing to dispatch,
-        // so it must never trip a `PublishTargetNotImplemented` diagnostic.
-        assert!(PublishTarget::None.is_implemented());
     }
 }

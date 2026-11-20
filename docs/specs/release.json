@@ -290,7 +290,7 @@
     },
     {
       "id": "REL-PUB-15",
-      "criterion": "A `[registries.<name>]` entry must set `kind` to `cargo`, `npm` or `pypi`, except the built-in keys `cratesIo`, `npm` and `pypi`, which default to their own kind. A custom registry without `kind` is rejected when the configuration loads with E321, instead of being read as an npm registry.",
+      "criterion": "`crates-io` (kind `cargo`), `npm` and `pypi` are predeclared registries; a `[registries.<name>]` entry of the same name configures one and may leave `kind` out, and giving it another `kind` fails config loading with E334. Any other entry must set `kind` to `cargo`, `npm` or `pypi`, or config loading fails with E321. A name that is not letters, digits, `-` and `_`, starts with `-`, is `github-release` or `none`, or is `cratesIo` fails config loading with E325; the `cratesIo` message names `[registries.crates-io]`.",
       "is_error_case": true
     },
     {
@@ -304,7 +304,7 @@
     },
     {
       "id": "REL-PUB-18",
-      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its URL from `.cargo/config.toml`. A `publish-to` entry that is neither a built-in target nor the name of a `cargo` registry fails config loading with E330. An npm registry `url` is passed to the publish as `--registry <url>` whichever package manager packed the tarball. A registry that only yarn or bun reads, `npmPublishRegistry` or `npmRegistryServer` in the owning workspace's `.yarnrc.yml` (at the top level or under `npmScopes`) or a registry in its `bunfig.toml`, fails with E168 naming the file and key when the plan is derived, on the local route too and before any effect, because `npm publish <tarball>` does not read it; `publishConfig.registry` and `.npmrc` are honored."
+      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its URL from `.cargo/config.toml`. A `publish-to` entry that is not `github-release`, `none`, `crates-io`, `npm`, `pypi` or the name of a `cargo` registry fails config loading with E330. An npm registry `url` is passed to the publish as `--registry <url>` whichever package manager packed the tarball. A registry that only yarn or bun reads, `npmPublishRegistry` or `npmRegistryServer` in the owning workspace's `.yarnrc.yml` (at the top level or under `npmScopes`) or a registry in its `bunfig.toml`, fails with E168 naming the file and key when the plan is derived, on the local route too and before any effect, because `npm publish <tarball>` does not read it; `publishConfig.registry` and `.npmrc` are honored."
     },
     {
       "id": "REL-RERUN-01",
