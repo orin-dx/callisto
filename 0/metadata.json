@@ -1,0 +1,98 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XP4PZ5CK9JPCF5F6A4B5X8",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-20T23:54:59.617926Z",
+  "branch": "docs/action-paragraph",
+  "checkpoints_count": 13,
+  "save_step_count": 3,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "686400ae7542",
+  "checkpoint_transcript_start": 8650,
+  "transcript_lines_at_start": 8650,
+  "compact_transcript_start": 847,
+  "token_usage": {
+    "input_tokens": 112,
+    "cache_creation_tokens": 34603,
+    "cache_read_tokens": 39686119,
+    "output_tokens": 18789,
+    "api_call_count": 48
+  },
+  "session_token_usage": {
+    "input_tokens": 1696,
+    "cache_creation_tokens": 2713032,
+    "cache_read_tokens": 330055662,
+    "output_tokens": 402801,
+    "api_call_count": 721,
+    "subagent_tokens": {
+      "input_tokens": 862,
+      "cache_creation_tokens": 1159877,
+      "cache_read_tokens": 50385318,
+      "output_tokens": 212736,
+      "api_call_count": 431
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 19,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 0,
+      "entropy": 13,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 173
+  },
+  "summary": {
+    "intent": "Triage and drive a batch of open PRs (#596, #599-#605, release #558) in the callisto repo to green CI and merge-ready state, coordinating multiple Claude sessions, and clean up finished sessions and old worktrees.",
+    "outcome": "Fixed #601's fuzz-target CI break; #596, #600, #601, #602 merged; #603's finding fixed and synced; #604 synced with main; new #605 opened; 18 finished sessions and 33 old worktrees removed (226 GB to 27 GB). #603, #604, #605 await CI and approval; #599 and release PR #558 remain.",
+    "learnings": {
+      "repo": [
+        "Public signature changes in the model or manifests crates can break fuzz targets (e.g. fuzz/fuzz_targets/manifest_editor.rs); `just fuzz-check` catches this and was added to the rule sheet.",
+        "Most red CI marks are Entire approval gates or open Entire findings, not real failures; real failures must be separated out per PR.",
+        "Commits must not carry Claude-Session trailers/session links per repo rules; the auto-mode classifier also blocks them.",
+        "The --dry-run check must run before artifact-directory resolution in build-python/pack-npm/package-cargo so a missing dir yields E309, not E213.",
+        "durable_release_e2e tests fail locally in the sandbox because registry.npmjs.org is blocked; leave to CI.",
+        "Changesets groups containing `!`, `{`, `[`, `(` are not auto-translated; callisto prints a paste block for review. Names are resolved via the npm name."
+      ],
+      "code": [
+        {
+          "path": "fuzz/fuzz_targets/manifest_editor.rs",
+          "finding": "Fuzz call site needed updating after a public signature change in #601; fixed and verified with `just fuzz-check`."
+        }
+      ],
+      "workflow": [
+        "`claude rm <id>` removes the session's worktree; check each worktree for uncommitted/unpushed work first.",
+        "Locked worktrees needed the double force flag to remove.",
+        "Splitting queued tasks into separate sessions (e.g. #604 into its own) avoids waiting behind other work.",
+        "A background watcher over sessions and PRs, re-launched after each notification, is useful for tracking state changes.",
+        "Verify peer-session claims (signed head SHAs, ls-remote, Entire findings) before reporting them."
+      ]
+    },
+    "friction": [
+      "Only 3 of 18 `claude rm` calls reported removal at first; the rest needed inspection of output and flags.",
+      "15 worktrees were locked and required double force removal.",
+      "Sandbox blocked npm registry, causing an unrelated local test failure.",
+      "Auto-mode classifier blocked a commit containing a session trailer.",
+      "Missed fuzz-check initially let #601 break CI."
+    ],
+    "open_items": [
+      "Remove redundant `homepage` keys (plan item A) in the next small PR.",
+      "Decide on `agent-a5e8056f1ada4a831` (1 unpushed commit) and `wp-e-native-name` (171 uncommitted changes); user hasn't yet asked to see them.",
+      "Remove `cleanup-597` and `wp-git-boundary-types` worktrees after their running sessions finish.",
+      "Await CI and approval for #603, #604, #605.",
+      "Release: merge #599 (PyPI empty token), then release PR #558.",
+      "Unused workspace `tracing` dependency is handled by #603 per the earlier note."
+    ]
+  }
+}
