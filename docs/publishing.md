@@ -35,7 +35,7 @@ See the registries' own pages for current rules: [cargo yank](https://doc.rust-l
 
 ## Where a publish goes
 
-A registry with no `url` in `callisto.toml` publishes wherever the checkout's own configuration says: `.npmrc` for npm. Callisto honors that on purpose, so a private registry set there keeps working, and it means that file decides where the registry token is sent. A Cargo package with `crates-io` in `publish-to` runs a plain `cargo publish`, so Cargo's own configuration (`publish` in `Cargo.toml`, `[registry] default`) can redirect it while Callisto still observes crates.io. To pin a destination, name a `[registries.<name>]` entry with `kind = "cargo"` in `publish-to`: Callisto then runs `cargo publish --registry <name>`, `.cargo/config.toml` decides that registry's URL and where its token is sent, and the release job needs `CARGO_REGISTRIES_<NAME>_TOKEN` (the name upper-cased, `-` as `_`). Review changes to them like code. A release pull request cannot carry such a change: a version commit may only touch manifests, lockfiles, changelogs, changesets and the decision file, and any other path fails verification with E165. For npm (except yarn) and PyPI, set `url` on the registry entry to pin the destination in `callisto.toml`; a named Cargo registry takes its URL only from `.cargo/config.toml`, and a `url` on a cargo registry is rejected.
+A registry with no `url` in `callisto.toml` publishes wherever the checkout's own configuration says: `.npmrc` for npm. Callisto honors that on purpose, so a private registry set there keeps working, and it means that file decides where the registry token is sent. A Cargo package with `crates-io` in `publish-to` runs a plain `cargo publish`, so Cargo's own configuration (`publish` in `Cargo.toml`, `[registry] default`) can redirect it while Callisto still observes crates.io. To pin a destination, name a `[registries.<name>]` entry with `kind = "cargo"` in `publish-to`: Callisto then runs `cargo publish --registry <name>`, `.cargo/config.toml` decides that registry's URL and where its token is sent, and the release job needs `CARGO_REGISTRIES_<NAME>_TOKEN` (the name upper-cased, `-` as `_`). Review changes to them like code. A release pull request cannot carry such a change: a version commit may only touch manifests, lockfiles, changelogs, changesets and the decision file, and any other path fails verification with E165. For npm (except yarn) and PyPI, `url` on the registry entry names the registry Callisto reads and publishes to from `callisto.toml`. It does not override native routing: npm configuration such as `@scope:registry` in `.npmrc` still routes a scoped package, and Callisto respects that. Callisto adds no destination allowlist or preflight, so review changes to `.npmrc` like code. A named Cargo registry takes its URL only from `.cargo/config.toml`, and a `url` on a cargo registry is rejected.
 
 ---
 
@@ -88,6 +88,31 @@ Set an `NPM_TOKEN` secret. Add this only in the `execute` job, immediately befor
 
 Give the `execute` job `permissions: id-token: write` and set `NPM_CONFIG_PROVENANCE: "true"` in its env. npm then attests each package to the workflow run and commit; Callisto needs no flag.
 
+### Tokenless trusted publishing
+
+npm and PyPI can publish without a stored token: the registry trusts the workflow's OIDC identity. The native tools own that authentication. Callisto adds no auth switch or broker; it keeps the `execute` job's OIDC request variables for `npm` and `twine`, and when `NPM_TOKEN` or `PYPI_TOKEN` is empty or unset it configures no token, so the tool falls back to OIDC.
+
+Hosted OIDC publishing is not yet verified against the real registries. Rehearse it on a throwaway package before relying on it.
+
+1. **Registry side.** Add a trusted publisher for the package on the registry.
+   - npm: bind it to the release workflow file (`callisto-release.yml`), and to the GitHub environment too if the `execute` job uses one.
+   - PyPI: add a trusted publisher naming the repository, the workflow file and, if used, the environment. A package that does not exist yet needs a pending publisher.
+2. **Workflow side.**
+   - `execute` needs `permissions: id-token: write`; generated workflows grant it.
+   - Do not set the `NPM_TOKEN` or `PYPI_TOKEN` secret. Remove it, or leave the repository secret undefined.
+   - npm needs Node 22.14 or newer and npm 11.5.1 or newer for trusted publishing. Add a setup step to the `execute` job before the release step, for example:
+
+     ```yaml
+     - uses: actions/setup-node@v4 # pin to a commit SHA
+       with:
+         node-version: '22.14'
+     - run: npm install --global npm@^11.5.1
+     ```
+
+   - PyPI needs a twine that supports trusted publishing. Generated workflows install `twine==7.0.0` in `execute`; a hand-written workflow must provide its own. Older twine releases were not checked.
+3. **Limit.** With no token Callisto passes no `.npmrc` to the confirmation step, so a restricted scoped package may publish and then fail to confirm, because npm answers an anonymous view of it with 404. Not yet verified.
+4. **Read auth stays separate.** Trusted publishing covers publishing only. A job that installs private dependencies still needs its own read credential (for example an `.npmrc` token with read access or a private index login) in the job that installs them, never in `execute`.
+
 ---
 
 ## Cargo (crates.io)
@@ -119,7 +144,7 @@ The release action maps the `PYPI_TOKEN` secret to `TWINE_USERNAME` and `TWINE_P
 
 ### Generated Callisto workflows
 
-Generated release workflows accept `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, and `PYPI_TOKEN` as secrets. They supply each token only during publishing. Custom npm registries need their own native configuration.
+Generated release workflows accept `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, and `PYPI_TOKEN` as secrets. They supply each token only during publishing: `NPM_TOKEN` becomes an `.npmrc` entry that reads it, and `PYPI_TOKEN` becomes `TWINE_USERNAME=__token__` with `TWINE_PASSWORD`. An unset or empty secret configures nothing, which leaves [tokenless trusted publishing](#tokenless-trusted-publishing) to the tools. Custom npm registries need their own native configuration.
 
 `prepack` and `prepare` run in the job that packs the package, which has no registry credentials. `prepublishOnly`, `publish` and `postpublish` do not run, because the publish is `npm publish <tarball> --ignore-scripts`. A package that relied on a publish-time hook moves that work into `prepack`.
 

@@ -893,6 +893,24 @@ const PACKAGE_SEAL_STEP: &str = "      - name: Seal the artifact manifest
           callisto release artifact-manifest \"${args[@]}\"
 ";
 
+/// Hands a repository secret to npm as an `.npmrc` entry that reads `NPM_TOKEN`; an empty secret leaves trusted publishing to npm.
+const MATRIX_NPM_AUTH: &str = "          if [[ -n \"${NPM_TOKEN:-}\" ]]; then
+            npmrc=\"$RUNNER_TEMP/publish-npmrc\"
+            user_npmrc=\"${NPM_CONFIG_USERCONFIG:-${HOME:-}/.npmrc}\"
+            if [[ -f \"$user_npmrc\" ]]; then cp \"$user_npmrc\" \"$npmrc\"; else : > \"$npmrc\"; fi
+            chmod 600 \"$npmrc\"
+            printf '\\n%s\\n' \"//registry.npmjs.org/:_authToken=\\${NPM_TOKEN}\" >> \"$npmrc\"
+            export CALLISTO_PUBLISH_NPM_CONFIG=\"$npmrc\"
+          fi
+";
+
+/// Hands a repository secret to twine as a PyPI API token; an empty secret leaves trusted publishing to twine.
+const MATRIX_PYPI_AUTH: &str = "          if [[ -n \"${PYPI_TOKEN:-}\" ]]; then
+            export TWINE_USERNAME=__token__ TWINE_PASSWORD=\"$PYPI_TOKEN\"
+            unset PYPI_TOKEN
+          fi
+";
+
 /// Installs the upload tool into a venv put on the PATH of the later steps; the executing job is the only one with credentials.
 const SIMPLE_TWINE_STEP: &str = "      - name: Install twine
         run: |
@@ -1063,9 +1081,17 @@ pub fn render_workflow(
     .filter_map(|(wanted, step)| wanted.then_some(step))
     .collect();
     let twine_step = if has(Ecosystem::Pypi) { SIMPLE_TWINE_STEP } else { "" };
+    let publish_auth: String = [
+        (has(Ecosystem::Npm), MATRIX_NPM_AUTH),
+        (has(Ecosystem::Pypi), MATRIX_PYPI_AUTH),
+    ]
+    .into_iter()
+    .filter_map(|(wanted, block)| wanted.then_some(block))
+    .collect();
     fill(
         template,
         &[
+            ("          __PUBLISH_AUTH__\n", WorkflowScalar::trusted(publish_auth)),
             (
                 "      __PACKAGE_STEPS__\n",
                 WorkflowScalar::trusted(package_steps.replace("__BUILD__", BUILD_REQUIREMENT)),
