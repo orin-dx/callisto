@@ -142,7 +142,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | --- | --- | --- |
 | E110 | Failed to read `callisto.toml` | Check that `<path>` exists and is readable. |
 | E111 | `callisto.toml` is not valid TOML | Fix the TOML syntax error at the reported line in callisto.toml. |
-| E325 | `callisto.toml` sets a key Callisto does not know | Remove or correct the key named in the message; see docs/config.md for the supported keys. |
+| E325 | `callisto.toml` sets a key Callisto does not know, including the retired `[[package-set]]` | Remove or correct the key named in the message; see docs/config.md for the supported keys. Rename `[[package-set]]` to `[[package]]`. |
 | E326 | `callisto.toml` has a value that does not fit its key (wrong type, or a required key missing) | Give the key a value of the type the message names, or add the missing key; see docs/config.md. |
 | E113 | A package's `changelog` path is absolute or contains `..`, and would escape the workspace root | Use a forward-slash-separated path relative to the package root that does not contain '..' components. |
 | E116 | `changesets.dir` is absolute or contains `..`, and would escape the workspace root | Use a forward-slash-separated path relative to the workspace root that is not absolute and does not contain '..' components. |
@@ -153,15 +153,15 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E252 | Duplicate group name | Rename one of the two groups sharing this name. |
 | E255 | `cascade.bump-severity` is invalid | Set `cascade.bump-severity` to `patch` or `minor` in callisto.toml. |
 | E256 | `pre-major-inference` is invalid | Set `pre-major-inference` to `off`, `conservative`, or `conservative-feat` in callisto.toml. |
-| E330 | A `publish-to` entry in a `[[package]]` or `[[package-set]]` block is not a publish target | Set `<location>` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release`, `none` or the name of a `kind = "cargo"` registry in `[registries]`, in callisto.toml. |
-| E331 | A `release-trigger` in a `[[package]]` or `[[package-set]]` block is not `changeset` or `auto` | Set `<location>` to `changeset` or `auto` in callisto.toml. |
+| E330 | A `publish-to` entry in a `[[package]]` block is not a publish target | Set `<location>` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release`, `none` or the name of a `kind = "cargo"` registry in `[registries]`, in callisto.toml. |
+| E331 | A `release-trigger` in a `[[package]]` block is not `changeset` or `auto` | Set `<location>` to `changeset` or `auto` in callisto.toml. |
 | E332 | `cascade.mode` is not `always` or `out-of-range` | Set `cascade.mode` to `always` or `out-of-range` in callisto.toml. |
 | E333 | `changelog.layout` is not `grouped` or `flat` | Set `changelog.layout` to `grouped` or `flat` in callisto.toml. |
 | E334 | A `[registries.<name>]` entry has a `kind` that is not `cargo`, `npm` or `pypi` | Set `kind` on `[registries.<registry>]` to `cargo`, `npm` or `pypi` in callisto.toml. |
 | E335 | A `[registries.<name>]` entry that is not `pypi` sets `publish-url` | Remove `publish-url` from `[registries.<registry>]`, or set `kind = "pypi"`. Only a `pypi` registry has a separate upload route. |
 | E336 | A `[registries.<name>]` entry of kind `cargo` sets `url` | Remove `url` from `[registries.<registry>]`; cargo takes its destination from `.cargo/config.toml`. |
 | E337 | A registry's `confirm-timeout` or `publish-timeout` is not a duration from 1s to 1h | Set `<field>` to a whole number followed by `s`, `m` or `h`, from `1s` to `1h`, such as `"90s"` or `"15m"`. |
-| E338 | The `match` of a `[[package]]` or `[[package-set]]` block is not a valid package pattern (a `..` or leading `-` in a name, or an invalid glob) | Fix `<location>` in callisto.toml; see docs/config.md for the supported forms. |
+| E338 | The `match` of a `[[package]]` block is not a valid package pattern (a `..` or leading `-` in a name, or an invalid glob), or a glob `match` sets `previous-tag-templates` | Fix `<location>` in callisto.toml; see docs/config.md for the supported forms. |
 
 ## callisto-graph — workspace graph
 
@@ -188,7 +188,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E248,
 | E115 | Failed to read `.changeset/pre.json` | Check that the file named above is readable. |
 | E117 | Manifest's on-disk version doesn't match the version plan's expected from/to version | The manifest version does not match the plan's from or to version. This may indicate the manifest was modified outside of callisto after the plan was generated. |
 | E118 | Package declares platform targets through both `napi.targets` and `[tool.maturin].targets` | Remove one of the two target declarations -- either napi.targets in package.json or [tool.maturin].targets in pyproject.toml -- from the package's manifest. |
-| E119 | Package's `publish-to` target ecosystem doesn't match its detected ecosystem | Remove the mismatched target from publish-to, or fix the [[package]]/[[package-set]] rule so it only matches packages in that ecosystem. |
+| E119 | Package's `publish-to` target ecosystem doesn't match its detected ecosystem | Remove the mismatched target from publish-to, or fix the [[package]] rule so it only matches packages in that ecosystem. |
 | E120 | Package's `publishConfig.registry` (npm) is not an operator-approved registry | `publishConfig.registry` in package.json is manifest-controlled data (a PR author can set it in their own package.json), not operator config, so it is never trusted verbatim as a publish destination. The URL must use the `https` scheme and must exactly match a `url` configured on an `npm`-kind entry in `[registries]` in callisto.toml. Add the registry there if it is a legitimate private registry, or remove the override from package.json. |
 | E121 | A canonical manifest's on-disk or staged version differs from its version at `HEAD` while release inputs remain in `HEAD` or the working tree, or a staged version change remains outside pre mode | Inspect the manifest and release inputs in both `git diff` and `git diff --cached`. If these are correct outputs from an interrupted run, finish removing its retained changeset or pre-state input with `git rm -- <path>` and commit the result. Otherwise, commit the intended version changes or restore the affected files to HEAD before running `version` again. |
 | E122 | A filesystem operation failed while applying the version plan | Check file permissions and that the path still exists, then re-run `callisto version`. |

@@ -308,7 +308,12 @@ fn check_partial_run_propagates_fatal_historical_git_read_errors() {
                 "--quiet".to_string(),
                 changeset_spec.clone(),
             ],
-            "ls-tree" => vec!["ls-tree".to_string(), "--name-only".to_string(), changeset_spec.clone()],
+            "ls-tree" => vec![
+                "ls-tree".to_string(),
+                "-z".to_string(),
+                "--name-only".to_string(),
+                changeset_spec.clone(),
+            ],
             _ => vec!["show".to_string(), "HEAD:./pkg-a/Cargo.toml".to_string()],
         };
         let runner = IndexInspectionFailureRunner {
@@ -1763,6 +1768,56 @@ fn plan_version_lists_every_bumped_dependency_of_a_cascaded_package() {
             ("pkg-c".to_string(), "1.0.1".to_string())
         ]
     );
+}
+
+/// A peer-escalated package's changelog names the dependency and the version it reached.
+#[test]
+fn plan_version_records_a_peer_escalation_in_the_changelog() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init_with_commit(root);
+
+    for (name, deps) in [("lib", ""), ("app", r#","peerDependencies":{"lib":"~1.0.0"}"#)] {
+        std::fs::create_dir_all(root.join(name)).unwrap();
+        std::fs::write(
+            root.join(name).join("package.json"),
+            format!(r#"{{"name":"{name}","version":"1.0.0"{deps}}}"#),
+        )
+        .unwrap();
+    }
+    std::fs::write(root.join("callisto.toml"), "[cascade]\npeer-escalation = true\n").unwrap();
+    std::fs::create_dir_all(root.join(".changeset")).unwrap();
+    std::fs::write(root.join(".changeset/lib.md"), "---\n\"lib\": minor\n---\n\nChange.\n").unwrap();
+    commit_all(root, "add packages and changeset");
+
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = GitRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+    let opts = VersionOptions {
+        strict: false,
+        allow_empty_changesets: true,
+    };
+
+    let plan = plan_version(&ws, &crate::infer::NoInference, &opts).expect("plan_version must succeed");
+
+    let app = callisto_model::PackageId::parse("app").unwrap();
+    let write = plan
+        .changelog_writes
+        .iter()
+        .find(|w| w.input.package == app)
+        .expect("app must have a ChangelogWrite");
+    let escalations: Vec<(String, String)> = write
+        .input
+        .entries
+        .iter()
+        .filter_map(|e| match &e.source {
+            crate::changelog::ChangeSource::PeerEscalation { dependency, to } => {
+                Some((dependency.display_name().to_string(), to.render().to_string()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(escalations, vec![("lib".to_string(), "1.1.0".to_string())]);
 }
 
 /// A package with

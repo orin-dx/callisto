@@ -11,8 +11,9 @@ pub struct RawConfig {
     pub release: Option<RawProductReleaseConfig>,
     pub registries: Option<BTreeMap<String, RawRegistryConfig>>,
     pub package: Option<Vec<RawPackageConfig>>,
+    /// Never `Some`: parsing fails first, so the key can only answer with its replacement.
     #[serde(rename = "package-set")]
-    pub package_set: Option<Vec<RawPackageSetConfig>>,
+    pub package_set: Option<RetiredPackageSet>,
     #[serde(rename = "fixed-group")]
     pub fixed_group: Option<Vec<crate::config::groups::RawGroup>>,
     #[serde(rename = "linked-group")]
@@ -131,24 +132,14 @@ pub struct RawPackageConfig {
     pub pre_major_inference: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RawPackageSetConfig {
-    #[serde(rename = "match")]
-    pub pattern: String,
-    #[serde(rename = "release-trigger")]
-    pub release_trigger: Option<String>,
-    #[serde(rename = "publish-to")]
-    pub publish_to: Option<Vec<String>>,
-    #[serde(rename = "tag-template")]
-    pub tag_template: Option<String>,
-    /// Package-root-relative. Always forward-slash-separated (`/`), never `\` — same
-    /// portability rule as `[changesets].dir` (see its doc comment): this value is parsed
-    /// through `workspace_relative`, which only normalizes the *host* platform's native
-    /// separator, so a `\`-separated value written on Windows is misread as one literal
-    /// path component the moment the same config is read on a non-Windows host. Rejected
-    /// if absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E113).
-    pub changelog: Option<String>,
-    #[serde(rename = "pre-major-inference")]
-    pub pre_major_inference: Option<String>,
+/// The `[[package-set]]` key: deserializing it always fails, naming `[[package]]`.
+#[derive(Clone, Debug)]
+pub struct RetiredPackageSet;
+
+impl<'de> Deserialize<'de> for RetiredPackageSet {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "unknown field `package-set`: rename it to `[[package]]`",
+        ))
+    }
 }

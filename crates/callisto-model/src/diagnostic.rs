@@ -141,10 +141,6 @@ pub enum DiagnosticCode {
     /// that neither the shared triple-to-role table nor matrix's own host-runner table
     /// recognizes — excluded from the report's `targets[]` rather than silently guessing.
     UnrecognisedPlatformTriple,
-    /// A `[[package-set]]` config rule matched no packages after the workspace walk —
-    /// advisory rather than a hard error, since a monorepo-wide rule can legitimately match
-    /// nothing against a partial checkout or filtered walk.
-    PackageSetMatchedNothing,
     /// `callisto matrix` found the same platform triple declared more than once within one
     /// package's own `napi.targets`/`[tool.maturin].targets` — the duplicate is dropped
     /// (first occurrence wins) rather than treated as a hard error.
@@ -164,7 +160,8 @@ pub enum DiagnosticCode {
     /// `callisto init` wrote a release workflow: a merge to the named default branch
     /// publishes, so that branch should require pull requests and reviews.
     WorkflowMergePublishes,
-    /// A `[[package]]` config rule matched no packages.
+    /// A `[[package]]` config rule, exact or glob, matched no packages after the workspace walk. Advisory rather than
+    /// a hard error, since a monorepo-wide glob can legitimately match nothing on a partial checkout.
     PackageRuleMatchedNothing,
     /// A `.changeset/*.md` file failed to parse -- malformed frontmatter, an invalid entry
     /// line, or entries present with an empty summary. The file stays on disk unconsumed;

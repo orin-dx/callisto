@@ -78,70 +78,8 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         });
     }
 
-    // No severity to propagate; just rewrite each dependent spec that doesn't cover `snapshot_ver`.
-    let mut rewrites: std::collections::BTreeMap<crate::cascade::RewriteKey, crate::cascade::SpecRewrite> =
-        std::collections::BTreeMap::new();
-    let mut diagnostics = Vec::new();
-
-    for pkg in ws.graph.packages() {
-        for edge in ws.graph.dependencies_of(&pkg.id) {
-            if matches!(
-                edge.spec,
-                callisto_model::DepSpec::Workspace(_) | callisto_model::DepSpec::Catalog(_)
-            ) {
-                if matches!(edge.spec, callisto_model::DepSpec::Catalog(_)) {
-                    diagnostics.push(callisto_model::Diagnostic {
-                        code: callisto_model::DiagnosticCode::CatalogSpecNotRewritten,
-                        severity: callisto_model::DiagnosticSeverity::Warning,
-                        message: format!(
-                            "spec `{}` for `{}` could not be tested for coverage",
-                            edge.spec.render(),
-                            edge.to.display_name()
-                        ),
-                        package: Some(edge.from.clone()),
-                        path: Some(edge.from_manifest.clone()),
-                        governed_by: Some(callisto_model::ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
-                        escalated_by: None,
-                    });
-                }
-                continue;
-            }
-            if matches!(edge.spec, callisto_model::DepSpec::Opaque(_)) {
-                continue;
-            }
-            let Some(snap_to) = snapshot_versions.get(&edge.to) else {
-                continue;
-            };
-            // snap_to is always SemVer-parsed, so a Pep440 edge here surfaces as a GrammarMismatch, not silently.
-            let covers =
-                crate::cascade::coverage(&edge.spec, snap_to).map_err(|source| GraphError::GrammarMismatch {
-                    from: edge.from.clone(),
-                    to: edge.to.clone(),
-                    source,
-                })?;
-            if matches!(covers, callisto_model::Coverage::Covers) {
-                continue;
-            }
-
-            match crate::cascade::rewrite_edge(edge, snap_to, &ws.config.cascade)? {
-                crate::cascade::RewriteOutcome::Rewritten(to_spec) => {
-                    let key = crate::cascade::dependency_rewrite_key(edge);
-                    rewrites
-                        .entry(key.clone())
-                        .or_insert_with(|| crate::cascade::SpecRewrite {
-                            key,
-                            dependency: edge.to.clone(),
-                            from: edge.spec.clone(),
-                            to: to_spec,
-                        });
-                }
-                crate::cascade::RewriteOutcome::LeftAlone(dg) => {
-                    diagnostics.push(dg);
-                }
-            }
-        }
-    }
-    let rewrites: Vec<_> = rewrites.into_values().collect();
+    let (rewrites, diagnostics) =
+        crate::cascade::snapshot_rewrites(&ws.graph, snapshot_versions.clone(), &ws.config.cascade)?;
 
     let (platform_writes, optional_dep_updates) =
         crate::commands::version::platform_version_writes(ws, &snapshot_versions)?;
