@@ -174,7 +174,7 @@ jobs:
         run: bash .github/scripts/build-release-artifact.sh
 
   release-artifact-preflight-macos:
-    name: Release Artifact Preflight (${{ matrix.id }})
+    name: Release Artifact Preflight (macOS)
     if: github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
