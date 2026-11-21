@@ -1,5 +1,19 @@
 # callisto-cli
 
+## 0.22.1
+
+_2026-11-21 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.22.0...callisto@0.22.1)_
+
+### Patch Changes
+
+- **Python ranges keep their precision when a bound has a suffix.** A dependent requirement whose bound carries a post, dev or pre-release suffix is now rewritten at the precision it was written with, in any epoch.
+
+  - `>=1.2.3.post1,<1.3` becomes `>=1.2.4,<1.3` instead of widening to `<2`.
+  - `~=1.2.post1` becomes `~=1.2` instead of narrowing to `~=1.2.1`.
+- **A release that publishes only some of a package's manifests is no longer refused for a dependency cycle among the others.** A package with both a Cargo.toml and a package.json that publishes only to crates.io now plans its crate publishes even when the npm manifests depend on each other in a loop. Dependencies declared by a manifest the release does not publish no longer order any publish, and a cycle between published manifests still fails with E104.
+- **Release PRs and changelogs name the dependency version actually released.** A dependent bumped because a dependency changed now reports that dependency's final version, including when a fixed group realigned it after the cascade first ran.
+- **`pre enter` and `pre exit` stage only their own `pre.json`.** A changesets directory whose name contains glob characters, such as `notes*`, no longer stages a neighbouring tracked `notes-other/pre.json` as well.
+
 ## 0.22.0
 
 _2026-11-21 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.21.1...callisto@0.22.0)_
