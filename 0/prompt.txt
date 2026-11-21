@@ -1,0 +1,19 @@
+Investigate and fix a flaky test, worktree wp-flaky-process-count, trail #357. crates/callisto-cli/tests/git_process_count_tests.rs release_dry_run once saw 10 git processes instead of 11 under CI or parallel load, and passes alone. Find the cause first (a git process skipped by a cache, a race, timing, or a count that depends on environment) by reading the code and running it under load (cargo nextest run -p callisto-cli git_process_count with --test-threads matching CI, repeated about 20 times). Fix the cause, not the symptom: don't widen the expected count or add retries unless the count really is environment-dependent by design, in which case make the test state that exactly. Report the root cause in the PR body. No changeset unless product behaviour changes. Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: time-box this. If roughly 20 runs under load don't reproduce the 10-vs-11 count, or the cause isn't clear from the code, stop and report what you saw. No speculative fix, no widened assertion, no retry.
+</cross-session-message>

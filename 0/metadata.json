@@ -1,0 +1,77 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XRWSP8RF54AZJZ61EK1QG5",
+  "session_id": "748dafbb-9954-4fe8-8f51-8912fcae30be",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-21T00:43:09.736139Z",
+  "branch": "worktree-wp-flaky-process-count",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-fixtures/src/perf.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e2e9c5e41d3e",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 80921,
+    "cache_read_tokens": 3211404,
+    "output_tokens": 11363,
+    "api_call_count": 36
+  },
+  "session_token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 80921,
+    "cache_read_tokens": 3211404,
+    "output_tokens": 11363,
+    "api_call_count": 36
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 2,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Investigate and fix the flaky release_dry_run test in git_process_count_tests.rs (trail #357), which occasionally saw 10 git processes instead of 11, by finding the root cause and fixing it rather than widening the expected count.",
+    "outcome": "Root cause found and reproduced: the fixture repo's origin is a github.com URL, so `release --dry-run` runs ls-remote against it. With network, github.com answers 401 and git starts a credential helper (one extra process); offline or sandboxed, it does not. The fix rewrites the fixture origin to an empty local bare repo in crates/callisto-fixtures/src/perf.rs, which also covers the bench. The commit was being retried unsandboxed for signing, and the merge, push, PR and lead report were not done in this transcript.",
+    "learnings": {
+      "repo": [
+        "Process counts in git_process_count_tests are measured via GIT_TRACE2_EVENT, counting 'start' events.",
+        "The perf fixture repo's origin points at github.com, so any command that contacts the remote (e.g. release --dry-run's ls-remote) depends on network and credential-helper state.",
+        "crates/callisto-cli/benches/commands.rs also uses GIT_TRACE2_EVENT and the same fixture, so fixing the fixture covers both test and bench instead of patching each.",
+        "Fixture helpers such as callisto_fixtures::git::run_git exist for setting up repos in tests."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-fixtures/src/perf.rs",
+          "finding": "Fixture generation now rewrites origin to an empty local bare repository, removing the network and credential-helper dependency from process counts (line numbers not given in the transcript)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "line": 95,
+          "end_line": 175,
+          "finding": "Release flow code inspected to locate where git ls-remote is invoked against origin."
+        }
+      ],
+      "workflow": [
+        "Temporarily tracing the git argv (an inspect/eprintln in the test) quickly showed which git processes release starts, and confirmed the 10 vs 11 difference (offline vs network).",
+        "Fixing at the shared fixture level was better than per-call-site env overrides (GIT_CONFIG_COUNT/insteadOf), since it fixed the test and the bench together.",
+        "Review the staged diff before committing: a scripted/edit-tool change mangled a line and was caught and restored via git restore.",
+        "Commit signing needs gpg access outside the sandbox, so the signed commit has to be retried unsandboxed.",
+        "Follow the lead's rule of no session trailer: the first commit attempt included a Claude-Session trailer and was redone without it."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}
