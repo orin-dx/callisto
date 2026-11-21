@@ -513,7 +513,7 @@ impl GitAccess<'_> {
             "-z",
             "--name-only",
             "--relative",
-            &LogEntry::format(["%H"]),
+            &LogEntry::format("%H"),
             "--",
         ]
         .map(str::to_owned)
@@ -522,9 +522,9 @@ impl GitAccess<'_> {
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let output = self.runner.run("git", &arg_refs, &self.root)?;
         let output = GitStdout::of(output).map_err(|output| probe_failed(&arg_refs, &self.root, &output))?;
-        for entry in output.log_entries::<1>()? {
+        for entry in output.log_entries()? {
             let index = touches.commits.len();
-            touches.commits.push(entry.header[0].to_owned());
+            touches.commits.push(entry.header.to_owned());
             for file in entry.files {
                 touches.by_path.entry(PathBuf::from(file)).or_default().push(index);
             }

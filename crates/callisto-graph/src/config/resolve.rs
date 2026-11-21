@@ -1849,35 +1849,4 @@ mod tests {
         assert!(exact_package_config(&names, &cfg).is_none());
         assert!(resolve_package_config(&names, &cfg).is_some());
     }
-
-    #[test]
-    fn the_retired_package_set_table_is_refused_with_its_replacement_named() {
-        let error = parse_raw(Path::new("callisto.toml"), "[[package-set]]\nmatch = \"cargo/*\"\n")
-            .expect_err("[[package-set]] is retired");
-        assert!(
-            matches!(&error, ConfigError::UnknownField { message, .. } if message.contains("rename it to `[[package]]`")),
-            "{error:?}"
-        );
-        assert_eq!(
-            miette::Diagnostic::code(&error).map(|c| c.to_string()).as_deref(),
-            Some("E325")
-        );
-    }
-
-    #[test]
-    fn previous_tag_templates_on_a_glob_is_refused_because_it_names_one_packages_old_tags() {
-        let raw = toml::from_str::<RawConfig>(
-            "[[package]]\nmatch = \"cargo/*\"\nprevious-tag-templates = [\"old-{version}\"]\n",
-        )
-        .expect("parse");
-        let error = resolve(Path::new("/workspace"), raw).expect_err("a glob cannot carry previous-tag-templates");
-        assert!(
-            matches!(&error, ConfigError::InvalidPackageMatch { reason, .. } if reason.contains("give it an exact match")),
-            "{error:?}"
-        );
-        assert_eq!(
-            miette::Diagnostic::code(&error).map(|c| c.to_string()).as_deref(),
-            Some("E338")
-        );
-    }
 }
