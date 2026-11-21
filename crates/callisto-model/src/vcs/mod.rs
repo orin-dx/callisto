@@ -4,7 +4,7 @@ use crate::{CommandError, CommitRecord, CommitWalkError, CommitWalker};
 use thiserror::Error;
 
 pub mod access;
-pub mod boundary;
+mod boundary;
 pub mod checkpoint;
 
 pub use access::{FirstParentTouches, GitAccess};
