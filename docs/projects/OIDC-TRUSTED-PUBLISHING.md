@@ -12,23 +12,23 @@ Publish to npm, crates.io and PyPI with no long-lived registry secret in the rep
 | --- | --- | --- | --- |
 | npm | per package on npmjs.com: owner, repository, workflow file, optional environment | have `id-token: write`; run npm 11.5.1 or later (Node 24 ships it) | npm detects the OIDC environment itself and prefers it over a token. No secret |
 | crates.io | per crate in its settings, after a first manual publish | have `id-token: write`; run `rust-lang/crates-io-auth-action`, which exchanges the OIDC token for a short-lived crates.io token and revokes it when the job ends | the action's `token` output, passed to `cargo publish` as `CARGO_REGISTRY_TOKEN` |
-| PyPI | per project on pypi.org: owner, repository, workflow file, optional environment | have `id-token: write`; mint an upload token through PyPI's OIDC exchange | PyPI documents the exchange as an implementation detail; the stable interfaces are `pypa/gh-action-pypi-publish` and `uv publish`. Twine takes the minted token as `TWINE_PASSWORD` with `TWINE_USERNAME=__token__` |
+| PyPI | per project on pypi.org: owner, repository, workflow file, optional environment | have `id-token: write`; mint an upload token through PyPI's OIDC exchange | PyPI documents the exchange as an implementation detail; the stable interfaces are `pypa/gh-action-pypi-publish` and `uv publish`. Twine takes a token as `TWINE_PASSWORD` with `TWINE_USERNAME=__token__`, and falls back to trusted publishing when none is given |
 
 A mismatch in owner, repository, workflow file or environment fails, and npm reports it as a misleading E404. Self-hosted runners are not supported by npm. crates.io blocks the `pull_request_target` and `workflow_run` triggers.
 
 ## Where Callisto stands
 
-- Generated workflows already give `execute` `id-token: write` (for npm provenance), so the permission itself is not new there. Callisto's own release workflow does not: its policy check allows `id-token: write` only on `build-artifact`.
+- Generated workflows already give `execute` `id-token: write` (for npm provenance), so the permission itself is not new there. Callisto's own release workflow does not: its policy check allows `id-token: write` only on `attest`, a job with no checkout and no run step.
 - Callisto passes the environment through to the tool and never strips `ACTIONS_ID_TOKEN_REQUEST_URL` or `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, so npm can see them. ADR 4 keeps authentication with the ecosystem tool, which fits: Callisto does not need to mint tokens.
-- The generated action writes a temporary npm config with an `NPM_TOKEN` entry. With no token set that line may stop npm falling back to OIDC. Unverified.
-- Twine is the PyPI uploader, and it cannot mint a token.
+- An unset or empty `NPM_TOKEN` or `PYPI_TOKEN` configures nothing, so npm and twine are left to fall back to OIDC themselves. Twine is installed in generated workflows and runs without credentials in that case.
+- Hosted OIDC success against the real registries is not yet verified; local registries cannot exercise it.
 
 ## Work
 
 1. Decide the shape: a `callisto.toml` switch, or a generated-workflow option, for "this registry publishes by OIDC", so no secret input is expected for it.
-2. npm: omit the token entry from the generated npm config when OIDC is chosen, and check the pnpm, yarn and bun publish paths. Only `npm publish` is documented to use OIDC, so each package manager must be tested.
+2. npm: verify the OIDC fallback on a real package, and check the pnpm, yarn and bun publish paths. Only `npm publish` is documented to use OIDC, so each package manager must be tested.
 3. crates.io: generate the auth-action step before `execute` and pass its output as `CARGO_REGISTRY_TOKEN`.
-4. PyPI: mint the token in a generated step, or use `uv publish` where it is available; keep twine for the token path.
+4. PyPI: verify twine's own trusted-publishing fallback on a real project; use `uv publish` only if that fails.
 5. Diagnostics: an E163 hint for the npm E404 case that names the trusted-publisher fields to recheck.
 6. Policy and docs: the release workflow policy check, `docs/publishing.md`, the init docs and the generated-workflow tests.
 
