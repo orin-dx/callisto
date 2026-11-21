@@ -15,32 +15,14 @@ dir = ".changeset"
 
 [release]
 product-package = "cargo/callisto-cli"
-forge-repository = "orin-dx/callisto"
-
-[[release.artifact]]
-package = "cargo/callisto-cli"
-target = "aarch64-apple-darwin"
-asset-name = "callisto-aarch64-apple-darwin.tar.gz"
-
-[[release.artifact]]
-package = "cargo/callisto-cli"
-target = "x86_64-apple-darwin"
-asset-name = "callisto-x86_64-apple-darwin.tar.gz"
-
-[[release.artifact]]
-package = "cargo/callisto-cli"
-target = "x86_64-unknown-linux-gnu"
-asset-name = "callisto-x86_64-unknown-linux-gnu.tar.gz"
-
-[[release.artifact]]
-package = "cargo/callisto-cli"
-target = "aarch64-unknown-linux-gnu"
-asset-name = "callisto-aarch64-unknown-linux-gnu.tar.gz"
-
-[[release.artifact]]
-package = "cargo/callisto-cli"
-target = "x86_64-unknown-linux-musl"
-asset-name = "callisto-x86_64-unknown-linux-musl.tar.gz"
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+]
+asset-name = "callisto-{target}.tar.gz"
 
 [cascade]
 mode = "out-of-range"

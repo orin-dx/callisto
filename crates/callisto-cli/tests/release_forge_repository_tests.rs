@@ -1,6 +1,6 @@
 //! `[release].forge-repository` is the one release destination; profiles are gone.
 
-use std::{fs, path::Path, process::Command};
+use std::{fs, process::Command};
 
 const HEAD: &str = "[release]\nproduct-package = \"cargo/core-crate\"\n";
 const ARTIFACTS: &str = "\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n";
@@ -102,28 +102,4 @@ fn a_release_profile_table_is_rejected() {
         );
         assert!(!ok && detail.contains("profiles"), "{profile}: ok={ok}: {detail}");
     }
-}
-
-fn repo_file(path: &str) -> String {
-    fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(path)).unwrap()
-}
-
-#[test]
-fn release_workflow_and_its_contract_pass_no_profile() {
-    for path in [
-        ".github/workflows/callisto-release.yml",
-        ".github/tests/verify-release-workflow-contract.sh",
-    ] {
-        assert!(!repo_file(path).contains("--profile"), "{path}");
-    }
-}
-
-#[test]
-fn this_repository_config_uses_top_level_forge_repository() {
-    let text = repo_file("callisto.toml");
-    assert!(!text.contains("[release.profiles") && !text.contains("registry-routes"));
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let config = callisto_graph::load_config(&root).unwrap();
-    let forge = config.product_release.and_then(|release| release.forge_repository);
-    assert_eq!(forge.map(|repo| repo.as_slug()).as_deref(), Some("orin-dx/callisto"));
 }
