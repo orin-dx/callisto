@@ -1,0 +1,81 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XTNDX728MHXRA2CBR4RX0Y",
+  "session_id": "1c00e96f-95be-4505-abd7-ff58addb4585",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-21T01:14:03.257159Z",
+  "branch": "worktree-wp-flaky-process-count",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/git_process_count_tests.rs",
+    "crates/callisto-fixtures/src/perf.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "51f44768addd",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 49089,
+    "cache_read_tokens": 1185423,
+    "output_tokens": 4473,
+    "api_call_count": 17
+  },
+  "session_token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 49089,
+    "cache_read_tokens": 1185423,
+    "output_tokens": 4473,
+    "api_call_count": 17
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 2,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Fix PR #610 finding 01M7XSAZ95N3: replace the fixture's url.insteadOf origin rewrite (which broke canonical_git_remote and made the tag probe skip / ForeignTags bench fail) with a repo-local empty credential.helper and GIT_TERMINAL_PROMPT=0, then merge main, push signed, and resolve the finding.",
+    "outcome": "Fixture reworked to keep HTTPS origin with empty credential.helper, and a new test asserts one ls-remote and no credential process; tests passed sandboxed and unsandboxed, full bench ran clean of UnsafeGitRemote, and lint passed. The commit was made and main re-merged, but the transcript ends before the push, ls-remote confirmation, trail link, and finding resolution are shown.",
+    "learnings": {
+      "repo": [
+        "The git process-count fixture lives in crates/callisto-fixtures/src/perf.rs and is exercised by crates/callisto-cli/tests/git_process_count_tests.rs, which counts git processes via GIT_TRACE2_EVENT start events.",
+        "url.insteadOf in the fixture also rewrites 'git remote get-url --push origin' to a local path, which binding.rs canonical_git_remote rejects as UnsafeGitRemote (local.rs:279), so any fixture origin must remain an HTTPS URL.",
+        "Network-dependent extra git processes come from credential helpers after a 401; setting repo-local credential.helper to empty and GIT_TERMINAL_PROMPT=0 makes ls-remote a single process regardless of network."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/git_process_count_tests.rs",
+          "finding": "Refactored git_processes into git_starts (returns start event lines) plus a count wrapper, and added release_dry_run_probes_origin_once_and_starts_no_credential_helper asserting exactly one ls-remote and zero credential processes."
+        },
+        {
+          "path": "crates/callisto-fixtures/src/perf.rs",
+          "finding": "Removed the insteadOf/bare-repo origin setup and replaced it with run_git(root, [\"config\",\"credential.helper\",\"\"])."
+        }
+      ],
+      "workflow": [
+        "The task's no-session-trailer rule was initially violated in the first commit command (included a Claude-Session trailer) but the lint check failed to chain, so the commit was redone without the trailer.",
+        "Running the full `cargo bench -p callisto-cli --bench commands` with a timeout and grepping output for UnsafeGitRemote was used to confirm the ForeignTags shape no longer errors.",
+        "Tests were verified both sandboxed (network denied) and unsandboxed to prove count stability."
+      ]
+    },
+    "friction": [
+      "Several initial Bash calls were redundant or failed (repeated fetch/grep attempts, a plain `just lint` failing until run via `rtk just lint`), wasting steps.",
+      "A background bench run had to be stopped and re-run directly.",
+      "The first combined lint/commit/merge/push command did not behave as intended (ran with a session trailer), requiring a redo."
+    ],
+    "open_items": [
+      "Push with explicit refspec, confirm via git ls-remote, link trail #357, and open with entire trail ci-pr still need to be completed/confirmed.",
+      "Resolve finding 01M7XSAZ95N3 after pushing.",
+      "Send the 3-line report to the lead (close-gap-for-alpha) with PR, sha, and what was run."
+    ]
+  }
+}
