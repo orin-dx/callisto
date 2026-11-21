@@ -436,7 +436,7 @@ mod tests {
         assert!(runner.calls.lock().unwrap().is_empty());
     }
 
-    /// Only the package a commit changed differs from its tag. The tags' commits come from one `git for-each-ref`, the
+    /// Only the package a commit changed differs from its tag. The tags' commits came with the tag names when the index was built, the
     /// trees from one `git cat-file`, and the uncommitted changes from one `git diff`; no history is read.
     #[test]
     fn a_commit_changes_only_the_package_it_touched() {
@@ -451,7 +451,7 @@ mod tests {
         assert!(!result[&id("pkg-b")]);
         assert!(!result[&id("pkg-c")]);
         let count = |sub: &str| calls.iter().filter(|c| c.starts_with(sub)).count();
-        assert_eq!(count("for-each-ref"), 1, "{calls:?}");
+        assert_eq!(count("for-each-ref"), 0, "{calls:?}");
         assert_eq!(count("cat-file"), 1, "{calls:?}");
         assert_eq!(count("diff"), 1, "{calls:?}");
         assert_eq!(count("log"), 0, "{calls:?}");
