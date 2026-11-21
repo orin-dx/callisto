@@ -2289,3 +2289,58 @@ fn a_fixed_group_member_is_never_visible_at_its_own_provisional_version() {
         outcome.dependency_updates
     );
 }
+
+/// A cascade reason names the dependency version that is released, even when a fixed group realigns it afterwards.
+#[test]
+fn cascade_reason_names_the_final_version_after_a_fixed_group_realigns() {
+    let a = PackageId::parse("a").unwrap();
+    let b = PackageId::parse("b").unwrap();
+    let c = PackageId::parse("c").unwrap();
+    let lib = PackageId::parse("lib").unwrap();
+
+    let graph = TestGraph {
+        packages: [&a, &b, &c, &lib].map(bare_package).to_vec(),
+        edges: vec![
+            make_dep_edge(&a, &b, "=1.0.0", callisto_model::Ecosystem::Cargo),
+            make_dep_edge(&c, &lib, "^1.0.0", callisto_model::Ecosystem::Cargo),
+        ],
+    };
+    let base: BTreeMap<_, _> = [&a, &b, &c, &lib]
+        .into_iter()
+        .map(|id| (id.clone(), Version::semver(1, 0, 0)))
+        .collect();
+    let seed = BTreeMap::from([(b.clone(), Severity::Patch), (lib.clone(), Severity::Major)]);
+    let group = GroupDef {
+        name: GroupName("bc".to_string()),
+        kind: GroupKind::Fixed,
+        members: vec![GroupMember::Package(b.clone()), GroupMember::Package(c.clone())],
+    };
+    let groups = GroupTable::try_from_groups(vec![group], vec![]).unwrap();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Minor,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    let final_b = outcome.targets.get(&b).unwrap().version().clone();
+    assert_eq!(final_b.render(), "1.1.0");
+    let Some(BumpReason::Cascade { dependency_to, .. }) = outcome.reasons.get(&a) else {
+        panic!("a must cascade from b: {:?}", outcome.reasons.get(&a));
+    };
+    assert_eq!(dependency_to, &final_b);
+}

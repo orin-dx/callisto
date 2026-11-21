@@ -408,6 +408,15 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
 
     out.targets = ConvergedTargets::settle(targets);
 
+    // A fixed group can realign `via` after the step that recorded the reason, so name the version that is released.
+    for reason in out.reasons.values_mut() {
+        if let BumpReason::Cascade { via, dependency_to, .. } = reason
+            && let Some(settled) = out.targets.get(via)
+        {
+            *dependency_to = settled.version().clone();
+        }
+    }
+
     // Group alignment can move a target after the worklist first visited it, so rewrites and rejections are derived
     // from the converged targets only.
     for (pkg, new_version) in out.targets.iter() {
