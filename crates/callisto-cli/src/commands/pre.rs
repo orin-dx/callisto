@@ -6,6 +6,7 @@ use callisto_graph::GraphError;
 use callisto_model::format::{
     parse_pre_json, write_pre_json, write_pre_json_preserving, PreJsonError, PreMode, PreState,
 };
+use callisto_model::vcs::Pathspec;
 use callisto_model::{ApplyPermit, CommandRunner, PreReport, SCHEMA_VERSION};
 
 use crate::cli::{GlobalArgs, OutputFormat, PreArgs};
@@ -16,8 +17,8 @@ use crate::workspace::load_workspace;
 
 /// Extracted from [`handle`] so a fake [`CommandRunner`] can exercise the `git add` without shelling out for real.
 fn stage_pre_json(runner: &dyn CommandRunner, root: &Path, rel_path: &Path) -> Result<(), CliError> {
-    let rel_str = rel_path.to_string_lossy();
-    let output = runner.run("git", &["add", rel_str.as_ref()], root)?;
+    let spec = Pathspec::literal(rel_path);
+    let output = runner.run("git", &["add", "--", spec.as_str()], root)?;
     if !output.success() {
         return Err(callisto_model::CommandError::Failed {
             program: "git".to_string(),

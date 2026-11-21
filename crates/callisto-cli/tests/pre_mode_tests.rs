@@ -1105,3 +1105,60 @@ mod python_baselines {
         assert_eq!(changelog.matches("Resumed Python cycle").count(), 1);
     }
 }
+
+fn git_out(root: &std::path::Path, args: &[&str]) -> String {
+    let out = Command::new("git").args(args).current_dir(root).output().unwrap();
+    assert!(out.status.success(), "git {args:?} failed");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// Runs `pre enter` then `pre exit` with the changesets dir named `dir`, beside a tracked, modified
+/// `notes-other/pre.json`, and returns what each step staged.
+fn staged_by_pre(dir: &str) -> (Vec<String>, Vec<String>) {
+    let repo = setup_polyglot_git_repo();
+    let root = repo.path();
+    fs::write(root.join("callisto.toml"), format!("[changesets]\ndir = \"{dir}\"\n")).unwrap();
+    fs::create_dir_all(root.join("notes-other")).unwrap();
+    fs::write(root.join("notes-other/pre.json"), "{}\n").unwrap();
+    git_out(root, &["add", "."]);
+    git_out(root, &["commit", "-q", "-m", "neighbour"]);
+    fs::write(root.join("notes-other/pre.json"), "{\"touched\":1}\n").unwrap();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+    let staged = |root: &std::path::Path| {
+        git_out(root, &["diff", "--cached", "--name-only"])
+            .lines()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        commands::pre::handle(PreArgs::Enter { tag: "beta".into() }, &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
+    let entered = staged(root);
+    git_out(root, &["reset", "-q"]);
+    assert_eq!(
+        commands::pre::handle(PreArgs::Exit, &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
+    (entered, staged(root))
+}
+
+#[test]
+fn pre_enter_and_exit_stage_only_their_own_pre_json_when_the_dir_is_a_glob() {
+    let (entered, exited) = staged_by_pre("notes*");
+    assert_eq!(entered, ["notes*/pre.json"]);
+    assert_eq!(exited, ["notes*/pre.json"]);
+}
+
+#[test]
+fn pre_enter_and_exit_stage_their_pre_json_when_the_dir_is_plain() {
+    let (entered, exited) = staged_by_pre("notes-plain");
+    assert_eq!(entered, ["notes-plain/pre.json"]);
+    assert_eq!(exited, ["notes-plain/pre.json"]);
+}
