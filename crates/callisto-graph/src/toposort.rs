@@ -1,6 +1,6 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use callisto_model::{DepKind, PackageId};
+use callisto_model::{DepKind, Ecosystem, PackageId};
 use michi_graph::{Graph, GraphBuilder, Order, UnknownTargets, Violation, Violations};
 
 use crate::error::GraphError;
@@ -89,39 +89,50 @@ pub const PUBLISH_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Buil
 /// Which dependency edges order a publish: every [`PUBLISH_ORDERING_KINDS`] edge,
 /// except a `Dev` edge between two packages of the same cycle.
 ///
+/// Publish waits are per distribution, so cycles are looked for per ecosystem: each
+/// ecosystem's graph holds only the edges `outgoing_edges` reports for it, and opposite
+/// edges in two ecosystems are not a cycle.
+///
 /// Mutual dev-only dependencies (cross-integration tests) are legitimate, so a
-/// `Dev` edge inside a cyclic component is dropped; a `Dev` edge anywhere else
-/// still orders. A cycle that survives with every `Dev` edge excluded is a real
-/// `Runtime`/`Build`/`Optional` cycle and fails construction with
+/// `Dev` edge inside a cyclic component of its ecosystem is dropped; a `Dev` edge
+/// anywhere else still orders. A cycle that survives with every `Dev` edge excluded is
+/// a real `Runtime`/`Build`/`Optional` cycle and fails construction with
 /// [`GraphError::Cycle`]. Used by release derivation.
 pub struct PublishEdgeFilter {
-    dev_cycles: Vec<HashSet<PackageId>>,
+    dev_cycles: BTreeMap<Ecosystem, Vec<HashSet<PackageId>>>,
 }
 
 impl PublishEdgeFilter {
+    /// `outgoing_edges(package, ecosystem)` is the edges that order `ecosystem`'s publishes.
     pub fn new<F>(
         subset: &HashSet<PackageId>,
         all_packages: &[PackageId],
+        ecosystems: impl IntoIterator<Item = Ecosystem>,
         outgoing_edges: F,
     ) -> Result<Self, GraphError>
     where
-        F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
+        F: Fn(&PackageId, Ecosystem) -> Vec<(PackageId, DepKind)>,
     {
-        toposort_impl(subset, all_packages, CASCADE_ORDERING_KINDS, &outgoing_edges)?;
-        Ok(PublishEdgeFilter {
-            dev_cycles: cyclic_sccs(subset, &outgoing_edges, PUBLISH_ORDERING_KINDS),
-        })
+        let mut dev_cycles = BTreeMap::new();
+        for ecosystem in ecosystems {
+            let edges = |id: &PackageId| outgoing_edges(id, ecosystem);
+            toposort_impl(subset, all_packages, CASCADE_ORDERING_KINDS, edges)?;
+            dev_cycles.insert(ecosystem, cyclic_sccs(subset, edges, PUBLISH_ORDERING_KINDS));
+        }
+        Ok(PublishEdgeFilter { dev_cycles })
     }
 
-    /// Whether the `from -> to` edge of `kind` is a publish-ordering constraint.
-    pub fn allows(&self, from: &PackageId, to: &PackageId, kind: DepKind) -> bool {
+    /// Whether the `from -> to` edge of `kind` is a publish-ordering constraint in `ecosystem`.
+    pub fn allows(&self, ecosystem: Ecosystem, from: &PackageId, to: &PackageId, kind: DepKind) -> bool {
         if !PUBLISH_ORDERING_KINDS.contains(&kind) {
             return false;
         }
         kind != DepKind::Dev
             || !self
                 .dev_cycles
-                .iter()
+                .get(&ecosystem)
+                .into_iter()
+                .flatten()
                 .any(|component| component.contains(from) && component.contains(to))
     }
 }

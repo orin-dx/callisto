@@ -226,13 +226,20 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     } = select_packages(workspace, decision)?;
     require_dependencies_selected(workspace, &selected, &package_ids)?;
     let all_packages: Vec<_> = workspace.graph.packages().map(|package| package.id.clone()).collect();
+    let ecosystems: BTreeSet<_> = package_ids
+        .values()
+        .flatten()
+        .map(ReleasePackageId::ecosystem)
+        .collect();
     let publish_edges = PublishEdgeFilter::new(
         &package_ids.keys().cloned().collect(),
         &all_packages,
-        |id: &callisto_model::PackageId| {
+        ecosystems,
+        |id: &callisto_model::PackageId, ecosystem| {
             workspace
                 .graph
                 .dependencies_of(id)
+                .filter(|edge| edge_orders_in(edge, ecosystem, &package_ids))
                 .map(|edge| (edge.to.clone(), edge.kind))
                 .collect()
         },
@@ -472,6 +479,23 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
     Ok(())
 }
 
+/// Whether `edge` takes part in `ecosystem`'s publish order: the dependent publishes from the declaring manifest's
+/// ecosystem, which is `ecosystem`, or the dependency has no distribution there, so the edge waits for every one of its
+/// distributions and counts in each ecosystem.
+fn edge_orders_in(
+    edge: &callisto_model::DepEdge,
+    ecosystem: callisto_model::Ecosystem,
+    package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
+) -> bool {
+    let publishes_in = |package, ecosystem| {
+        package_ids
+            .get(package)
+            .is_some_and(|ids| ids.iter().any(|id| id.ecosystem() == ecosystem))
+    };
+    let declared = crate::cascade::manifest_ecosystem(&edge.from_manifest);
+    publishes_in(&edge.from, declared) && (declared == ecosystem || !publishes_in(&edge.to, declared))
+}
+
 /// Replaces each publish leaf with prerequisites from selected dependency packages.
 fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
@@ -495,13 +519,13 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
     for (id, (package, _)) in selected {
         let mut prerequisites = BTreeSet::new();
         for edge in workspace.graph.dependencies_of(&package.id) {
-            if !publish_edges.allows(&package.id, &edge.to, edge.kind) {
-                continue;
-            }
             // The edge names the dependency's distribution in the declaring manifest's ecosystem, so a Cargo
             // dependent waits for the dependency's crate, not for its npm package. No such distribution means the
             // edge was resolved some other way, so it waits for all of them.
             let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
+            if !publish_edges.allows(ecosystem, &package.id, &edge.to, edge.kind) {
+                continue;
+            }
             // Likewise only the dependent's own distribution in that ecosystem waits.
             if id.ecosystem() != ecosystem {
                 continue;
@@ -2121,6 +2145,136 @@ mod tests {
             [(Ecosystem::Npm, "lib".to_string())]
         );
         assert_eq!(waits_for(Ecosystem::Cargo, "jsdep"), []);
+    }
+
+    /// Two dual packages whose manifests: `a_cargo`/`b_cargo` are the Cargo dependency tables and `a_npm`/`b_npm` the
+    /// npm `dependencies` objects, each naming the other package or nothing.
+    fn dual_pair_repo(a_cargo: &str, b_cargo: &str, a_npm: &str, b_npm: &str) -> tempfile::TempDir {
+        let cargo = |name: &str, table: &str| {
+            format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{table}")
+        };
+        let npm = |name: &str, dependencies: &str| {
+            format!(r#"{{"name":"{name}","version":"1.0.0","dependencies":{{{dependencies}}}}}"#)
+        };
+        repo_of(&[
+            (
+                "Cargo.toml".to_owned(),
+                "[workspace]\nmembers = [\"a\", \"b\"]\nresolver = \"2\"\n".to_owned(),
+            ),
+            (
+                "package.json".to_owned(),
+                r#"{"name":"root","private":true,"workspaces":["a","b"]}"#.to_owned(),
+            ),
+            ("a/Cargo.toml".to_owned(), cargo("a", a_cargo)),
+            ("b/Cargo.toml".to_owned(), cargo("b", b_cargo)),
+            ("a/package.json".to_owned(), npm("a", a_npm)),
+            ("b/package.json".to_owned(), npm("b", b_npm)),
+            (
+                "callisto.toml".to_owned(),
+                "[[package]]\nmatch = \"cargo/*\"\npublish-to = [\"crates-io\", \"npm\"]\n".to_owned(),
+            ),
+        ])
+    }
+
+    fn dual_pair_decision() -> ReleaseDecisionV1 {
+        release(&[
+            (Ecosystem::Cargo, "a", "1.0.0"),
+            (Ecosystem::Npm, "a", "1.0.0"),
+            (Ecosystem::Cargo, "b", "1.0.0"),
+            (Ecosystem::Npm, "b", "1.0.0"),
+        ])
+    }
+
+    fn publish_waits(operations: &[ReleaseOperation], ecosystem: Ecosystem, name: &str) -> Vec<(Ecosystem, String)> {
+        operations
+            .iter()
+            .find(|operation| {
+                matches!(
+                    operation.id().role,
+                    callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+                ) && operation.id().package.ecosystem() == ecosystem
+                    && operation.id().package.name() == name
+            })
+            .unwrap_or_else(|| panic!("no {ecosystem:?} publish of {name}"))
+            .prerequisites()
+            .iter()
+            .map(|id| (id.package.ecosystem(), id.package.name().to_string()))
+            .collect()
+    }
+
+    /// Opposite runtime edges in two ecosystems are not a cycle: each ecosystem's publishes order on their own.
+    #[test]
+    fn opposite_edges_in_different_ecosystems_order_instead_of_failing() {
+        let dir = dual_pair_repo(
+            "[dependencies]\nb = { path = \"../b\", version = \"1.0.0\" }\n",
+            "",
+            "",
+            r#""a":"^1.0.0""#,
+        );
+        let (_, operations, _, _, _) = derive(&dir, &dual_pair_decision()).unwrap();
+        assert_eq!(
+            publish_waits(&operations, Ecosystem::Cargo, "a"),
+            [(Ecosystem::Cargo, "b".to_string())]
+        );
+        assert_eq!(
+            publish_waits(&operations, Ecosystem::Npm, "b"),
+            [(Ecosystem::Npm, "a".to_string())]
+        );
+        assert_eq!(publish_waits(&operations, Ecosystem::Cargo, "b"), []);
+        assert_eq!(publish_waits(&operations, Ecosystem::Npm, "a"), []);
+    }
+
+    /// A dev edge is dropped only when it closes a cycle in its own ecosystem, not through another ecosystem's edge.
+    #[test]
+    fn a_dev_edge_is_not_dropped_for_a_cycle_through_another_ecosystem() {
+        let dir = dual_pair_repo(
+            "[dev-dependencies]\nb = { path = \"../b\", version = \"1.0.0\" }\n",
+            "",
+            "",
+            r#""a":"^1.0.0""#,
+        );
+        let (_, operations, _, _, _) = derive(&dir, &dual_pair_decision()).unwrap();
+        assert_eq!(
+            publish_waits(&operations, Ecosystem::Cargo, "a"),
+            [(Ecosystem::Cargo, "b".to_string())]
+        );
+        assert_eq!(
+            publish_waits(&operations, Ecosystem::Npm, "b"),
+            [(Ecosystem::Npm, "a".to_string())]
+        );
+    }
+
+    /// An edge to a package with no distribution in the declaring ecosystem waits for all of its distributions, so a
+    /// cycle through two such edges still fails with the cycle error naming the packages.
+    #[test]
+    fn a_cycle_through_edges_with_no_native_distribution_still_fails_with_a_cycle_error() {
+        let dir = repo_of(&[
+            ("Cargo.toml".to_owned(), "[workspace]\nmembers = [\"lib\", \"web\"]\nresolver = \"2\"\n".to_owned()),
+            ("package.json".to_owned(), r#"{"name":"root","private":true,"workspaces":["lib","web"]}"#.to_owned()),
+            (
+                "lib/Cargo.toml".to_owned(),
+                "[package]\nname = \"lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n[dependencies]\nweb = { path = \"../web\", version = \"1.0.0\" }\n".to_owned(),
+            ),
+            (
+                "web/Cargo.toml".to_owned(),
+                "[package]\nname = \"web\"\nversion = \"1.0.0\"\nedition = \"2021\"\n".to_owned(),
+            ),
+            ("lib/package.json".to_owned(), r#"{"name":"lib","version":"1.0.0"}"#.to_owned()),
+            (
+                "web/package.json".to_owned(),
+                r#"{"name":"web","version":"1.0.0","dependencies":{"lib":"^1.0.0"}}"#.to_owned(),
+            ),
+            (
+                "callisto.toml".to_owned(),
+                "[[package]]\nmatch = \"cargo/lib\"\npublish-to = [\"crates-io\"]\n\n[[package]]\nmatch = \"cargo/web\"\npublish-to = [\"npm\"]\n".to_owned(),
+            ),
+        ]);
+        let decision = release(&[(Ecosystem::Cargo, "lib", "1.0.0"), (Ecosystem::Npm, "web", "1.0.0")]);
+        let error = derive(&dir, &decision).unwrap_err();
+        assert!(
+            matches!(&error, GraphError::Cycle { cycle } if cycle.len() == 3),
+            "{error:?}"
+        );
     }
 
     /// The owner's one physical tag and GitHub release must wait for every registry publish of the package, not
