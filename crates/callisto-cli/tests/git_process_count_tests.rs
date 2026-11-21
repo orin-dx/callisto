@@ -5,7 +5,7 @@ use std::process::Command;
 use callisto_fixtures::perf::{PackageKind, ScaledWorkspace};
 
 /// Runs `callisto` over a workspace of `packages` and returns how many git processes it started.
-fn git_processes(kind: PackageKind, packages: usize, args: &[&str]) -> usize {
+fn git_starts(kind: PackageKind, packages: usize, args: &[&str]) -> Vec<String> {
     let repository = tempfile::tempdir().unwrap();
     ScaledWorkspace {
         kind,
@@ -20,6 +20,7 @@ fn git_processes(kind: PackageKind, packages: usize, args: &[&str]) -> usize {
         .arg(repository.path())
         .args(args)
         .env("GIT_TRACE2_EVENT", &trace)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .unwrap();
     assert!(
@@ -31,7 +32,12 @@ fn git_processes(kind: PackageKind, packages: usize, args: &[&str]) -> usize {
         .unwrap()
         .lines()
         .filter(|line| line.contains("\"event\":\"start\""))
-        .count()
+        .map(str::to_owned)
+        .collect()
+}
+
+fn git_processes(kind: PackageKind, packages: usize, args: &[&str]) -> usize {
+    git_starts(kind, packages, args).len()
 }
 
 fn assert_independent_of_package_count(args: &[&str]) {
@@ -69,4 +75,13 @@ fn foreign_tags_of_one_commit_start_no_git_process_per_tag() {
             "`callisto {args:?}` started {few} git processes for 6 foreign tags and {many} for 30: a git process per tag"
         );
     }
+}
+
+/// The tag probe runs `ls-remote` against the HTTPS origin, and no credential helper adds a process when it is refused.
+#[test]
+fn release_dry_run_probes_origin_once_and_starts_no_credential_helper() {
+    let starts = git_starts(PackageKind::Cargo, 6, &["--dry-run", "release"]);
+    let count = |needle: &str| starts.iter().filter(|line| line.contains(needle)).count();
+    assert_eq!(count("\"ls-remote\""), 1, "{starts:#?}");
+    assert_eq!(count("credential"), 0, "{starts:#?}");
 }
