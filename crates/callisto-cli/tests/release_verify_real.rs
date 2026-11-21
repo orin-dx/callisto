@@ -19,7 +19,7 @@ mod release_harness;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Output;
+use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 
 use local_registries::*;
@@ -1012,4 +1012,96 @@ fn a_changesets_pre_cycle_is_continued_and_exited_by_callisto() {
             "the stable release after exit differs from changeset {major}.x"
         );
     }
+}
+
+// ------------------------------------------------------------- yarn and bun
+
+/// Packs a released yarn or bun workspace whose dependent names its sibling `workspace:^` with the workspace's own
+/// tool, and checks the sealed tarball carries the sibling's released version instead of the `workspace:` range.
+fn assert_workspace_pack_rewrites_sibling(tool: &str, workspace: &NpmWorkspace) {
+    let version = Command::new(tool).arg("--version").output();
+    assert!(
+        version.as_ref().is_ok_and(|output| output.status.success()),
+        "{tool} must be installed by `just verify-real-tools`: {version:?}"
+    );
+    let (dir, release_commit) =
+        npm_release_fixture_with(&[(DEPENDENCY, &[]), (DEPENDENT, &[DEPENDENCY])], "", workspace);
+    let external = tempfile::tempdir().unwrap();
+    let intent = external.path().join("release-intent.json");
+    let plan = callisto(
+        dir.path(),
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            &release_commit,
+            "--decision",
+            DECISION_PATH,
+            "--out",
+            intent.to_str().unwrap(),
+        ],
+    );
+    assert!(plan.status.success(), "release plan failed: {}", stderr_of(&plan));
+
+    let artifacts = external.path().join("npm-dist");
+    fs::create_dir_all(&artifacts).unwrap();
+    let packed = callisto(
+        dir.path(),
+        &[
+            "release",
+            "pack-npm",
+            "--intent",
+            intent.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+        ],
+    );
+    assert!(packed.status.success(), "pack-npm failed: {}", stderr_of(&packed));
+
+    let expected = vec![format!("{DEPENDENCY}-0.2.0.tgz"), format!("{DEPENDENT}-0.2.0.tgz")];
+    assert_eq!(files_in(&artifacts), expected, "the sealed tarballs");
+    let manifest = Command::new("tar")
+        .args([
+            "-xOzf",
+            artifacts.join(&expected[1]).to_str().unwrap(),
+            "package/package.json",
+        ])
+        .output()
+        .unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest.stdout).unwrap();
+    let range = manifest["dependencies"][DEPENDENCY].as_str();
+    assert!(
+        range.is_some_and(|range| !range.contains("workspace:") && range.contains("0.2.0")),
+        "the sibling range must be the released version, got {range:?} in {manifest}"
+    );
+}
+
+#[test]
+#[ignore = "needs yarn; run via `just verify-real`"]
+fn yarn_packs_a_workspace_dependency_at_its_released_version() {
+    assert_workspace_pack_rewrites_sibling(
+        "yarn",
+        &NpmWorkspace {
+            sibling_range: "workspace:^",
+            root_fields: "\"packageManager\": \"yarn@4.18.1\",\n  ",
+            root_files: &[
+                ("yarn.lock", ""),
+                (".yarnrc.yml", "nodeLinker: node-modules\n"),
+                (".gitignore", ".npmrc\n.yarn/\n"),
+            ],
+        },
+    );
+}
+
+#[test]
+#[ignore = "needs bun; run via `just verify-real`"]
+fn bun_packs_a_workspace_dependency_at_its_released_version() {
+    assert_workspace_pack_rewrites_sibling(
+        "bun",
+        &NpmWorkspace {
+            sibling_range: "workspace:^",
+            root_fields: "",
+            root_files: &[("bun.lock", "")],
+        },
+    );
 }
