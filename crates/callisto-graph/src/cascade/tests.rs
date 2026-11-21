@@ -65,9 +65,11 @@ fn workspace_rewrites_keep_protocol_and_alias_even_when_npm_range_preservation_i
     }
 }
 
-/// Shared fixture: a `CommandRunner` that answers `git tag --list` with a
+/// Shared fixture: a `CommandRunner` that answers `git for-each-ref` with a
 /// fixed tag set, used by tests that need a real `TagIndex::build` (not
 /// `TagIndex::empty()`) to exercise tag-driven fixed-group alignment.
+const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
 struct FakeGitTagRunner {
     calls: std::sync::atomic::AtomicUsize,
     tags: Vec<String>,
@@ -88,11 +90,16 @@ impl callisto_model::CommandRunner for FakeGitTagRunner {
                 stderr: String::new(),
             });
         }
-        assert_eq!(args, ["tag", "--list"]);
+        assert_eq!(args[0], "for-each-ref");
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(callisto_model::CommandOutput {
             exit_code: Some(0),
-            stdout: self.tags.join("\n"),
+            stdout: self
+                .tags
+                .iter()
+                .map(|tag| format!("{tag}\0commit\0{COMMIT}\0\0"))
+                .collect::<Vec<_>>()
+                .join("\n"),
             stderr: String::new(),
         })
     }

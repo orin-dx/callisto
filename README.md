@@ -91,7 +91,7 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 
 ### Releasing
 
-- `callisto release` publishes each package whose current version has no tag, using the ecosystem's own tool (`cargo`, `npm`, `pnpm`, `yarn`, `bun` or Twine), then creates the tag and the GitHub release. `--dry-run` prints the plan first ([releasing](docs/releasing.md#local-release-callisto-release)).
+- `callisto release` publishes each package whose current version has no tag, using the ecosystem's own tool (`cargo publish`, `twine upload`, and `npm publish <tarball>` for every npm package), then creates the tag and the GitHub release. `--dry-run` prints the plan first ([releasing](docs/releasing.md#local-release-callisto-release)).
 - The order follows dependencies: platform packages publish before their npm owner, and a package's tag and release wait for every one of its registry publishes ([architecture](docs/architecture/release.md)).
 - A published version must show on the registry before anything is tagged or announced; `confirm-timeout` sets the wait ([releasing](docs/releasing.md#release-identity-and-recovery)).
 - Product binaries are declared with `[release] product-package` with `targets` and an `asset-name` template, plus `[[release.artifact]]` entries for irregular names and attach to the product's GitHub release ([config](docs/config.md#release)).
@@ -104,14 +104,14 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 ### CI and automation
 
 - `callisto init` detects packages and writes `callisto.toml` and `.changeset/`. With a GitHub origin it also writes `.github/workflows/callisto-release.yml` unless you pass `--no-workflow` ([releasing](docs/releasing.md#generated-workflows)).
-- The simple workflow has a `version-pr` job that keeps the release PR current, a `package` job without secrets that plans the release and builds or packs what it publishes, and an `execute` job that publishes exactly those files. With binaries or napi targets it becomes version-pr, plan, build, attest, optional Python build, crate packaging and npm pack jobs, and execute. Only `execute` gets registry secrets.
+- The simple workflow has a `version-pr` job that keeps the release PR current, a `package` job without secrets that plans the release and builds or packs what it publishes, and an `execute` job that publishes exactly those files. Packing uses the workspace's own manager (`npm`, `pnpm`, `yarn` or `bun`), but `npm` uploads the tarball, so its authentication and scoped-registry routing apply; Yarn and Bun registry settings are not used ([publishing](docs/publishing.md#package-managers)). With binaries or napi targets it becomes version-pr, plan, build, attest, optional Python build, crate packaging and npm pack jobs, and execute. Only `execute` gets registry secrets.
 - `callisto-action` runs in `mode: version-pr` (create or update the release PR), `mode: release` (run `callisto release`) or `mode: execute` (run `callisto release execute` on a prepared handoff directory). `setup-callisto` installs Callisto, checking the release binary with `gh attestation verify` (`verification: require`, `fallback` or `skip`). `callisto-validate` runs `status --check` and `release --dry-run` for your PR workflow ([releasing](docs/releasing.md#pr-pre-flight-verification)).
 - To adopt it: run `callisto init`, add the registry secrets it names, and require pull requests and reviews on the default branch.
 
 ### Scripting and stability
 
 - `--format json` works on every command that reports a result. Each report carries `schemaVersion`, `command` and `dryRun`, with camelCase fields, and `callisto schema --type <report>` prints its JSON Schema ([stability](docs/stability.md)).
-- Exit codes are 0 for success, 1 for failure and 2 for a bad flag or argument. Every error has a code listed in [errors](docs/errors.md).
+- Exit codes are 0 for success, 1 for failure and 2 for a bad flag or argument. With `--format json` a failure ends stderr with one JSON error document and leaves stdout empty; a bad flag prints clap's usage text instead ([stability](docs/stability.md)). Every error has a code listed in [errors](docs/errors.md).
 - `--dry-run` is accepted on every command and changes nothing.
 - Release binaries cover macOS (arm64, x86_64) and Linux (x86_64 glibc and musl, arm64) ([install](#install)).
 

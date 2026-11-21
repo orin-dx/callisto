@@ -93,14 +93,83 @@ impl Release {
         self.dir.path()
     }
 
+    /// Packs and seals the npm and Python artifacts once, without publisher credentials, as the generated workflow's
+    /// build jobs do. Reruns reuse the same sealed files.
+    fn sealed_artifacts(&self) -> Option<(PathBuf, PathBuf)> {
+        let intent: callisto_model::ReleaseIntentV1 = serde_json::from_slice(&fs::read(&self.intent).unwrap()).unwrap();
+        let npm = !callisto_model::npm_publishes(&intent).is_empty();
+        let python = !callisto_model::python_publishes(&intent).is_empty();
+        if !npm && !python {
+            return None;
+        }
+        let directory = self.external.path().join("sealed-artifacts");
+        let manifest = self.external.path().join("artifact-manifest.json");
+        if !manifest.exists() {
+            fs::create_dir_all(&directory).unwrap();
+            let run = |args: &[&str]| {
+                let mut command = rig_command(self.root(), self.root(), &self.rig, &self.forge_tag);
+                for credential in [
+                    "CARGO_REGISTRY_TOKEN",
+                    "GH_TOKEN",
+                    "GITHUB_TOKEN",
+                    "NPM_TOKEN",
+                    "NODE_AUTH_TOKEN",
+                    "NPM_CONFIG_TOKEN",
+                    "PYPI_TOKEN",
+                    "TWINE_USERNAME",
+                    "TWINE_PASSWORD",
+                ] {
+                    command.env_remove(credential);
+                }
+                let output = command.args(args).output().expect("artifact preparation must run");
+                assert!(output.status.success(), "{args:?}: {}", stderr_of(&output));
+            };
+            let intent = self.intent.to_str().unwrap();
+            let dir = directory.to_str().unwrap();
+            if npm {
+                run(&["release", "pack-npm", "--intent", intent, "--artifact-dir", dir]);
+            }
+            if python {
+                run(&["release", "build-python", "--intent", intent, "--artifact-dir", dir]);
+            }
+            let mut seal = vec![
+                "release",
+                "artifact-manifest",
+                "--intent",
+                intent,
+                "--artifact-dir",
+                dir,
+                "--out",
+                manifest.to_str().unwrap(),
+            ];
+            if npm {
+                seal.push("--seal-npm");
+            }
+            if python {
+                seal.push("--seal-python");
+            }
+            run(&seal);
+        }
+        Some((directory, manifest))
+    }
+
     fn execute(&self) -> Output {
+        let sealed = self.sealed_artifacts();
+        let extra: Vec<&str> = sealed.as_ref().map_or_else(Vec::new, |(directory, manifest)| {
+            vec![
+                "--artifact-manifest",
+                manifest.to_str().unwrap(),
+                "--artifact-dir",
+                directory.to_str().unwrap(),
+            ]
+        });
         execute_rig(
             self.root(),
             &self.intent,
             &self.receipt,
             &self.rig,
             &self.forge_tag,
-            &[],
+            &extra,
             None,
         )
     }

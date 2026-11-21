@@ -157,7 +157,7 @@ mod tests {
 
     impl CommandRunner for FailingTagsRunner {
         fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-            if program == "git" && args == ["tag", "--list"] {
+            if program == "git" && args.first() == Some(&"for-each-ref") {
                 return Err(CommandError::NotFound {
                     program: "git".to_string(),
                 });
