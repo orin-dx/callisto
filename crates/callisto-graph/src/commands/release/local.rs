@@ -10,12 +10,10 @@ use crate::{DependencyResolver, GraphError, Workspace};
 
 use super::binding::optional_git_remote;
 use super::capability::{
-    names_taken_by_other_projects, observe_source, published_packages, unsatisfied_packages, ReleaseCheckout,
+    derive_release_intent_unmoved, names_taken_by_other_projects, observe_source, published_packages,
+    unsatisfied_packages, ReleaseCheckout,
 };
-use super::derive::{
-    derive_release_intent, derive_release_intent_with_prepared, ArtifactBuildPolicy, GitRemoteRequirement,
-};
-use super::StaleReason;
+use super::derive::{derive_release_intent_with_prepared, ArtifactBuildPolicy, GitRemoteRequirement};
 
 /// How a local release observes its source commit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,6 +177,7 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
         return Ok(tagged);
     }
     let profile = ExecutionTrustProfileV1::GitCommit;
+    // Reuses the HEAD already read above: a second read is one more git process.
     let source = match mode {
         LocalReleaseSource::Preview => SourceIdentity::GitCommit { sha: head },
         LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead)?,
@@ -395,6 +394,19 @@ enum Observation {
     Never,
 }
 
+fn local_source<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    profile: ExecutionTrustProfileV1,
+    mode: LocalReleaseSource,
+) -> Result<SourceIdentity, GraphError> {
+    match mode {
+        LocalReleaseSource::Preview => Ok(SourceIdentity::GitCommit {
+            sha: workspace.git_access().head_sha()?,
+        }),
+        LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead),
+    }
+}
+
 fn plan_release<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selections: &[ReleasePackageId],
@@ -408,12 +420,7 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
         return Ok(None);
     };
     let profile = ExecutionTrustProfileV1::GitCommit;
-    let source = match mode {
-        LocalReleaseSource::Preview => SourceIdentity::GitCommit {
-            sha: workspace.git_access().head_sha()?,
-        },
-        LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead)?,
-    };
+    let source = local_source(workspace, profile, mode)?;
     if check_taken_names {
         refuse_a_crate_crates_io_would_reject(workspace, &decision)?;
         refuse_a_name_another_project_owns(workspace, &decision, &source, profile, mode)?;
@@ -435,10 +442,13 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
         LocalReleaseSource::Trusted => GitRemoteRequirement::Required,
     };
     let mut diagnostics = Vec::new();
-    let intent = derive_release_intent(
+    // Only a trusted run re-observes the source; a preview takes HEAD's commit as given.
+    let recheck = (mode == LocalReleaseSource::Trusted).then_some(ReleaseCheckout::AnyHead);
+    let intent = derive_release_intent_unmoved(
         workspace,
         &decision,
-        source.clone(),
+        source,
+        recheck,
         profile,
         artifact_policy.as_ref(),
         remote,
@@ -450,11 +460,6 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
             .iter()
             .any(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
         && optional_git_remote(&workspace.root, workspace.runner)?.is_none();
-    if mode == LocalReleaseSource::Trusted && observe_source(workspace, profile, ReleaseCheckout::AnyHead)? != source {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::source_identity_changed(),
-        });
-    }
     Ok(Some(LocalReleasePlan {
         intent,
         tags_unbound,
