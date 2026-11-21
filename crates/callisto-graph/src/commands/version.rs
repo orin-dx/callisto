@@ -708,14 +708,18 @@ fn head_dir_has_changeset<R: CommandRunner, D: DependencyResolver>(
         .runner
         .run("git", &["ls-tree", "-z", "--name-only", &spec], &ws.root)
         .map_err(GraphError::Command)?;
-    let names = GitStdout::of(output).map_err(|output| {
+    let names = git_stdout(output)?;
+    Ok(names.fields().any(|name| name.ends_with(".md") && name != "README.md"))
+}
+
+fn git_stdout(output: callisto_model::CommandOutput) -> Result<GitStdout, GraphError> {
+    GitStdout::of(output).map_err(|output| {
         GraphError::Command(callisto_model::CommandError::Failed {
             program: "git".to_string(),
             exit_code: output.exit_code,
             stderr: output.stderr,
         })
-    })?;
-    Ok(names.fields().any(|name| name.ends_with(".md") && name != "README.md"))
+    })
 }
 
 fn manifest_blob_at<R: CommandRunner, D: DependencyResolver>(
@@ -731,13 +735,7 @@ fn manifest_blob_at<R: CommandRunner, D: DependencyResolver>(
         .runner
         .run("git", &["show", &spec], &ws.root)
         .map_err(GraphError::Command)?;
-    let blob = GitStdout::of(output).map_err(|output| {
-        GraphError::Command(callisto_model::CommandError::Failed {
-            program: "git".to_string(),
-            exit_code: output.exit_code,
-            stderr: output.stderr,
-        })
-    })?;
+    let blob = git_stdout(output)?;
     Ok(Some(blob.into_text()))
 }
 
@@ -753,13 +751,7 @@ fn manifest_blob_in_index<R: CommandRunner, D: DependencyResolver>(
         .runner
         .run("git", &["show", &spec], &ws.root)
         .map_err(GraphError::Command)?;
-    let blob = GitStdout::of(output).map_err(|output| {
-        GraphError::Command(callisto_model::CommandError::Failed {
-            program: "git".to_string(),
-            exit_code: output.exit_code,
-            stderr: output.stderr,
-        })
-    })?;
+    let blob = git_stdout(output)?;
     Ok(Some(blob.into_text()))
 }
 
@@ -780,13 +772,7 @@ impl SourceChanges {
         let index = vec!["diff", "--cached", "--name-only", "-z", "--relative", head];
         for (args, is_index) in [(working_tree, false), (index, true)] {
             let output = ws.runner.run("git", &args, &ws.root).map_err(GraphError::Command)?;
-            let output = GitStdout::of(output).map_err(|output| {
-                GraphError::Command(callisto_model::CommandError::Failed {
-                    program: "git".to_string(),
-                    exit_code: output.exit_code,
-                    stderr: output.stderr,
-                })
-            })?;
+            let output = git_stdout(output)?;
             let paths = output.fields().map(str::to_owned);
             if is_index {
                 let paths: Vec<String> = paths.collect();

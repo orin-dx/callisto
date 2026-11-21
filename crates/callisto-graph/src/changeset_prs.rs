@@ -16,7 +16,7 @@ pub fn changeset_pull_requests(
     let dir = Pathspec::literal(changesets_dir);
     // A Changesets v3 pre cycle's archive gains notes in version commits; their pull request is not the author's.
     let archive = Pathspec::excluded(&changesets_dir.join("pre"));
-    let format = LogEntry::format(["%s"]);
+    let format = LogEntry::format("%s");
     let args = [
         "log",
         "--no-show-signature",
@@ -42,7 +42,7 @@ pub fn changeset_pull_requests(
             output.redacted_stderr()
         ))
     })?;
-    Ok(changeset_prs(&log.log_entries::<1>()?))
+    Ok(changeset_prs(&log.log_entries()?))
 }
 
 /// The pull request number in a commit subject: `Merge pull request #12 from ...` or `Title (#12)`.
@@ -54,10 +54,10 @@ fn pull_request_of(subject: &str) -> Option<u64> {
     tail.rsplit_once("(#")?.1.parse().ok()
 }
 
-fn changeset_prs(log: &[LogEntry<'_, 1>]) -> BTreeMap<String, u64> {
+fn changeset_prs(log: &[LogEntry<'_>]) -> BTreeMap<String, u64> {
     let mut found = BTreeMap::new();
     for entry in log {
-        let Some(pr) = pull_request_of(entry.header[0]) else {
+        let Some(pr) = pull_request_of(entry.header) else {
             continue;
         };
         for path in &entry.files {
@@ -167,9 +167,9 @@ mod tests {
 
     /// Versioning deletes a released changeset and `callisto add` can reuse its name, so the file that exists now is
     /// the newest addition, not the oldest.
-    fn entry<'a>(subject: &'a str, files: &[&'a str]) -> LogEntry<'a, 1> {
+    fn entry<'a>(subject: &'a str, files: &[&'a str]) -> LogEntry<'a> {
         LogEntry {
-            header: [subject],
+            header: subject,
             files: files.to_vec(),
         }
     }
