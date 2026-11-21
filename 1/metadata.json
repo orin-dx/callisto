@@ -1,0 +1,87 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XSCKHJRAGQY6849RVWEHKT",
+  "session_id": "0c0daf57-0dfb-4727-b91c-93c9b13943db",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-21T00:51:58.53899Z",
+  "branch": "worktree-wp-dry-run-checkpoint",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/version_resume_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "db3962eeef76",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 66341,
+    "cache_read_tokens": 1456281,
+    "output_tokens": 8564,
+    "api_call_count": 19
+  },
+  "session_token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 66341,
+    "cache_read_tokens": 1456281,
+    "output_tokens": 8564,
+    "api_call_count": 19
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Fix a bug where `version --dry-run` with an interrupted-run checkpoint skips `resume_input_changes` (no permit) and could report another directory's plan, by running workspace/tree identity checks before the permit gate; test first at the binary boundary, ship as a PR with a patch changeset.",
+    "outcome": "No PR was opened. The bug as described could not be reproduced on current main (ac5637b): a dry run in a sibling workspace prints that workspace's own plan, not the sibling's. A regression test asserting E340 refusal on dry run was added but is uncommitted and failing; the source split was drafted in a script but the agent stopped and reported instead of finishing it.",
+    "learnings": {
+      "repo": [
+        "Interrupted-run checkpoints are checked by `resume_input_changes` in callisto-graph; the CLI calls it only when a permit exists, so `--dry-run` skips all checkpoint verification.",
+        "A real `version` in a sibling workspace refuses a foreign checkpoint with E340 (checkpoint belongs to another workspace); dry run currently exits 0 instead.",
+        "The plan a dry run reports in a sibling workspace comes from that workspace's own tree at the checkpoint commit, so it is not actually another directory's plan.",
+        "Integration tests for resume live in crates/callisto-cli/tests/version_resume_tests.rs and use helpers such as `repo`, `cargo_cascade`, `fake_tools`, `version` and `has_checkpoint`; a first failing run is forced via a flag file and fake cargo, producing E208.",
+        "The binary is invoked in tests via `env!(\"CARGO_BIN_EXE_callisto\")` with `--cwd <dir> --dry-run version`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/version.rs",
+          "finding": "The `resume_input_changes` call is gated on `permit.as_ref()`, so dry runs skip identity checks (HEAD, tags, Callisto version, workspace, tree)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "finding": "`resume_input_changes` mixes permit-free identity checks with permit-requiring scratch apply and file comparison; it could be split into `resume_identity_changes` plus the remainder, re-exported from commands/mod.rs."
+        }
+      ],
+      "workflow": [
+        "After EnterWorktree, Bash kept resolving to the shared checkout; re-entering the worktree by path fixed the working directory.",
+        "Verify the reported bug actually reproduces before fixing; here the reproduction contradicted the premise, so the agent stopped and reported rather than making an unrequested behaviour change.",
+        "The lead's rules call for lean local checks (crate tests plus lint) with GitHub CI doing the full run."
+      ]
+    },
+    "friction": [
+      "Bash resolved to the shared checkout instead of the worktree, forcing repeated fetch/reset and re-entry attempts.",
+      "Several redundant identical commands were run while working around the cwd problem.",
+      "The bug premise did not match observed behaviour, blocking the planned PR."
+    ],
+    "open_items": [
+      "Lead must decide whether dry run should refuse with E340 on a sibling-workspace checkpoint, via a permit-free `resume_identity_changes` split in callisto-graph.",
+      "The failing test `a_dry_run_refuses_a_checkpoint_from_a_sibling_workspace` is uncommitted in worktree wp-dry-run-checkpoint; keep it if the refusal is wanted, otherwise drop the worktree.",
+      "No patch changeset, lint or commit was made.",
+      "If the fix goes ahead, the draft edit script's changes to callisto-graph and callisto-cli sources need to be applied and verified; they were not confirmed to have landed."
+    ]
+  }
+}

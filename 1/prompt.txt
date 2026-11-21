@@ -1,0 +1,19 @@
+Bug fix PR off fresh origin/main, worktree wp-dry-run-checkpoint, trail #462. In crates/callisto-cli/src/commands/version.rs, a version --dry-run that finds an interrupted-run checkpoint skips resume_input_changes because there is no permit, so it can report another directory's plan (it writes nothing). The workspace and tree identity checks need no permit: run them before the permit gate so a dry run refuses or reports exactly as a real resume would. Test first at the binary boundary: a checkpoint from a sibling workspace, then version --dry-run, must not print that sibling's plan. Patch changeset written for users. Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: before building anything, check this is still a real problem. The original cause was a trimmed workspace path that let a run pick up a sibling's checkpoint, and #577 (S) fixed that by preserving path identity. A dry run also writes nothing. Write the failing test first on current origin/main. If you can't make version --dry-run report another directory's plan, stop, open no PR, and report "not reproducible after #577". Only fix it if the test fails on main.
+</cross-session-message>
