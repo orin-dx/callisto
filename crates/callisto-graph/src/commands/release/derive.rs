@@ -24,7 +24,7 @@ use super::provider::{
 };
 use crate::commands::registry_argv::npm_default_access;
 use crate::commands::release_decision::version_is_tagged;
-use crate::toposort::PublishEdgeFilter;
+use crate::toposort::PublishWaits;
 
 /// A package that is itself an npm platform package (its own package.json has
 /// `os`+`cpu`). An owner's attached platform manifests do not count.
@@ -225,31 +225,20 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
         owners,
     } = select_packages(workspace, decision)?;
     require_dependencies_selected(workspace, &selected, &package_ids)?;
-    let all_packages: Vec<_> = workspace.graph.packages().map(|package| package.id.clone()).collect();
-    let ecosystems: BTreeSet<_> = package_ids
-        .values()
-        .flatten()
-        .map(ReleasePackageId::ecosystem)
+    let distributions = selected
+        .iter()
+        .map(|(id, (package, _))| (id.clone(), package.id.clone()))
         .collect();
-    let publish_edges = PublishEdgeFilter::new(
-        &package_ids.keys().cloned().collect(),
-        &all_packages,
-        ecosystems,
-        |id: &callisto_model::PackageId, ecosystem| {
-            workspace
-                .graph
-                .dependencies_of(id)
-                .filter(|edge| edge_orders_in(edge, ecosystem, &package_ids))
-                .map(|edge| (edge.to.clone(), edge.kind))
-                .collect()
-        },
+    let publish_waits = PublishWaits::new(
+        &distributions,
+        &distribution_dependencies(workspace, &selected, &package_ids),
     )?;
 
     let git_remote = prepare_remote(workspace, &selected, artifact_policy, remote)?;
 
     let mut ops = Ops::default();
     build_publish_leaves(workspace, &selected, git_remote.as_ref(), &mut package_inputs, &mut ops)?;
-    link_publish_prerequisites(workspace, &selected, &package_ids, &publish_edges, &mut ops)?;
+    link_publish_prerequisites(&selected, &publish_waits, &mut ops)?;
     add_tags(&selected, &package_ids, &owners, &source, &mut ops)?;
     add_forge_releases(workspace, &selected, &owners, &mut ops)?;
     let artifact_slots = add_artifact_uploads(workspace, &selected, &owners, artifact_policy, &mut ops, diagnostics)?;
@@ -479,29 +468,40 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
     Ok(())
 }
 
-/// Whether `edge` takes part in `ecosystem`'s publish order: the dependent publishes from the declaring manifest's
-/// ecosystem, which is `ecosystem`, or the dependency has no distribution there, so the edge waits for every one of its
-/// distributions and counts in each ecosystem.
-fn edge_orders_in(
-    edge: &callisto_model::DepEdge,
-    ecosystem: callisto_model::Ecosystem,
-    package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
-) -> bool {
-    let publishes_in = |package, ecosystem| {
-        package_ids
-            .get(package)
-            .is_some_and(|ids| ids.iter().any(|id| id.ecosystem() == ecosystem))
-    };
-    let declared = crate::cascade::manifest_ecosystem(&edge.from_manifest);
-    publishes_in(&edge.from, declared) && (declared == ecosystem || !publishes_in(&edge.to, declared))
-}
-
-/// Replaces each publish leaf with prerequisites from selected dependency packages.
-fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
+/// Every `(dependent, dependency, kind)` wait between selected distributions.
+fn distribution_dependencies<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
     package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
-    publish_edges: &PublishEdgeFilter,
+) -> Vec<(ReleasePackageId, ReleasePackageId, DepKind)> {
+    let mut edges = Vec::new();
+    for (id, (package, _)) in selected {
+        for edge in workspace.graph.dependencies_of(&package.id) {
+            // Only the dependent's distribution in the declaring manifest's ecosystem waits.
+            let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
+            if id.ecosystem() != ecosystem {
+                continue;
+            }
+            // It waits for the dependency's distribution in that ecosystem, so a Cargo dependent follows the crate,
+            // not the npm package. No such distribution means the edge was resolved some other way: wait for all.
+            let dependency_ids = package_ids.get(&edge.to).map(Vec::as_slice).unwrap_or_default();
+            let native = dependency_ids
+                .iter()
+                .any(|dependency| dependency.ecosystem() == ecosystem);
+            for dependency in dependency_ids {
+                if !native || dependency.ecosystem() == ecosystem {
+                    edges.push((id.clone(), dependency.clone(), edge.kind));
+                }
+            }
+        }
+    }
+    edges
+}
+
+/// Replaces each publish leaf with prerequisites from the publishes of the distributions it waits for.
+fn link_publish_prerequisites(
+    selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
+    publish_waits: &PublishWaits,
     ops: &mut Ops,
 ) -> Result<(), GraphError> {
     let Ops {
@@ -514,42 +514,11 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
         ..
     } = ops;
 
-    // Replace each publish leaf with prerequisites from selected dependency
-    // packages, ordered by the shared publish edge filter.
-    for (id, (package, _)) in selected {
-        let mut prerequisites = BTreeSet::new();
-        for edge in workspace.graph.dependencies_of(&package.id) {
-            // The edge names the dependency's distribution in the declaring manifest's ecosystem, so a Cargo
-            // dependent waits for the dependency's crate, not for its npm package. No such distribution means the
-            // edge was resolved some other way, so it waits for all of them.
-            let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
-            if !publish_edges.allows(ecosystem, &package.id, &edge.to, edge.kind) {
-                continue;
-            }
-            // Likewise only the dependent's own distribution in that ecosystem waits.
-            if id.ecosystem() != ecosystem {
-                continue;
-            }
-            let dependency_ids = package_ids.get(&edge.to).map(Vec::as_slice).unwrap_or_default();
-            let touched: Vec<&ReleasePackageId> = dependency_ids
-                .iter()
-                .filter(|dependency_release_id| dependency_release_id.ecosystem() == ecosystem)
-                .collect();
-            let dependency_ids: Vec<&ReleasePackageId> = if touched.is_empty() {
-                dependency_ids.iter().collect()
-            } else {
-                touched
-            };
-            for dependency_release_id in dependency_ids {
-                prerequisites.extend(
-                    publishes_by_package
-                        .get(dependency_release_id)
-                        .into_iter()
-                        .flatten()
-                        .cloned(),
-                );
-            }
-        }
+    for id in selected.keys() {
+        let prerequisites: BTreeSet<_> = publish_waits
+            .of(id)
+            .flat_map(|dependency| publishes_by_package.get(dependency).into_iter().flatten().cloned())
+            .collect();
         for publish_id in publishes_by_package.get(id).into_iter().flatten() {
             let operation = operations.get(publish_id).expect("publish operation was constructed");
             let mut prerequisites = prerequisites.clone();
@@ -2244,35 +2213,86 @@ mod tests {
         );
     }
 
-    /// An edge to a package with no distribution in the declaring ecosystem waits for all of its distributions, so a
-    /// cycle through two such edges still fails with the cycle error naming the packages.
-    #[test]
-    fn a_cycle_through_edges_with_no_native_distribution_still_fails_with_a_cycle_error() {
-        let dir = repo_of(&[
-            ("Cargo.toml".to_owned(), "[workspace]\nmembers = [\"lib\", \"web\"]\nresolver = \"2\"\n".to_owned()),
-            ("package.json".to_owned(), r#"{"name":"root","private":true,"workspaces":["lib","web"]}"#.to_owned()),
+    /// Crates `a` and `b`, npm packages `c` and `d`: Cargo `a -> b -> c` (`a_table` holds `a`'s edge to `b`) and npm
+    /// `c -> d -> a`. `b -> c` and `d -> a` name a package with no distribution in the declaring ecosystem, so they
+    /// wait for its other distribution and close a loop no single ecosystem holds.
+    fn fallback_loop_repo(a_table: &str) -> tempfile::TempDir {
+        let cargo = |name: &str, table: &str| {
+            format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{table}")
+        };
+        let npm = |name: &str, dependencies: &str| {
+            format!(r#"{{"name":"{name}","version":"1.0.0","dependencies":{{{dependencies}}}}}"#)
+        };
+        let target = |name: &str, registry: &str| {
+            format!("[[package]]\nmatch = \"cargo/{name}\"\npublish-to = [\"{registry}\"]\n")
+        };
+        repo_of(&[
             (
-                "lib/Cargo.toml".to_owned(),
-                "[package]\nname = \"lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n[dependencies]\nweb = { path = \"../web\", version = \"1.0.0\" }\n".to_owned(),
+                "Cargo.toml".to_owned(),
+                "[workspace]\nmembers = [\"a\", \"b\", \"c\", \"d\"]\nresolver = \"2\"\n".to_owned(),
             ),
             (
-                "web/Cargo.toml".to_owned(),
-                "[package]\nname = \"web\"\nversion = \"1.0.0\"\nedition = \"2021\"\n".to_owned(),
+                "package.json".to_owned(),
+                r#"{"name":"root","private":true,"workspaces":["a","b","c","d"]}"#.to_owned(),
             ),
-            ("lib/package.json".to_owned(), r#"{"name":"lib","version":"1.0.0"}"#.to_owned()),
             (
-                "web/package.json".to_owned(),
-                r#"{"name":"web","version":"1.0.0","dependencies":{"lib":"^1.0.0"}}"#.to_owned(),
+                "a/Cargo.toml".to_owned(),
+                cargo(
+                    "a",
+                    &format!("{a_table}\nb = {{ path = \"../b\", version = \"1.0.0\" }}\n"),
+                ),
             ),
+            (
+                "b/Cargo.toml".to_owned(),
+                cargo("b", "[dependencies]\nc = { path = \"../c\", version = \"1.0.0\" }\n"),
+            ),
+            ("c/Cargo.toml".to_owned(), cargo("c", "")),
+            ("d/Cargo.toml".to_owned(), cargo("d", "")),
+            ("a/package.json".to_owned(), npm("a", "")),
+            ("b/package.json".to_owned(), npm("b", "")),
+            ("c/package.json".to_owned(), npm("c", r#""d":"^1.0.0""#)),
+            ("d/package.json".to_owned(), npm("d", r#""a":"^1.0.0""#)),
             (
                 "callisto.toml".to_owned(),
-                "[[package]]\nmatch = \"cargo/lib\"\npublish-to = [\"crates-io\"]\n\n[[package]]\nmatch = \"cargo/web\"\npublish-to = [\"npm\"]\n".to_owned(),
+                [("a", "crates-io"), ("b", "crates-io"), ("c", "npm"), ("d", "npm")]
+                    .map(|(name, registry)| target(name, registry))
+                    .join("\n"),
             ),
-        ]);
-        let decision = release(&[(Ecosystem::Cargo, "lib", "1.0.0"), (Ecosystem::Npm, "web", "1.0.0")]);
-        let error = derive(&dir, &decision).unwrap_err();
+        ])
+    }
+
+    fn fallback_loop_decision() -> ReleaseDecisionV1 {
+        release(&[
+            (Ecosystem::Cargo, "a", "1.0.0"),
+            (Ecosystem::Cargo, "b", "1.0.0"),
+            (Ecosystem::Npm, "c", "1.0.0"),
+            (Ecosystem::Npm, "d", "1.0.0"),
+        ])
+    }
+
+    /// A dev edge closing a loop through waits on other ecosystems' distributions is dropped, so the release plans.
+    #[test]
+    fn a_dev_edge_closing_a_loop_through_fallback_waits_is_dropped() {
+        let dir = fallback_loop_repo("[dev-dependencies]");
+        let (_, operations, _, _, _) = derive(&dir, &fallback_loop_decision()).unwrap();
+        assert_eq!(publish_waits(&operations, Ecosystem::Cargo, "a"), []);
+        assert_eq!(
+            publish_waits(&operations, Ecosystem::Cargo, "b"),
+            [(Ecosystem::Npm, "c".to_string())]
+        );
+        assert_eq!(
+            publish_waits(&operations, Ecosystem::Npm, "d"),
+            [(Ecosystem::Cargo, "a".to_string())]
+        );
+    }
+
+    /// A runtime loop through waits on other ecosystems' distributions fails with the cycle error naming the packages.
+    #[test]
+    fn a_runtime_loop_through_fallback_waits_fails_with_a_cycle_error() {
+        let dir = fallback_loop_repo("[dependencies]");
+        let error = derive(&dir, &fallback_loop_decision()).unwrap_err();
         assert!(
-            matches!(&error, GraphError::Cycle { cycle } if cycle.len() == 3),
+            matches!(&error, GraphError::Cycle { cycle } if cycle.len() == 5),
             "{error:?}"
         );
     }

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use callisto_model::{DepKind, Ecosystem, PackageId};
+use callisto_model::{DepKind, PackageId, ReleasePackageId};
 use michi_graph::{Graph, GraphBuilder, Order, UnknownTargets, Violation, Violations};
 
 use crate::error::GraphError;
@@ -9,7 +9,7 @@ use crate::error::GraphError;
 /// whose [`DepKind`] appears in `ordering_kinds` as ordering constraints. Different callers
 /// need different kinds to count: cascade/version-bump propagation only cares about
 /// `Runtime`/`Build`/`Optional` (a `Dev`-only change correctly shouldn't force a consumer's
-/// version to bump), while publish ordering ([`PublishEdgeFilter`]) also needs
+/// version to bump), while publish ordering ([`PublishWaits`]) also needs
 /// `Dev`, since `cargo publish`'s own local verification build needs every declared
 /// dependency — dev included — resolvable. This function has no opinion on which kinds
 /// matter; the caller states it explicitly via `ordering_kinds`.
@@ -62,8 +62,8 @@ where
 
 /// One loop to show for a failed sort, each package followed by the one that depends on it and the first repeated at
 /// the end. Members are distinct and every edge points at a member, so a cycle is the only thing validation reports.
-fn cycle_of(violations: &Violations<PackageId>) -> Vec<PackageId> {
-    let mut cycle: Vec<PackageId> = violations
+fn cycle_of<K: Clone>(violations: &Violations<K>) -> Vec<K> {
+    let mut cycle: Vec<K> = violations
         .iter()
         .find_map(|violation| match violation {
             Violation::Cycle(cycle) => Some(cycle.path().iter().rev().cloned().collect()),
@@ -86,77 +86,62 @@ pub const CASCADE_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Buil
 /// dependency -- `[dev-dependencies]` included -- resolvable from the registry.
 pub const PUBLISH_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, DepKind::Optional, DepKind::Dev];
 
-/// Which dependency edges order a publish: every [`PUBLISH_ORDERING_KINDS`] edge,
-/// except a `Dev` edge between two packages of the same cycle.
+/// The waits between a release's distributions: each distribution's publish follows the distributions it depends on.
 ///
-/// Publish waits are per distribution, so cycles are looked for per ecosystem: each
-/// ecosystem's graph holds only the edges `outgoing_edges` reports for it, and opposite
-/// edges in two ecosystems are not a cycle.
-///
-/// Mutual dev-only dependencies (cross-integration tests) are legitimate, so a
-/// `Dev` edge inside a cyclic component of its ecosystem is dropped; a `Dev` edge
-/// anywhere else still orders. A cycle that survives with every `Dev` edge excluded is
-/// a real `Runtime`/`Build`/`Optional` cycle and fails construction with
-/// [`GraphError::Cycle`]. Used by release derivation.
-pub struct PublishEdgeFilter {
-    dev_cycles: BTreeMap<Ecosystem, Vec<HashSet<PackageId>>>,
+/// Built once from every dependency edge between distributions, and the cycle check, the dev edges it drops and the
+/// waits it returns all come from that one graph. Mutual dev-only dependencies (cross-integration tests) are
+/// legitimate, so a `Dev` edge between two distributions of the same cycle is dropped; a `Dev` edge anywhere else
+/// still waits. A cycle that survives with every `Dev` edge excluded is a real `Runtime`/`Build`/`Optional` cycle and
+/// fails construction with [`GraphError::Cycle`], naming the distributions' packages.
+pub struct PublishWaits {
+    waits: BTreeMap<ReleasePackageId, BTreeSet<ReleasePackageId>>,
 }
 
-impl PublishEdgeFilter {
-    /// `outgoing_edges(package, ecosystem)` is the edges that order `ecosystem`'s publishes.
-    pub fn new<F>(
-        subset: &HashSet<PackageId>,
-        all_packages: &[PackageId],
-        ecosystems: impl IntoIterator<Item = Ecosystem>,
-        outgoing_edges: F,
-    ) -> Result<Self, GraphError>
-    where
-        F: Fn(&PackageId, Ecosystem) -> Vec<(PackageId, DepKind)>,
-    {
-        let mut dev_cycles = BTreeMap::new();
-        for ecosystem in ecosystems {
-            let edges = |id: &PackageId| outgoing_edges(id, ecosystem);
-            toposort_impl(subset, all_packages, CASCADE_ORDERING_KINDS, edges)?;
-            dev_cycles.insert(ecosystem, cyclic_sccs(subset, edges, PUBLISH_ORDERING_KINDS));
+impl PublishWaits {
+    /// `distributions` pairs each distribution with its package; `edges` are `(dependent, dependency, kind)` between
+    /// them. Kinds outside [`PUBLISH_ORDERING_KINDS`] do not wait.
+    pub fn new(
+        distributions: &BTreeMap<ReleasePackageId, PackageId>,
+        edges: &[(ReleasePackageId, ReleasePackageId, DepKind)],
+    ) -> Result<Self, GraphError> {
+        let mut builder = GraphBuilder::<ReleasePackageId, DepKind>::with_capacity(distributions.len());
+        let nodes: BTreeMap<_, _> = distributions.keys().map(|id| (id, builder.node(id.clone()))).collect();
+        for (dependent, dependency, kind) in edges {
+            if let Some(node) = nodes.get(dependent) {
+                builder.depends_on(*node, dependency.clone(), *kind);
+            }
         }
-        Ok(PublishEdgeFilter { dev_cycles })
+        let graph = builder.build(UnknownTargets::Error);
+        graph
+            .validate_filtered(|edge| CASCADE_ORDERING_KINDS.contains(edge.kind), Order::Key)
+            .map_err(|violations| GraphError::Cycle {
+                cycle: cycle_of(&violations)
+                    .iter()
+                    .filter_map(|id| distributions.get(id).cloned())
+                    .collect(),
+            })?;
+        let dev_cycles: Vec<BTreeSet<ReleasePackageId>> = graph
+            .cycles(|edge| PUBLISH_ORDERING_KINDS.contains(edge.kind), Order::Key)
+            .into_iter()
+            .map(|cycle| cycle.members().iter().cloned().collect())
+            .collect();
+        let mut waits: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+        for (dependent, dependency, kind) in edges {
+            let dropped = *kind == DepKind::Dev
+                && dev_cycles
+                    .iter()
+                    .any(|cycle| cycle.contains(dependent) && cycle.contains(dependency));
+            if PUBLISH_ORDERING_KINDS.contains(kind) && !dropped {
+                waits.entry(dependent.clone()).or_default().insert(dependency.clone());
+            }
+        }
+        Ok(PublishWaits { waits })
     }
 
-    /// Whether the `from -> to` edge of `kind` is a publish-ordering constraint in `ecosystem`.
-    pub fn allows(&self, ecosystem: Ecosystem, from: &PackageId, to: &PackageId, kind: DepKind) -> bool {
-        if !PUBLISH_ORDERING_KINDS.contains(&kind) {
-            return false;
-        }
-        kind != DepKind::Dev
-            || !self
-                .dev_cycles
-                .get(&ecosystem)
-                .into_iter()
-                .flatten()
-                .any(|component| component.contains(from) && component.contains(to))
+    /// The distributions `distribution`'s publish waits for.
+    pub fn of(&self, distribution: &ReleasePackageId) -> impl Iterator<Item = &ReleasePackageId> {
+        self.waits.get(distribution).into_iter().flatten()
     }
-}
-
-/// Returns every non-trivial strongly-connected component (size > 1, or a
-/// single self-looping node) of `subset` under the edges `ordering_kinds`
-/// selects — the full member set, not just what's left after a failed
-/// toposort. Used by [`PublishEdgeFilter`] to scope a Dev-cycle
-/// exclusion to exactly the packages that participate in a cycle, rather
-/// than excluding Dev edges across the whole subset.
-pub fn cyclic_sccs<F>(
-    subset: &HashSet<PackageId>,
-    outgoing_edges: F,
-    ordering_kinds: &[DepKind],
-) -> Vec<HashSet<PackageId>>
-where
-    F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
-{
-    let members: BTreeSet<PackageId> = subset.iter().cloned().collect();
-    member_graph(&members, &outgoing_edges)
-        .cycles(|edge| ordering_kinds.contains(edge.kind), Order::Key)
-        .into_iter()
-        .map(|cycle| cycle.members().iter().cloned().collect())
-        .collect()
 }
 
 #[cfg(test)]
@@ -187,48 +172,54 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cyclic_sccs_finds_only_nontrivial_components() {
-        let pkg_a = PackageId::parse("pkg-a").unwrap();
-        let pkg_b = PackageId::parse("pkg-b").unwrap();
-        let pkg_c = PackageId::parse("pkg-c").unwrap();
-        let pkg_d = PackageId::parse("pkg-d").unwrap();
+    fn dist(ecosystem: &str, name: &str) -> ReleasePackageId {
+        format!("{ecosystem}/{name}").parse().unwrap()
+    }
 
-        // pkg-a <-> pkg-b: a real 2-node cycle. pkg-c -> pkg-d: acyclic, no
-        // cycle at all.
-        let subset: HashSet<_> = vec![pkg_a.clone(), pkg_b.clone(), pkg_c.clone(), pkg_d.clone()]
-            .into_iter()
+    fn waits(edges: &[(ReleasePackageId, ReleasePackageId, DepKind)]) -> Result<PublishWaits, GraphError> {
+        let distributions = edges
+            .iter()
+            .flat_map(|(from, to, _)| [from, to])
+            .map(|id| (id.clone(), PackageId::parse(id.name()).unwrap()))
             .collect();
-
-        let sccs = cyclic_sccs(
-            &subset,
-            |id| {
-                if id == &pkg_a {
-                    vec![(pkg_b.clone(), DepKind::Dev)]
-                } else if id == &pkg_b {
-                    vec![(pkg_a.clone(), DepKind::Dev)]
-                } else if id == &pkg_c {
-                    vec![(pkg_d.clone(), DepKind::Dev)]
-                } else {
-                    vec![]
-                }
-            },
-            &[DepKind::Dev],
-        );
-
-        assert_eq!(sccs.len(), 1, "expected exactly one cyclic component; got {sccs:?}");
-        assert_eq!(sccs[0], vec![pkg_a, pkg_b].into_iter().collect::<HashSet<_>>());
+        PublishWaits::new(&distributions, edges)
     }
 
     #[test]
-    fn cyclic_sccs_includes_self_loop() {
-        let pkg_a = PackageId::parse("pkg-a").unwrap();
-        let subset: HashSet<_> = vec![pkg_a.clone()].into_iter().collect();
+    fn a_dev_edge_waits_unless_it_closes_a_cycle() {
+        let (a, b, c, d) = (
+            dist("cargo", "a"),
+            dist("npm", "b"),
+            dist("cargo", "c"),
+            dist("cargo", "d"),
+        );
+        let waits = waits(&[
+            (a.clone(), b.clone(), DepKind::Dev),
+            (b.clone(), a.clone(), DepKind::Runtime),
+            (c.clone(), d.clone(), DepKind::Dev),
+            (d.clone(), d.clone(), DepKind::Dev),
+        ])
+        .unwrap();
+        assert_eq!(waits.of(&a).count(), 0);
+        assert_eq!(waits.of(&b).collect::<Vec<_>>(), [&a]);
+        assert_eq!(waits.of(&c).collect::<Vec<_>>(), [&d]);
+        assert_eq!(waits.of(&d).count(), 0);
+    }
 
-        let sccs = cyclic_sccs(&subset, |id| vec![(id.clone(), DepKind::Dev)], &[DepKind::Dev]);
-
-        assert_eq!(sccs.len(), 1);
-        assert_eq!(sccs[0], vec![pkg_a].into_iter().collect::<HashSet<_>>());
+    #[test]
+    fn a_runtime_cycle_names_the_packages() {
+        let (a, b) = (dist("cargo", "a"), dist("npm", "b"));
+        let error = waits(&[(a.clone(), b.clone(), DepKind::Build), (b, a, DepKind::Optional)])
+            .err()
+            .unwrap();
+        let a_b = [PackageId::parse("a").unwrap(), PackageId::parse("b").unwrap()];
+        match error {
+            GraphError::Cycle { cycle } => {
+                assert_eq!(cycle.len(), 3, "{cycle:?}");
+                assert!(cycle.iter().all(|package| a_b.contains(package)), "{cycle:?}");
+            }
+            other => panic!("expected a cycle, got {other:?}"),
+        }
     }
 
     /// The Kahn pass this module used before michi-graph, kept as the oracle: `None` when it cannot order everything.
