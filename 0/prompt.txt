@@ -1,0 +1,20 @@
+Small correctness check, then fix only if users see it. Worktree wp-cascade-reason-final-version, trail #462. In crates/callisto-graph/src/cascade.rs (about line 578), BumpReason::Cascade.dependency_to records the dependency version current when the cascade step ran, which can be an intermediate version that convergence later changes (for example a fixed group realigning from 1.0.1 to 2.0.0). First find whether dependency_to reaches user-visible output: changelog dependency-update lines, the release PR reason column, version --dry-run or --format json output (git grep dependency_to and follow it). If it does, write a failing test with a fixed group that realigns after a cascade step, asserting the final version appears, then fix by setting dependency_to from the converged final target (ConvergedTargets) when reasons are finalised, using existing types. Patch changeset written for users (changelogs and release PRs name the dependency version actually released). If it is never shown to users, stop, report, and open no PR. Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: good fix. The gpg and github.com failures are sandbox restrictions, which other sessions handled by re-running just those commands with the sandbox disabled for that call (dangerouslyDisableSandbox: true). Do the same: make the signed commit (never gpgsign=false), run git fetch origin, merge origin/main, push HEAD:refs/heads/<branch>, check git ls-remote, then entire trail link 462 and entire trail ci-pr. Run just doc-check before pushing. If the permission prompt or classifier refuses, stop and tell me.
+</cross-session-message>
