@@ -1,5 +1,219 @@
 # callisto-cli
 
+## 0.22.0
+
+_2026-11-21 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.21.1...callisto@0.22.0)_
+
+### Minor Changes
+
+- **Shorter release configuration.** List your build targets once and let Callisto name each asset, and drop `forge-repository`.
+
+  - **How to adopt:** replace repeated `[[release.artifact]]` blocks for the product with `targets = [...]` and `asset-name = "tool-{target}.tar.gz"` under `[release]`. Keep `[[release.artifact]]` for another package's artifact or an irregular name such as a Windows `.zip`.
+  - `forge-repository` is optional: Callisto uses the `origin` GitHub repository, which every release already required it to equal.
+  - `callisto init` now writes `targets` and one `asset-name` template, named after the single binary or after the package when it has several.
+  - **Limits:** `{target}` is the only placeholder. A target named by both `targets` and a `[[release.artifact]]` of the product is E197.
+
+  **Breaking:** `callisto init` no longer asks for or accepts `--forge-repository`.
+
+  **Action:** drop `--forge-repository` from scripted `init` calls.
+- **Generated release workflows publish only what a credential-free job built.** Package scripts, build backends and crate builds no longer run in the job that holds your registry tokens.
+
+  - The publish job uploads exactly the Python files and npm tarballs that a job without credentials built and sealed.
+  - Crates publish with `cargo publish --no-verify` after a credential-free job compiled every crate of the release, including a Cargo workspace under a directory such as `native/` with no root manifest.
+  - The simple workflow now has `version-pr`, `package` and `execute` jobs.
+  - The build-matrix workflow gains `attest`, `package-cargo` and `pack-npm` jobs.
+  - Only `execute` holds secrets, and only the attestation job holds an OIDC token without checking out your code.
+  - npm packages are packed by their workspace's own package manager, so `workspace:` and `catalog:` ranges are rewritten in the published tarball.
+  - A local `callisto release` still verifies crates and packs in place, with registry credentials withheld from the build.
+
+  **Breaking:** npm publishes ran the `prepublishOnly`, `publish` and `postpublish` hooks. They now run `npm publish <tarball> --ignore-scripts`, so those hooks no longer run, and `prepack` and `prepare` run in the pack job, which has no registry credentials. Move work that must run at publish time into `prepack` or a step of your own after `execute`.
+
+  **Breaking:** the simple workflow published whenever an untagged version was merged. It now publishes only when a push adds or changes the release decision file. Release through a push that adds or changes that file.
+
+  **Breaking:** an npm or PyPI publish that is not sealed in the artifact manifest used to proceed. It now fails with E306 before anything is published. Regenerate the workflow so the credential-free job seals it.
+
+  **Breaking:** `npm publish <tarball>` does not read a registry set in `.yarnrc.yml` or `bunfig.toml`, and Yarn and Bun token settings are not used either. A yarn workspace whose `.yarnrc.yml` sets `npmPublishRegistry` or `npmRegistryServer` (at the top level or under `npmScopes`), or a bun workspace whose `bunfig.toml` sets a registry, now fails with E168 before anything is published. Move the registry to `publishConfig.registry` in your package's `package.json`, or to `.npmrc`, and keep the publish token in `NPM_TOKEN`.
+
+  **Action:** delete `.github/workflows/callisto-release.yml`, regenerate it with `callisto init --workflow`, and close any stray release PR it opened. Yarn and Bun users: move the registry to `publishConfig.registry` or `.npmrc`. Move work from `prepublishOnly`, `publish` or `postpublish` into `prepack` or a step after `execute`.
+- **Changesets 3.x prerelease cycles work.** A repository mid-cycle with the `pre.json` that `@changesets/cli` 3.x writes (only `mode` and `tag`) now versions, reruns and exits instead of failing with E114.
+
+  - Applied changesets move to `.changeset/pre/`, as Changesets v3 does, and are released together at `pre exit`.
+  - `pre.json` is written back in the shape it was read, v2 or v3, and keeps keys Callisto does not know. A cycle Callisto starts with `pre enter` still writes v2.
+  - The E114, E115 and E243 help no longer suggests deleting `pre.json` and re-entering, which would drop a cycle's archived notes.
+- **`status --since <ref>` catches a pull request that forgot its changeset.** Run `callisto status --check --since origin/main` in CI to fail when a package changed on the branch and no changeset names it.
+
+  - A package whose bump is inferred from commits passes without one.
+  - A change that needs no release takes a changeset with severity `none`.
+- **Dry-run refusals share one error code, and a no-op flag is gone.** `--dry-run` on a command that cannot preview now always fails with `E309`, naming the command.
+
+  - Why it matters: one code to match instead of five, and fewer codes to keep stable.
+  - How to adopt it: match `E309` where you matched `E216`, `E217`, `E218` or `E282`.
+  - Limits: the message and fix text now name the command, for example `release plan refuses --dry-run`.
+
+  **Breaking:** `callisto version --refresh-lockfiles` is removed. It did nothing, since lockfiles refresh by default. Remove the flag from scripts; use `--no-refresh-lockfiles` to skip the refresh.
+
+  **Breaking:** `E216`, `E217`, `E218` and `E282` are retired and no longer emitted. `release artifact-manifest`, `release plan`, `release execute` and `release-pr commit-plan` with `--dry-run` now fail with `E309`, as `release build-python`, `release pack-npm` and `release package-cargo` already did.
+
+  **Action:** update scripts that match `E216`, `E217`, `E218` or `E282` to match `E309`, and drop `--refresh-lockfiles` from `version` calls.
+- **Release PRs open for releases inferred from commits.** A package with `release-trigger = "auto"` now gets a release PR from its commits alone; it no longer needs a changeset to be released.
+
+  - `release-pr decide` opens a PR whenever `callisto version` would version a package, after groups and dependents.
+  - A changeset that cannot be parsed now fails `release-pr decide` with the error `version` reports, instead of a green run that releases nothing.
+  - `status` no longer warns `inferred-release-without-changeset`; that diagnostic code is gone.
+
+  **Scripting:** `version --emit-decision` writes decision schema 3, which adds `consumedChangesets`. Release verification (E165) checks that the release commit deletes exactly those changesets. Schema 1 and 2 decisions still read.
+- **`callisto init` migrates a Changesets config.**
+  Switch an `@changesets/cli` 2.x or 3.x repository to Callisto without rewriting its groups or release branch by hand.
+
+  - **Why it matters:** `init` reads `.changeset/config.json` and reports every setting it did not carry over, so none goes silently inert.
+  - **How to adopt:** run `callisto init` in the repository.
+    - Translated:
+      - `fixed` becomes `[[fixed-group]]` entries, with globs expanded to the npm packages that exist now.
+      - `baseBranch` becomes the branch filter of the generated release workflow.
+    - Reported, not translated:
+      - `linked`, `ignore` and `updateInternalDependencies`.
+      - Any other non-empty key, such as `changelog` or `commit`.
+  - **Limits:**
+    - Add packages created after `init` to the fixed groups by hand.
+    - A fixed group that uses negation (`!`), braces, character classes or extglobs is not written: the warning gives the block to paste once you have checked its members.
+    - `linked` is not translated: a Callisto linked group bumps every member on each release, while Changesets bumps only members with changesets.
+
+  **Action:** if `access` is `restricted` or absent and a scoped npm package has no `publishConfig.access`, `init` refuses (E342) unless you pass `--yes`, because Callisto publishes such packages as public. Set `publishConfig.access` in each listed package.json, or pass `--yes`.
+- **Peer dependents now get a patch, not a major.** An out-of-range peer-dependency bump releases the dependent with `cascade.bump-severity` (patch by default), matching Changesets v3.
+
+  **Breaking:** `cascade.peer-escalation` now defaults to `false`. Before, an out-of-range peer bump from a minor or major source released the dependent as a major. Now it gets `bump-severity`. To keep the old behavior, set `peer-escalation = true` under `[cascade]`, or add an explicit major changeset for the dependent.
+- **Release pull requests run prerelease cycles.** After `callisto pre enter <tag>`, the release workflow keeps a release PR open: each new changeset, or new commit to a `release-trigger = "auto"` package, opens or updates it for the next prerelease, and after `callisto pre exit` it releases the stable versions.
+
+  - `release-pr decide` no longer refuses pre mode, so E318 is retired.
+  - A cycle with nothing new since its last prerelease needs no release PR.
+  - Works with both Changesets v2 and v3 `pre.json` state.
+- **Each registry has one name, used in both `[registries]` and `publish-to`.** You configure crates.io as `[registries.crates-io]`, the same name you publish to, and a mistyped registry kind is caught when the config loads instead of during a release.
+
+  - **How to adopt:** `crates-io`, `npm` and `pypi` always exist. Add `[registries.crates-io]`, `[registries.npm]` or `[registries.pypi]` only to change a setting such as `confirm-timeout`; `kind` can be left out.
+  - **Limits:** a custom registry with `kind = "npm"` or `kind = "pypi"` cannot be named in `publish-to` yet.
+  - **Limits:** a custom npm registry's `url` only approves a package's `publishConfig.registry`.
+
+  **Breaking:** `[registries.cratesIo]` used to configure crates.io. It now fails when the config loads with E325, and the message names the new spelling. Rename it to `[registries.crates-io]`.
+
+  **Breaking:** `crates-io`, `npm` or `pypi` given another `kind` (for example `[registries.npm] kind = "cargo"`) used to load and then fail during a release. It now fails when the config loads with E334. Remove the `kind`, or give a custom registry another name.
+
+  **Breaking:** A registry named `none` or `github-release`, or with characters other than letters, digits, `-` and `_`, used to load. It now fails with E325. Rename the registry.
+
+  **Breaking:** `publish-to = ["nuget"]` used to load and then fail during a release. It now fails when the config loads with E330. Remove `nuget` from `publish-to`.
+
+  **Breaking:** A release plan saved by an earlier version used to be read. It is now refused with E215. Run `callisto release plan` again.
+
+  **Action:** Rename `[registries.cratesIo]` to `[registries.crates-io]` and remove `nuget` from `publish-to` before upgrading.
+- **Publish to a private Cargo registry.** Name a `kind = "cargo"` registry in `publish-to` and Callisto publishes and checks that crate there instead of on crates.io.
+
+  - **Why it matters:** crates for an internal registry can now be released with the same flow as every other package.
+  - **How to adopt:**
+    - Declare `[registries.<name>]` with `kind = "cargo"`.
+    - Define its URL in `.cargo/config.toml`.
+    - Set `publish-to = ["<name>"]` on the package.
+    - Give the release job `CARGO_REGISTRIES_<NAME>_TOKEN` (the name upper-cased, `-` as `_`).
+    - Callisto then runs `cargo publish --registry <name>` and `cargo info --registry <name>`.
+  - **Limits:** a `url` on a Cargo registry is still rejected, because Cargo takes the URL from `.cargo/config.toml`. A name that is not a `kind = "cargo"` registry fails with E330.
+- **`[[package-set]]` is folded into `[[package]]`.** One table now takes an exact name or a glob, and every field, `pre-major-inference` included, applies the same either way.
+
+  - Why it matters: `pre-major-inference` on a `[[package-set]]` was ignored; on a glob `[[package]]` it now takes effect.
+  - How to adopt it: rename each `[[package-set]]` to `[[package]]`; its `match` already holds a glob. A `match` with any of `*?[]{}` is a glob.
+  - Limits:
+    - An exact rule wins over any glob, then the first glob in declaration order. Fields are not merged across rules.
+    - A renamed `match` with no glob character is now exact. It outranks globs, and for a private npm workspace root it makes that root a package.
+    - `previous-tag-templates` names one package's old tags, so a glob that sets it is E338.
+
+  **Breaking:** `[[package-set]]` is no longer a key. A `callisto.toml` that still has one fails with E325 and a message telling you to rename it.
+
+  **Breaking:** the `package-set-matched-nothing` diagnostic code is gone. A glob that matches no package now reports `package-rule-matched-nothing`, the code exact rules already used.
+
+  **Action:** rename `[[package-set]]` to `[[package]]` in `callisto.toml`, and match `package-rule-matched-nothing` in anything that read `package-set-matched-nothing` from `--json` output.
+
+### Patch Changes
+
+- **Retrying `version` finishes when its emitted decision is inside the workspace.** A run that wrote `--emit-decision` or `--emit-preview` into `.changeset` and was then interrupted no longer refuses its own retry with `E340`.
+
+  - A hand edit to that file after the interruption is still refused.
+- **Package directories with unusual names release correctly.** A package directory named with `*`, `?` or leading spaces is now read as exactly that directory.
+
+  - Commit inference and the version commit no longer pick up a sibling such as `packages/odd-other` for a package in `packages/odd*`.
+  - A commit message containing the U+001E control character no longer stops inference with `E026`.
+  - Resuming an interrupted `version` run in a workspace directory with leading or trailing spaces resumes that workspace, not a similarly named sibling.
+- **Large pnpm workspaces load much faster.** Relative `workspace:../path` dependencies are now resolved through one directory index instead of a scan per dependency.
+
+  - At 800 packages with relative `workspace:` paths, `status` drops from about 4.9 s to 0.6 s, `version --dry-run` from 7.6 s to 0.8 s and `release --dry-run` from 6.3 s to 0.9 s.
+  - No configuration change is needed. Dependency edges and warnings are unchanged.
+- **`release-pr` JSON arguments report where a failure came from.** A relative `--decision` or `--snapshot` file is now read relative to `--cwd`, and a bad file no longer looks like a usage mistake.
+
+  - Malformed inline or stdin JSON is still `E281`, exit 2, naming the flag.
+  - A malformed file is `E238`, exit 1, naming the file; an unreadable file is `E213`.
+  - `compose-pr-body --preview` follows the same rule: a malformed preview file is `E238`, exit 1, instead of `E281`.
+
+  **Scripting:** treat exit 1 from a file argument as a data problem, not a bad invocation.
+- **Fixed groups no longer leak provisional versions into dependency ranges.** When a fixed group aligned its members to a lower version than a member's own bump, a dependent's requirement could be rewritten to the provisional version, widening a range, or rejected (E319) for a version that was never released.
+
+  - Rewrites and E319 now follow the group's final aligned versions, for Cargo, npm and Python.
+  - If a run aborted with E319 naming a version your fixed group never released, re-run it.
+- **Dual-published packages no longer hit a false cycle error.** A release of packages published to both Cargo and npm now plans when their dependencies point opposite ways in the two ecosystems.
+
+  - Why it matters: crate `a` depending on crate `b`, with npm `b` depending on npm `a`, failed with `E104` although each registry orders cleanly.
+  - Limits: a runtime, build or optional cycle among the published crates and packages, including through a dependency published only to the other registry, still fails with `E104`.
+- **Tokenless PyPI publishing works when `PYPI_TOKEN` is empty.** An empty PyPI credential is no longer handed to `twine`, so it falls back to trusted publishing (OIDC) instead of failing on empty credentials.
+
+  - Why it matters: workflows that map `PYPI_TOKEN` from an unset or blank secret now publish through trusted publishing.
+  - How to adopt: configure a trusted publisher on PyPI and leave `PYPI_TOKEN` unset or empty.
+- **Generated release workflows carry any valid branch name.** `callisto init` no longer truncates a default branch such as `release/next` to `next`, and no longer breaks the workflow YAML for branch names containing `,`, `#`, `]` or similar.
+
+  - **Why it matters:** the push trigger and the action `branch` input now name the real default branch, so version PRs target the right base.
+  - When init skips the workflow (for example, the release tag cannot be resolved), `callisto init --workflow` now adds just the workflow to an initialized workspace and leaves `callisto.toml` untouched. Before, it refused with E190.
+  - **Limits:** generated branch names are always double-quoted in the workflow; `+` and `!` are escaped in the trigger filter.
+- **Repositories with many foreign release tags on one commit are much faster.** When a package took over a name that another package once held, `status`, `version` and `release` no longer repeat the same history lookups for every tag on that commit.
+
+  - At 50 such tags, `status` drops from 304 helper processes and about 3.0 s to 17 processes and 0.4 s. The count no longer grows with the number of tags.
+  - No configuration change is needed. The tags are still reported as owned by another package, and the choice of last tag is unchanged.
+- **The release preview links every change to its pull request.** A changeset whose file name holds non-ASCII characters or quotes, or whose commit subject holds a control character, no longer loses its pull request link in the release PR body and `version` preview.
+- **Python requirements on an epoch version keep the epoch.** Releasing a Python package that sits in a PEP 440 epoch no longer rewrites a dependent's `>=2!0.4.8` to `>=0.4.9`, which silently accepted every epoch-0 version such as 99.0.0.
+
+  - **Why it matters:** the rewritten range now admits the new release and still rejects the versions the original rejected.
+  - `==`, `~=`, `>=` and `>=X,<Y` requirements write `N!` on every bound, including the upper bound.
+  - **Limits:** a Poetry caret or tilde has no epoch form, so one that needs rewriting for an epoch release fails the run with E319.
+- **The build-matrix release workflow now passes `NPM_TOKEN` and `PYPI_TOKEN` to npm and twine.** A token-based npm or PyPI publish from that workflow now authenticates, and a workflow with no token keeps working with trusted publishing.
+
+  - `NPM_TOKEN` becomes an `.npmrc` entry that reads it, and `PYPI_TOKEN` becomes the twine username and password, as the simple workflow already did.
+  - An unset or empty secret configures nothing, so npm and twine fall back to OIDC.
+  - Tokenless publishing for npm and PyPI is documented in `docs/publishing.md`. npm trusted publishing needs Node 22.14 or newer and npm 11.5.1 or newer, and hosted OIDC publishing is not yet verified against the real registries.
+- **A package published to both crates.io and npm no longer waits on the other registry's dependencies.** A Cargo-only dependency now orders only the package's crate, and an npm-only dependency only its npm package, so one registry's publish is not held back by the other's.
+- **`version --dry-run` refuses where `version` would**
+
+  A dry run now predicts the real run when an interrupted run left a checkpoint.
+
+  - Why it matters: a dry run used to report a plan even when the checkpoint came from another workspace, or `HEAD`, the tags or Callisto had changed, where `version` refuses with E340.
+  - Limits: a dry run still does not compare the files the interrupted run wrote, since it writes nothing.
+- **Flit packages report their version.** A Flit `[tool.flit.metadata]` version is now read wherever a PEP 621 or Poetry version is, so a Flit project is no longer treated as having no version.
+- **Prerelease reruns keep new work.** In a pre cycle, a commit or group change that arrives after a changeset was already applied now releases the next prerelease instead of being dropped.
+
+  - The next prerelease keeps the severity the earlier changeset set, so a major cycle stays `2.0.0-beta.N`.
+  - Fixed and linked group members and dependents of such a package are bumped with it.
+  - A rerun with nothing new still plans nothing.
+- **Release and registry lookups no longer fail when a GitHub or PyPI response body contains a blank line.** Such a reply, for example indented JSON, is now read whole instead of being cut at the last blank line.
+
+  - **Why it matters:** the truncated body failed to parse, so the lookup errored instead of reporting the real state.
+  - **How to adopt:** nothing to do; upgrade.
+- **Equivalent package names are rejected as duplicates.** Two PyPI projects such as `My_Pkg` and `my-pkg`, or two crates such as `foo-bar` and `foo_bar`, can no longer both load and publish under one registry name.
+
+  - **Why it matters:** a registry treats these as one project, so the second upload and its tag could never be valid.
+  - Selectors follow the same rule: `pypi/my-pkg` now selects a package declared as `My_Pkg`, and `[[package]]` rules match the same way.
+  - **Limits:** glob patterns such as `pypi/my-*` still match the spelling in the manifest.
+
+  **Action:** if a workspace fails with E100 after upgrading, rename one of the two packages.
+- **An interrupted `version` run resumes only with its own workspace's plan.** Running `version` again after an interruption now refuses with `E340` if the plan would come from any directory other than this workspace's recorded tree, instead of writing another workspace's bump, notes and changelog here.
+
+  - Delete the checkpoint ref named in the error and follow the `E121` steps, as for any refused resume.
+- Dependency updates
+  - `callisto-graph` → `0.22.0`
+  - `callisto-manifests` → `0.22.0`
+  - `callisto-model` → `0.22.0`
+
 ## 0.21.1
 
 _2026-11-16 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.21.0...callisto@0.21.1)_
