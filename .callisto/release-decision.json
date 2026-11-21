@@ -1,9 +1,9 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "entries": [
     {
       "package": "cargo/callisto-cli",
-      "targetVersion": "0.21.1",
+      "targetVersion": "0.22.0",
       "reasons": [
         {
           "kind": "changeset"
@@ -12,7 +12,7 @@
     },
     {
       "package": "cargo/callisto-fixtures",
-      "targetVersion": "0.21.1",
+      "targetVersion": "0.22.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -22,7 +22,7 @@
     },
     {
       "package": "cargo/callisto-graph",
-      "targetVersion": "0.21.1",
+      "targetVersion": "0.22.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -32,7 +32,7 @@
     },
     {
       "package": "cargo/callisto-manifests",
-      "targetVersion": "0.21.1",
+      "targetVersion": "0.22.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -42,7 +42,7 @@
     },
     {
       "package": "cargo/callisto-model",
-      "targetVersion": "0.21.1",
+      "targetVersion": "0.22.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -51,5 +51,38 @@
       ]
     }
   ],
-  "digest": "cd466938a608cc7df732ebca1c0e85545b1b450b80b5d7936d1ff2a0be4013ee"
+  "consumedChangesets": [
+    ".changeset/brave-lions-roar.md",
+    ".changeset/brave-lynxes-jump.md",
+    ".changeset/brave-pandas-swim.md",
+    ".changeset/brave-panthers-climb.md",
+    ".changeset/bright-lynxes-strut.md",
+    ".changeset/calm-otters-fly.md",
+    ".changeset/clever-falcons-drift.md",
+    ".changeset/clever-hawks-soar.md",
+    ".changeset/eager-bears-sprint.md",
+    ".changeset/happy-badgers-spin.md",
+    ".changeset/jolly-eagles-fly.md",
+    ".changeset/lively-dolphins-jump.md",
+    ".changeset/mighty-falcons-jump.md",
+    ".changeset/mighty-lynxes-sprint.md",
+    ".changeset/mighty-tigers-surge.md",
+    ".changeset/noble-cobras-surge.md",
+    ".changeset/noble-eagles-race.md",
+    ".changeset/noble-foxes-fly.md",
+    ".changeset/noble-leopards-run.md",
+    ".changeset/noble-lynxes-strut.md",
+    ".changeset/proud-cobras-glide.md",
+    ".changeset/quick-cobras-fly.md",
+    ".changeset/quick-falcons-fly.md",
+    ".changeset/quick-otters-dash.md",
+    ".changeset/radiant-bears-chase.md",
+    ".changeset/silent-ravens-climb.md",
+    ".changeset/swift-bears-chase.md",
+    ".changeset/swift-cheetahs-sprint.md",
+    ".changeset/swift-foxes-sprint.md",
+    ".changeset/swift-stags-race.md",
+    ".changeset/vivid-lynxes-bound.md"
+  ],
+  "digest": "e18bf49b1833809a50ec386c3fd08a12eac08eea089296eca97d767d3b559f7a"
 }
