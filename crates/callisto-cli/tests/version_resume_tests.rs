@@ -958,3 +958,36 @@ fn a_version_edited_by_hand_after_the_failure_is_refused_not_overwritten() {
     assert!(!out.status.success(), "a hand edit must not be resumed over");
     assert_eq!(fs::read_to_string(&manifest).unwrap(), edited);
 }
+
+/// A dry run cannot apply the plan in the checkpoint's worktree, but it still refuses what a real resume refuses.
+#[test]
+fn a_dry_run_refuses_a_checkpoint_from_a_sibling_workspace() {
+    let repo = repo(
+        |root| {
+            cargo_cascade(&root.join("one"));
+            cargo_cascade(&root.join("two"));
+        },
+        "",
+        None,
+    );
+    let bin = fake_tools(repo.root.parent().unwrap());
+    let flag = repo.root.parent().unwrap().join("failed-once");
+    let first = version(&repo.root.join("one"), &bin, Some(("cargo", &flag)));
+    assert!(String::from_utf8_lossy(&first.stderr).contains("E208"));
+    assert!(has_checkpoint(&repo.root));
+
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", repo.root.join("two").to_str().unwrap(), "--dry-run", "version"])
+        .env("PATH", path)
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains("E340"),
+        "{stderr}\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(out.stdout.is_empty(), "{}", String::from_utf8_lossy(&out.stdout));
+}
