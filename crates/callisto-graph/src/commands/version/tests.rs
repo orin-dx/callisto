@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{
     check_partial_run, head_has_pending_changeset, head_object_exists, manifest_blob_at, plan_version,
-    resume_input_changes, VersionOptions,
+    resume_identity_changes, VersionOptions,
 };
 use crate::error::GraphError;
 use crate::infer::NoInference;
@@ -10,7 +10,7 @@ use crate::locate::IgnoreWalkLocator;
 use crate::Workspace;
 use callisto_fixtures::git::GitRunner;
 use callisto_model::vcs::VERSION_CHECKPOINT;
-use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner};
+use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
 struct IndexInspectionFailureRunner {
     failed_args: Vec<String>,
@@ -110,17 +110,7 @@ fn a_resume_refuses_a_plan_made_in_a_sibling_directory_of_the_checkpoint() {
     let changes = |dir: &str| {
         let scratch_root = tree.join(dir);
         let scratch = Workspace::load(scratch_root.clone(), &IgnoreWalkLocator::new(&scratch_root), &runner).unwrap();
-        let plan = plan_version(&scratch, &NoInference, &VersionOptions::default()).unwrap();
-        resume_input_changes(
-            &ws,
-            &scratch,
-            &checkpoint,
-            &facts,
-            &plan,
-            &runner,
-            &ApplyPermit::force_for_tests(),
-        )
-        .unwrap()
+        resume_identity_changes(&ws, &scratch, &checkpoint, &facts).unwrap()
     };
 
     assert_eq!(changes("primary"), Vec::<String>::new());

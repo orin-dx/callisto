@@ -396,24 +396,16 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     })
 }
 
-/// The inputs of an interrupted run that changed in a way the run did not cause, so a resume must refuse (ADR 13).
+/// What differs between an interrupted run and this one, so a resume (or a dry run predicting one) must refuse (ADR 13).
 ///
-/// `scratch` is the workspace loaded from the checkpoint's worktree and `plan` was made from it. The plan is applied
-/// there, without a lockfile refresh, so the worktree becomes the tree a finished run leaves. Every file the plan was
-/// derived from (the manifests the loader opened, `callisto.toml`, the changesets) and every file it writes must then be
-/// on disk either as the checkpoint recorded it or as that expected tree has it, compared through Git's filters; a file
-/// the expected tree lacks counts as the run's deletion only when the index lacks it too, so a changeset the user
-/// deleted by hand is a change. `HEAD`, the tags and the Callisto version must match as well, and `scratch` must hold this
-/// workspace's tree in the checkpoint, so a plan made in another directory is never applied here. `permit` writes only
-/// into `scratch`.
-pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
+/// `HEAD`, the tags, the Callisto version and the workspace must match, and `scratch`, the workspace loaded from the
+/// checkpoint's worktree, must hold this workspace's tree in the checkpoint, so a plan made in another directory is
+/// never applied here. It only reads, so it needs no permit.
+pub fn resume_identity_changes<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     scratch: &Workspace<'_, R, D>,
     checkpoint: &callisto_model::vcs::Checkpoint,
     now: &callisto_model::vcs::CheckpointFacts,
-    plan: &VersionPlan,
-    runner: &R,
-    permit: &callisto_model::ApplyPermit,
 ) -> Result<Vec<String>, GraphError> {
     let then = &checkpoint.facts;
     let mut changes = Vec::new();
@@ -436,20 +428,40 @@ pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
         ));
     }
 
-    let git = ws.git_access();
-    let expected = scratch.git_access();
-    let rev = checkpoint.commit.as_str();
-
     // Names can be lost on the way to the scratch checkout; the plan is this workspace's only when it was made from this
     // workspace's own tree in the checkpoint. Nothing else about another directory's plan is worth checking.
     let root = std::path::Path::new("");
-    if git.blob_hash_at(rev, root)? != expected.blob_hash_at(rev, root)? {
+    let rev = checkpoint.commit.as_str();
+    if ws.git_access().blob_hash_at(rev, root)? != scratch.git_access().blob_hash_at(rev, root)? {
         changes.push(format!(
             "the plan was made in another directory of the checkpoint (`{}`), not this workspace",
             scratch.root.display()
         ));
-        return Ok(changes);
     }
+    Ok(changes)
+}
+
+/// The inputs of an interrupted run that changed in a way the run did not cause, so a resume must refuse (ADR 13).
+///
+/// `scratch` is the workspace loaded from the checkpoint's worktree and `plan` was made from it; its identity has
+/// passed `resume_identity_changes`. The plan is applied there, without a lockfile refresh, so the worktree becomes the
+/// tree a finished run leaves. Every file the plan was derived from (the manifests the loader opened, `callisto.toml`,
+/// the changesets) and every file it writes must then be on disk either as the checkpoint recorded it or as that
+/// expected tree has it, compared through Git's filters; a file the expected tree lacks counts as the run's deletion
+/// only when the index lacks it too, so a changeset the user deleted by hand is a change. `permit` writes only into
+/// `scratch`.
+pub fn resume_input_changes<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    scratch: &Workspace<'_, R, D>,
+    checkpoint: &callisto_model::vcs::Checkpoint,
+    plan: &VersionPlan,
+    runner: &R,
+    permit: &callisto_model::ApplyPermit,
+) -> Result<Vec<String>, GraphError> {
+    let mut changes = Vec::new();
+    let git = ws.git_access();
+    let expected = scratch.git_access();
+    let rev = checkpoint.commit.as_str();
 
     let apply_opts = crate::apply::ApplyOptions {
         refresh_lockfiles: false,

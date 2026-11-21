@@ -141,11 +141,20 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         }
     }
 
-    // A resume must start from the checkpoint plus some of the interrupted run's own writes. The plan is applied in the
-    // checkpoint's scratch worktree to learn what a finished run leaves, which takes the run's own permit and writes
-    // only there; a dry run has no permit, so it reports the plan without verifying the inputs.
-    if let (Some(scratch), Some(checkpoint), Some(facts), Some(permit), false) =
-        (&checkpoint_ws, &checkpoint, &facts, permit.as_ref(), has_errors)
+    // A resume must start from this workspace's checkpoint at the same `HEAD`, tags and Callisto; a dry run refuses
+    // exactly where the real run would.
+    if let (Some(scratch), Some(checkpoint), Some(facts), false) = (&checkpoint_ws, &checkpoint, &facts, has_errors) {
+        let changes = callisto_graph::commands::resume_identity_changes(&ws, scratch, checkpoint, facts)?;
+        if !changes.is_empty() {
+            return Err(GraphError::CheckpointInputsChanged { changes }.into());
+        }
+    }
+
+    // It must also hold some of the interrupted run's own writes. The plan is applied in the checkpoint's scratch
+    // worktree to learn what a finished run leaves, which takes the run's own permit and writes only there; a dry run
+    // has no permit, so it reports the plan without verifying the files.
+    if let (Some(scratch), Some(checkpoint), Some(permit), false) =
+        (&checkpoint_ws, &checkpoint, permit.as_ref(), has_errors)
     {
         // A finished run leaves its emitted files too, so one inside the workspace is its own output, not an edited input.
         // One outside it, `..` and symlinks resolved, is no input at all and is not simulated.
@@ -154,8 +163,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
                 write_emitted(&scratch.root.join(relative), content, permit)?;
             }
         }
-        let changes =
-            callisto_graph::commands::resume_input_changes(&ws, scratch, checkpoint, facts, &plan, &runner, permit)?;
+        let changes = callisto_graph::commands::resume_input_changes(&ws, scratch, checkpoint, &plan, &runner, permit)?;
         if !changes.is_empty() {
             return Err(GraphError::CheckpointInputsChanged { changes }.into());
         }
