@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use callisto_graph::infer::SeverityInference;
 use callisto_graph::locate::{find_workspace_root, IgnoreWalkLocator};
 use callisto_graph::resolver::ManifestWalkResolver;
 use callisto_graph::Workspace;
@@ -34,11 +33,6 @@ pub fn workspace_root(global: &GlobalArgs, runner: &dyn CommandRunner) -> Result
     })?;
     ensure_git_supported(runner, &start)?;
     Ok(find_workspace_root(&start, runner)?)
-}
-
-/// Commit inference; `release-trigger` decides per package whether it runs.
-pub fn select_inference() -> impl SeverityInference {
-    callisto_graph::infer::CommitInference
 }
 
 #[cfg(test)]

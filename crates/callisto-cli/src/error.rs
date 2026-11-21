@@ -52,11 +52,8 @@ impl CliError {
             Self::Graph(error) => error.exit_kind(),
             Self::Config(error) => error.exit_kind(),
             Self::NotATty
-            | Self::ReleaseArtifactManifestDryRun
-            | Self::ReleasePlanDryRun
-            | Self::ReleaseExecuteDryRun
             | Self::ReleasePendingFromInvalid { .. }
-            | Self::ReleaseBuildDryRun { .. }
+            | Self::DryRunRefused { .. }
             | Self::ReleaseCommitInvalid { .. }
             | Self::ReleaseDecisionOutsideSource { .. }
             | Self::ReleaseDecisionPathInvalid { .. }
@@ -80,7 +77,6 @@ impl CliError {
             | Self::AddSummaryEmpty
             | Self::VersionEmitDryRun { .. }
             | Self::PreTagEmpty
-            | Self::ReleasePrCommitPlanDryRun
             | Self::HelpUnknownCommand { .. } => ExitKind::Usage,
             _ => ExitKind::Runtime,
         }
@@ -112,10 +108,6 @@ pub enum CliError {
         help("verify registry credentials/authentication and network connectivity, then retry")
     )]
     Registry(#[from] callisto_model::RegistryError),
-
-    #[error(transparent)]
-    #[diagnostic(transparent)]
-    ChangesetParse(#[from] callisto_model::format::ParseError),
 
     #[error(transparent)]
     #[diagnostic(transparent)]
@@ -187,18 +179,6 @@ pub enum CliError {
         expected: u8,
     },
 
-    #[error("release artifact-manifest needs an output file; remove --dry-run because it records build output")]
-    #[diagnostic(code(E216), help("re-run `callisto release artifact-manifest` without --dry-run"))]
-    ReleaseArtifactManifestDryRun,
-
-    #[error("release plan needs an output file; remove --dry-run because planning is already read-only")]
-    #[diagnostic(code(E217), help("re-run `callisto release plan --out <file>` without --dry-run"))]
-    ReleasePlanDryRun,
-
-    #[error("release execute cannot run with --dry-run")]
-    #[diagnostic(code(E218), help("remove --dry-run; release execute has no read-only mode"))]
-    ReleaseExecuteDryRun,
-
     #[error("release intent declares no binary artifact slots; no artifact manifest can be created")]
     #[diagnostic(code(E219), help("plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots"))]
     ReleaseNoArtifactSlots,
@@ -217,9 +197,9 @@ pub enum CliError {
     )]
     ReleasePendingFromInvalid { reason: String },
 
-    #[error("release {command} writes build output; remove --dry-run")]
-    #[diagnostic(code(E309), help("re-run `callisto release {command}` without --dry-run"))]
-    ReleaseBuildDryRun { command: &'static str },
+    #[error("{command} refuses --dry-run")]
+    #[diagnostic(code(E309), help("re-run `callisto {command}` without --dry-run"))]
+    DryRunRefused { command: &'static str },
 
     #[error("artifact manifests require a Git commit release source")]
     #[diagnostic(code(E220), help("plan the release from a Git commit source"))]
@@ -442,10 +422,6 @@ pub enum CliError {
     #[diagnostic(code(E281), help("check the JSON is well-formed and matches the expected schema"))]
     ReleasePrArgJsonInvalid { flag: &'static str, detail: String },
 
-    #[error("release-pr commit-plan cannot write --out with --dry-run; omit --out")]
-    #[diagnostic(code(E282), help("re-run without --dry-run, or drop --out"))]
-    ReleasePrCommitPlanDryRun,
-
     #[error("no such subcommand `{name}`")]
     #[diagnostic(code(E283), help("run `callisto --help` to list commands"))]
     HelpUnknownCommand { name: String },
@@ -665,12 +641,11 @@ mod tests {
     #[test]
     fn typed_release_errors_carry_code_and_help() {
         let errors = [
-            CliError::ReleaseArtifactManifestDryRun,
-            CliError::ReleasePlanDryRun,
-            CliError::ReleaseExecuteDryRun,
             CliError::ReleaseNoArtifactSlots,
             CliError::ReleaseNoSealablePublishes { ecosystem: "npm" },
-            CliError::ReleaseBuildDryRun { command: "pack-npm" },
+            CliError::DryRunRefused {
+                command: "release pack-npm",
+            },
             CliError::ReleaseManifestSourceNotGit,
             CliError::ReleaseArtifactNotRegularFile {
                 asset: "x".to_owned(),
@@ -770,7 +745,6 @@ mod tests {
                 flag: "snapshot",
                 detail: "x".to_owned(),
             },
-            CliError::ReleasePrCommitPlanDryRun,
         ];
         for error in &errors {
             let json = format_error_json("add", false, error);

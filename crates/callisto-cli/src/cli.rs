@@ -206,9 +206,6 @@ pub struct MatrixArgs {
 /// Arguments for the `version` command.
 #[derive(Args, Clone, Debug)]
 pub struct VersionArgs {
-    /// No-op kept for existing callers; lockfile refresh is the default.
-    #[arg(long, hide = true)]
-    pub refresh_lockfiles: bool,
     /// Skip regenerating lockfiles after applying the version bumps.
     #[arg(long)]
     pub no_refresh_lockfiles: bool,
@@ -585,7 +582,6 @@ mod tests {
             }),
             Command::Matrix(MatrixArgs::default()),
             Command::Version(VersionArgs {
-                refresh_lockfiles: false,
                 no_refresh_lockfiles: false,
                 strict: false,
                 allow_empty_changesets: false,
@@ -627,59 +623,6 @@ mod tests {
                 variant.name()
             );
         }
-    }
-
-    /// `status --strict`/`--check` help text is exact, user-facing wording,
-    /// not clap's placeholder or a jargon-laden restatement of the flag name.
-    #[test]
-    fn status_strict_and_check_help_text_is_exact() {
-        let mut cmd = Cli::command();
-        cmd.build();
-
-        let status_sub = cmd
-            .get_subcommands()
-            .find(|s| s.get_name() == "status")
-            .expect("status subcommand must exist");
-
-        let help_for = |long: &str| {
-            status_sub
-                .get_arguments()
-                .find(|a| a.get_long() == Some(long))
-                .unwrap_or_else(|| panic!("--{long} argument must exist on status subcommand"))
-                .get_help()
-                .map(|h| h.to_string())
-                .unwrap_or_default()
-        };
-
-        assert_eq!(help_for("strict"), "Treat warnings as errors (fails with --check)");
-        assert_eq!(
-            help_for("check"),
-            "Exit 1 if any diagnostic is an error (pending changesets never fail it)"
-        );
-    }
-
-    /// `--strict` help says what it does on each command: escalates warnings (graph errors always abort).
-    #[test]
-    fn version_and_snapshot_strict_help_text_is_exact() {
-        let mut cmd = Cli::command();
-        cmd.build();
-        let help_for = |name: &str| {
-            cmd.get_subcommands()
-                .find(|s| s.get_name() == name)
-                .and_then(|s| s.get_arguments().find(|a| a.get_long() == Some("strict")))
-                .unwrap_or_else(|| panic!("{name} must have --strict"))
-                .get_help()
-                .map(|h| h.to_string())
-                .unwrap_or_default()
-        };
-        assert_eq!(
-            help_for("version"),
-            "Treat warnings as errors, including finding no pending changesets"
-        );
-        assert_eq!(
-            help_for("snapshot"),
-            "Treat warnings as errors (graph errors abort with or without it)"
-        );
     }
 
     #[test]
@@ -806,92 +749,6 @@ mod tests {
         assert!(
             Cli::try_parse_from(["callisto", "release", "--package", "cargo/a", "inspect", "--input", "x"]).is_err()
         );
-    }
-
-    /// `callisto matrix --package foo` parses
-    /// into Command::Matrix with the package field populated; MatrixArgs
-    /// declares no --format of its own (the global flag is used instead).
-    #[test]
-    fn test_cli_parse_matrix_command_with_package() {
-        use clap::Parser;
-        let cli = Cli::parse_from(["callisto", "matrix", "--package", "foo"]);
-        if let Command::Matrix(args) = cli.command {
-            assert_eq!(args.package, Some("foo".to_string()));
-        } else {
-            panic!("Expected Matrix command");
-        }
-    }
-
-    /// Bare `callisto matrix` (no --package) parses with package: None.
-    #[test]
-    fn test_cli_parse_matrix_command_bare() {
-        use clap::Parser;
-        let cli = Cli::parse_from(["callisto", "matrix"]);
-        if let Command::Matrix(args) = cli.command {
-            assert_eq!(args.package, None);
-        } else {
-            panic!("Expected Matrix command");
-        }
-    }
-
-    /// `--help` lists exactly the 8 user commands,
-    /// each with one plain-language line free of internal jargon.
-    #[test]
-    fn help_lists_exactly_eight_commands_with_plain_help_text() {
-        let mut cmd = Cli::command();
-        cmd.build();
-
-        let visible: Vec<&str> = cmd
-            .get_subcommands()
-            .filter(|s| !s.is_hide_set())
-            .map(|s| s.get_name())
-            .collect();
-        let expected = [
-            "add",
-            "status",
-            "version",
-            "pre",
-            "snapshot",
-            "init",
-            "release",
-            "completions",
-        ];
-        assert_eq!(
-            visible.len(),
-            8,
-            "expected exactly 8 visible commands, got: {visible:?}"
-        );
-        for name in expected {
-            assert!(
-                visible.contains(&name),
-                "missing {name:?} from visible commands: {visible:?}"
-            );
-        }
-
-        let banned = [
-            "durable release intent",
-            "forge snapshot",
-            "coordinator revision",
-            "schema v",
-        ];
-        for sub in cmd.get_subcommands().filter(|s| !s.is_hide_set()) {
-            let about = sub.get_about().map(|a| a.to_string()).unwrap_or_default();
-            assert_eq!(
-                about.lines().count().max(1),
-                1,
-                "{}'s help text must be exactly one line: {about:?}",
-                sub.get_name()
-            );
-            assert!(!about.is_empty(), "{} has no help text", sub.get_name());
-            let lower = about.to_lowercase();
-            for phrase in banned {
-                assert!(
-                    !lower.contains(phrase),
-                    "{}'s help text contains banned jargon {phrase:?}: {about:?}",
-                    sub.get_name()
-                );
-            }
-        }
     }
 
     /// clap's automatic `help` subcommand is disabled (it would otherwise

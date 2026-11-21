@@ -12,9 +12,10 @@ use callisto_graph::commands::{
     build_release_intent, ci_release_route, derive_release_commit_decision, derive_selected_release_decision,
     execute_release, origin_tag_probe, pending_releases, plan_loaded_release, require_sealed_publishes,
     seal_npm_tarballs, seal_python_distributions, validate_local_release_intent, validate_release_intent,
-    verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, VersionOptions,
+    verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, ValidatedReleaseIntent, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
+use callisto_graph::GraphError;
 use callisto_model::{
     ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, CommitSha, ExecutionTrustProfileV1,
     GitHubArtifactAttestationV1, PackageId, ReleaseArtifactManifestReport, ReleaseDryRunReport, ReleaseExecuteReport,
@@ -31,7 +32,7 @@ use crate::error::CliError;
 use crate::io::{read_json_file, OutputFile, OutputKind};
 use crate::output::{emit_line, emit_report, log_line, write_document};
 use crate::runner::CliCommandRunner;
-use crate::workspace::{load_workspace, select_inference};
+use crate::workspace::load_workspace;
 
 pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     match args.command {
@@ -358,27 +359,54 @@ fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     Ok(ExitCode::SUCCESS)
 }
 
-fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+fn refuse_dry_run(command: &'static str, global: &GlobalArgs) -> Result<(), CliError> {
     if global.dry_run {
-        return Err(CliError::ReleaseBuildDryRun {
-            command: "build-python",
-        });
+        return Err(CliError::DryRunRefused { command });
     }
-    let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
-    if callisto_model::python_publishes(&intent).is_empty() {
-        return Err(CliError::ReleaseNoSealablePublishes { ecosystem: "Python" });
+    Ok(())
+}
+
+/// Shared steps of the build commands: require a publish for the ecosystem, validate the intent. Callers refuse
+/// `--dry-run` first.
+fn build_from_intent(
+    ecosystem: &'static str,
+    intent_path: &Path,
+    source_root: Option<&Path>,
+    global: &GlobalArgs,
+    publishes_nothing: fn(&ReleaseIntentV1) -> bool,
+    build: impl FnOnce(&ValidatedReleaseIntent<'_>) -> Result<Vec<String>, GraphError>,
+) -> Result<Vec<String>, CliError> {
+    let intent = read_intent(&global.resolve_file_arg(intent_path))?;
+    if publishes_nothing(&intent) {
+        return Err(CliError::ReleaseNoSealablePublishes { ecosystem });
     }
-    let artifact_dir = global.resolve_file_arg(&args.artifact_dir);
-    let outdir = artifact_dir.canonicalize().map_err(|source| CliError::Io {
-        source,
-        path: Some(artifact_dir.clone()),
-    })?;
     let runner = CliCommandRunner;
-    let source_workspace = load_workspace(&source_global(global, args.source_root.as_deref()), &runner)?;
+    let source_workspace = load_workspace(&source_global(global, source_root), &runner)?;
     let root = source_workspace.root.clone();
     let locator = IgnoreWalkLocator::new(&root);
     let capability = validate_release_intent(&root, &locator, &runner, intent)?;
-    let built = capability.build_python_distributions(&outdir)?;
+    Ok(build(&capability)?)
+}
+
+fn canonical_artifact_dir(global: &GlobalArgs, dir: &Path) -> Result<PathBuf, CliError> {
+    let dir = global.resolve_file_arg(dir);
+    dir.canonicalize().map_err(|source| CliError::Io {
+        source,
+        path: Some(dir.clone()),
+    })
+}
+
+fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    refuse_dry_run("release build-python", global)?;
+    let outdir = canonical_artifact_dir(global, &args.artifact_dir)?;
+    let built = build_from_intent(
+        "Python",
+        &args.intent,
+        args.source_root.as_deref(),
+        global,
+        |intent| callisto_model::python_publishes(intent).is_empty(),
+        |capability| capability.build_python_distributions(&outdir),
+    )?;
     match global.format {
         OutputFormat::Json => emit_report(
             &mut std::io::stdout(),
@@ -395,24 +423,16 @@ fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<Exi
 }
 
 fn pack_npm(args: ReleasePackNpmArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    if global.dry_run {
-        return Err(CliError::ReleaseBuildDryRun { command: "pack-npm" });
-    }
-    let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
-    if callisto_model::npm_publishes(&intent).is_empty() {
-        return Err(CliError::ReleaseNoSealablePublishes { ecosystem: "npm" });
-    }
-    let artifact_dir = global.resolve_file_arg(&args.artifact_dir);
-    let outdir = artifact_dir.canonicalize().map_err(|source| CliError::Io {
-        source,
-        path: Some(artifact_dir.clone()),
-    })?;
-    let runner = CliCommandRunner;
-    let source_workspace = load_workspace(&source_global(global, args.source_root.as_deref()), &runner)?;
-    let root = source_workspace.root.clone();
-    let locator = IgnoreWalkLocator::new(&root);
-    let capability = validate_release_intent(&root, &locator, &runner, intent)?;
-    let built = capability.pack_npm_tarballs(&outdir)?;
+    refuse_dry_run("release pack-npm", global)?;
+    let outdir = canonical_artifact_dir(global, &args.artifact_dir)?;
+    let built = build_from_intent(
+        "npm",
+        &args.intent,
+        args.source_root.as_deref(),
+        global,
+        |intent| callisto_model::npm_publishes(intent).is_empty(),
+        |capability| capability.pack_npm_tarballs(&outdir),
+    )?;
     match global.format {
         OutputFormat::Json => emit_report(
             &mut std::io::stdout(),
@@ -429,21 +449,15 @@ fn pack_npm(args: ReleasePackNpmArgs, global: &GlobalArgs) -> Result<ExitCode, C
 }
 
 fn package_cargo(args: ReleasePackageCargoArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    if global.dry_run {
-        return Err(CliError::ReleaseBuildDryRun {
-            command: "package-cargo",
-        });
-    }
-    let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
-    if callisto_model::cargo_publishes(&intent).is_empty() {
-        return Err(CliError::ReleaseNoSealablePublishes { ecosystem: "Cargo" });
-    }
-    let runner = CliCommandRunner;
-    let source_workspace = load_workspace(&source_global(global, args.source_root.as_deref()), &runner)?;
-    let root = source_workspace.root.clone();
-    let locator = IgnoreWalkLocator::new(&root);
-    let capability = validate_release_intent(&root, &locator, &runner, intent)?;
-    let built = capability.package_cargo_crates()?;
+    refuse_dry_run("release package-cargo", global)?;
+    let built = build_from_intent(
+        "Cargo",
+        &args.intent,
+        args.source_root.as_deref(),
+        global,
+        |intent| callisto_model::cargo_publishes(intent).is_empty(),
+        |capability| capability.package_cargo_crates(),
+    )?;
     match global.format {
         OutputFormat::Json => emit_report(
             &mut std::io::stdout(),
@@ -627,7 +641,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         }
         None => {
             let selections = parse_selections(&args.packages)?;
-            let inference = select_inference();
+            let inference = callisto_graph::infer::CommitInference;
             let version_plan =
                 callisto_graph::commands::plan_version(&workspace, &inference, &VersionOptions::default())?;
             derive_selected_release_decision(&workspace, &version_plan, &selections)?

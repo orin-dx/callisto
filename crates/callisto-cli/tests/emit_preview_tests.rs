@@ -11,7 +11,6 @@ use common::setup_polyglot_git_repo;
 
 fn version_args(emit_preview: Option<std::path::PathBuf>) -> VersionArgs {
     VersionArgs {
-        refresh_lockfiles: false,
         no_refresh_lockfiles: true,
         strict: false,
         allow_empty_changesets: false,

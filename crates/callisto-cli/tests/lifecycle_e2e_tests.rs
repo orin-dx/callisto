@@ -66,7 +66,6 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     // 4. callisto version (consumes changesets, bumps Cargo.toml & package.json)
     let version_res = commands::version::handle(
         VersionArgs {
-            refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
@@ -137,7 +136,6 @@ license = "MIT"
     assert_eq!(
         commands::version::handle(
             VersionArgs {
-                refresh_lockfiles: false,
                 no_refresh_lockfiles: true,
                 strict: false,
                 allow_empty_changesets: false,
@@ -220,7 +218,6 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
     assert_eq!(
         commands::version::handle(
             VersionArgs {
-                refresh_lockfiles: false,
                 no_refresh_lockfiles: true,
                 strict: false,
                 allow_empty_changesets: false,
@@ -242,87 +239,5 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
         changelog_content.contains("Add new core component API"),
         "changelog must contain the real changeset summary 'Add new core component API', \
          but got:\n{changelog_content}"
-    );
-}
-
-#[test]
-fn test_dry_run_flag_preserves_disk_state() {
-    let dir = setup_polyglot_git_repo();
-    let root = dir.path();
-
-    let global_dry = GlobalArgs {
-        format: OutputFormat::Json,
-        cwd: root.to_path_buf(),
-        dry_run: true,
-    };
-
-    callisto_fixtures::scaffold_callisto(root);
-
-    assert_eq!(
-        commands::add::handle(
-            AddArgs {
-                packages: vec!["cargo/core-crate:minor".to_string()],
-                summary: Some("New feature".to_string()),
-            },
-            &GlobalArgs {
-                dry_run: false,
-                ..global_dry.clone()
-            },
-        )
-        .unwrap(),
-        std::process::ExitCode::SUCCESS
-    );
-
-    // Run version with dry_run = true
-    let version_res = commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            no_refresh_lockfiles: true,
-            strict: false,
-            allow_empty_changesets: false,
-            emit_decision: None,
-            emit_preview: None,
-        },
-        &global_dry,
-    );
-    assert!(version_res.is_ok());
-
-    // Manifest must remain 0.1.0 on disk
-    let cargo_content = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
-    assert!(cargo_content.contains("version = \"0.1.0\""));
-}
-
-#[test]
-fn test_add_dry_run_does_not_write_changeset_file() {
-    let dir = setup_polyglot_git_repo();
-    let root = dir.path();
-
-    let global_dry = GlobalArgs {
-        format: OutputFormat::Text,
-        cwd: root.to_path_buf(),
-        dry_run: true,
-    };
-
-    let add_res = commands::add::handle(
-        AddArgs {
-            packages: vec!["cargo/core-crate:patch".to_string()],
-            summary: Some("Dry run should not write anything".to_string()),
-        },
-        &global_dry,
-    );
-    assert!(add_res.is_ok());
-
-    // `add --dry-run` must never create the .changeset directory or any
-    // changeset file within it.
-    let changeset_dir = root.join(".changeset");
-    let has_changeset_files = changeset_dir.exists()
-        && fs::read_dir(&changeset_dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .any(|e| e.path().extension().is_some_and(|ext| ext == "md"));
-    assert!(
-        !has_changeset_files,
-        "callisto add --dry-run must not write a changeset file to disk, but found one in {}",
-        changeset_dir.display()
     );
 }

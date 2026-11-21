@@ -104,7 +104,7 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
-    let inference = crate::workspace::select_inference();
+    let inference = callisto_graph::infer::CommitInference;
     // The plan `version` would apply, so an unparseable changeset fails here instead of looking like nothing pending.
     let options = VersionOptions {
         strict: false,

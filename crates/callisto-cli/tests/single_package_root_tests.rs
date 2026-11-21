@@ -75,7 +75,6 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
         ExitCode::SUCCESS
     );
     let version = VersionArgs {
-        refresh_lockfiles: false,
         no_refresh_lockfiles: true,
         strict: false,
         allow_empty_changesets: false,
@@ -197,7 +196,6 @@ fn root_package_release_commit_accepts_default_and_configured_changelog_paths() 
             assert_eq!(
                 commands::version::handle(
                     VersionArgs {
-                        refresh_lockfiles: false,
                         no_refresh_lockfiles: true,
                         strict: false,
                         allow_empty_changesets: false,

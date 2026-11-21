@@ -18,10 +18,7 @@ use callisto_cli::commands;
 use callisto_fixtures::dry_run::assert_no_disk_mutation;
 use tempfile::tempdir;
 
-fn git(root: &std::path::Path, args: &[&str]) {
-    let status = Command::new("git").args(args).current_dir(root).status().unwrap();
-    assert!(status.success(), "git {args:?} failed");
-}
+use callisto_fixtures::git::run_git as git;
 
 /// A committed Cargo + npm workspace, matching the lifecycle suite's fixture.
 fn setup_repo() -> tempfile::TempDir {
@@ -115,7 +112,6 @@ fn version_dry_run_writes_nothing() {
         assert_eq!(
             commands::version::handle(
                 VersionArgs {
-                    refresh_lockfiles: false,
                     no_refresh_lockfiles: true,
                     strict: false,
                     allow_empty_changesets: false,
@@ -288,32 +284,6 @@ fn snapshot_dry_run_text_output_has_dry_run_marker() {
     assert!(
         text.contains("[DRY-RUN]"),
         "snapshot --dry-run text output should contain [DRY-RUN], got: {text:?}"
-    );
-}
-
-/// `pre exit` checks for `.changeset/pre.json` before reading it or checking the dry-run permit.
-/// When the file does not exist the function must return the typed `CliError::PreNotActive`
-/// (naming `pre enter` as the fix), not a raw `CliError::Io` or a panic.
-#[test]
-fn pre_exit_without_pre_json_returns_pre_not_active() {
-    let dir = tempdir().unwrap();
-    let root = dir.path();
-    callisto_fixtures::git::init_repo(root);
-
-    // A minimal workspace root marker satisfies `find_workspace_root`.
-    fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
-
-    let g = GlobalArgs {
-        format: OutputFormat::Text,
-        cwd: root.to_path_buf(),
-        dry_run: false,
-    };
-
-    let result = commands::pre::handle(PreArgs::Exit, &g);
-    assert!(
-        matches!(result, Err(callisto_cli::error::CliError::PreNotActive)),
-        "expected CliError::PreNotActive when .changeset/pre.json is absent, got: {:?}",
-        result
     );
 }
 

@@ -5,14 +5,7 @@ use std::{fs, path::Path, process::Command};
 const HEAD: &str = "[release]\nproduct-package = \"cargo/core-crate\"\n";
 const ARTIFACTS: &str = "\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n";
 
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git").args(args).current_dir(root).output().unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+use callisto_fixtures::git::run_git as git;
 
 /// Runs `callisto status` over `[release]` with `keys`, its artifacts, then `fragment`.
 fn status_with(keys: &str, fragment: &str) -> (bool, Vec<String>, String) {

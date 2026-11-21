@@ -815,7 +815,7 @@ fn release_plan_dry_run_is_rejected_and_writes_nothing() {
     );
     assert!(!result.status.success(), "release plan --dry-run must be rejected");
     assert!(
-        diagnostic_codes(&result).iter().any(|code| code == "E217"),
+        diagnostic_codes(&result).iter().any(|code| code == "E309"),
         "release plan --dry-run must surface release_plan_dry_run: {}",
         stderr_of(&result)
     );
@@ -844,7 +844,7 @@ fn release_execute_dry_run_is_rejected_and_writes_nothing() {
     );
     assert!(!result.status.success(), "release execute --dry-run must be rejected");
     assert!(
-        diagnostic_codes(&result).iter().any(|code| code == "E218"),
+        diagnostic_codes(&result).iter().any(|code| code == "E309"),
         "release execute --dry-run must surface release_execute_dry_run: {}",
         stderr_of(&result)
     );
@@ -876,7 +876,7 @@ fn release_artifact_manifest_dry_run_is_rejected_and_writes_nothing() {
         "release artifact-manifest --dry-run must be rejected"
     );
     assert!(
-        diagnostic_codes(&result).iter().any(|code| code == "E216"),
+        diagnostic_codes(&result).iter().any(|code| code == "E309"),
         "release artifact-manifest --dry-run must surface release_artifact_manifest_dry_run: {}",
         stderr_of(&result)
     );

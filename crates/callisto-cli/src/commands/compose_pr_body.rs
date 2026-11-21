@@ -8,7 +8,7 @@ use crate::error::CliError;
 use crate::output::emit_report;
 use crate::render;
 use crate::runner::CliCommandRunner;
-use crate::workspace::{load_workspace, select_inference};
+use crate::workspace::load_workspace;
 
 pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let existing_body = match args.existing_body {
@@ -51,7 +51,7 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
         None => {
             let runner = CliCommandRunner;
             let ws = load_workspace(global, &runner)?;
-            callisto_graph::commands::compose_pr_body(&ws, &select_inference(), &opts)?
+            callisto_graph::commands::compose_pr_body(&ws, &callisto_graph::infer::CommitInference, &opts)?
         }
     };
 

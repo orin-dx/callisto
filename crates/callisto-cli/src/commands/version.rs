@@ -13,7 +13,7 @@ use crate::error::CliError;
 use crate::output::{emit_line, emit_report};
 use crate::render;
 use crate::runner::CliCommandRunner;
-use crate::workspace::{load_workspace, select_inference};
+use crate::workspace::load_workspace;
 
 /// A throwaway worktree of the checkpoint, removed when dropped so no exit path leaves one registered.
 struct ResumeTree<'g, 'r> {
@@ -72,7 +72,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    let inference = select_inference();
+    let inference = callisto_graph::infer::CommitInference;
     let opts = VersionOptions {
         strict: args.strict,
         allow_empty_changesets: args.allow_empty_changesets,
@@ -536,7 +536,7 @@ mod tests {
     }
 
     /// A `release-trigger = "auto"` package with a `feat:` commit and no changeset gets an
-    /// inferred minor bump through `select_inference()`, the call `handle()` makes.
+    /// inferred minor bump through `CommitInference`, the call `handle()` makes.
     #[test]
     fn version_uses_real_commit_inference_for_auto_trigger() {
         use crate::runner::CliCommandRunner;
@@ -551,7 +551,7 @@ mod tests {
         let runner = CliCommandRunner;
         let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
-        let inference = crate::workspace::select_inference();
+        let inference = callisto_graph::infer::CommitInference;
         let opts = VersionOptions {
             strict: false,
             allow_empty_changesets: true,
@@ -600,7 +600,6 @@ mod tests {
         let args = crate::cli::VersionArgs {
             strict: false,
             allow_empty_changesets: true,
-            refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             emit_decision: None,
             emit_preview: None,
