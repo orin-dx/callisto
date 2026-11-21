@@ -146,6 +146,8 @@ proto install callisto
 cargo install callisto-cli
 ```
 
+Upgrading from 0.21.x: follow the [0.22 checklist](docs/upgrading-0.22.md).
+
 **Release binaries**, from [GitHub Releases](https://github.com/orin-dx/callisto/releases) (tag `callisto@<version>`):
 
 ```bash
