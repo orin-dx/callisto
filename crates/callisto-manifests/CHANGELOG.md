@@ -1,5 +1,18 @@
 # callisto-manifests
 
+## 0.22.0
+
+_2026-11-21 · [compare](https://github.com/orin-dx/callisto/compare/callisto-manifests@0.21.1...callisto-manifests@0.22.0)_
+
+### Minor Changes
+
+- Released together with the `workspace` fixed group.
+
+### Patch Changes
+
+- Dependency updates
+  - `callisto-model` → `0.22.0`
+
 ## 0.21.1
 
 _2026-11-16 · [compare](https://github.com/orin-dx/callisto/compare/callisto-manifests@0.21.0...callisto-manifests@0.21.1)_
