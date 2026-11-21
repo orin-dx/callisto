@@ -442,6 +442,32 @@ pub fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, S
 /// The same fixture for several npm packages, each with the packages it depends on, and `extra_config` appended to
 /// `callisto.toml`. Every package gets a minor bump.
 pub fn npm_release_fixture(packages: &[(&str, &[&str])], extra_config: &str) -> (tempfile::TempDir, String) {
+    npm_release_fixture_with(packages, extra_config, &NpmWorkspace::default())
+}
+
+/// How a fixture's npm workspace differs from the plain one: the range dependents use for their siblings, extra
+/// `package.json` fields at the root, and extra root files (lockfiles, tool config).
+pub struct NpmWorkspace<'a> {
+    pub sibling_range: &'a str,
+    pub root_fields: &'a str,
+    pub root_files: &'a [(&'a str, &'a str)],
+}
+
+impl Default for NpmWorkspace<'_> {
+    fn default() -> Self {
+        Self {
+            sibling_range: "^0.1.0",
+            root_fields: "",
+            root_files: &[],
+        }
+    }
+}
+
+pub fn npm_release_fixture_with(
+    packages: &[(&str, &[&str])],
+    extra_config: &str,
+    workspace: &NpmWorkspace,
+) -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     callisto_fixtures::git::init_repo(root);
@@ -450,15 +476,21 @@ pub fn npm_release_fixture(packages: &[(&str, &[&str])], extra_config: &str) -> 
     fs::write(root.join(".gitignore"), ".npmrc\n").unwrap();
     fs::write(
         root.join("package.json"),
-        "{\n  \"name\": \"npm-registry-fixture-root\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"workspaces\": [\"packages/*\"]\n}\n",
+        format!(
+            "{{\n  \"name\": \"npm-registry-fixture-root\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  {}\"workspaces\": [\"packages/*\"]\n}}\n",
+            workspace.root_fields
+        ),
     )
     .unwrap();
+    for (name, content) in workspace.root_files {
+        fs::write(root.join(name), content).unwrap();
+    }
     for (name, dependencies) in packages {
         let directory = root.join("packages").join(name.replace('/', "-"));
         fs::create_dir_all(&directory).unwrap();
         let dependencies = dependencies
             .iter()
-            .map(|dependency| format!("\"{dependency}\": \"^0.1.0\""))
+            .map(|dependency| format!("\"{dependency}\": \"{}\"", workspace.sibling_range))
             .collect::<Vec<_>>()
             .join(", ");
         fs::write(
