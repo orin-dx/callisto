@@ -320,6 +320,7 @@ dependencies = [
  "callisto-model",
  "indexmap",
  "jsonc-parser",
+ "pep440_rs",
  "proptest",
  "serde",
  "serde_json",

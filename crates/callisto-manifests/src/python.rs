@@ -767,7 +767,7 @@ fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec>
     // components it was written with.
     if op == "~="
         && !target.is_prerelease()
-        && parse_release_core(rest.trim()).is_some_and(|(_, (_, minor, patch))| minor.is_some() && patch.is_none())
+        && parse_clause_version(rest).is_some_and(|version| version.release().len() == 2)
     {
         rendered_target = format!("{}{}.{}", epoch_prefix(target), target.major()?, target.minor()?);
     }
@@ -819,16 +819,10 @@ fn epoch_prefix(target: &Version) -> String {
     }
 }
 
-/// Major, and the minor and patch when written.
-type ReleaseCore = (u64, Option<u64>, Option<u64>);
-
-/// A clause's epoch and release core, to read the precision it was written at.
-fn parse_release_core(s: &str) -> Option<(u64, ReleaseCore)> {
-    let (epoch, release) = match s.split_once('!') {
-        Some((epoch, release)) => (epoch.trim().parse().ok()?, release),
-        None => (0, s),
-    };
-    Some((epoch, parse_version_core(release)?))
+/// A PEP 440 clause's version, to read the epoch and release segment it was written at; its suffixes do not change
+/// that precision.
+fn parse_clause_version(s: &str) -> Option<pep440_rs::Version> {
+    s.trim().parse().ok()
 }
 
 /// Rewrites a two-clause `>=X.Y.Z,<A.B` range to `>=NEW,<NEXT_MAJOR`.
@@ -859,22 +853,24 @@ fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
 
     // A window of one minor (`>=0.1.0,<0.2`) stays one minor wide; any other upper bound, including one in another
     // epoch, becomes the next major.
-    let lower_core = lower
-        .strip_prefix(">=")
-        .and_then(|version| parse_release_core(version.trim()));
-    let upper_core = upper
+    // A suffixed upper bound (`<1.3.post1`) admits `1.3.0`, so only a bare release caps the window.
+    let lower_version = lower.strip_prefix(">=").and_then(parse_clause_version);
+    let upper_version = upper
         .strip_prefix('<')
-        .and_then(|version| parse_release_core(version.trim()));
-    let one_minor_window = matches!(
-        (lower_core, upper_core),
-        (
-            Some((lower_epoch, (lower_major, Some(lower_minor), _))),
-            Some((upper_epoch, (upper_major, Some(upper_minor), upper_patch)))
-        ) if upper_epoch == lower_epoch
-            && upper_major == lower_major
-            && upper_minor == lower_minor + 1
-            && upper_patch.unwrap_or(0) == 0
-    );
+        .and_then(parse_clause_version)
+        .filter(|version| !version.any_prerelease() && !version.is_post() && !version.is_local());
+    let one_minor_window =
+        lower_version
+            .zip(upper_version)
+            .is_some_and(|(lower, upper)| match (lower.release(), upper.release()) {
+                ([lower_major, lower_minor, ..], [upper_major, upper_minor, upper_rest @ ..]) => {
+                    upper.epoch() == lower.epoch()
+                        && upper_major == lower_major
+                        && *upper_minor == lower_minor + 1
+                        && upper_rest.iter().all(|&component| component == 0)
+                }
+                _ => false,
+            });
     let epoch = epoch_prefix(target);
     let upper_bound = if one_minor_window {
         format!("{epoch}{}.{}", target.major()?, target.minor()? + 1)

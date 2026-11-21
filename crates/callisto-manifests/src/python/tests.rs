@@ -1190,6 +1190,119 @@ fn round_trip_range_of_one_minor_stays_one_minor_wide() {
     assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some(">=0.2.0,<0.3"));
 }
 
+/// Which of `versions` Python's `packaging` admits under `specifier`, or `None` when `uv` is not installed.
+fn packaging_admits(specifier: &str, versions: &[&str]) -> Option<Vec<bool>> {
+    let script = "import sys, json\nfrom packaging.specifiers import SpecifierSet\n\
+                  s = SpecifierSet(sys.argv[1])\nprint(json.dumps([s.contains(v, prereleases=True) for v in sys.argv[2:]]))";
+    let output = match std::process::Command::new("uv")
+        .args([
+            "run",
+            "--no-project",
+            "--quiet",
+            "--with",
+            "packaging",
+            "python",
+            "-c",
+            script,
+            specifier,
+        ])
+        .args(versions)
+        .output()
+    {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        result => result.unwrap(),
+    };
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    Some(serde_json::from_slice(&output.stdout).unwrap())
+}
+
+/// Rewrites `original` for `target`, expects `expected`, and checks the exact allowed and forbidden versions against
+/// both our matcher and Python's `packaging`.
+fn assert_rewrite_window(original: &str, target: &str, expected: &str, allowed: &[&str], forbidden: &[&str]) {
+    let rewritten = round_trip(&make_pypi_spec(original), &make_pep440_version(target)).expect(original);
+    let DepSpec::Range(req, raw) = rewritten else {
+        panic!("{original} must stay a range")
+    };
+    assert_eq!(raw, expected, "{original}");
+    let probes: Vec<&str> = allowed.iter().chain(forbidden).copied().collect();
+    let want: Vec<bool> = probes.iter().map(|probe| allowed.contains(probe)).collect();
+    let ours: Vec<bool> = probes
+        .iter()
+        .map(|probe| req.matches(&make_pep440_version(probe)).unwrap())
+        .collect();
+    assert_eq!(ours, want, "{expected} over {probes:?}");
+    match packaging_admits(expected, &probes) {
+        Some(native) => assert_eq!(native, want, "packaging: {expected} over {probes:?}"),
+        None => eprintln!("uv not on PATH: skipped the packaging differential for {expected}"),
+    }
+}
+
+#[test]
+fn a_suffixed_lower_bound_keeps_its_one_minor_window() {
+    for (epoch, other) in [("", "1!1.2.5"), ("1!", "1.2.5")] {
+        let v = |version: &str| format!("{epoch}{version}");
+        for suffix in [".post1", ".dev0", "rc1", ".post1.dev2"] {
+            assert_rewrite_window(
+                &format!(">={},<{}", v(&format!("1.2.3{suffix}")), v("1.3")),
+                &v("1.2.4"),
+                &format!(">={},<{}", v("1.2.4"), v("1.3")),
+                &[&v("1.2.4"), &v("1.2.9"), &v("1.2.9.post1")],
+                &[&v("1.2.3"), &v("1.3.0"), &v("1.5.0"), &v("2.0.0"), other, "99.0.0"],
+            );
+        }
+    }
+}
+
+#[test]
+fn a_suffixed_compatible_release_keeps_its_two_component_precision() {
+    for (epoch, other) in [("", "1!1.5.0"), ("1!", "1.5.0")] {
+        let v = |version: &str| format!("{epoch}{version}");
+        for suffix in [".post1", ".dev0", "rc1"] {
+            assert_rewrite_window(
+                &format!("~={}", v(&format!("1.2{suffix}"))),
+                &v("1.2.1"),
+                &format!("~={}", v("1.2")),
+                &[&v("1.2.1"), &v("1.5.0"), &v("1.99.0")],
+                &[&v("1.1.9"), &v("2.0.0"), other, "99.0.0"],
+            );
+        }
+        // A suffixed three-component clause stays three components.
+        assert_rewrite_window(
+            &format!("~={}", v("1.2.3.post1")),
+            &v("1.2.4"),
+            &format!("~={}", v("1.2.4")),
+            &[&v("1.2.4"), &v("1.2.9")],
+            &[&v("1.2.3"), &v("1.3.0"), &v("1.5.0"), other],
+        );
+    }
+}
+
+#[test]
+fn a_suffixed_upper_bound_is_not_read_as_a_one_minor_window() {
+    // `<1.3.post1` admits 1.3.0, so it is not a one-minor cap; the rewrite widens to the next major as before.
+    assert_rewrite_window(
+        ">=1.2.3,<1.3.post1",
+        "1.2.4",
+        ">=1.2.4,<2",
+        &["1.2.4", "1.3.0", "1.9.0"],
+        &["1.2.3", "2.0.0"],
+    );
+    // `<1.3.1` admits 1.3.0, so it is not a one-minor cap either.
+    assert_rewrite_window(
+        ">=1.2.3.post1,<1.3.1",
+        "1.2.4",
+        ">=1.2.4,<2",
+        &["1.2.4", "1.3.0", "1.9.0"],
+        &["1.2.3", "2.0.0"],
+    );
+}
+
+#[test]
+fn a_local_version_bound_is_left_alone_or_rewritten_without_its_local_segment() {
+    // PEP 440 allows a local segment only on `==` and `!=`.
+    assert_rewrite_window("==1.2.3+abc", "1.2.4", "==1.2.4", &["1.2.4"], &["1.2.3", "1.2.5"]);
+}
+
 #[test]
 fn round_trip_poetry_caret_moves_to_the_new_version_as_an_equivalent_range() {
     let spec = DepSpec::Range(
