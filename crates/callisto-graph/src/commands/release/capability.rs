@@ -312,23 +312,51 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
     let workspace = Workspace::load(root.clone(), locator, runner)?;
     let source = observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)?;
     let mut diagnostics = Vec::new();
-    let intent = derive_release_intent(
+    let intent = derive_release_intent_unmoved(
         &workspace,
         decision,
-        source.clone(),
+        source,
+        Some(ReleaseCheckout::Detached),
         trust_profile,
         artifact_policy,
         GitRemoteRequirement::Required,
         &mut diagnostics,
     )?;
-    // Recheck after all input reads. A concurrent edit or checkout cannot be
-    // authorized merely because it happened after the first check.
-    if observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)? != source {
+    Ok((intent, diagnostics))
+}
+
+/// The one derivation behind every release plan, CI and local: derive from `source`, then re-observe it.
+///
+/// A concurrent edit or checkout cannot be authorized merely because it happened after the first check. `recheck` is
+/// the checkout to re-observe `source` under; `None` for a source taken without observation (a local preview).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn derive_release_intent_unmoved<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    decision: &ReleaseDecisionV1,
+    source: SourceIdentity,
+    recheck: Option<ReleaseCheckout>,
+    trust_profile: ExecutionTrustProfileV1,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
+    remote: GitRemoteRequirement,
+    diagnostics: &mut Vec<callisto_model::Diagnostic>,
+) -> Result<ReleaseIntentV1, GraphError> {
+    let intent = derive_release_intent(
+        workspace,
+        decision,
+        source.clone(),
+        trust_profile,
+        artifact_policy,
+        remote,
+        diagnostics,
+    )?;
+    if let Some(checkout) = recheck
+        && observe_source(workspace, trust_profile, checkout)? != source
+    {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),
         });
     }
-    Ok((intent, diagnostics))
+    Ok(intent)
 }
 
 /// Re-observes root, config, package discovery, manifests, Git evidence, and
