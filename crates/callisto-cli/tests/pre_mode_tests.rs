@@ -1136,10 +1136,16 @@ fn staged_by_pre(dir: &str) -> (Vec<String>, Vec<String>) {
             .collect::<Vec<_>>()
     };
 
-    commands::pre::handle(PreArgs::Enter { tag: "beta".into() }, &global).unwrap();
+    assert_eq!(
+        commands::pre::handle(PreArgs::Enter { tag: "beta".into() }, &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     let entered = staged(root);
     git_out(root, &["reset", "-q"]);
-    commands::pre::handle(PreArgs::Exit, &global).unwrap();
+    assert_eq!(
+        commands::pre::handle(PreArgs::Exit, &global).unwrap(),
+        std::process::ExitCode::SUCCESS
+    );
     (entered, staged(root))
 }
 
