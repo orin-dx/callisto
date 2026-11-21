@@ -138,37 +138,12 @@ fn take_chosen(selection: LastTagSelection, diagnostics: &mut Vec<Diagnostic>) -
     selection.chosen
 }
 
-/// The commit each tag ends at, from one `git for-each-ref`; a tag that ends at something else is absent.
-fn read_tag_commits(git: &GitAccess<'_>) -> Result<BTreeMap<String, CommitSha>, GraphError> {
-    Ok(git
-        .tags_with_commits()?
-        .into_iter()
-        .filter_map(|(name, commit)| Some((name.as_str().to_owned(), commit?)))
-        .collect())
-}
-
-/// The commit each tag ends at, read the first time history asks for a tag by commit. History queries keyed by commit
-/// let the tags of one commit share their probes.
-#[derive(Default)]
-struct TagCommits(std::cell::OnceCell<Option<BTreeMap<String, CommitSha>>>);
-
-impl TagCommits {
-    /// The revision to query `tag` by: its commit, or the tag name when its commit is unknown.
-    fn rev_of(&self, git: &GitAccess<'_>, tag: &str) -> String {
-        let commits = self.0.get_or_init(|| read_tag_commits(git).ok());
-        commits
-            .as_ref()
-            .and_then(|commits| commits.get(tag))
-            .map_or_else(|| tag.to_owned(), |commit| commit.as_str().to_owned())
-    }
-
-    fn into_known(self) -> std::cell::OnceCell<BTreeMap<String, CommitSha>> {
-        let known = std::cell::OnceCell::new();
-        if let Some(Some(commits)) = self.0.into_inner() {
-            drop(known.set(commits));
-        }
-        known
-    }
+/// The revision to query `tag` by: its commit, or the tag name when its commit is unknown. History queries keyed by
+/// commit let the tags of one commit share their probes.
+fn rev_of(commits: &BTreeMap<String, CommitSha>, tag: &str) -> String {
+    commits
+        .get(tag)
+        .map_or_else(|| tag.to_owned(), |commit| commit.as_str().to_owned())
 }
 
 /// The higher-versioned of two tags found for one package; `first` wins a tie.
@@ -235,8 +210,8 @@ pub struct TagIndex {
     /// package) can consult this in-memory set instead of re-querying `git`
     /// once per check.
     all_tags: std::collections::BTreeSet<String>,
-    /// The commit each tag ends at, read with one `git for-each-ref` the first time a caller asks for any.
-    commits: std::cell::OnceCell<BTreeMap<String, CommitSha>>,
+    /// The commit each tag ends at, read with the tag names in one `git for-each-ref`.
+    commits: BTreeMap<String, CommitSha>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -255,13 +230,17 @@ impl TagIndex {
 
         // Fetch the raw tag list exactly once for the whole build, not once
         // per package -- see `fetch_all_tags` for why.
-        let all_tag_names = fetch_all_tags(git)?;
+        let listed = git.tags_with_commits()?;
+        let all_tag_names: Vec<String> = listed.iter().map(|(name, _)| name.as_str().to_owned()).collect();
+        let tag_commits: BTreeMap<String, CommitSha> = listed
+            .into_iter()
+            .filter_map(|(name, commit)| Some((name.as_str().to_owned(), commit?)))
+            .collect();
         let all_tags_set: std::collections::BTreeSet<String> = all_tag_names.iter().cloned().collect();
         let all_tags = SortedTags::new(&all_tag_names);
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
 
         let mut rosters = crate::history::Rosters::default();
-        let tag_commits = TagCommits::default();
         // A bare-named package's candidates are parsed and ordered once, here, and checked below.
         let mut ranked: std::collections::HashMap<PackageId, RankedTags> = std::collections::HashMap::new();
         // The first candidate of every bare-named package is checked below; read their manifests together.
@@ -313,7 +292,7 @@ impl TagIndex {
                 let mut rejected = false;
                 for tag in tags.ordered {
                     let rev = if rejected {
-                        tag_commits.rev_of(git, tag.name.as_str())
+                        rev_of(&tag_commits, tag.name.as_str())
                     } else {
                         tag.name.as_str().to_owned()
                     };
@@ -364,7 +343,7 @@ impl TagIndex {
                     .collect();
                 let mut owned = Vec::new();
                 for tag in matching_tags(&all_tags, &unqualified)? {
-                    let rev = tag_commits.rev_of(git, tag);
+                    let rev = rev_of(&tag_commits, tag);
                     if crate::history::sole_owner_at(git, &rev, pkg.id.name(), &same, identity, &mut rosters)?
                         .is_some_and(|owner| owner.id == pkg.id)
                     {
@@ -399,7 +378,7 @@ impl TagIndex {
             templates,
             foreign,
             all_tags: all_tags_set,
-            commits: tag_commits.into_known(),
+            commits: tag_commits,
             diagnostics,
         })
     }
@@ -421,16 +400,13 @@ impl TagIndex {
         self.all_tags.contains(tag_name)
     }
 
-    /// The commit `tag_name` ends at. Every tag is read in one process the first time, so asking once per package
-    /// costs no process each; a tag that ends at something else is left to `git rev-parse`.
+    /// The commit `tag_name` ends at. Every tag's commit is read with the tag names when the index is built, so
+    /// asking once per package costs no process; a tag that ends at something else is left to `git rev-parse`.
     pub fn commit_of(&self, git: &GitAccess<'_>, tag_name: &str) -> Result<Option<CommitSha>, GraphError> {
         if !self.all_tags.contains(tag_name) {
             return Ok(git.resolve_commit(&format!("refs/tags/{tag_name}"))?);
         }
-        if self.commits.get().is_none() {
-            drop(self.commits.set(read_tag_commits(git)?));
-        }
-        match self.commits.get().and_then(|commits| commits.get(tag_name)) {
+        match self.commits.get(tag_name) {
             Some(commit) => Ok(Some(commit.clone())),
             None => Ok(git.resolve_commit(&format!("refs/tags/{tag_name}"))?),
         }
@@ -449,7 +425,7 @@ impl TagIndex {
             templates: BTreeMap::new(),
             foreign: BTreeMap::new(),
             all_tags: std::collections::BTreeSet::new(),
-            commits: std::cell::OnceCell::new(),
+            commits: BTreeMap::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -496,9 +472,11 @@ mod tests {
     }
 
     /// A `CommandRunner` double that never touches a real `git` binary: it
-    /// answers `git tag --list` with a canned tag list and counts every
+    /// answers `git for-each-ref` with a canned tag list and counts every
     /// invocation, to count how many `git` spawns a `TagIndex::build` call
     /// costs.
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
     struct FakeGitTagRunner {
         calls: AtomicUsize,
         tags: Vec<String>,
@@ -524,11 +502,16 @@ mod tests {
                     stderr: String::new(),
                 });
             }
-            assert_eq!(args, ["tag", "--list"]);
+            assert_eq!(args[0], "for-each-ref");
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(CommandOutput {
                 exit_code: Some(0),
-                stdout: self.tags.join("\n"),
+                stdout: self
+                    .tags
+                    .iter()
+                    .map(|tag| format!("{tag}\0commit\0{COMMIT}\0\0"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
                 stderr: String::new(),
             })
         }
@@ -541,7 +524,7 @@ mod tests {
     }
 
     /// Spec: `TagIndex::build` selects each package's last tag from the
-    /// `git tag --list` output.
+    /// `git for-each-ref` output.
     #[test]
     fn test_tag_index_build_selects_last_tag_from_git_tag_list() {
         let dir = non_repo_dir();

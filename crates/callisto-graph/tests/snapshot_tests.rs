@@ -311,7 +311,7 @@ fn test_snapshot_resolves_head_sha_through_the_command_runner() {
                     stdout: format!("{}\n", self.0),
                     stderr: String::new(),
                 }),
-                ["tag", "--list"] => Ok(callisto_model::CommandOutput {
+                ["for-each-ref", _, "refs/tags"] => Ok(callisto_model::CommandOutput {
                     exit_code: Some(0),
                     stdout: String::new(),
                     stderr: String::new(),

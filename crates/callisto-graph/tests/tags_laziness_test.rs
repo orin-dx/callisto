@@ -23,7 +23,7 @@ struct CountingTagListRunner {
 impl CommandRunner for CountingTagListRunner {
     fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         assert_eq!(program, "git", "only `git` should ever be shelled out to here");
-        if args == ["tag", "--list"] {
+        if matches!(args, ["for-each-ref", _, "refs/tags"]) {
             self.tag_list_calls.fetch_add(1, Ordering::SeqCst);
         }
         Ok(CommandOutput {

@@ -77,6 +77,19 @@ fn foreign_tags_of_one_commit_start_no_git_process_per_tag() {
     }
 }
 
+/// Names and commits of every tag come from one process, not a `tag --list` and a `for-each-ref`.
+#[test]
+fn status_and_version_enumerate_tags_in_one_git_process() {
+    for args in [&["status"][..], &["--dry-run", "version"][..]] {
+        let starts = git_starts(PackageKind::Cargo, 6, args);
+        let listings = starts
+            .iter()
+            .filter(|line| line.contains("\"--list\"") || line.contains("refname:strip=2"))
+            .count();
+        assert_eq!(listings, 1, "`callisto {args:?}`: {starts:#?}");
+    }
+}
+
 /// The tag probe runs `ls-remote` against the HTTPS origin, and no credential helper adds a process when it is refused.
 #[test]
 fn release_dry_run_probes_origin_once_and_starts_no_credential_helper() {

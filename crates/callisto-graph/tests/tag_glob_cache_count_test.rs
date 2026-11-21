@@ -74,11 +74,16 @@ impl CommandRunner for FakeGitTagRunner {
                 stderr: String::new(),
             });
         }
-        assert_eq!(args, ["tag", "--list"]);
+        assert!(
+            matches!(args, ["for-each-ref", _, "refs/tags"]),
+            "unexpected git call: {args:?}"
+        );
         self.calls.fetch_add(1, Ordering::SeqCst);
+        let sha = "a".repeat(40);
+        let lines: Vec<String> = self.tags.iter().map(|t| format!("{t}\0commit\0{sha}\0\0")).collect();
         Ok(CommandOutput {
             exit_code: Some(0),
-            stdout: self.tags.join("\n"),
+            stdout: lines.join("\n"),
             stderr: String::new(),
         })
     }
