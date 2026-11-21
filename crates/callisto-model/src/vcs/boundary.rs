@@ -79,7 +79,7 @@ impl GitStdout {
     }
 
     /// `git log -z --name-only` run with [`LogEntry::format`]: each commit's header fields and the files it lists.
-    pub fn log_entries<const N: usize>(&self) -> Result<Vec<LogEntry<'_, N>>, VcsError> {
+    pub fn log_entries(&self) -> Result<Vec<LogEntry<'_>>, VcsError> {
         let malformed = |detail: String| VcsError::MalformedLogOutput { detail };
         let mut fields = self.fields().peekable();
         let mut entries = Vec::new();
@@ -87,9 +87,9 @@ impl GitStdout {
             if !opener.is_empty() {
                 return Err(malformed(format!("expected a commit to open with NUL, got {opener:?}")));
             }
-            let header: Vec<&str> = fields.by_ref().take(N).collect();
-            let header = <[&str; N]>::try_from(header)
-                .map_err(|header| malformed(format!("expected {N} header fields, got {header:?}")))?;
+            let header = fields
+                .next()
+                .ok_or_else(|| malformed("expected a header field after the opening NUL".to_owned()))?;
             let mut files = Vec::new();
             while let Some(file) = fields.next_if(|file| !file.is_empty()) {
                 // Git puts a newline between the header and the first file.
@@ -107,16 +107,16 @@ impl GitStdout {
 
 /// One commit of [`GitStdout::log_entries`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct LogEntry<'a, const N: usize> {
-    pub header: [&'a str; N],
+pub struct LogEntry<'a> {
+    pub header: &'a str,
     pub files: Vec<&'a str>,
 }
 
-impl<const N: usize> LogEntry<'_, N> {
+impl LogEntry<'_> {
     /// The `--format` argument whose output [`GitStdout::log_entries`] reads: each commit opens with NUL, which no
-    /// header field or file name can hold, followed by the `placeholders` NUL-separated.
-    pub fn format(placeholders: [&str; N]) -> String {
-        format!("--format=%x00{}", placeholders.join("%x00"))
+    /// header field or file name can hold, followed by the `placeholder`.
+    pub fn format(placeholder: &str) -> String {
+        format!("--format=%x00{placeholder}")
     }
 }
 
@@ -152,25 +152,24 @@ mod tests {
 
     #[test]
     fn log_entries_group_files_under_their_commit() {
-        let log = stdout("\x001\0s \u{1}one\0\n\nodd\0b\0\x002\0two\0\nc\0\x003\0none\0");
+        let log = stdout("\x001\0\n\nodd\0b\0\x002\0\nc\0\x003\0");
         assert_eq!(
-            log.log_entries::<2>().unwrap(),
+            log.log_entries().unwrap(),
             [
                 LogEntry {
-                    header: ["1", "s \u{1}one"],
+                    header: "1",
                     files: vec!["\nodd", "b"],
                 },
                 LogEntry {
-                    header: ["2", "two"],
+                    header: "2",
                     files: vec!["c"],
                 },
                 LogEntry {
-                    header: ["3", "none"],
+                    header: "3",
                     files: vec![],
                 },
             ]
         );
-        assert!(stdout("\x001\0").log_entries::<2>().is_err());
-        assert!(stdout("1\0s\0").log_entries::<2>().is_err());
+        assert!(stdout("1\0s\0").log_entries().is_err());
     }
 }

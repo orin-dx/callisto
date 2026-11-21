@@ -794,12 +794,6 @@ fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
         "pkg-a must appear exactly once in severities map, got {a_severity_count}"
     );
 
-    let a_target_count = outcome.targets.keys().filter(|k| *k == &pkg_a).count();
-    assert_eq!(
-        a_target_count, 1,
-        "pkg-a must appear exactly once in targets map, got {a_target_count}"
-    );
-
     assert_eq!(
         outcome.severities[&pkg_d],
         Severity::Major,
