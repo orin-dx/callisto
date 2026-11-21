@@ -1,0 +1,12 @@
+---
+source: crates/callisto-cli/tests/schema_guard_test.rs
+expression: "variant_names(&receipt, name)"
+---
+[
+  "artifactUpload",
+  "forgePublish",
+  "forgeRelease",
+  "platformPublish",
+  "registryPublish",
+  "tag"
+]
