@@ -1,0 +1,29 @@
+---
+source: crates/callisto-cli/tests/schema_guard_test.rs
+expression: "variant_names(&run_schema(\"status\"), \"DiagnosticCode\")"
+---
+[
+  "ambiguous-package-name",
+  "artifact-without-forge-destination",
+  "catalog-spec-not-rewritten",
+  "changed-without-changeset",
+  "changeset-parse-failed",
+  "changesets-config-key-dropped",
+  "duplicate-platform-triple",
+  "empty-changeset",
+  "init-origin-missing",
+  "invalid-package-name",
+  "manifest-unresolved",
+  "napi-target-added-not-in-members",
+  "napi-target-removed-still-on-disk",
+  "package-rule-matched-nothing",
+  "platform-package-without-owner",
+  "product-artifact-owner-without-product",
+  "range-not-round-trippable",
+  "tag-glob-non-version-match",
+  "tag-owned-by-another-package",
+  "unknown-package",
+  "unrecognised-platform-triple",
+  "workflow-generation-unsupported",
+  "workflow-merge-publishes"
+]

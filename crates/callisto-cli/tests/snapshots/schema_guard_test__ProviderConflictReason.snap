@@ -1,0 +1,14 @@
+---
+source: crates/callisto-cli/tests/schema_guard_test.rs
+expression: "variant_names(&receipt, name)"
+---
+[
+  "artifactAssetDiffers",
+  "duplicateArtifactAsset",
+  "forgeReleaseDiffers",
+  "forgeReleasePrereleaseDiffers",
+  "localTagDiffers",
+  "registryVersionYanked",
+  "remoteTagTargetDiffers",
+  "unannotatedTag"
+]

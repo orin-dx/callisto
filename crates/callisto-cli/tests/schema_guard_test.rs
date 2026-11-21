@@ -501,46 +501,28 @@ fn report_struct_field_shapes_are_unchanged() {
     );
 }
 
-#[test]
-fn diagnostic_code_enum_variants_match_expected_set() {
-    let status_schema = run_schema("status");
-    let variants: BTreeSet<String> = status_schema["$defs"]["DiagnosticCode"]["oneOf"]
+/// Wire names are permanent: a snapshot diff here is a deliberate decision about a public spelling.
+fn variant_names(schema: &Value, name: &str) -> Vec<String> {
+    let mut names: Vec<String> = schema["$defs"][name]["oneOf"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| v["const"].as_str().unwrap().to_string())
+        .map(|variant| {
+            variant
+                .get("const")
+                .or_else(|| variant["properties"]["kind"].get("const"))
+                .and_then(Value::as_str)
+                .expect("every variant names itself")
+                .to_owned()
+        })
         .collect();
+    names.sort();
+    names
+}
 
-    let expected = set(&[
-        "empty-changeset",
-        "unknown-package",
-        "invalid-package-name",
-        "napi-target-added-not-in-members",
-        "napi-target-removed-still-on-disk",
-        "range-not-round-trippable",
-        "catalog-spec-not-rewritten",
-        "tag-glob-non-version-match",
-        "changesets-config-key-dropped",
-        "changeset-parse-failed",
-        "changed-without-changeset",
-        "init-origin-missing",
-        "manifest-unresolved",
-        "unrecognised-platform-triple",
-        "duplicate-platform-triple",
-        "ambiguous-package-name",
-        "platform-package-without-owner",
-        "workflow-generation-unsupported",
-        "workflow-merge-publishes",
-        "package-rule-matched-nothing",
-        "product-artifact-owner-without-product",
-        "tag-owned-by-another-package",
-        "artifact-without-forge-destination",
-    ]);
-
-    assert_eq!(
-        variants, expected,
-        "DiagnosticCode schema variants changed; update this list deliberately"
-    );
+#[test]
+fn diagnostic_code_wire_names_are_stable() {
+    insta::assert_json_snapshot!(variant_names(&run_schema("status"), "DiagnosticCode"));
 }
 
 /// The receipt is versioned: a change to its shape without a `SCHEMA_VERSION`
@@ -566,82 +548,18 @@ fn durable_release_wire_shapes_match_their_schema_version() {
     assert_eq!(props, expected);
 }
 
-/// The operation role is the durable DAG's vocabulary: a receipt names every
-/// operation by it. `forgePublish` is the role that makes publication the last
-/// forge step, after every `artifactUpload`.
+/// Receipts name every operation by role and persist both observation enums, so a reader from an earlier release must
+/// recognise every value.
 #[test]
-fn release_operation_roles_carry_exactly_their_declared_variants() {
+fn receipt_enum_wire_names_are_stable() {
     let receipt = run_schema("release-receipt");
-    let variants: BTreeSet<String> = receipt["$defs"]["ReleaseOperationRole"]["oneOf"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|variant| {
-            variant["properties"]["kind"]["const"]
-                .as_str()
-                .expect("every role variant names itself")
-                .to_owned()
-        })
-        .collect();
-    assert_eq!(
-        variants,
-        set(&[
-            "registryPublish",
-            "tag",
-            "forgeRelease",
-            "artifactUpload",
-            "forgePublish",
-            "platformPublish",
-        ])
-    );
-}
-
-/// Both observation enums are closed and persisted in receipts, so a
-/// reader from an earlier release must be able to name every value it can meet.
-/// Adding one is intentional and belongs here; losing one silently is not.
-#[test]
-fn provider_observation_enums_carry_exactly_their_declared_variants() {
-    let receipt = run_schema("release-receipt");
-    let variants = |name: &str| -> BTreeSet<String> {
-        receipt["$defs"][name]["oneOf"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|variant| {
-                variant
-                    .get("const")
-                    .or_else(|| variant["properties"]["kind"].get("const"))
-                    .and_then(serde_json::Value::as_str)
-                    .expect("every variant names itself")
-                    .to_owned()
-            })
-            .collect()
-    };
-
-    assert_eq!(
-        variants("ProviderConflictReason"),
-        set(&[
-            "localTagDiffers",
-            "remoteTagTargetDiffers",
-            "unannotatedTag",
-            "forgeReleaseDiffers",
-            "forgeReleasePrereleaseDiffers",
-            "artifactAssetDiffers",
-            "duplicateArtifactAsset",
-            "registryVersionYanked",
-        ])
-    );
-    assert_eq!(
-        variants("ProviderIndeterminateCause"),
-        set(&[
-            "unsupportedProvider",
-            "providerStatus",
-            "commandFailed",
-            "malformedResponse",
-            "timeout",
-            "artifactManifestUnavailable",
-        ])
-    );
+    for name in [
+        "ReleaseOperationRole",
+        "ProviderConflictReason",
+        "ProviderIndeterminateCause",
+    ] {
+        insta::assert_json_snapshot!(name, variant_names(&receipt, name));
+    }
 }
 
 /// Every key at every depth of a user-facing or CI JSON document is camelCase; `serde`'s enum-level `rename_all`

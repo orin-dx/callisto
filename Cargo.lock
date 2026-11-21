@@ -261,6 +261,7 @@ dependencies = [
  "dialoguer",
  "dunce",
  "indexmap",
+ "insta",
  "jsonschema",
  "miette",
  "schemars",
