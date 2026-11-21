@@ -31,4 +31,4 @@ Canonical `ecosystem/name` references, historical tag ownership, one tag and rel
 
 ## After 1.0
 
-Generated OIDC trusted publishing ([plan](OIDC-TRUSTED-PUBLISHING.md)); the [tokenless recipe](../publishing.md#tokenless-trusted-publishing) is documented but unverified on real registries, `cargo-semver-checks` on the promised surfaces (schema output, config and report formats), and a review of the remaining `expect` calls.
+Generated OIDC trusted publishing ([plan](OIDC-TRUSTED-PUBLISHING.md)); the [tokenless recipe](../publishing.md#tokenless-trusted-publishing) is documented but unverified on real registries, and a review of the remaining `expect` calls. The CLI, config and report surfaces are already covered by the `callisto schema` output checked in `schema_guard_test` and the snapshot tests under `crates/callisto-cli/tests/snapshots`; no new gate is planned.
