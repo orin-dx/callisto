@@ -1,0 +1,89 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M7XSCKHJRAGQY6849RVWEHKT",
+  "session_id": "21ca0c7f-55f9-4935-aaa5-67d5ab570690",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-21T00:51:47.540386Z",
+  "branch": "worktree-wp-dry-run-checkpoint",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/version_resume_tests.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b3862300092d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 92065,
+    "cache_read_tokens": 2945465,
+    "output_tokens": 13917,
+    "api_call_count": 32
+  },
+  "session_token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 92065,
+    "cache_read_tokens": 2945465,
+    "output_tokens": 13917,
+    "api_call_count": 32
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 2,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Fix a bug where `version --dry-run` with an interrupted-run checkpoint skipped the workspace/tree identity checks (they sat behind the permit gate), so it could proceed where a real `version` would refuse with E340. Ship it as a signed-commit PR on trail #462 with a patch changeset.",
+    "outcome": "Added a regression test, split `resume_input_changes` into a permit-free `resume_identity_changes` that runs before the permit gate, and added a patch changeset. Lint, doc-check and the callisto-cli resume tests were run, but the signed commit was still being retried after the classifier denied the first attempt, so merge, push and PR were not completed in this transcript.",
+    "learnings": {
+      "repo": [
+        "Resume identity checks (HEAD, tags, Callisto version, workspace, tree blob hash at checkpoint commit) need no permit because they only read; only the input-file comparison requires an ApplyPermit, since it applies the plan in the scratch worktree.",
+        "`cargo test -p callisto-cli version_resume` matches the test file name, not test names; use `--test version_resume_tests <name>` to target tests.",
+        "`cargo test -p callisto-graph` has a sandbox-related failure from npm cache/network access that is unrelated to the change.",
+        "Changesets are created with `cargo run -p callisto-cli -- add --package cargo/callisto-cli:patch --summary ...`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "finding": "`resume_input_changes` was split: new permit-free `resume_identity_changes(ws, scratch, checkpoint, now)` checks HEAD, tags, workspace, Callisto version and tree identity; `resume_input_changes` now takes only the permit-needing input comparison and drops the `facts` argument."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/version.rs",
+          "finding": "The CLI now calls `resume_identity_changes` before the permit gate and returns `GraphError::CheckpointInputsChanged`, so a dry run refuses like a real resume. The input-file comparison still runs only when a permit exists."
+        },
+        {
+          "path": "crates/callisto-cli/tests/version_resume_tests.rs",
+          "finding": "Added `a_dry_run_refuses_a_checkpoint_from_a_sibling_workspace`: a checkpoint from workspace `one`, then `--dry-run version` in `two` must exit nonzero with E340 and empty stdout."
+        }
+      ],
+      "workflow": [
+        "The Bash tool kept resolving to the shared checkout rather than the worktree; re-entering the worktree via EnterWorktree fixed the working directory.",
+        "The original premise (dry run prints another directory's plan) did not reproduce; the real gap was a missed E340 refusal. The agent reported this and got lead approval before making an unrequested behavior change.",
+        "Writing the edit script to a temp file and running it with `python3 -I` kept the large multi-file edit repeatable.",
+        "The auto-mode classifier denied a commit that carried a session-link trailer, which the task rules forbid; the commit was retried without it."
+      ]
+    },
+    "friction": [
+      "Bash repeatedly resolved to the shared checkout instead of the worktree, costing several redundant fetch/reset/grep calls.",
+      "`cargo test ... version_resume` filtered by file name and ran nothing useful.",
+      "`just lint` failed at first and needed a follow-up edit to the graph tests before it passed.",
+      "The first signed commit attempt included a forbidden session trailer and was denied.",
+      "The sandbox's npm network/cache error made one `callisto-graph` test fail for reasons unrelated to the change."
+    ],
+    "open_items": [
+      "Finish the commit, merge origin/main, push with `git push origin HEAD:refs/heads/<branch>`, confirm with `git ls-remote`, open the PR with `entire trail ci-pr` on trail #462, and report to the lead.",
+      "Dry run still does not compare files the interrupted run wrote, since it writes nothing; this is documented in the changeset as a limit.",
+      "Inspect any Entire or CI findings once the PR is open."
+    ]
+  }
+}
