@@ -225,19 +225,26 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
         owners,
     } = select_packages(workspace, decision)?;
     require_dependencies_selected(workspace, &selected, &package_ids)?;
-    let distributions = selected
-        .iter()
-        .map(|(id, (package, _))| (id.clone(), package.id.clone()))
-        .collect();
-    let publish_waits = PublishWaits::new(
-        &distributions,
-        &distribution_dependencies(workspace, &selected, &package_ids),
-    )?;
 
     let git_remote = prepare_remote(workspace, &selected, artifact_policy, remote)?;
 
     let mut ops = Ops::default();
     build_publish_leaves(workspace, &selected, git_remote.as_ref(), &mut package_inputs, &mut ops)?;
+    // Only the distributions a registry publish runs for wait or are waited for; the rest still tag and release.
+    let published: BTreeMap<_, _> = selected
+        .iter()
+        .filter(|(id, _)| {
+            ops.index
+                .publishes_by_package
+                .get(*id)
+                .is_some_and(|ids| !ids.is_empty())
+        })
+        .map(|(id, (package, _))| (id.clone(), package.id.clone()))
+        .collect();
+    let publish_waits = PublishWaits::new(
+        &published,
+        &distribution_dependencies(workspace, &published, &package_ids),
+    )?;
     link_publish_prerequisites(&selected, &publish_waits, &mut ops)?;
     add_tags(&selected, &package_ids, &owners, &source, &mut ops)?;
     add_forge_releases(workspace, &selected, &owners, &mut ops)?;
@@ -468,28 +475,29 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
     Ok(())
 }
 
-/// Every `(dependent, dependency, kind)` wait between selected distributions.
+/// Every `(dependent, dependency, kind)` wait between published distributions.
 fn distribution_dependencies<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
-    selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
+    published: &BTreeMap<ReleasePackageId, callisto_model::PackageId>,
     package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
 ) -> Vec<(ReleasePackageId, ReleasePackageId, DepKind)> {
     let mut edges = Vec::new();
-    for (id, (package, _)) in selected {
-        for edge in workspace.graph.dependencies_of(&package.id) {
+    for (id, package) in published {
+        for edge in workspace.graph.dependencies_of(package) {
             // Only the dependent's distribution in the declaring manifest's ecosystem waits.
             let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
             if id.ecosystem() != ecosystem {
                 continue;
             }
             // It waits for the dependency's distribution in that ecosystem, so a Cargo dependent follows the crate,
-            // not the npm package. No such distribution means the edge was resolved some other way: wait for all.
+            // not the npm package, and an unpublished crate orders nothing. No such distribution means the edge was
+            // resolved some other way: wait for every published one.
             let dependency_ids = package_ids.get(&edge.to).map(Vec::as_slice).unwrap_or_default();
             let native = dependency_ids
                 .iter()
                 .any(|dependency| dependency.ecosystem() == ecosystem);
             for dependency in dependency_ids {
-                if !native || dependency.ecosystem() == ecosystem {
+                if (!native || dependency.ecosystem() == ecosystem) && published.contains_key(dependency) {
                     edges.push((id.clone(), dependency.clone(), edge.kind));
                 }
             }
@@ -2119,6 +2127,17 @@ mod tests {
     /// Two dual packages whose manifests: `a_cargo`/`b_cargo` are the Cargo dependency tables and `a_npm`/`b_npm` the
     /// npm `dependencies` objects, each naming the other package or nothing.
     fn dual_pair_repo(a_cargo: &str, b_cargo: &str, a_npm: &str, b_npm: &str) -> tempfile::TempDir {
+        dual_pair_repo_to([r#""crates-io", "npm""#; 2], a_cargo, b_cargo, a_npm, b_npm)
+    }
+
+    /// [`dual_pair_repo`] whose owners `a` and `b` publish to `targets`.
+    fn dual_pair_repo_to(
+        targets: [&str; 2],
+        a_cargo: &str,
+        b_cargo: &str,
+        a_npm: &str,
+        b_npm: &str,
+    ) -> tempfile::TempDir {
         let cargo = |name: &str, table: &str| {
             format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{table}")
         };
@@ -2140,9 +2159,57 @@ mod tests {
             ("b/package.json".to_owned(), npm("b", b_npm)),
             (
                 "callisto.toml".to_owned(),
-                "[[package]]\nmatch = \"cargo/*\"\npublish-to = [\"crates-io\", \"npm\"]\n".to_owned(),
+                ["a", "b"]
+                    .iter()
+                    .zip(targets)
+                    .map(|(name, to)| format!("[[package]]\nmatch = \"cargo/{name}\"\npublish-to = [{to}]\n"))
+                    .collect(),
             ),
         ])
+    }
+
+    /// The registry publishes `callisto release --dry-run` plans for every unreleased package, with their waits.
+    fn planned_publishes(dir: &tempfile::TempDir) -> Result<Vec<(String, usize)>, GraphError> {
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
+        let plan = super::super::local::plan_workspace_release_offline(&workspace, &[])?.unwrap();
+        Ok(plan
+            .intent
+            .operations
+            .iter()
+            .filter(|operation| {
+                matches!(
+                    operation.id().role,
+                    callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+                )
+            })
+            .map(|operation| (operation.id().package.to_string(), operation.prerequisites().len()))
+            .collect())
+    }
+
+    /// A cycle between manifests the release does not publish orders nothing; one between published ones still fails.
+    #[test]
+    fn only_published_manifests_take_part_in_the_publish_cycle_check() {
+        let npm_cycle = |to| dual_pair_repo_to([to; 2], "", "", r#""b":"^1.0.0""#, r#""a":"^1.0.0""#);
+        assert_eq!(
+            planned_publishes(&npm_cycle(r#""crates-io""#)).unwrap(),
+            [("cargo/a".to_string(), 0), ("cargo/b".to_string(), 0)]
+        );
+        let error = planned_publishes(&npm_cycle(r#""npm""#)).unwrap_err();
+        assert!(matches!(error, GraphError::Cycle { .. }), "{error:?}");
+    }
+
+    /// A Cargo dependency resolves to the crate, so a crate the release does not publish orders nothing, and the
+    /// dependent does not fall back to waiting for the package's npm publish.
+    #[test]
+    fn a_dependency_on_an_unpublished_crate_waits_for_nothing() {
+        let on_b = "[dependencies]\nb = { path = \"../b\", version = \"1.0.0\" }\n";
+        let dir = dual_pair_repo_to([r#""crates-io""#, r#""npm""#], on_b, "", "", "");
+        assert_eq!(
+            planned_publishes(&dir).unwrap(),
+            [("cargo/a".to_string(), 0), ("npm/b".to_string(), 0)]
+        );
     }
 
     fn dual_pair_decision() -> ReleaseDecisionV1 {
