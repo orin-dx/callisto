@@ -22,12 +22,11 @@ pub struct StatusOptions {
     pub since: Option<String>,
 }
 
-/// Per-package accumulator: pending changeset names and their max severity.
-type PendingChangesets = BTreeMap<PackageId, (Vec<String>, Option<Severity>)>;
+/// Per-package pending changeset names.
+type PendingChangesets = BTreeMap<PackageId, Vec<String>>;
 
 /// Resolves each changeset entry to at most one package through the identity index -- the
-/// resolver `callisto version` uses -- and accumulates the pending changeset names and max
-/// severity per package.
+/// resolver `callisto version` uses -- and accumulates the pending changeset names per package.
 ///
 /// An unknown or ambiguous entry is skipped here rather than hard-erroring:
 /// `changeset_wellformedness_diagnostics` reports both cases as an Error-severity diagnostic.
@@ -53,14 +52,10 @@ fn resolve_pending_changesets<'a>(
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-            let state = pending.entry(resolved.id.clone()).or_default();
-            if state.0.last() != Some(&name) {
-                state.0.push(name);
+            let names = pending.entry(resolved.id.clone()).or_default();
+            if names.last() != Some(&name) {
+                names.push(name);
             }
-            state.1 = match (state.1, entry.severity) {
-                (None, s) => Some(s),
-                (Some(cur), s) => Some(cur.max(s)),
-            };
         }
     }
     Ok(pending)
@@ -114,7 +109,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         let last_tag = last.map(|t| t.name.clone());
         let last_released_version = last.map(|t| t.version.clone());
 
-        let (pkg_changesets, _) = pending.get(&pkg.id).cloned().unwrap_or_default();
+        let pkg_changesets = pending.get(&pkg.id).cloned().unwrap_or_default();
         let pending_severity = planned_severity.get(&pkg.id).copied();
 
         packages.push(callisto_model::StatusPackageRecord {
@@ -158,7 +153,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         for id in changed.packages {
             let named = pending
                 .get(&id)
-                .is_some_and(|(names, _)| names.iter().any(|name| changed.changesets.contains(name)));
+                .is_some_and(|names| names.iter().any(|name| changed.changesets.contains(name)));
             if named || inferred.contains(&id) {
                 continue;
             }
@@ -377,9 +372,8 @@ mod tests {
 
         let pending = resolve_pending_changesets([&cargo_foo].into_iter(), &identity, &loaded).unwrap();
 
-        let (names, sev) = pending.get(&cargo_foo.id).expect("package should be present");
+        let names = pending.get(&cargo_foo.id).expect("package should be present");
         assert_eq!(names, &vec!["foo-changeset".to_string()]);
-        assert_eq!(sev, &Some(Severity::Major));
     }
 
     /// Two selectors for one package fold into one record carrying the higher severity.
@@ -399,9 +393,8 @@ mod tests {
 
         let pending = resolve_pending_changesets([&owner].into_iter(), &identity, &loaded).unwrap();
 
-        let (names, sev) = pending.get(&owner.id).expect("owner should be present");
+        let names = pending.get(&owner.id).expect("owner should be present");
         assert_eq!(names, &vec!["core-changeset".to_string()]);
-        assert_eq!(sev, &Some(Severity::Minor));
     }
 
     #[test]

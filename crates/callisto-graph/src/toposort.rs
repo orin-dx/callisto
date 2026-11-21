@@ -22,27 +22,6 @@ pub fn toposort_impl<F>(
 where
     F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
 {
-    toposort_with_edge_filter(subset, all_packages, outgoing_edges, |_from, _to, kind| {
-        ordering_kinds.contains(&kind)
-    })
-}
-
-/// Same algorithm as [`toposort_impl`], but the caller decides per-edge
-/// whether it counts as an ordering constraint, rather than a single
-/// `DepKind` list applied uniformly to every pair. This is what lets
-/// a caller exclude a `Dev` edge only between the
-/// specific packages that form a cycle, instead of dropping `Dev` ordering
-/// for every package in `subset` the moment any one Dev cycle exists.
-pub fn toposort_with_edge_filter<F, P>(
-    subset: &HashSet<PackageId>,
-    all_packages: &[PackageId],
-    outgoing_edges: F,
-    edge_allowed: P,
-) -> Result<Vec<PackageId>, GraphError>
-where
-    F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
-    P: Fn(&PackageId, &PackageId, DepKind) -> bool,
-{
     let members: BTreeSet<PackageId> = subset.iter().cloned().collect();
     // Build a HashSet once so validation is O(N) rather than O(N²) slice scans.
     let all_set: std::collections::HashSet<&PackageId> = all_packages.iter().collect();
@@ -56,10 +35,7 @@ where
     }
 
     let dag = member_graph(&members, &outgoing_edges)
-        .validate_filtered(
-            |edge| edge_allowed(edge.dependent, edge.prerequisite, *edge.kind),
-            Order::Key,
-        )
+        .validate_filtered(|edge| ordering_kinds.contains(edge.kind), Order::Key)
         .map_err(|violations| GraphError::Cycle {
             cycle: cycle_of(&violations),
         })?;
@@ -177,54 +153,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-
-    #[test]
-    fn test_toposort_linear() {
-        let pkg_a = PackageId::parse("pkg-a").unwrap();
-        let pkg_b = PackageId::parse("pkg-b").unwrap();
-
-        let subset: HashSet<_> = vec![pkg_a.clone(), pkg_b.clone()].into_iter().collect();
-        let all = vec![pkg_a.clone(), pkg_b.clone()];
-
-        let res = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
-            if id == &pkg_a {
-                vec![(pkg_b.clone(), DepKind::Runtime)]
-            } else {
-                vec![]
-            }
-        })
-        .unwrap();
-
-        assert_eq!(res, vec![pkg_b, pkg_a]);
-    }
-
-    #[test]
-    fn test_toposort_produces_correct_order_large_graph() {
-        // Build a 10-package chain: pkg-a -> pkg-b -> ... -> pkg-i -> pkg-j
-        // Each package depends on the next; pkg-j is the leaf with no dependencies.
-        // Expected toposort order (dependencies first): [pkg-j, pkg-i, ..., pkg-a]
-        let ids: Vec<PackageId> = (b'a'..=b'j')
-            .map(|c| PackageId::parse(&format!("pkg-{}", c as char)).unwrap())
-            .collect();
-
-        let subset: HashSet<PackageId> = ids.iter().cloned().collect();
-        let all: Vec<PackageId> = ids.clone();
-
-        let result = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
-            // Find the index of this package; if it's not the last, it depends on the next.
-            if let Some(pos) = ids.iter().position(|x| x == id)
-                && pos + 1 < ids.len()
-            {
-                return vec![(ids[pos + 1].clone(), DepKind::Runtime)];
-            }
-            vec![]
-        })
-        .unwrap();
-
-        // pkg-j has no dependents so it sorts first; pkg-a sorts last.
-        let expected: Vec<PackageId> = ids.iter().cloned().rev().collect();
-        assert_eq!(result, expected);
-    }
 
     #[test]
     fn test_toposort_self_loop_cycle() {

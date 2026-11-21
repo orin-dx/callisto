@@ -295,13 +295,6 @@ impl ReleasePreview {
         ]
     }
 
-    /// The packages this release bumps, as `release --package` names them, or `None` if any could not be named. These
-    /// are the packages the committed decision will hold, so planning with exactly them cannot pick up an unrelated
-    /// unreleased package.
-    pub fn release_selections(&self) -> Option<Vec<String>> {
-        self.packages.iter().map(|package| package.release_id.clone()).collect()
-    }
-
     /// Adds what planning the versioned tree's release said. A plan that refused is a finding that stops the release.
     pub fn with_publish(mut self, outlook: PublishOutlook) -> Self {
         if let PublishOutlook::Blocked { code, message } = &outlook {
@@ -334,10 +327,7 @@ pub fn publish_outlook_in<R: callisto_model::CommandRunner, D: crate::resolver::
     let owners = crate::commands::release_decision::ReleaseOwners::of(ws);
     for package in &preview.packages {
         let id: callisto_model::ReleasePackageId = package.release_id.as_deref()?.parse().ok()?;
-        if owners
-            .get(&id)
-            .is_some_and(crate::commands::release_decision::has_dispatchable_target)
-        {
+        if owners.get(&id).is_some_and(|package| package.is_release_point()) {
             publishable.push(id);
         } else {
             versioned_only.push(package.name.clone());
@@ -637,7 +627,7 @@ pub fn unreleased_changes<R: callisto_model::CommandRunner, D: crate::resolver::
     let publishable: Vec<&callisto_model::Package> = ws
         .graph
         .packages()
-        .filter(|package| crate::commands::release_decision::has_dispatchable_target(package))
+        .filter(|package| package.is_release_point())
         .filter(|package| tags.last_tag(&package.id).is_some())
         .collect();
     let bumped: std::collections::BTreeSet<PackageId> = plan.bumps.iter().map(|bump| bump.package.clone()).collect();
@@ -836,7 +826,10 @@ mod tests {
             diagnostics: vec![],
         };
         // No manifest write, so no ecosystem: the preview must not claim a selection it cannot name.
-        assert_eq!(build_release_preview(&plan).release_selections(), None);
+        assert!(build_release_preview(&plan)
+            .packages
+            .iter()
+            .all(|package| package.release_id.is_none()));
     }
 
     fn plan_with_summary(severity: Severity, from: Version, summary: &str) -> VersionPlan {

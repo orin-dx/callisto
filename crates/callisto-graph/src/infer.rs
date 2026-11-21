@@ -57,7 +57,7 @@ pub struct CommitInference;
 impl SeverityInference for CommitInference {
     fn infer(
         &self,
-        pkg: &Package,
+        _pkg: &Package,
         git: &GitAccess<'_>,
         window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError> {
@@ -69,17 +69,14 @@ impl SeverityInference for CommitInference {
         };
 
         let input = InferenceInput {
-            package: &pkg.id,
             pathspecs: window.pathspecs,
             window: inf_window,
-            current_version: window.current_version,
-            has_prior_release: window.has_prior_release,
         };
 
         // Selecting the VCS backend is this layer's job: `conventional`
         // takes any `callisto_model::CommitWalker` and never names a VCS crate.
         let raw = infer_severity(git, &input)?;
-        if raw.commit_count == 0 {
+        if raw.commits.is_empty() {
             return Ok(None);
         }
 
@@ -90,6 +87,7 @@ impl SeverityInference for CommitInference {
             window.has_prior_release,
         );
 
+        let commit_count = raw.commits.len();
         let commits = raw
             .commits
             .into_iter()
@@ -98,7 +96,7 @@ impl SeverityInference for CommitInference {
 
         Ok(Some(InferenceOutcome {
             severity,
-            commit_count: raw.commit_count,
+            commit_count,
             remapped,
             commits,
         }))

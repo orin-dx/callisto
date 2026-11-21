@@ -120,11 +120,6 @@ fn strip_leading_title(text: &str) -> &str {
     }
 }
 
-/// The non-empty `## {version}` section body, trimmed.
-pub fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str> {
-    find_section(changelog, version).filter(|section| !section.is_empty())
-}
-
 /// The trimmed `## {version}` section body, empty when the heading has no content;
 /// `None` only when the heading is absent.
 pub fn find_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str> {
@@ -192,7 +187,7 @@ mod tests {
 - Initial release
 "#;
         let v1_1 = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
-        let extracted = extract_section(changelog, &v1_1).unwrap();
+        let extracted = find_section(changelog, &v1_1).unwrap();
         assert!(extracted.contains("### Minor Changes"));
         assert!(extracted.contains("- Add cool feature"));
         assert!(!extracted.contains("## 1.0.0"));
@@ -202,7 +197,7 @@ mod tests {
     fn extracts_crlf_changelog_section() {
         let changelog = "# my-pkg\r\n\r\n## 1.1.0\r\n\r\n### Minor Changes\r\n\r\n- Feature\r\n\r\n## 1.0.0\r\n";
         let v1_1 = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
-        let extracted = extract_section(changelog, &v1_1).unwrap();
+        let extracted = find_section(changelog, &v1_1).unwrap();
         assert!(extracted.contains("### Minor Changes"));
         assert!(extracted.contains("- Feature"));
     }
@@ -213,7 +208,6 @@ mod tests {
         let v1_1 = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
         let v2 = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
         assert_eq!(find_section(changelog, &v1_1), Some(""));
-        assert_eq!(extract_section(changelog, &v1_1), None);
         assert_eq!(find_section(changelog, &v2), None);
     }
 
@@ -267,7 +261,7 @@ mod tests {
     fn a_section_runs_past_headings_inside_a_code_block_or_indented_under_a_list_item() {
         let changelog = "# pkg\n\n## 1.1.0\n\n- Run it:\n\n  ```sh\n  # install\n  ## not a heading\n  make\n  ```\n\n- Next\n\n## 1.0.0\n\n- First\n";
         let v = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
-        let section = extract_section(changelog, &v).unwrap();
+        let section = find_section(changelog, &v).unwrap();
         assert!(section.contains("make"), "cut short:\n{section}");
         assert!(section.ends_with("- Next"), "got:\n{section}");
         assert!(!section.contains("First"));
@@ -275,7 +269,7 @@ mod tests {
 
     fn notes(changelog: &str) -> String {
         let v = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
-        extract_section(changelog, &v).unwrap().to_owned()
+        find_section(changelog, &v).unwrap().to_owned()
     }
 
     #[test]
@@ -571,7 +565,7 @@ mod tests {
         assert_eq!(section, GROUPED_NEW.strip_prefix("## 1.2.0\n\n").unwrap().trim());
         assert!(section.starts_with("_2026-11-08"));
         assert!(section.contains("### Major Changes") && section.contains("### Patch Changes"));
-        assert_eq!(extract_section(&changelog, &v("1.2.0")), Some(section));
+        assert_eq!(find_section(&changelog, &v("1.2.0")), Some(section));
         assert_eq!(find_section(&changelog, &v("1.1.0")), Some("- Old flat entry."));
     }
 }

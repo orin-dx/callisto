@@ -21,10 +21,10 @@ pub use callisto_model::{ReleaseDecisionEntry, ReleaseDecisionError, ReleaseDeci
 pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, render_pr_body_from_preview, PrBodyOptions};
 pub use release::{
-    build_release_intent, build_release_intent_with_artifacts, ci_release_route, origin_tag_probe, pending_releases,
-    plan_loaded_release, plan_local_release, plan_workspace_release, plan_workspace_release_offline,
-    validate_local_release_intent, validate_release_intent, ArtifactBuildPolicy, CiReleaseRoute, LocalReleasePlan,
-    LocalReleaseSource, OriginTagProbe, ReleasePreflight, ReleaseProviderSet, ValidatedReleaseIntent,
+    build_release_intent, ci_release_route, origin_tag_probe, pending_releases, plan_loaded_release,
+    plan_workspace_release, plan_workspace_release_offline, validate_local_release_intent, validate_release_intent,
+    ArtifactBuildPolicy, CiReleaseRoute, LocalReleasePlan, LocalReleaseSource, OriginTagProbe, ReleasePreflight,
+    ReleaseProviderSet, ValidatedReleaseIntent,
 };
 pub use release_artifacts::{
     require_sealed_publishes, seal_npm_tarballs, seal_python_distributions, verify_artifact_manifest,

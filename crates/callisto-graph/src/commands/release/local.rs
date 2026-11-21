@@ -1,19 +1,16 @@
 //! The local `callisto release` route: select every unreleased package and
 //! derive its intent, for both the preview and the run.
 
-use std::path::Path;
-
 use callisto_model::{
     CommandRunner, ExecutionTrustProfileV1, ManifestFormat, PublishTarget, ReleaseIntentV1, ReleasePackageId,
     SourceIdentity,
 };
 
-use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
+use crate::{DependencyResolver, GraphError, Workspace};
 
 use super::binding::optional_git_remote;
 use super::capability::{
-    canonical_root, names_taken_by_other_projects, observe_source, published_packages, unsatisfied_packages,
-    ReleaseCheckout,
+    names_taken_by_other_projects, observe_source, published_packages, unsatisfied_packages, ReleaseCheckout,
 };
 use super::derive::{
     derive_release_intent, derive_release_intent_with_prepared, ArtifactBuildPolicy, GitRemoteRequirement,
@@ -155,22 +152,6 @@ pub struct LocalReleasePlan {
     pub tags_unbound: bool,
     /// Advisory findings from derivation (e.g. an artifact owner selected without its product).
     pub diagnostics: Vec<callisto_model::Diagnostic>,
-}
-
-/// Derives the intent for every unreleased package (or exactly `selections`).
-///
-/// This is the one plan derivation behind both `callisto release --dry-run`
-/// and `callisto release`; `None` means nothing is unreleased.
-pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
-    root: &Path,
-    locator: &L,
-    runner: &R,
-    selections: &[ReleasePackageId],
-    mode: LocalReleaseSource,
-) -> Result<Option<LocalReleasePlan>, GraphError> {
-    let root = canonical_root(root)?;
-    let workspace = Workspace::load(root, locator, runner)?;
-    plan_release(&workspace, selections, mode, true, Observation::Registries)
 }
 
 /// The tagged releases on HEAD whose operations are not all observed satisfied: a rerun finishes them.
@@ -368,10 +349,11 @@ fn refuse_a_published_version_left_behind<R: CommandRunner, D: DependencyResolve
     }
 }
 
-/// [`plan_local_release`] over an already-loaded workspace, e.g. one built from an in-memory config.
+/// The plan for every unreleased package (or exactly `selections`) of an already-loaded workspace, e.g. one built from an
+/// in-memory config.
 ///
 /// This looks at no registry for a name another project owns, so a caller that must stay offline, such as the plan
-/// `init` previews, can use it; [`plan_local_release`] does look.
+/// `init` previews, can use it; [`plan_loaded_release`] does look.
 pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selections: &[ReleasePackageId],
@@ -396,8 +378,8 @@ pub fn plan_workspace_release_offline<R: CommandRunner, D: DependencyResolver>(
     )
 }
 
-/// [`plan_local_release`] over an already-loaded workspace: the same plan, including the registry checks, without
-/// loading the workspace again.
+/// The one plan derivation behind both `callisto release --dry-run` and `callisto release`, including the registry
+/// checks; `None` means nothing is unreleased.
 pub fn plan_loaded_release<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selections: &[ReleasePackageId],
@@ -487,7 +469,20 @@ mod tests {
     use callisto_model::{Ecosystem, ReleaseInclusionReason, ReleasePackageId};
 
     use super::*;
+    use crate::commands::release::capability::canonical_root;
     use crate::commands::release::tests::{fixture, RealGitRunner};
+    use crate::ProjectLocator;
+
+    fn load_and_plan<L: ProjectLocator, R: CommandRunner>(
+        root: &Path,
+        locator: &L,
+        runner: &R,
+        selections: &[ReleasePackageId],
+        mode: LocalReleaseSource,
+    ) -> Result<Option<LocalReleasePlan>, GraphError> {
+        let workspace = Workspace::load(canonical_root(root)?, locator, runner)?;
+        plan_loaded_release(&workspace, selections, mode)
+    }
     use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason};
 
     /// A runner whose `run_with_timeout` echoes live and whose `run_quiet` does not; both fail like an unreachable remote.
@@ -565,7 +560,7 @@ mod tests {
         selections: &[ReleasePackageId],
         mode: LocalReleaseSource,
     ) -> Result<Option<ReleaseIntentV1>, GraphError> {
-        plan_local_release(
+        load_and_plan(
             root,
             &crate::IgnoreWalkLocator::new(root),
             &RealGitRunner,
@@ -579,7 +574,7 @@ mod tests {
     fn preview_without_origin_leaves_tags_unbound_and_the_run_refuses() {
         let (dir, _) = fixture();
         git(dir.path(), &["remote", "remove", "origin"]);
-        let preview = plan_local_release(
+        let preview = load_and_plan(
             dir.path(),
             &crate::IgnoreWalkLocator::new(dir.path()),
             &RealGitRunner,
@@ -603,7 +598,7 @@ mod tests {
     #[test]
     fn preview_with_origin_binds_tags() {
         let (dir, _) = fixture();
-        let preview = plan_local_release(
+        let preview = load_and_plan(
             dir.path(),
             &crate::IgnoreWalkLocator::new(dir.path()),
             &RealGitRunner,
@@ -654,7 +649,7 @@ mod tests {
         let runner = DeadRegistry {
             lookups: std::sync::atomic::AtomicUsize::new(0),
         };
-        let preview = plan_local_release(
+        let preview = load_and_plan(
             dir.path(),
             &crate::IgnoreWalkLocator::new(dir.path()),
             &runner,
@@ -808,7 +803,7 @@ mod tests {
         selections: &[ReleasePackageId],
         mode: LocalReleaseSource,
     ) -> Result<Option<LocalReleasePlan>, GraphError> {
-        plan_local_release(
+        load_and_plan(
             root,
             &crate::IgnoreWalkLocator::new(root),
             &OfflineRunner,

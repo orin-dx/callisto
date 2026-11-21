@@ -11,11 +11,11 @@ use callisto_model::{
 };
 
 use crate::commands::registry_argv;
-use crate::error::{CommandFailure, ReleasePreconditionRequirement, RemoteConflict, UnsupportedReleaseFeature};
+use crate::error::{CommandFailure, RemoteConflict, UnsupportedReleaseFeature};
 use crate::GraphError;
 
 use super::http::parse_http_response;
-use super::policy::{self, programs, require_registry_confirmation, run_observation, timeouts, Attempt};
+use super::policy::{self, programs, run_observation, timeouts, Attempt};
 use super::pypi_files::{self, BuiltFile, BuiltSet, PypiSimpleFile, PypiSimpleIndex};
 use super::repository;
 use super::{
@@ -95,12 +95,6 @@ impl ReleaseProvider for RegistryProvider {
         // so only an exact observation may satisfy the operation.
         let confirmed = adapter.confirm(context, request.id, operation, request.artifacts)?;
         let waited = visibility_window(adapter, operation);
-        require_registry_confirmation(
-            confirmed.is_terminal_success(),
-            &operation.package_name,
-            &operation.version,
-            waited,
-        )?;
         confirmed
             .exact_evidence()
             .ok_or_else(|| GraphError::RegistryPublishUnconfirmed {
@@ -173,11 +167,6 @@ fn registry_observation<A: RegistryEcosystem + ?Sized>(
     context: &ProviderContext<'_>,
     operation: &RegistryPublishOperation,
 ) -> Result<ProviderObservationV1, GraphError> {
-    if !adapter.can_observe_versions() {
-        return Ok(ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::UnsupportedProvider,
-        });
-    }
     policy::retry_observation_within(context.sleeper(), context.patience(), || {
         adapter.observe_once(context, operation)
     })
@@ -233,13 +222,7 @@ pub(crate) trait RegistryEcosystem {
         None
     }
 
-    /// Whether this registry exposes a query that proves an exact published
-    /// version. `false` makes every observation `Indeterminate`, so a publish
-    /// is never confirmed here and instead fails closed at the mandatory
-    /// post-effect exact observation.
-    fn can_observe_versions(&self) -> bool;
-
-    /// One observation attempt. Only called when [`Self::can_observe_versions`].
+    /// One observation attempt.
     fn observe_once(
         &self,
         context: &ProviderContext<'_>,
@@ -265,14 +248,8 @@ pub(crate) trait RegistryEcosystem {
         operation: &RegistryPublishOperation,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ReleasePreflight, GraphError> {
-        match registry_observation(self, context, operation)? {
-            // A registry with no query API at all has nothing to observe
-            // before the effect; the post-effect confirmation fails closed.
-            ProviderObservationV1::Indeterminate {
-                cause: ProviderIndeterminateCause::UnsupportedProvider,
-            } => Ok(proceed()),
-            observation => preflight_from_observation(observation, id, RemoteConflict::RegistryVersionDiffers),
-        }
+        let observation = registry_observation(self, context, operation)?;
+        preflight_from_observation(observation, id, RemoteConflict::RegistryVersionDiffers)
     }
 
     /// The observation that lets a finished publish be recorded. The client reported the version published or already
@@ -284,11 +261,7 @@ pub(crate) trait RegistryEcosystem {
         operation: &RegistryPublishOperation,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
-        if self.can_observe_versions() {
-            confirmed_registry_observation(self, context, operation)
-        } else {
-            registry_observation(self, context, operation)
-        }
+        confirmed_registry_observation(self, context, operation)
     }
 }
 
@@ -405,18 +378,6 @@ pub(crate) fn pack_npm_into(
     outdir: &std::path::Path,
 ) -> Result<PathBuf, GraphError> {
     NpmRegistry::pack_into(context, operation, outdir)
-}
-
-/// The plan-time gate: an ecosystem whose client cannot prove a version absent
-/// could never mint the absence proof an effect needs, nor the exact evidence a
-/// receipt needs, so the plan is refused here rather than at dispatch.
-pub(crate) fn require_observable_registry(ecosystem: Ecosystem) -> Result<(), GraphError> {
-    if !adapter_for(ecosystem)?.can_observe_versions() {
-        return Err(GraphError::ReleasePreconditionUnmet {
-            requirement: ReleasePreconditionRequirement::ObservableRegistryClient,
-        });
-    }
-    Ok(())
 }
 
 /// An environment variable's value, or `None` when unset or empty: an empty credential must not reach a tool.

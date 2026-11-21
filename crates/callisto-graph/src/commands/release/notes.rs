@@ -7,6 +7,8 @@ use callisto_model::Version;
 
 use crate::error::GraphError;
 
+use crate::changelog::render::BUMP_GROUP_HEADINGS;
+
 use super::provider::{NotesFallback, ReleaseNotes};
 
 /// The non-empty `## {version}` section of the changelog at `root.join(changelog)`, or why there is none. A changelog
@@ -57,14 +59,12 @@ pub(crate) fn release_notes(
 
 /// A fixed-group member's changelog line that only says it was released with the group.
 fn is_group_boilerplate(entry: &str) -> bool {
-    entry.starts_with("- Released together with the `") || entry.starts_with("- Joined the `")
+    use crate::changelog::render::{GROUP_JOIN_PREFIX, GROUP_UNION_PREFIX};
+    entry.starts_with(GROUP_UNION_PREFIX) || entry.starts_with(GROUP_JOIN_PREFIX)
 }
 
-/// The bump groups a grouped changelog section is split into, highest first.
-const GROUP_HEADINGS: [&str; 3] = ["### Major Changes", "### Minor Changes", "### Patch Changes"];
-
 fn group_of(line: &str) -> Option<usize> {
-    GROUP_HEADINGS.iter().position(|heading| *heading == line)
+    BUMP_GROUP_HEADINGS.iter().position(|heading| *heading == line)
 }
 
 /// For each line of `text`, the bump group it opens. A group heading inside fenced code is an example, not a boundary,
@@ -136,7 +136,7 @@ fn merge_into_groups(kept: &str, extra: &[(Option<usize>, String)]) -> String {
     if !preamble.is_empty() {
         blocks.push(preamble);
     }
-    for (heading, body) in GROUP_HEADINGS.iter().zip(&groups) {
+    for (heading, body) in BUMP_GROUP_HEADINGS.iter().zip(&groups) {
         let body = body.join("\n").trim().to_owned();
         if !body.is_empty() {
             blocks.push(format!("{heading}\n\n{body}"));

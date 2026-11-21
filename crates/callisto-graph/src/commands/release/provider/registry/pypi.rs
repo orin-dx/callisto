@@ -321,10 +321,6 @@ impl RegistryEcosystem for PypiRegistry {
     /// other registry: 200 with the version present or absent, 404 for an
     /// unknown project. `pip` cannot observe this; `curl` against the index
     /// directly can.
-    fn can_observe_versions(&self) -> bool {
-        true
-    }
-
     fn observe_once(
         &self,
         context: &ProviderContext<'_>,

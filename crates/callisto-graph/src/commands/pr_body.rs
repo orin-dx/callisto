@@ -5,9 +5,8 @@ use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
 use crate::release_preview::{
-    build_release_preview, Change, ChangeKind, Finding, FindingLevel, PublishOutlook, PublishTargets, ReleasePreview,
-    FINDING_ACTION_REQUIRED, FINDING_BREAKING_BUMP_MISMATCH, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP,
-    FINDING_UNRELEASED_CHANGES,
+    Change, ChangeKind, Finding, FindingLevel, PublishOutlook, PublishTargets, ReleasePreview, FINDING_ACTION_REQUIRED,
+    FINDING_BREAKING_BUMP_MISMATCH, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP, FINDING_UNRELEASED_CHANGES,
 };
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
@@ -46,7 +45,7 @@ fn change_label(kind: &ChangeKind) -> String {
         ChangeKind::Changeset { filename, .. } => {
             format!("`{}`", filename.strip_suffix(".md").unwrap_or(filename))
         }
-        ChangeKind::Commit { sha, .. } => format!("Commit `{}`", &sha[..sha.len().min(7)]),
+        ChangeKind::Commit { short_sha, .. } => format!("Commit `{short_sha}`"),
         ChangeKind::PeerEscalation { dependency, to } => format!("Peer dependency `{dependency}` → `{to}`"),
         ChangeKind::DependencyUpdate { dependency, to } => format!("Dependency `{dependency}` → `{to}`"),
         ChangeKind::Fallback { .. } => unreachable!("Fallback changes render via their sole member, not this label"),
@@ -141,14 +140,7 @@ pub fn compose_pr_body<R: CommandRunner, D: DependencyResolver, I: SeverityInfer
     Ok(render_pr_body_from_preview(&preview, opts))
 }
 
-pub fn render_pr_body_from_plan(
-    plan: &crate::plan::VersionPlan,
-    opts: &PrBodyOptions,
-) -> Result<ComposePrBodyReport, GraphError> {
-    Ok(render_pr_body_from_preview(&build_release_preview(plan), opts))
-}
-
-/// The same body as [`render_pr_body_from_plan`], from a preview written earlier by `version --emit-preview`.
+/// The PR body for a preview, e.g. one written earlier by `version --emit-preview`.
 pub fn render_pr_body_from_preview(preview: &ReleasePreview, opts: &PrBodyOptions) -> ComposePrBodyReport {
     ComposePrBodyReport {
         schema_version: SCHEMA_VERSION,
@@ -493,6 +485,7 @@ fn review_callout(bumps: &[crate::plan::PlannedBump]) -> String {
 mod tests {
     use super::*;
     use crate::plan::{PlannedBump, VersionPlan};
+    use crate::release_preview::build_release_preview;
     use callisto_model::{BumpReason, PackageId, Severity, Version};
 
     fn preview_of_one_bump() -> ReleasePreview {
@@ -845,7 +838,7 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let body = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap().body;
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
 
         let major = body.find("#### 🔴 Major").expect("major heading");
         let minor = body.find("#### 🟡 Minor").expect("minor heading");
@@ -963,7 +956,7 @@ mod tests {
         };
 
         let opts = PrBodyOptions::default();
-        let report = render_pr_body_from_plan(&plan, &opts).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &opts);
         insta::assert_snapshot!(report.body);
     }
 
@@ -989,7 +982,7 @@ mod tests {
             existing_body: None,
             branch: Some("custom-release-branch".to_string()),
         };
-        let report = render_pr_body_from_plan(&plan, &opts).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &opts);
         assert!(report.body.contains("## Release Preview"));
     }
 
@@ -1047,7 +1040,7 @@ mod tests {
             commits: 3,
             remapped: false,
         });
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         assert_release_reason_has_content(&report.body);
     }
 
@@ -1056,7 +1049,7 @@ mod tests {
         let plan = plan_with_single_bump(BumpReason::PreRelease {
             tag: "alpha".to_string(),
         });
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         assert_release_reason_has_content(&report.body);
     }
 
@@ -1065,7 +1058,7 @@ mod tests {
         let plan = plan_with_single_bump(BumpReason::NewGroupMember {
             group: callisto_model::GroupName("grp".to_string()),
         });
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         assert_release_reason_has_content(&report.body);
     }
 
@@ -1122,7 +1115,7 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
 
         assert!(
             report.body.contains("A real changeset summary."),
@@ -1218,7 +1211,7 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         assert!(
             report.body.contains("Automatic dependency cascade triggered by"),
             "pkg-a must use the fallback text since its ChangelogWrite has empty entries; body: {}",
@@ -1284,7 +1277,7 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         assert!(
             report.body.contains("Automatic dependency cascade triggered by"),
             "body: {}",
@@ -1329,7 +1322,7 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         assert!(
             report.body.contains("_No changelog entries available._"),
             "body: {}",
@@ -1405,7 +1398,7 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
 
         assert_eq!(
             report
@@ -1438,7 +1431,7 @@ mod tests {
         let plan = plan_with_single_bump(BumpReason::Changeset {
             changesets: vec!["x".to_string()],
         });
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         let changing_start = report
             .body
             .find("### 📦 What's Changing")
@@ -1464,7 +1457,7 @@ mod tests {
         let minor_only = plan_with_single_bump(BumpReason::Changeset {
             changesets: vec!["x".to_string()],
         });
-        let minor_report = render_pr_body_from_plan(&minor_only, &PrBodyOptions::default()).unwrap();
+        let minor_report = render_pr_body_from_preview(&build_release_preview(&minor_only), &PrBodyOptions::default());
         assert!(
             minor_report.body.contains("<details>\n<summary><b>pkg-a</b>"),
             "a minor-only change's block must default closed; body: {}",
@@ -1475,7 +1468,7 @@ mod tests {
             changesets: vec!["y".to_string()],
         });
         major_plan.bumps[0].severity = Severity::Major;
-        let major_report = render_pr_body_from_plan(&major_plan, &PrBodyOptions::default()).unwrap();
+        let major_report = render_pr_body_from_preview(&build_release_preview(&major_plan), &PrBodyOptions::default());
         assert!(
             major_report.body.contains("<details open>\n<summary><b>pkg-a</b>"),
             "a change containing a major bump must default its own block open; body: {}",
@@ -1532,7 +1525,7 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         assert!(
             report.body.contains("Also bumped with no direct change of their own"),
             "body: {}",
@@ -1552,7 +1545,7 @@ mod tests {
         let plan = plan_with_single_bump(BumpReason::Changeset {
             changesets: vec!["x".to_string()],
         });
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
         assert!(
             !report.body.contains("Suggested PR Label"),
             "the label line duplicates GitHub's own label UI and is never merely \"suggested\" \
@@ -1601,7 +1594,7 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let report = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default());
 
         let table_a = report.body.find("`pkg-a`").expect("pkg-a must appear in the table");
         let table_m = report.body.find("`pkg-m`").expect("pkg-m must appear in the table");

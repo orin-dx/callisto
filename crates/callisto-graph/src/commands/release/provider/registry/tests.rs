@@ -1034,16 +1034,6 @@ fn the_simple_index_url_uses_the_default_endpoint_and_the_normalized_project_nam
 
 // ----------------------------------------------------- adapter capabilities
 
-/// PyPI's own JSON simple index answers like any other registry, so all three
-/// implemented ecosystems pass the plan-time observability gate.
-#[test]
-fn cargo_npm_and_pypi_are_observable_and_pass_the_plan_time_gate() {
-    for ecosystem in [Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi] {
-        assert!(adapter_for(ecosystem).unwrap().can_observe_versions());
-        assert!(require_observable_registry(ecosystem).is_ok());
-    }
-}
-
 #[test]
 fn an_ecosystem_with_no_registry_adapter_is_unsupported() {
     assert!(matches!(

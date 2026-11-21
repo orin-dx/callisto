@@ -23,7 +23,7 @@ use super::provider::{
     TagOperation,
 };
 use crate::commands::registry_argv::npm_default_access;
-use crate::commands::release_decision::{has_dispatchable_target, version_is_tagged};
+use crate::commands::release_decision::version_is_tagged;
 use crate::toposort::PublishEdgeFilter;
 
 /// A package that is itself an npm platform package (its own package.json has
@@ -299,12 +299,7 @@ fn prepare_remote<R: CommandRunner, D: DependencyResolver>(
     artifact_policy: Option<&ArtifactBuildPolicy>,
     remote: GitRemoteRequirement,
 ) -> Result<Option<PreparedGitRemote>, GraphError> {
-    let requires_git_remote = selected.values().any(|(package, _)| {
-        package
-            .publish_to
-            .iter()
-            .any(|target| !matches!(target, PublishTarget::None))
-    });
+    let requires_git_remote = selected.values().any(|(package, _)| package.is_release_point());
     let git_remote = match (requires_git_remote, remote) {
         (false, _) => None,
         (true, GitRemoteRequirement::Required) => Some(prepared_git_remote(&workspace.root, workspace.runner)?),
@@ -377,10 +372,7 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
                 reason: ReleaseSelectionInvalidReason::SnapshotVersion,
             });
         }
-        let produces_tag = package
-            .publish_to
-            .iter()
-            .any(|target| !matches!(target, PublishTarget::None));
+        let produces_tag = package.is_release_point();
         let fingerprint = package_fingerprint(
             workspace,
             id,
@@ -396,7 +388,6 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
         let mut publishes = Vec::new();
         for target in &package.publish_to {
             if target.ecosystem() == Some(id.ecosystem()) {
-                super::provider::registry::require_observable_registry(id.ecosystem())?;
                 let binding = prepared_registry_binding(workspace, target, &package.id)?;
                 let binding_id = RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?;
                 let operation =
@@ -560,11 +551,7 @@ fn add_tags(
     } = ops;
 
     for (id, (package, version)) in owned(selected, owners) {
-        if !package
-            .publish_to
-            .iter()
-            .any(|target| !matches!(target, PublishTarget::None))
-        {
+        if !package.is_release_point() {
             continue;
         }
         let tag = ReleaseOperation::tag(
@@ -862,7 +849,7 @@ fn require_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
             let Some(dependency) = workspace
                 .graph
                 .packages()
-                .find(|candidate| candidate.id == edge.to && has_dispatchable_target(candidate))
+                .find(|candidate| candidate.id == edge.to && candidate.is_release_point())
             else {
                 continue;
             };

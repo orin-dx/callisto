@@ -9,4 +9,4 @@ pub mod write;
 pub use error::ChangelogError;
 pub use input::{ChangeSource, ChangelogEntry, ChangelogInput, ChangelogLayout, ChangelogStyle};
 pub use render::render_section;
-pub use write::{extract_section, find_section, prepend};
+pub use write::{find_section, prepend};

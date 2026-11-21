@@ -2,12 +2,11 @@ mod fixtures;
 use callisto_graph::cascade::{run_cascade, CascadeInput};
 use callisto_graph::config::groups::GroupTable;
 use callisto_graph::config::{CascadeBumpSeverity, CascadeConfig, CascadeMode};
-use callisto_graph::toposort_impl;
 use callisto_graph::IdentityIndex;
 use callisto_graph::TagIndex;
 use callisto_model::{DepKind, DepSpec, PackageId, Severity, Version, VersionGrammar, VersionReq};
 use fixtures::GraphBuilder;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 #[test]
 fn promoted_dual_dependent_preserves_aliases_across_cascade_and_release_floor() {
@@ -483,35 +482,6 @@ fn test_linked_group_version_convergence() {
     assert_eq!(target_b, "2.8.0");
     assert_eq!(outcome.severities.get(&pkg_a), Some(&Severity::Minor));
     assert_eq!(outcome.severities.get(&pkg_b), Some(&Severity::Minor));
-}
-
-#[test]
-fn test_tarjan_scc_detects_cycles() {
-    let pkg_a = PackageId::parse("pkg-a").unwrap();
-    let pkg_b = PackageId::parse("pkg-b").unwrap();
-    let pkg_c = PackageId::parse("pkg-c").unwrap();
-
-    let subset: HashSet<_> = vec![pkg_a.clone(), pkg_b.clone(), pkg_c.clone()].into_iter().collect();
-    let all = vec![pkg_a.clone(), pkg_b.clone(), pkg_c.clone()];
-
-    // A -> B -> C -> A
-    let res = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
-        if id == &pkg_a {
-            vec![(pkg_b.clone(), DepKind::Runtime)]
-        } else if id == &pkg_b {
-            vec![(pkg_c.clone(), DepKind::Runtime)]
-        } else {
-            vec![(pkg_a.clone(), DepKind::Runtime)]
-        }
-    });
-
-    assert!(res.is_err());
-    let err = res.unwrap_err();
-    let err_str = err.to_string();
-    assert!(
-        err_str.contains("cycle") || err_str.contains("circular"),
-        "Error must diagnose cycle: {err_str}"
-    );
 }
 
 #[test]
