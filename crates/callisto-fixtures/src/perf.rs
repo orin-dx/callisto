@@ -69,14 +69,8 @@ impl ScaledWorkspace {
         assert!(child.wait().unwrap().success(), "git fast-import");
         run_git(root, &["reset", "-q", "--hard", "main"]);
         run_git(root, &["remote", "add", "origin", ORIGIN]);
-        // Reads of `origin` land on an empty local repository, so what they start never depends on the network or on a
-        // credential helper being asked.
-        let offline = root.join(".git/offline-origin");
-        run_git(root, &["init", "-q", "--bare", &offline.display().to_string()]);
-        run_git(
-            root,
-            &["config", &format!("url.{}.insteadOf", offline.display()), ORIGIN],
-        );
+        // No credential helper runs when the remote answers 401, so the process count does not depend on the network.
+        run_git(root, &["config", "credential.helper", ""]);
     }
 
     fn foreign_tags_stream(self) -> Vec<u8> {
