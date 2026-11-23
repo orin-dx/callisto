@@ -35,7 +35,7 @@ if [[ "$SOURCE" == "auto" && "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:
 fi
 
 # Validate verification mode
-VERIFICATION="${INPUT_CALLISTO_VERIFICATION:-fallback}"
+VERIFICATION="${INPUT_CALLISTO_VERIFICATION:-require}"
 case "$VERIFICATION" in
   require|fallback|skip) ;;
   *)
@@ -108,7 +108,7 @@ verify_asset() {
   [[ -z "$reason" ]] && return 0
   rm -f "$DOWNLOAD_DEST"
   if [[ "$VERIFICATION" == "require" ]]; then
-    echo "::error::cannot verify $ASSET_NAME: $reason (verification=require)"
+    echo "::error::cannot verify $ASSET_NAME: $reason (verification=require needs gh; set verification: fallback to install from crates.io instead)"
     exit 1
   fi
   echo "::warning::cannot verify $ASSET_NAME: $reason; discarding it and installing from crates.io (verification=fallback)"
@@ -119,7 +119,7 @@ verify_asset() {
 fetch_prebuilt() {
   if ! curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
     if [[ "$VERIFICATION" == "require" ]]; then
-      echo "::error::cannot download $ASSET_NAME from $DOWNLOAD_URL (verification=require)"
+      echo "::error::cannot download $ASSET_NAME from $DOWNLOAD_URL (verification=require; set verification: fallback to install from crates.io instead)"
       exit 1
     fi
     return 1
@@ -167,7 +167,7 @@ if [[ "$SOURCE" == "local" ]]; then
     --bin callisto --target-dir "$GITHUB_WORKSPACE/target"
   cp "$GITHUB_WORKSPACE/target/debug/callisto" "$CALLISTO_BIN_DIR/callisto"
 elif [[ -z "$ASSET_NAME" && "$VERIFICATION" == "require" ]]; then
-  echo "::error::no prebuilt callisto asset exists for $OS_NAME/$ARCH_NAME (verification=require)"
+  echo "::error::no prebuilt callisto asset exists for $OS_NAME/$ARCH_NAME (verification=require; set verification: fallback to install from crates.io instead)"
   exit 1
 elif [[ -n "$ASSET_NAME" ]] && fetch_prebuilt; then
   echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"

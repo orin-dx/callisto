@@ -76,7 +76,7 @@ fail=0
 
 # 1. Windows is not a supported product-binary target. It must skip a
 # fictitious download and use the established installation fallback.
-out=$(run_case "MINGW64_NT-10.0" "x86_64" 0); code=$?
+out=$(run_case "MINGW64_NT-10.0" "x86_64" 0 ok fallback); code=$?
 if [[ $code -ne 0 ]] \
   || [[ "$out" == *"tar -xzf"* ]] \
   || [[ "$out" == *"unzip"* ]] \
@@ -87,7 +87,7 @@ else
 fi
 
 # 2. macOS arm64 regression -> unchanged tar.gz behavior, unzip not invoked.
-out=$(run_case "Darwin" "arm64" 0); code=$?
+out=$(run_case "Darwin" "arm64" 0 ok fallback); code=$?
 if [[ $code -ne 0 ]] \
   || [[ "$out" != *"tar -xzf "* ]] \
   || [[ "$out" != *" -C "* ]] \
@@ -98,7 +98,7 @@ else
 fi
 
 # 3. Linux amd64 regression -> unchanged tar.gz behavior, unzip not invoked.
-out=$(run_case "Linux" "x86_64" 0); code=$?
+out=$(run_case "Linux" "x86_64" 0 ok fallback); code=$?
 if [[ $code -ne 0 ]] \
   || [[ "$out" != *"tar -xzf "* ]] \
   || [[ "$out" != *" -C "* ]] \
@@ -115,14 +115,14 @@ for platform in "Darwin arm64 callisto-aarch64-apple-darwin.tar.gz" \
   "Linux aarch64 callisto-aarch64-unknown-linux-gnu.tar.gz" \
   "Linux arm64 callisto-aarch64-unknown-linux-gnu.tar.gz"; do
   read -r os arch asset <<< "$platform"
-  out=$(run_case "$os" "$arch" 0); code=$?
+  out=$(run_case "$os" "$arch" 0 ok fallback); code=$?
   if [[ $code -ne 0 ]] || [[ "$out" != *"curl "*"/$asset "* ]] || [[ "$out" != *"tar -xzf "* ]]; then
     echo "FAIL test_${os}_${arch}_downloads_$asset: code=$code out=$out"; fail=1
   else
     echo "PASS test_${os}_${arch}_downloads_$asset"
   fi
 done
-out=$(run_case "Linux" "riscv64" 0); code=$?
+out=$(run_case "Linux" "riscv64" 0 ok fallback); code=$?
 if [[ $code -ne 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" != *"cargo install callisto-cli"* ]]; then
   echo "FAIL test_unsupported_architecture_uses_install_fallback: code=$code out=$out"; fail=1
 else
@@ -131,7 +131,7 @@ fi
 
 # 4. Unknown/exotic OS must likewise use the fallback chain rather than
 # guessing an archive target.
-out=$(run_case "SunOS" "sun4u" 0); code=$?
+out=$(run_case "SunOS" "sun4u" 0 ok fallback); code=$?
 if [[ $code -ne 0 ]] \
   || [[ "$out" == *"tar -xzf "* ]] \
   || [[ "$out" == *"unzip"* ]] \
@@ -142,7 +142,7 @@ else
 fi
 
 # 5. Download failure falls through to the cargo-install chain: no tar or unzip, `cargo install callisto-cli` runs, exit 0.
-out=$(run_case "Linux" "x86_64" 1); code=$?
+out=$(run_case "Linux" "x86_64" 1 ok fallback); code=$?
 if [[ $code -ne 0 ]] \
   || [[ "$out" == *"tar -xzf"* ]] \
   || [[ "$out" == *"unzip"* ]] \
@@ -170,19 +170,22 @@ done
 
 # 7. require + verification failure or missing gh aborts; asset never extracted or kept.
 for gh in fail missing; do
-  out=$(run_case "Linux" "x86_64" 0 "$gh" require); code=$?
-  if [[ $code -eq 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"cargo install"* ]] \
-    || [[ "$out" == *"ASSET_PRESENT"* ]] || [[ "$out" != *"::error::"* ]]; then
-    echo "FAIL test_require_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_aborts: code=$code out=$out"; fail=1
-  else
-    echo "PASS test_require_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_aborts"
-  fi
+  for mode in require ""; do
+    out=$(run_case "Linux" "x86_64" 0 "$gh" "$mode"); code=$?
+    name="test_require_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_aborts_${mode:-default}"
+    if [[ $code -eq 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"cargo install"* ]] \
+      || [[ "$out" == *"ASSET_PRESENT"* ]] || [[ "$out" != *"::error::"* ]] \
+      || [[ "$out" != *"verification: fallback"* ]]; then
+      echo "FAIL $name: code=$code out=$out"; fail=1
+    else
+      echo "PASS $name"
+    fi
+  done
 done
 
-# 8. fallback (explicit and default) + failure or missing gh: warn, delete the asset,
-# take crates.io, never extract.
+# 8. fallback + failure or missing gh: warn, delete the asset, take crates.io, never extract.
 for gh in fail missing; do
-  for mode in fallback ""; do
+  for mode in fallback; do
     out=$(run_case "Linux" "x86_64" 0 "$gh" "$mode"); code=$?
     name="test_fallback_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_uses_crates_io_${mode:-default}"
     if [[ $code -ne 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"unzip"* ]] \
@@ -224,11 +227,11 @@ else
   echo "PASS test_invalid_verification_fails"
 fi
 
-# 12. The action's declared input default is fallback.
-if grep -A12 '^  verification:' "$ACTION_YML" | grep -q "default: 'fallback'"; then
-  echo "PASS test_default_verification_is_fallback"
+# 12. The action's declared input default is require.
+if grep -A12 '^  verification:' "$ACTION_YML" | grep -q "default: 'require'"; then
+  echo "PASS test_default_verification_is_require"
 else
-  echo "FAIL test_default_verification_is_fallback"; fail=1
+  echo "FAIL test_default_verification_is_require"; fail=1
 fi
 
 exit $fail
