@@ -1,0 +1,81 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M84KM3QBZ2Z50YNEH0A6NYK6",
+  "session_id": "5881d751-4151-4d2b-b661-c05c6dbf4ba9",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T16:25:38.408105Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "e.txt",
+    "o.txt"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "702ea71ff169",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 85911,
+    "cache_read_tokens": 3074217,
+    "output_tokens": 9280,
+    "api_call_count": 33
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Reconcile Callisto docs (OIDC plan, REQ-DX-V1, --format json stderr contract, packing vs upload wording, ROAD-TO-V1) with observed current behaviour, docs-only, under trail #374 in worktree wp-docs-reconcile-alpha.",
+    "outcome": "Edited the docs, ran just doc-check and just pre-push (both exit 0), pushed the branch and opened PR #623 linked to trail #374 at commit 9fa8d911d. Signature was not verified after pushing, and the PR body was not set.",
+    "learnings": {
+      "repo": [
+        "Callisto's generated release workflow allows `id-token: write` only on the `attest` job (no checkout, no run step), not `build-artifact`; the policy check is in .github/tests/verify-release-workflow-policy.sh.",
+        "With --format json a failed command leaves stdout empty and ends stderr with one JSON error document, exit 1. Clap argument-parsing errors print usage text and exit 2. Output from tools the command ran (e.g. git `fatal:`) can precede the JSON.",
+        "There is no docs/cli directory; the JSON stderr contract is stated only in README.md and docs/stability.md (docs/specs/cli.json already described it).",
+        "For npm packages, the workspace's own manager (npm/pnpm/yarn/bun) packs the tarball but `npm publish <tarball>` uploads it, so npm auth and scoped-registry routing apply and Yarn/Bun registry settings are not used. docs/publishing.md already said this.",
+        "CLI, config and report surfaces are covered by `callisto schema` output checked in crates/callisto-cli/tests/schema_guard_test.rs and snapshot tests under crates/callisto-cli/tests/snapshots.",
+        "Registry binding is proven for Cargo; npm/PyPI evidence comes from the `just verify-real` fixture, which is not part of `just ci`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/schema_guard_test.rs",
+          "line": 1,
+          "end_line": 30,
+          "finding": "Schema guard test checks the `callisto schema` output; this is the existing coverage cited in place of cargo-semver-checks."
+        }
+      ],
+      "workflow": [
+        "Observing the real binary with failing commands (--format json) was needed to record the actual stderr contract rather than trusting existing docs.",
+        "Use /usr/bin/git explicitly when the shell git is wrapped or aliased; `entire trail link` and `entire trail ci-pr` handle trail linking and PR creation."
+      ]
+    },
+    "friction": [
+      "Several initial Bash calls were repeated or reworked, e.g. the git fetch and merge --ff-only calls and the rtk read variant.",
+      "The probe loop with `release inspect nofile` and `status --nope` needed a probe script and re-runs to get usable output.",
+      "just pre-push first hit a sandbox network block on launch.moonrepo.app and passed only after the host was allowed; one run needed TaskStop and a rerun.",
+      "Stray e.txt and o.txt probe output files ended up in the modified-files list."
+    ],
+    "open_items": [
+      "PR #623 body is unset; use `gh pr edit 623 --body-file` to add PR-specific text.",
+      "The commit signature was not verified after pushing.",
+      "Not checked whether the snapshot tests cover config formats, which the ROAD-TO-V1 wording now implies.",
+      "Hosted OIDC publishing against real registries remains unverified, as the docs now say.",
+      "Fallback of npm and twine to OIDC when tokens are unset is documented but not tested on real packages or projects."
+    ]
+  }
+}
