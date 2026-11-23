@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M855GQA37WYXHY5A6A3T3F3K",
+  "strategy": "manual-commit",
+  "branch": "fix-pr630-trigger-reason",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/tests/pre_v3_tests.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/plan.rs",
+    "docs/specs/release.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 17364,
+    "cache_read_tokens": 3318599,
+    "output_tokens": 8396,
+    "api_call_count": 14
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
