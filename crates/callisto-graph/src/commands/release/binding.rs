@@ -160,6 +160,19 @@ pub(crate) fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Re
     canonical_git_remote(output.stdout.trim())
 }
 
+/// [`optional_git_remote`] for a preview: an `origin` that is a local path is no hosted remote, so it reads as `None`.
+pub(crate) fn preview_git_remote(
+    root: &Path,
+    runner: &dyn CommandRunner,
+) -> Result<Option<PreparedGitRemote>, GraphError> {
+    match optional_git_remote(root, runner) {
+        Err(GraphError::UnsafeGitRemote { reason }) if reason == LOCAL_PATH_REASON => Ok(None),
+        other => other,
+    }
+}
+
+const LOCAL_PATH_REASON: &str = "origin is a local path, not a hosted remote";
+
 /// `origin`'s canonical push URL, or `None` when `origin` has no push URL.
 pub(crate) fn optional_git_remote(
     root: &Path,
@@ -196,6 +209,11 @@ pub(crate) fn recheck_git_remote(
 }
 
 pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
+    if raw.starts_with(['/', '.', '~']) || raw.starts_with("file://") {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: LOCAL_PATH_REASON,
+        });
+    }
     let ssh_url = if raw.starts_with("git@") && !raw.contains("//") {
         let (host, path) =
             raw.strip_prefix("git@")

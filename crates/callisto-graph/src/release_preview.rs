@@ -373,7 +373,7 @@ pub fn publish_outlook(planned: Result<Option<LocalReleasePlan>, GraphError>) ->
 
     let mut notes: Vec<String> = Vec::new();
     if plan.tags_unbound {
-        notes.push("`origin` has no push URL, so tags cannot be pushed until one is set.".to_owned());
+        notes.push("`origin` is missing or not a hosted remote, so tags cannot be pushed until one is set.".to_owned());
     }
     notes.extend(plan.diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
     PublishOutlook::Planned {

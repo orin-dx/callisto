@@ -755,11 +755,6 @@ fn missing_origin_writes_config_with_warning_and_skips_shipping() {
     let out = Shared::default();
     let err = Shared::default();
     run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
-    assert!(
-        err.text().contains("No `origin` remote is configured"),
-        "{}",
-        err.text()
-    );
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     assert_eq!(report["initialized"], true);
     let diagnostics = report["diagnostics"].as_array().unwrap();
@@ -1101,12 +1096,17 @@ fn written_workflow_notes_that_merging_publishes() {
     );
     assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
     assert!(run.out.contains(&format!("{note}\n")), "{}", run.out);
+    assert_eq!(run.out.matches(note).count(), 1, "{}", run.out);
+    assert!(
+        run.out.contains(".github/workflows/callisto-release.yml: ") && !run.out.contains("\njobs:"),
+        "the path and a summary, not the file: {}",
+        run.out
+    );
 
     let dir = workspace(0);
     let out = Shared::default();
     let err = Shared::default();
     run_with_json(dir.path(), args(), false, &out, &err);
-    assert!(err.text().contains(note), "{}", err.text());
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     let diagnostics = report["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics.len(), 1, "{report}");
@@ -1325,11 +1325,10 @@ fn base_branch_is_reported_when_the_default_workflow_cannot_be_built() {
     .unwrap();
     let (out, err) = (Shared::default(), Shared::default());
     run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
-    assert!(
-        err.text().contains("Skipping the GitHub Actions workflow"),
-        "{}",
-        err.text()
-    );
+    assert!(report_diagnostics(&out).iter().any(|d| d["message"]
+        .as_str()
+        .unwrap()
+        .contains("Skipping the GitHub Actions workflow")));
     assert!(report_diagnostics(&out)
         .iter()
         .any(|d| d["message"].as_str().unwrap().contains("no workflow was generated")));
@@ -1552,11 +1551,6 @@ fn unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic() {
         )
         .unwrap(),
         std::process::ExitCode::SUCCESS
-    );
-    assert!(
-        err.text().contains("Skipping GitHub Actions workflow generation"),
-        "{}",
-        err.text()
     );
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     let diagnostics = report["diagnostics"].as_array().unwrap();

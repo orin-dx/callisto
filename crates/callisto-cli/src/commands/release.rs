@@ -50,7 +50,14 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
 
 /// Stderr note when a preview's tags have no `origin` to push to.
 pub const TAGS_UNBOUND_NOTE: &str =
-    "note: `origin` has no push URL, so tag operations are unbound; `callisto release` will refuse until one is set";
+    "note: `origin` is missing or not a hosted remote, so tag operations are unbound; a real `callisto release` needs a hosted remote";
+
+/// Stderr note when a preview plans versions already written while changesets are still pending.
+fn pending_changesets_note(count: usize) -> String {
+    format!(
+        "note: {count} pending changeset(s) are not in this plan: run `callisto version` (or merge the release PR) first"
+    )
+}
 
 /// Stderr warning for a tag that exists here but not on `origin`.
 fn tag_missing_from_origin_note(tag: &str) -> String {
@@ -183,6 +190,9 @@ pub(crate) fn write_release_preview(
     if let Some(plan) = plan {
         if plan.tags_unbound {
             eprintln!("{TAGS_UNBOUND_NOTE}");
+        }
+        if plan.pending_changesets > 0 {
+            eprintln!("{}", pending_changesets_note(plan.pending_changesets));
         }
         for diagnostic in &plan.diagnostics {
             eprintln!("warning: {}", diagnostic.message);

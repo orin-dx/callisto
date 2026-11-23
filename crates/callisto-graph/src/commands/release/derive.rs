@@ -16,7 +16,7 @@ use callisto_model::{
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::binding::{optional_git_remote, prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
+use super::binding::{prepared_git_remote, prepared_registry_binding, preview_git_remote, PreparedGitRemote};
 use super::notes::group_release_notes;
 use super::provider::{
     ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
@@ -306,7 +306,7 @@ fn prepare_remote<R: CommandRunner, D: DependencyResolver>(
     let git_remote = match (requires_git_remote, remote) {
         (false, _) => None,
         (true, GitRemoteRequirement::Required) => Some(prepared_git_remote(&workspace.root, workspace.runner)?),
-        (true, GitRemoteRequirement::OptionalForPreview) => optional_git_remote(&workspace.root, workspace.runner)?,
+        (true, GitRemoteRequirement::OptionalForPreview) => preview_git_remote(&workspace.root, workspace.runner)?,
     };
     if let Some(policy) = artifact_policy {
         match git_remote.as_ref().and_then(|remote| remote.github_repository.as_ref()) {

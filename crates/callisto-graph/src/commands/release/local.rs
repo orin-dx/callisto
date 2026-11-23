@@ -8,7 +8,7 @@ use callisto_model::{
 
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::binding::optional_git_remote;
+use super::binding::preview_git_remote;
 use super::capability::{
     derive_release_intent_unmoved, names_taken_by_other_projects, observe_source, published_packages,
     unsatisfied_packages, ReleaseCheckout,
@@ -88,7 +88,7 @@ pub struct OriginTagProbe {
 pub fn origin_tag_probe<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
 ) -> Result<Option<OriginTagProbe>, GraphError> {
-    let Some(remote) = optional_git_remote(&workspace.root, workspace.runner)? else {
+    let Some(remote) = preview_git_remote(&workspace.root, workspace.runner)? else {
         return Ok(None);
     };
     let tags = workspace.tags()?;
@@ -148,6 +148,8 @@ pub struct LocalReleasePlan {
     pub intent: ReleaseIntentV1,
     /// A preview only: `origin` has no push URL, so tags carry no remote and a run would refuse.
     pub tags_unbound: bool,
+    /// Changesets still pending: a release plans versions already written, so these are not in it until `version` runs.
+    pub pending_changesets: usize,
     /// Advisory findings from derivation (e.g. an artifact owner selected without its product).
     pub diagnostics: Vec<callisto_model::Diagnostic>,
 }
@@ -172,7 +174,7 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
     }
     // Without an `origin` push URL a preview cannot observe anything, so it cannot call a tagged release finished.
     if observation == Observation::Never
-        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
+        || (mode == LocalReleaseSource::Preview && preview_git_remote(&workspace.root, workspace.runner)?.is_none())
     {
         return Ok(tagged);
     }
@@ -275,7 +277,7 @@ fn refuse_a_name_another_project_owns<R: CommandRunner, D: DependencyResolver>(
     let first_releases = first_release_packages(workspace, decision)?;
     // Without an `origin` push URL a preview cannot tell whose repository the registry names.
     if first_releases.is_empty()
-        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
+        || (mode == LocalReleaseSource::Preview && preview_git_remote(&workspace.root, workspace.runner)?.is_none())
     {
         return Ok(());
     }
@@ -314,7 +316,7 @@ fn refuse_a_published_version_left_behind<R: CommandRunner, D: DependencyResolve
     let moved = super::version_commit::packages_moved_past_their_version(workspace, decision, resumable)?;
     // Without an `origin` push URL a preview cannot observe the registry either.
     if moved.is_empty()
-        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
+        || (mode == LocalReleaseSource::Preview && preview_git_remote(&workspace.root, workspace.runner)?.is_none())
     {
         return Ok(());
     }
@@ -459,10 +461,13 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
             .operations
             .iter()
             .any(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
-        && optional_git_remote(&workspace.root, workspace.runner)?.is_none();
+        && preview_git_remote(&workspace.root, workspace.runner)?.is_none();
+    let pending_changesets =
+        crate::load_changesets_permissive(&workspace.root, &workspace.config).map_or(0, |(loaded, _)| loaded.len());
     Ok(Some(LocalReleasePlan {
         intent,
         tags_unbound,
+        pending_changesets,
         diagnostics,
     }))
 }

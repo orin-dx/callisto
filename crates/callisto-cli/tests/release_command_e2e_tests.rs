@@ -396,6 +396,79 @@ fn dry_run_without_origin_notes_unbound_tags() {
     assert_no_effects(&rig, root);
 }
 
+/// A local-path `origin` previews like no `origin`, with one note; the real release still refuses.
+#[test]
+fn dry_run_with_a_local_path_origin_previews_with_one_note() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let remote = tempfile::tempdir().unwrap();
+    git(root, &["remote", "set-url", "origin", remote.path().to_str().unwrap()]);
+    let rig = Rig::new(&release_commit);
+
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let text = String::from_utf8_lossy(&preview.stdout);
+    assert!(text.contains("cargo/core-crate 0.2.0"), "{text}");
+    assert_eq!(
+        stderr(&preview).matches("not a hosted remote").count(),
+        1,
+        "{}",
+        stderr(&preview)
+    );
+
+    let run = rig.run(root, &["release"]);
+    assert!(!run.status.success());
+    assert_no_effects(&rig, root);
+}
+
+/// A preview plans what is already versioned, so pending changesets get a pointer to `callisto version`.
+#[test]
+fn dry_run_with_pending_changesets_points_at_version() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    assert_eq!(
+        stderr(&preview).matches("callisto version").count(),
+        1,
+        "{}",
+        stderr(&preview)
+    );
+}
+
+/// `init` says each note once, not inline and again under Diagnostics.
+#[test]
+fn init_prints_each_note_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"solo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src/lib.rs"), "").unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "initial"]);
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--format", "text", "--cwd", root.to_str().unwrap(), "init", "--yes"])
+        .args(["--versioning", "independent"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(text.matches("No `origin` remote is configured").count(), 1, "{text}");
+}
+
 /// L1: a mid-run failure writes no receipt; the rerun adopts what landed and writes one.
 #[test]
 fn a_failed_run_writes_no_receipt_and_a_rerun_completes() {

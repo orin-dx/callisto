@@ -173,7 +173,6 @@ pub fn run<R: CommandRunner>(
     let mut diagnostics = migration.diagnostics.clone();
     diagnostics.extend(migration.apply_fixed_groups(&mut answers));
     if facts.origin.is_none() {
-        writeln!(human, "{ORIGIN_MISSING_NOTE}")?;
         diagnostics.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::InitOriginMissing,
             severity: callisto_model::DiagnosticSeverity::Warning,
@@ -193,7 +192,6 @@ pub fn run<R: CommandRunner>(
         }
         Err(reason) => {
             let note = workflow_unsupported_note(reason);
-            writeln!(human, "{note}")?;
             diagnostics.push(callisto_model::Diagnostic {
                 code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
                 severity: callisto_model::DiagnosticSeverity::Warning,
@@ -223,7 +221,6 @@ pub fn run<R: CommandRunner>(
             Err(error) if !asked_for_workflow => {
                 let note =
                     format!("Skipping the GitHub Actions workflow: {error}. Run `callisto init --workflow` to retry.");
-                writeln!(human, "{note}")?;
                 diagnostics.push(callisto_model::Diagnostic {
                     code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
                     severity: callisto_model::DiagnosticSeverity::Warning,
@@ -264,12 +261,8 @@ pub fn run<R: CommandRunner>(
         }
         None => writeln!(human, "{NO_COMMITS}")?,
     }
-    if let Some((workflow, _)) = &workflow {
-        writeln!(
-            human,
-            "\n{}:\n{workflow}",
-            scaffold::workflow_path(&facts.root).display()
-        )?;
+    if workflow.is_some() {
+        writeln!(human, "\n{}", workflow_summary(&facts.root))?;
     }
 
     // Computed before any write, so the `.changeset/README.md` existence check sees disk state as-is.
@@ -306,6 +299,14 @@ pub fn run<R: CommandRunner>(
     Ok(ExitCode::SUCCESS)
 }
 
+/// The workflow's path and what it does, in place of its text.
+fn workflow_summary(root: &std::path::Path) -> String {
+    format!(
+        "{}: on a merge to the default branch, opens a release PR while changesets are pending and publishes once it merges.",
+        scaffold::workflow_path(root).display()
+    )
+}
+
 /// Prints what a written workflow means and what to do next; the same text is recorded as a diagnostic.
 fn announce_workflow(
     human: &mut dyn Write,
@@ -313,7 +314,6 @@ fn announce_workflow(
     branch: &BranchName,
 ) -> Result<callisto_model::Diagnostic, CliError> {
     let note = merge_publishes_note(branch);
-    writeln!(human, "{note}")?;
     writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(facts)))?;
     Ok(callisto_model::Diagnostic {
         code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
@@ -350,11 +350,7 @@ fn run_workflow_only<R: CommandRunner>(
         })?;
     let base_branch = changesets::base_branch(root);
     let (workflow, branch) = build_workflow(&facts, shape, base_branch.as_ref(), runner, human)?;
-    writeln!(
-        human,
-        "\n{}:\n{workflow}",
-        scaffold::workflow_path(&facts.root).display()
-    )?;
+    writeln!(human, "\n{}", workflow_summary(&facts.root))?;
     let mut diagnostics = Vec::new();
     if !global.dry_run {
         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
