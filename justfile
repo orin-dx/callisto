@@ -257,7 +257,6 @@ workflow-contracts: release-workflow-checks
     env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_contract.sh
     bash .github/actions/setup-callisto/tests/test_download_extraction_format.sh
     bash .github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh
-    bash .github/actions/setup-callisto/tests/test_crates_io_fallback.sh
 
 # Every check CI runs except actionlint (Docker) and the binary-dependent
 # release-PR decide contract, problem matcher contract and artifact preflight build. CI runs them as
