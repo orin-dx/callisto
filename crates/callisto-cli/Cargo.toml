@@ -51,4 +51,4 @@ callisto-graph = { path = "../callisto-graph" }
 insta.workspace = true
 trycmd = "1.2"
 base64.workspace = true
-jsonschema = { version = "0.61", default-features = false }
+jsonschema = { version = "0.62", default-features = false }

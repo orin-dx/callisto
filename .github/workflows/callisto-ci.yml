@@ -64,6 +64,7 @@ jobs:
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           components: rustfmt
       - run: just fmt-check
 
@@ -82,6 +83,7 @@ jobs:
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           components: clippy
       - run: just lint
       - run: just doc-check
@@ -121,6 +123,8 @@ jobs:
           tool: just@1.58.0
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-nextest
@@ -137,6 +141,7 @@ jobs:
 
   release-artifact-preflight:
     name: Release Artifact Preflight (${{ matrix.id }})
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -174,6 +179,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-key: ${{ matrix.target }}
       - name: Build the production artifact recipe
         env:
           CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}
@@ -197,6 +205,7 @@ jobs:
           tool: just@1.58.0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
@@ -224,6 +233,8 @@ jobs:
         with:
           tool: just@1.58.0,cargo-machete,cargo-semver-checks
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: just machete
       - run: just features-boundary
       # A version only moves on the release PR, so that is where the public API is compared with the published one.
@@ -244,6 +255,8 @@ jobs:
           tool: just@1.58.0
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-deny
