@@ -6,7 +6,7 @@ ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SCRIPT="$ACTION_DIR/scripts/install-callisto.sh"
 
 extract_snippet() {
-  sed -n '/^TAG_NAME="\$INPUT_CALLISTO_VERSION"$/,/^# Validate verification mode$/p' "$INSTALL_SCRIPT" \
+  sed -n '/^TAG_NAME="\$INPUT_CALLISTO_VERSION"$/,/^# Detect OS platform architecture for pre-built binaries$/p' "$INSTALL_SCRIPT" \
     | sed '$d'
 }
 
@@ -108,7 +108,7 @@ run_installer() (
   [[ -n "$fixture" && -d "$fixture" ]] || { echo "fixture directory missing" >&2; exit 1; }
   export GITHUB_WORKSPACE="$fixture/checkout with spaces" RUNNER_TEMP="$fixture/runner"
   export GITHUB_PATH="$fixture/github-path" GITHUB_ACTION_REF="$action_ref"
-  export INPUT_CALLISTO_SOURCE="$source" INPUT_CALLISTO_VERSION="$version" INPUT_CALLISTO_VERIFICATION=skip
+  export INPUT_CALLISTO_SOURCE="$source" INPUT_CALLISTO_VERSION="$version"
   mkdir -p "$GITHUB_WORKSPACE/crates/callisto-cli/src" "$RUNNER_TEMP"
   printf '# consumer depends on callisto-cli\n' > "$GITHUB_WORKSPACE/Cargo.toml"
   : > "$GITHUB_WORKSPACE/crates/callisto-cli/Cargo.toml"
@@ -159,7 +159,7 @@ run_installer() (
 
 for checkout in dependency owned; do
   out=$(run_installer auto callisto@0.5.0 "$checkout"); code=$?
-  if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --version 0.5.0 "* \
+  if [[ $code -eq 0 || "$out" != *"curl "*"/releases/download/callisto@0.5.0/"* \
     || "$out" == *"cargo build"* || "$out" == *"cargo metadata"* || "$out" == *"git ls-remote"* ]]; then
     echo "FAIL auto_explicit_pin_$checkout: code=$code out=$out"; fail=1
   else
@@ -168,7 +168,7 @@ for checkout in dependency owned; do
 done
 
 out=$(run_installer auto latest owned abc1230000000000000000000000000000000002); code=$?
-if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --version 0.8.0 "* || "$out" == *"cargo build"* ]]; then
+if [[ $code -eq 0 || "$out" != *"curl "*"/releases/download/callisto@0.8.0/"* || "$out" == *"cargo build"* ]]; then
   echo "FAIL auto_action_ref_pin_owned: code=$code out=$out"; fail=1
 else
   echo "PASS auto_action_ref_pin_owned"
@@ -197,8 +197,8 @@ done
 
 for action_ref in '' 0000000000000000000000000000000000000f; do
   out=$(run_installer auto latest dependency "$action_ref"); code=$?
-  if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --locked "* \
-    || "$out" == *"--version"* || "$out" == *"cargo build"* || "$out" == *"cargo metadata"* ]]; then
+  if [[ $code -eq 0 || "$out" != *"curl "*"/releases/latest/download/"* \
+    || "$out" == *"cargo install"* || "$out" == *"cargo build"* || "$out" == *"cargo metadata"* ]]; then
     echo "FAIL auto_latest_consumer_${action_ref:-unset}: code=$code out=$out"; fail=1
   else
     echo "PASS auto_latest_consumer_${action_ref:-unset}"

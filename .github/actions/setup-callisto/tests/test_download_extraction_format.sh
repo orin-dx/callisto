@@ -1,48 +1,35 @@
 #!/usr/bin/env bash
-# Tests the download/extraction format dispatch in scripts/install-callisto.sh, extracted from the "# Validate verification mode" comment to EOF.
+# Tests the release-asset install in scripts/install-callisto.sh, extracted from the "# Detect OS" comment to EOF.
 # Version resolution is covered separately; these fixtures supply the resolved tag.
 set -u
 ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ACTION_YML="$ACTION_DIR/action.yml"
 INSTALL_SCRIPT="$ACTION_DIR/scripts/install-callisto.sh"
+DOCS_URL="https://github.com/orin-dx/callisto/blob/main/docs/install-in-ci.md"
 
 extract_snippet() {
-  sed -n '/# Validate verification mode/,$p' "$INSTALL_SCRIPT"
+  sed -n '/^# Detect OS platform architecture for pre-built binaries$/,$p' "$INSTALL_SCRIPT"
 }
 
-# Runs the snippet with uname/curl stubbed per case and tar/unzip/cargo/cp recording into calls_file;
-# GITHUB_WORKSPACE is an empty temp dir so the local-monorepo build branch is skipped.
+# Runs the snippet with uname/curl stubbed per case and tar/cargo/cp recording into calls_file;
+# GITHUB_WORKSPACE is an empty temp dir so the local-checkout branch is skipped.
 run_case() {
-  local uname_s="$1"
-  local uname_m="$2"
-  local curl_exit="$3"
-  local gh_mode="${4:-ok}"
-  local mode="${5-}"
-  local tag="${6:-latest}"
-  local calls_file workspace runner_temp bin_dir github_path tmp_script
+  local uname_s="$1" uname_m="$2" curl_exit="$3" gh_mode="${4:-ok}" tag="${5:-latest}"
+  local calls_file workspace runner_temp bin_dir github_path tmp_script isolated_path
   calls_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   workspace="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   runner_temp="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   bin_dir="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   github_path="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   tmp_script="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
-  local isolated_path
   isolated_path="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   for d in "$workspace" "$runner_temp" "$bin_dir" "$isolated_path"; do
     [[ -n "$d" && -d "$d" ]] || { echo "mktemp -d failed" >&2; exit 1; }
   done
   for t in tr grep rm; do ln -s "$(command -v "$t")" "$isolated_path/$t"; done
   {
-    printf 'uname() {\n'
-    printf '  case "$1" in\n'
-    printf '    -s) echo %q ;;\n' "$uname_s"
-    printf '    -m) echo %q ;;\n' "$uname_m"
-    printf '    *) return 99 ;;\n'
-    printf '  esac\n'
-    printf '}\n'
+    printf 'uname() {\n  case "$1" in\n    -s) echo %q ;;\n    -m) echo %q ;;\n    *) return 99 ;;\n  esac\n}\n' "$uname_s" "$uname_m"
     printf 'curl() { echo "curl $*" >> %q; [[ %q -eq 0 ]] && : > "${@: -1}"; return %q; }\n' "$calls_file" "$curl_exit" "$curl_exit"
     printf 'tar() { echo "tar $*" >> %q; return 0; }\n' "$calls_file"
-    printf 'unzip() { echo "unzip $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cargo() { echo "cargo $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cp() { echo "cp $*" >> %q; return 0; }\n' "$calls_file"
     printf 'git() { echo "unexpected git $*" >> %q; return 99; }\n' "$calls_file"
@@ -53,16 +40,11 @@ run_case() {
       fail) printf 'gh() { echo "gh $*" >> %q; return 1; }\n' "$calls_file" ;;
       missing) printf 'PATH=%q\n' "$isolated_path" ;;
     esac
-    [[ -n "$mode" ]] && printf 'INPUT_CALLISTO_VERIFICATION=%q\n' "$mode"
-    printf 'GITHUB_WORKSPACE=%q\n' "$workspace"
-    printf 'RUNNER_TEMP=%q\n' "$runner_temp"
-    printf 'CALLISTO_BIN_DIR=%q\n' "$bin_dir"
-    printf 'GITHUB_PATH=%q\n' "$github_path"
-    printf 'TAG_NAME=%q\n' "$tag"
-    printf 'SOURCE=auto\n'
+    printf 'GITHUB_WORKSPACE=%q\nRUNNER_TEMP=%q\nCALLISTO_BIN_DIR=%q\nGITHUB_PATH=%q\n' "$workspace" "$runner_temp" "$bin_dir" "$github_path"
+    printf 'TAG_NAME=%q\nSOURCE=auto\nDOCS_URL=%q\n' "$tag" "$DOCS_URL"
     extract_snippet
   } > "$tmp_script"
-  bash "$tmp_script"
+  bash "$tmp_script" 2>&1
   local code=$?
   [[ -e "$runner_temp/callisto.tar.gz" ]] && echo "ASSET_PRESENT"
   echo "---CALLS---"
@@ -73,165 +55,60 @@ run_case() {
 }
 
 fail=0
+check() { # name, condition result (0 = pass), output
+  if [[ $2 -eq 0 ]]; then echo "PASS $1"; else echo "FAIL $1: $3"; fail=1; fi
+}
 
-# 1. Windows is not a supported product-binary target. It must skip a
-# fictitious download and use the established installation fallback.
-out=$(run_case "MINGW64_NT-10.0" "x86_64" 0 ok fallback); code=$?
-if [[ $code -ne 0 ]] \
-  || [[ "$out" == *"tar -xzf"* ]] \
-  || [[ "$out" == *"unzip"* ]] \
-  || [[ "$out" != *"cargo install callisto-cli"* ]]; then
-  echo "FAIL test_windows_falls_back_without_fictitious_asset: code=$code out=$out"; fail=1
-else
-  echo "PASS test_windows_falls_back_without_fictitious_asset"
-fi
-
-# 2. macOS arm64 regression -> unchanged tar.gz behavior, unzip not invoked.
-out=$(run_case "Darwin" "arm64" 0 ok fallback); code=$?
-if [[ $code -ne 0 ]] \
-  || [[ "$out" != *"tar -xzf "* ]] \
-  || [[ "$out" != *" -C "* ]] \
-  || [[ "$out" == *"unzip"* ]]; then
-  echo "FAIL test_macos_arm64_still_uses_targz: code=$code out=$out"; fail=1
-else
-  echo "PASS test_macos_arm64_still_uses_targz"
-fi
-
-# 3. Linux amd64 regression -> unchanged tar.gz behavior, unzip not invoked.
-out=$(run_case "Linux" "x86_64" 0 ok fallback); code=$?
-if [[ $code -ne 0 ]] \
-  || [[ "$out" != *"tar -xzf "* ]] \
-  || [[ "$out" != *" -C "* ]] \
-  || [[ "$out" == *"unzip"* ]]; then
-  echo "FAIL test_linux_amd64_still_uses_targz: code=$code out=$out"; fail=1
-else
-  echo "PASS test_linux_amd64_still_uses_targz"
-fi
-
-# 3b. Every supported platform downloads its own asset; an older release without it falls back to crates.io (case 5).
+# Every supported platform downloads its own asset, verifies it, then extracts only the binary.
 for platform in "Darwin arm64 callisto-aarch64-apple-darwin.tar.gz" \
   "Darwin x86_64 callisto-x86_64-apple-darwin.tar.gz" \
   "Linux x86_64 callisto-x86_64-unknown-linux-gnu.tar.gz" \
   "Linux aarch64 callisto-aarch64-unknown-linux-gnu.tar.gz" \
   "Linux arm64 callisto-aarch64-unknown-linux-gnu.tar.gz"; do
   read -r os arch asset <<< "$platform"
-  out=$(run_case "$os" "$arch" 0 ok fallback); code=$?
-  if [[ $code -ne 0 ]] || [[ "$out" != *"curl "*"/$asset "* ]] || [[ "$out" != *"tar -xzf "* ]]; then
-    echo "FAIL test_${os}_${arch}_downloads_$asset: code=$code out=$out"; fail=1
-  else
-    echo "PASS test_${os}_${arch}_downloads_$asset"
-  fi
-done
-out=$(run_case "Linux" "riscv64" 0 ok fallback); code=$?
-if [[ $code -ne 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" != *"cargo install callisto-cli"* ]]; then
-  echo "FAIL test_unsupported_architecture_uses_install_fallback: code=$code out=$out"; fail=1
-else
-  echo "PASS test_unsupported_architecture_uses_install_fallback"
-fi
-
-# 4. Unknown/exotic OS must likewise use the fallback chain rather than
-# guessing an archive target.
-out=$(run_case "SunOS" "sun4u" 0 ok fallback); code=$?
-if [[ $code -ne 0 ]] \
-  || [[ "$out" == *"tar -xzf "* ]] \
-  || [[ "$out" == *"unzip"* ]] \
-  || [[ "$out" != *"cargo install callisto-cli"* ]]; then
-  echo "FAIL test_unknown_os_uses_install_fallback: code=$code out=$out"; fail=1
-else
-  echo "PASS test_unknown_os_uses_install_fallback"
-fi
-
-# 5. Download failure falls through to the cargo-install chain: no tar or unzip, `cargo install callisto-cli` runs, exit 0.
-out=$(run_case "Linux" "x86_64" 1 ok fallback); code=$?
-if [[ $code -ne 0 ]] \
-  || [[ "$out" == *"tar -xzf"* ]] \
-  || [[ "$out" == *"unzip"* ]] \
-  || [[ "$out" != *"cargo install callisto-cli"* ]]; then
-  echo "FAIL test_download_failure_falls_back_to_cargo_install: code=$code out=$out"; fail=1
-else
-  echo "PASS test_download_failure_falls_back_to_cargo_install"
-fi
-
-# 6. Verification success extracts only the binary in every mode but skip
-# (skip never calls gh); gh runs against the pinned repo and signer, before extraction.
-for mode in require fallback ""; do
-  out=$(run_case "Linux" "x86_64" 0 ok "$mode"); code=$?
-  if [[ $code -ne 0 ]] \
-    || [[ "$out" != *"gh attestation verify "*"--repo orin-dx/callisto --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml"* ]] \
-    || [[ "$out" != *"--deny-self-hosted-runners --source-ref refs/heads/main"* ]] \
-    || [[ "$out" != *"tar -xzf "*" callisto" ]] \
-    || [[ "${out%%tar -xzf*}" != *"gh attestation verify"* ]] \
-    || [[ "$out" == *"cargo install"* ]]; then
-    echo "FAIL test_verification_success_extracts_only_binary_${mode:-default}: code=$code out=$out"; fail=1
-  else
-    echo "PASS test_verification_success_extracts_only_binary_${mode:-default}"
-  fi
+  out=$(run_case "$os" "$arch" 0); code=$?
+  [[ $code -eq 0 && "$out" == *"curl "*"--retry "*"/releases/latest/download/$asset "* \
+    && "$out" == *"gh attestation verify "*"--repo orin-dx/callisto --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml"* \
+    && "$out" == *"--deny-self-hosted-runners --source-ref refs/heads/main"* \
+    && "$out" == *"tar -xzf "*" callisto" && "${out%%tar -xzf*}" == *"gh attestation verify"* \
+    && "$out" != *"cargo install"* ]]
+  check "test_${os}_${arch}_downloads_verifies_then_extracts_$asset" $? "code=$code out=$out"
 done
 
-# 7. require + verification failure or missing gh aborts; asset never extracted or kept.
-for gh in fail missing; do
-  for mode in require ""; do
-    out=$(run_case "Linux" "x86_64" 0 "$gh" "$mode"); code=$?
-    name="test_require_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_aborts_${mode:-default}"
-    if [[ $code -eq 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"cargo install"* ]] \
-      || [[ "$out" == *"ASSET_PRESENT"* ]] || [[ "$out" != *"::error::"* ]] \
-      || [[ "$out" != *"verification: fallback"* ]]; then
-      echo "FAIL $name: code=$code out=$out"; fail=1
-    else
-      echo "PASS $name"
-    fi
-  done
+out=$(run_case Linux x86_64 0 ok "callisto@0.5.0"); code=$?
+[[ $code -eq 0 && "$out" == *"/releases/download/callisto@0.5.0/callisto-x86_64-unknown-linux-gnu.tar.gz "* ]]
+check test_pinned_tag_downloads_that_release $? "code=$code out=$out"
+
+# Message 1: no prebuilt asset for this platform; nothing is downloaded and crates.io is never used.
+for platform in "MINGW64_NT-10.0 x86_64" "Linux riscv64" "SunOS sun4u"; do
+  read -r os arch <<< "$platform"
+  out=$(run_case "$os" "$arch" 0); code=$?
+  [[ $code -ne 0 && "$out" == *"::error::no prebuilt callisto asset exists for "*"$DOCS_URL"* \
+    && "$out" != *"curl "* && "$out" != *"tar -xzf"* && "$out" != *"cargo install"* ]]
+  check "test_no_asset_for_${os}_${arch}_fails_with_docs_link" $? "code=$code out=$out"
 done
 
-# 8. fallback + failure or missing gh: warn, delete the asset, take crates.io, never extract.
-for gh in fail missing; do
-  for mode in fallback; do
-    out=$(run_case "Linux" "x86_64" 0 "$gh" "$mode"); code=$?
-    name="test_fallback_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_uses_crates_io_${mode:-default}"
-    if [[ $code -ne 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"unzip"* ]] \
-      || [[ "$out" == *"ASSET_PRESENT"* ]] || [[ "$out" != *"::warning::"* ]] \
-      || [[ "$out" != *"cargo install callisto-cli"* ]] || [[ "$out" == *"cargo install --locked --git"* ]]; then
-      echo "FAIL $name: code=$code out=$out"; fail=1
-    else
-      echo "PASS $name"
-    fi
-  done
-done
+# Message 1 also covers a release that has no such asset (download fails); nothing is extracted or installed from crates.io.
+out=$(run_case Linux x86_64 22); code=$?
+[[ $code -ne 0 && "$out" == *"::error::no prebuilt callisto asset "*"could be downloaded"*"$DOCS_URL"* \
+  && "$out" != *"gh attestation"* && "$out" != *"tar -xzf"* && "$out" != *"cargo install"* && "$out" != *"ASSET_PRESENT"* ]]
+check test_missing_release_asset_fails_with_docs_link $? "code=$code out=$out"
 
-# 9. fallback keeps an explicit version pin and never uses the unpinned git install.
-out=$(run_case "Linux" "x86_64" 0 fail fallback "callisto@0.5.0"); code=$?
-if [[ $code -ne 0 ]] || [[ "$out" == *"tar -xzf"* ]] \
-  || [[ "$out" != *"cargo install callisto-cli --version 0.5.0 "* ]] || [[ "$out" == *"--git"* ]]; then
-  echo "FAIL test_fallback_keeps_explicit_version_pin: code=$code out=$out"; fail=1
-else
-  echo "PASS test_fallback_keeps_explicit_version_pin"
-fi
+# Message 2: a failed attestation deletes the archive and never extracts it.
+out=$(run_case Linux x86_64 0 fail); code=$?
+[[ $code -ne 0 && "$out" == *"::error::attestation for "*"did not verify; do not use this file"*"$DOCS_URL"* \
+  && "$out" != *"tar -xzf"* && "$out" != *"cargo install"* && "$out" != *"ASSET_PRESENT"* ]]
+check test_failed_attestation_fails_and_discards_archive $? "code=$code out=$out"
 
-# 10. skip extracts without calling gh, with a warning.
-for gh in fail missing ok; do
-  out=$(run_case "Linux" "x86_64" 0 "$gh" skip); code=$?
-  if [[ $code -ne 0 ]] || [[ "$out" != *"tar -xzf "* ]] || [[ "$out" == *"gh attestation"* ]] \
-    || [[ "$out" != *"::warning::"* ]] || [[ "$out" == *"cargo install"* ]]; then
-    echo "FAIL test_skip_extracts_without_gh_$gh: code=$code out=$out"; fail=1
-  else
-    echo "PASS test_skip_extracts_without_gh_$gh"
-  fi
-done
+# Message 3: without gh nothing is downloaded or extracted.
+out=$(run_case Linux x86_64 0 missing); code=$?
+[[ $code -ne 0 && "$out" == *"::error::gh is not available"*"$DOCS_URL"* \
+  && "$out" != *"curl "* && "$out" != *"tar -xzf"* && "$out" != *"cargo install"* ]]
+check test_missing_gh_fails_with_docs_link $? "code=$code out=$out"
 
-# 11. Invalid value fails immediately, listing the valid values, with no download.
-out=$(run_case "Linux" "x86_64" 0 ok bogus); code=$?
-if [[ $code -eq 0 ]] || [[ "$out" != *"valid values: require, fallback, skip"* ]] \
-  || [[ "$out" == *"curl"* ]] || [[ "$out" == *"tar -xzf"* ]]; then
-  echo "FAIL test_invalid_verification_fails: code=$code out=$out"; fail=1
-else
-  echo "PASS test_invalid_verification_fails"
-fi
-
-# 12. The action's declared input default is require.
-if grep -A12 '^  verification:' "$ACTION_YML" | grep -q "default: 'require'"; then
-  echo "PASS test_default_verification_is_require"
-else
-  echo "FAIL test_default_verification_is_require"; fail=1
-fi
+# The removed verification input is ignored: setting it can no longer skip verification.
+out=$(INPUT_CALLISTO_VERIFICATION=skip run_case Linux x86_64 0 fail); code=$?
+[[ $code -ne 0 && "$out" == *"gh attestation verify"* && "$out" != *"tar -xzf"* ]]
+check test_verification_input_cannot_skip_verification $? "code=$code out=$out"
 
 exit $fail

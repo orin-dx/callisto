@@ -98,7 +98,6 @@ runs:
       env:
         INPUT_CALLISTO_SOURCE: auto
         INPUT_CALLISTO_VERSION: ${{ inputs.version }}
-        INPUT_CALLISTO_VERIFICATION: fallback
         GITHUB_ACTION_REF: ${{ github.action_ref }}
         GH_TOKEN: ${{ inputs.github_token || github.token }}
       run: bash "${{ github.action_path }}/../setup-callisto/scripts/install-callisto.sh" # zizmor: ignore[github-env] the PATH entry is a fixed child of the trusted runner temporary directory, not action input or downloaded archive content.

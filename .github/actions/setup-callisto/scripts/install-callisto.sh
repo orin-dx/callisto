@@ -9,6 +9,7 @@ CALLISTO_BIN_DIR="${RUNNER_TEMP}/callisto-bin"
 mkdir -p "$CALLISTO_BIN_DIR"
 TAG_NAME="$INPUT_CALLISTO_VERSION"
 SOURCE="$INPUT_CALLISTO_SOURCE"
+DOCS_URL="https://github.com/orin-dx/callisto/blob/main/docs/install-in-ci.md"
 
 if [[ "$SOURCE" != "auto" && "$SOURCE" != "local" ]]; then
   echo "::error::unsupported setup-callisto source '$SOURCE' (expected auto or local)"
@@ -34,106 +35,57 @@ if [[ "$SOURCE" == "auto" && "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:
   fi
 fi
 
-# Validate verification mode
-VERIFICATION="${INPUT_CALLISTO_VERIFICATION:-require}"
-case "$VERIFICATION" in
-  require|fallback|skip) ;;
-  *)
-    echo "::error::unsupported setup-callisto verification '$VERIFICATION' (valid values: require, fallback, skip)"
-    exit 1
-    ;;
-esac
-
 # Detect OS platform architecture for pre-built binaries
 OS_NAME=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH_NAME=$(uname -m)
-
+ASSET_NAME=""
 if [[ "$OS_NAME" == "darwin" ]]; then
   case "$ARCH_NAME" in
     arm64) ASSET_NAME="callisto-aarch64-apple-darwin.tar.gz" ;;
     x86_64) ASSET_NAME="callisto-x86_64-apple-darwin.tar.gz" ;;
-    *) ASSET_NAME="" ;;
   esac
 elif [[ "$OS_NAME" == "linux" ]]; then
   case "$ARCH_NAME" in
     x86_64) ASSET_NAME="callisto-x86_64-unknown-linux-gnu.tar.gz" ;;
     aarch64 | arm64) ASSET_NAME="callisto-aarch64-unknown-linux-gnu.tar.gz" ;;
-    *) ASSET_NAME="" ;;
   esac
-elif [[ "$OS_NAME" == *"mingw"* || "$OS_NAME" == *"msys"* || "$OS_NAME" == *"windows"* ]]; then
-  ASSET_NAME=""
-else
-  ASSET_NAME=""
 fi
 
-if [[ -n "$ASSET_NAME" && "$TAG_NAME" == "latest" ]]; then
+if [[ "$TAG_NAME" == "latest" ]]; then
   DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/$ASSET_NAME"
-elif [[ -n "$ASSET_NAME" ]]; then
+else
   DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/download/$TAG_NAME/$ASSET_NAME"
 fi
+DOWNLOAD_DEST="${RUNNER_TEMP}/callisto.tar.gz"
 
-# "latest" installs whatever crates.io resolves; a tag (`callisto@0.5.0` or `callisto-cli@0.5.0`) is stripped to bare semver.
-CRATE_VERSION="${TAG_NAME#callisto@}"; CRATE_VERSION="${CRATE_VERSION#callisto-cli@}"
-
-# Download under $RUNNER_TEMP with ASSET_NAME's extension: Windows assets are zip, which tar cannot read.
-case "$ASSET_NAME" in
-  *.zip)
-    DOWNLOAD_DEST="${RUNNER_TEMP}/callisto.zip"
-    ;;
-  *.tar.gz)
-    DOWNLOAD_DEST="${RUNNER_TEMP}/callisto.tar.gz"
-    ;;
-  *)
-    DOWNLOAD_DEST="${RUNNER_TEMP}/callisto.tar.gz"
-    ;;
-esac
-
-# A prebuilt asset runs with job privileges, so it needs a release-workflow attestation before extraction.
-# require aborts on failure; fallback discards the asset and returns 1; skip trusts it.
-verify_asset() {
-  local reason=""
-  if [[ "$VERIFICATION" == "skip" ]]; then
-    echo "::warning::verification=skip: $ASSET_NAME was not verified"
-    return 0
+# The archive runs with job privileges, so it is verified against the release workflow's attestation before extraction.
+install_release_asset() {
+  if [[ -z "$ASSET_NAME" ]]; then
+    echo "::error::no prebuilt callisto asset exists for $OS_NAME/$ARCH_NAME; install it yourself: $DOCS_URL"
+    exit 1
   fi
   if ! command -v gh >/dev/null 2>&1; then
-    reason="gh is not installed"
-  elif ! gh attestation verify "$DOWNLOAD_DEST" \
+    echo "::error::gh is not available, so the release attestation cannot be verified; install gh or follow: $DOCS_URL"
+    exit 1
+  fi
+  # curl retries transient network and HTTP errors itself; a missing asset (404) is not retried.
+  if ! curl -sSL -f --retry 3 --retry-delay 2 "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST"; then
+    rm -f "$DOWNLOAD_DEST"
+    echo "::error::no prebuilt callisto asset $ASSET_NAME for $TAG_NAME could be downloaded; install it yourself: $DOCS_URL"
+    exit 1
+  fi
+  if ! gh attestation verify "$DOWNLOAD_DEST" \
       --repo orin-dx/callisto \
       --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
       --deny-self-hosted-runners \
       --source-ref refs/heads/main; then
-    reason="attestation verification failed"
-  fi
-  [[ -z "$reason" ]] && return 0
-  rm -f "$DOWNLOAD_DEST"
-  if [[ "$VERIFICATION" == "require" ]]; then
-    echo "::error::cannot verify $ASSET_NAME: $reason (verification=require needs gh; set verification: fallback to install from crates.io instead)"
+    rm -f "$DOWNLOAD_DEST"
+    echo "::error::attestation for $ASSET_NAME did not verify; do not use this file: $DOCS_URL"
     exit 1
   fi
-  echo "::warning::cannot verify $ASSET_NAME: $reason; discarding it and installing from crates.io (verification=fallback)"
-  return 1
-}
-
-# Download, verify and extract the prebuilt asset; nonzero means use the fallback chain.
-fetch_prebuilt() {
-  if ! curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
-    if [[ "$VERIFICATION" == "require" ]]; then
-      echo "::error::cannot download $ASSET_NAME from $DOWNLOAD_URL (verification=require; set verification: fallback to install from crates.io instead)"
-      exit 1
-    fi
-    return 1
-  fi
-  verify_asset || return 1
   # Extract only the expected binary, never the whole archive.
-  case "$ASSET_NAME" in
-    *.zip)
-      unzip -q "$DOWNLOAD_DEST" callisto.exe -d "$CALLISTO_BIN_DIR"
-      ;;
-    *)
-      tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR" callisto
-      ;;
-  esac
+  tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR" callisto
+  echo "Callisto installed from the verified GitHub release ($DOWNLOAD_URL)"
 }
 
 # Dependencies named callisto-cli do not establish checkout source ownership.
@@ -166,20 +118,8 @@ if [[ "$SOURCE" == "local" ]]; then
   cargo build --locked --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" -p callisto-cli \
     --bin callisto --target-dir "$GITHUB_WORKSPACE/target"
   cp "$GITHUB_WORKSPACE/target/debug/callisto" "$CALLISTO_BIN_DIR/callisto"
-elif [[ -z "$ASSET_NAME" && "$VERIFICATION" == "require" ]]; then
-  echo "::error::no prebuilt callisto asset exists for $OS_NAME/$ARCH_NAME (verification=require; set verification: fallback to install from crates.io instead)"
-  exit 1
-elif [[ -n "$ASSET_NAME" ]] && fetch_prebuilt; then
-  echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
-elif [[ "$TAG_NAME" == "latest" ]] && cargo install callisto-cli --locked --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet; then
-  echo "Callisto installed from crates.io (latest)"
-  cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
-elif [[ "$TAG_NAME" != "latest" ]] && cargo install callisto-cli --version "$CRATE_VERSION" --locked --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet; then
-  echo "Callisto installed from crates.io ($CRATE_VERSION)"
-  cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
 else
-  echo "::error::callisto $TAG_NAME is available neither as a prebuilt asset nor on crates.io"
-  exit 1
+  install_release_asset
 fi
 
 echo "$CALLISTO_BIN_DIR" >> $GITHUB_PATH

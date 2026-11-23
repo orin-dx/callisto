@@ -12,17 +12,6 @@ inputs:
       back to the newest published release when that ref is unset or unresolvable.
     required: false
     default: 'latest'
-  verification:
-    description: >-
-      Attestation verification of the prebuilt release asset (gh attestation verify, repo
-      orin-dx/callisto, signer workflow callisto-release.yml, source ref refs/heads/main). One of: require (default) = a failed
-      verification, a missing gh or a missing asset aborts the step and the asset is never run;
-      fallback = on failure or missing gh, warn, delete the asset and install from crates.io
-      instead (never run the unverified asset); skip = do not verify, warn, and use the asset.
-      Releases built before the first attested release carry no attestation, and runners
-      without gh cannot verify: set fallback there.
-    required: false
-    default: 'require'
 
 runs:
   using: 'composite'
@@ -49,7 +38,6 @@ runs:
       env:
         INPUT_CALLISTO_SOURCE: ${{ inputs.source }}
         INPUT_CALLISTO_VERSION: ${{ inputs.version }}
-        INPUT_CALLISTO_VERIFICATION: ${{ inputs.verification }}
         GITHUB_ACTION_REF: ${{ github.action_ref }}
         GH_TOKEN: ${{ github.token }}
       run: bash "$GITHUB_ACTION_PATH/scripts/install-callisto.sh" # zizmor: ignore[github-env] the PATH entry is a fixed child of the trusted runner temporary directory, not action input or downloaded archive content.
