@@ -122,22 +122,21 @@ pub fn render_compose_pr_body<W: io::Write>(report: &ComposePrBodyReport, w: &mu
 }
 
 pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<()> {
-    if report.initialized {
-        writeln!(
-            w,
-            "Initialized callisto configuration at {}",
-            report.config_path.display()
-        )?;
+    // `init --workflow` on an existing config writes only the workflow, so the config is not always the lead.
+    let lead = if report.files.contains(&report.config_path) {
+        &report.config_path
     } else {
-        writeln!(
-            w,
-            "[DRY-RUN] Would write {} (no files written)",
-            report.config_path.display()
-        )?;
+        match report.files.first() {
+            Some(file) => file,
+            None => return render_diagnostics(&report.diagnostics, None, w),
+        }
+    };
+    match (report.initialized, lead == &report.config_path) {
+        (true, true) => writeln!(w, "Initialized callisto configuration at {}", lead.display())?,
+        (true, false) => writeln!(w, "Wrote {}", lead.display())?,
+        (false, _) => writeln!(w, "[DRY-RUN] Would write {} (no files written)", lead.display())?,
     }
-    // Every other file init wrote (or, under --dry-run, would write): the config path above
-    // already named it, so only the rest of `files` needs listing.
-    for file in report.files.iter().filter(|file| **file != report.config_path) {
+    for file in report.files.iter().filter(|file| *file != lead) {
         writeln!(w, "  {}", file.display())?;
     }
     render_diagnostics(&report.diagnostics, None, w)

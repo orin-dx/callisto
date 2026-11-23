@@ -10,7 +10,7 @@ For registry credential setup (npm, crates.io, PyPI), see [`publishing.md`](publ
 
 `callisto release` selects packages without a tag for their current version. It publishes to registries, creates tags and GitHub releases, and records HEAD as the source. It can run on any branch.
 
-- `callisto release --dry-run` prints the plan and performs no effect. It works anywhere, including on a dirty worktree or without an `origin` remote (tags are then noted as unbound).
+- `callisto release --dry-run` prints the plan and performs no effect. It works anywhere, including on a dirty worktree or without an `origin` remote (tags are then noted as unbound). An `origin` that is not a hosted HTTPS or SSH URL (a local path or `file://`) is previewed like no `origin`, and a real release refuses it.
 - `--package <ecosystem/name>` (repeatable) restricts the run to named unreleased packages, all distributions of each (naming `npm/dual` also releases `cargo/dual`), plus every member of their fixed or linked groups. An unreleased workspace package that a selected one depends on (runtime, optional, or peer) must be selected too.
 - It refuses a dirty worktree: a tracked modification or an untracked file not covered by `.gitignore`. Ignored files never count.
 - It requires the git repository root to be the workspace root; a workspace in a subdirectory fails with `E170`.
