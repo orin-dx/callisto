@@ -359,7 +359,7 @@ pub enum CliError {
         help(
             "{}",
             if *not_hosted {
-                "point `origin` at the hosted repository (`git remote set-url origin <url>`), then re-run init"
+                "point `origin` at the hosted repository (inspect with `git remote get-url --push origin`, fix with `git remote set-url --push origin <url>`), then re-run init"
             } else {
                 "add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init"
             }

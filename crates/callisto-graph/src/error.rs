@@ -473,7 +473,7 @@ pub enum GraphError {
     #[error("no hosted Git push remote: {refusal}")]
     #[diagnostic(
         code(E132),
-        help("Set origin to an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials.")
+        help("Set origin to an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials. Inspect with `git remote get-url --push origin`, fix with `git remote set-url --push origin <url>`.")
     )]
     UnsafeGitRemote { refusal: OriginRefusal },
 
@@ -1019,7 +1019,7 @@ impl std::fmt::Display for OriginRefusal {
             Self::NoPushUrl => f.write_str("`origin` has no push URL"),
             Self::NotHosted { reason } => write!(
                 f,
-                "`origin` is not a hosted remote: {reason} (use https://, ssh:// or git@host:owner/repo); see `git remote get-url origin`"
+                "`origin` is not a hosted remote: {reason} (use https://, ssh:// or git@host:owner/repo); see `git remote get-url --push origin`"
             ),
         }
     }
