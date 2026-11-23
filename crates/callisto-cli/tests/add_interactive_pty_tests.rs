@@ -230,6 +230,7 @@ fn ctrl_c_at_a_prompt_restores_the_cursor_writes_nothing_and_exits_130() {
     let mut add = Session::start(dir.path());
     add.after("Packages in this change", 1, "\x03");
     assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
+    assert!(add.screen().contains("E343"), "{}", add.screen());
     let screen = add.screen();
     assert!(screen.contains("Cancelled, nothing written."), "{screen}");
     assert!(
@@ -247,6 +248,7 @@ fn esc_at_a_prompt_writes_nothing_and_exits_130() {
     add.after("Packages in this change", 1, "\r");
     add.after("MAJOR", 1, "\x1b");
     assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
+    assert!(add.screen().contains("E343"), "{}", add.screen());
     assert!(add.screen().contains("Cancelled, nothing written."), "{}", add.screen());
     assert!(changesets(dir.path()).is_empty());
 }
@@ -326,6 +328,7 @@ fn ctrl_c_at_the_text_input_restores_the_cursor_writes_nothing_and_exits_130() {
     to_summary(&mut add);
     add.after("Changelog summary", 1, "\x03");
     assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
+    assert!(add.screen().contains("E343"), "{}", add.screen());
     let screen = add.screen();
     assert!(screen.contains("Cancelled, nothing written."), "{screen}");
     assert!(
@@ -363,23 +366,15 @@ fn an_editor_that_exits_non_zero_cancels_even_after_saving() {
     assert!(changesets(dir.path()).is_empty());
 }
 
-/// Prompts read Ctrl-C as a key, so a SIGINT from outside (`kill -INT`) arrives as a signal while the terminal is raw:
-/// the terminal is put back and the process ends as the default action does, before anything is written.
+/// Prompts read Ctrl-C as a key; a SIGINT from outside (`kill -INT`) ends the process by default, writing nothing.
 #[test]
-fn a_sigint_delivered_to_the_process_at_a_prompt_restores_the_terminal_and_ends_it() {
+fn a_sigint_delivered_to_the_process_at_a_prompt_ends_it_and_writes_nothing() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
     to_summary(&mut add);
     add.after("Changelog summary", 1, "");
     add.interrupt();
     assert_eq!(add.status().signal(), Some(2), "{}", add.screen());
-    let screen = add.screen();
-    assert!(screen.contains("Cancelled, nothing written."), "{screen}");
-    assert!(
-        screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
-        "the cursor is left hidden:\n{screen:?}"
-    );
-    add.assert_terminal_restored();
     assert!(changesets(dir.path()).is_empty());
 }
 
@@ -449,12 +444,80 @@ fn after_the_editor_a_sigint_takes_its_default_action_again() {
 }
 
 #[test]
+fn declining_the_review_writes_nothing_and_exits_0() {
+    let dir = workspace();
+    let mut add = Session::start(dir.path());
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "Fix b\r");
+    add.after("Write this changeset?", 1, "n\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert!(add.screen().contains("Cancelled, nothing written."), "{}", add.screen());
+    assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn an_editor_that_cannot_be_used_warns_once_and_asks_inline_whatever_the_reason() {
+    for (editor, reason) in [
+        (r#"sh -c 'printf "\377" > "$0"'"#, "not UTF-8"),
+        ("\"unterminated", "split into words"),
+    ] {
+        let dir = workspace();
+        let mut add = Session::start_with(dir.path(), &["add"], &[("EDITOR", editor)]);
+        to_summary(&mut add);
+        add.after("Changelog summary", 1, "\r");
+        add.after("Changelog summary", 2, "Fix b\r");
+        add.after("Write this changeset?", 1, "\r");
+        assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+        let screen = add.screen();
+        assert_eq!(screen.matches("warning: cannot use $EDITOR").count(), 1, "{screen}");
+        assert!(screen.contains(reason), "{screen}");
+        assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
+    }
+}
+
+#[test]
+fn declining_the_init_confirmation_writes_nothing_and_exits_0() {
+    let dir = workspace();
+    std::fs::remove_file(dir.path().join("callisto.toml")).unwrap();
+    let mut init = Session::start_with(dir.path(), &["init"], &[]);
+    init.after("How should packages be versioned?", 1, "\r");
+    init.after("Write callisto.toml?", 1, "n\r");
+    assert_eq!(init.exit_code(), Some(0), "{}", init.screen());
+    assert!(
+        init.screen().contains("Cancelled, nothing written."),
+        "{}",
+        init.screen()
+    );
+    assert!(!dir.path().join("callisto.toml").exists());
+}
+
+#[test]
+fn json_format_never_prompts_init_even_on_a_terminal() {
+    let dir = workspace();
+    std::fs::remove_file(dir.path().join("callisto.toml")).unwrap();
+    let mut init = Session::start_with(dir.path(), &["--format", "json", "init"], &[]);
+    assert_eq!(init.exit_code(), Some(2), "{}", init.screen());
+    assert!(
+        init.screen().contains("E240") && init.screen().contains("--yes"),
+        "{}",
+        init.screen()
+    );
+    assert!(
+        !init.screen().contains("How should packages be versioned?"),
+        "{}",
+        init.screen()
+    );
+    assert!(!dir.path().join("callisto.toml").exists());
+}
+
+#[test]
 fn esc_at_an_init_prompt_writes_nothing_and_exits_130() {
     let dir = workspace();
     std::fs::remove_file(dir.path().join("callisto.toml")).unwrap();
     let mut init = Session::start_with(dir.path(), &["init"], &[]);
     init.after("How should packages be versioned?", 1, "\x1b");
     assert_eq!(init.exit_code(), Some(130), "{}", init.screen());
+    assert!(init.screen().contains("E343"), "{}", init.screen());
     assert!(
         init.screen().contains("Cancelled, nothing written."),
         "{}",

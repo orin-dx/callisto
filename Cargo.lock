@@ -267,7 +267,6 @@ dependencies = [
  "clap",
  "clap_complete",
  "comfy-table",
- "crossterm",
  "dunce",
  "indexmap",
  "inquire",

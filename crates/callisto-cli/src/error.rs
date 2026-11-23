@@ -150,7 +150,7 @@ pub enum CliError {
     )]
     Interactive(inquire::InquireError),
 
-    /// Esc or Ctrl-C at a prompt; `main` prints the message and exits 130.
+    /// Esc or Ctrl-C at a prompt; `main` renders it like any error and exits 130.
     #[error("{}", crate::tty::CANCELLED)]
     #[diagnostic(
         code(E343),

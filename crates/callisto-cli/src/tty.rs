@@ -77,7 +77,7 @@ impl Editor {
             .suffix(".txt")
             .tempfile()
             .map_err(failed)?;
-        let _editor_owns_ctrl_c = sigint::enter(sigint::Mode::Ignore).map_err(failed)?;
+        let _editor_owns_ctrl_c = editor_owns_ctrl_c::enter().map_err(failed)?;
         let status = crate::runner::child_command(program, &[], &[])
             .args(args)
             .arg(file.path())
@@ -94,98 +94,40 @@ impl Editor {
     }
 }
 
-/// Runs one `inquire` prompt. A `kill -INT` from outside reaches this process while the prompt holds the terminal
-/// raw, so it puts the terminal back and says nothing was written before ending the process as SIGINT does (unix only).
-/// Esc and Ctrl-C at the prompt arrive as keys, as [`CliError::Cancelled`].
+/// Runs one `inquire` prompt. Esc and Ctrl-C arrive as keys, as [`CliError::Cancelled`].
 pub fn prompt<T>(run: impl FnOnce() -> Result<T, inquire::InquireError>) -> Result<T, CliError> {
-    // Restoring the terminal on SIGINT is a convenience: a prompt still runs when the handler cannot be installed.
-    let _restores = sigint::enter(sigint::Mode::RestoreTerminal).ok();
     run().map_err(CliError::from)
 }
 
 #[cfg(unix)]
-mod sigint {
-    use std::sync::{Mutex, MutexGuard, PoisonError};
+mod editor_owns_ctrl_c {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     use signal_hook::consts::SIGINT;
-    use signal_hook::iterator::Signals;
 
-    /// What a SIGINT does while it is held; without a [`Guard`] it ends the process, as by default.
-    #[derive(Clone, Copy)]
-    pub enum Mode {
-        /// A prompt holds the terminal raw: put it back and say nothing was written, then end the process.
-        RestoreTerminal,
-        /// Ctrl-C in a line-mode editor reaches this process too: as Git's `launch_editor` does, ignore it while the
-        /// editor runs and let its exit status decide.
-        Ignore,
-    }
+    /// Ctrl-C in a line-mode editor reaches this process too: as Git's `launch_editor` does, ignore SIGINT while the
+    /// editor runs and let its exit status decide. Dropping this gives SIGINT its default action back.
+    pub struct Guard(Arc<AtomicBool>);
 
-    /// One handler thread serves the whole process: once SIGINT has a handler it has no default action, so the thread
-    /// takes that action itself whenever no [`Guard`] says otherwise.
-    struct State {
-        installed: bool,
-        mode: Option<Mode>,
-    }
-
-    static STATE: Mutex<State> = Mutex::new(State {
-        installed: false,
-        mode: None,
-    });
-
-    fn state() -> MutexGuard<'static, State> {
-        STATE.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Dropping this gives SIGINT its default action back.
-    pub struct Guard(());
-
-    pub fn enter(mode: Mode) -> std::io::Result<Guard> {
-        let mut state = state();
-        if !state.installed {
-            let mut signals = Signals::new([SIGINT])?;
-            std::thread::Builder::new()
-                .name("callisto-sigint".to_owned())
-                .spawn(move || signals.forever().for_each(|_| react()))?;
-            state.installed = true;
-        }
-        state.mode = Some(mode);
-        Ok(Guard(()))
+    pub fn enter() -> std::io::Result<Guard> {
+        let default_action = Arc::new(AtomicBool::new(false));
+        signal_hook::flag::register_conditional_default(SIGINT, Arc::clone(&default_action))?;
+        Ok(Guard(default_action))
     }
 
     impl Drop for Guard {
         fn drop(&mut self) {
-            state().mode = None;
+            self.0.store(true, Ordering::SeqCst);
         }
-    }
-
-    fn react() {
-        let mode = state().mode;
-        match mode {
-            Some(Mode::Ignore) => return,
-            Some(Mode::RestoreTerminal) => {
-                // Best effort: the process is about to end, so there is nowhere to report a failure.
-                drop(crossterm::terminal::disable_raw_mode());
-                drop(crossterm::execute!(std::io::stderr(), crossterm::cursor::Show));
-                eprintln!("\n{}", super::CANCELLED);
-            }
-            None => {}
-        }
-        // Fails only when the default action cannot be taken; the process then carries on as if SIGINT were ignored.
-        drop(signal_hook::low_level::emulate_default_handler(SIGINT));
     }
 }
 
 #[cfg(not(unix))]
-mod sigint {
-    #[derive(Clone, Copy)]
-    pub enum Mode {
-        RestoreTerminal,
-        Ignore,
-    }
-
+mod editor_owns_ctrl_c {
     pub struct Guard;
 
-    pub fn enter(_: Mode) -> std::io::Result<Guard> {
+    pub fn enter() -> std::io::Result<Guard> {
         Ok(Guard)
     }
 }
