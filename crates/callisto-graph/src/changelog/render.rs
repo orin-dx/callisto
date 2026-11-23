@@ -58,16 +58,24 @@ pub(crate) fn peer_bullet(dependency: &str, to: &str) -> String {
     format!("- Peer dependency `{dependency}` requires `{to}`\n")
 }
 
+pub(crate) const DEPENDENCY_HEADING: &str = "- Dependency updates\n";
+
 /// The nested "Dependency updates" bullet; empty when there are none.
 pub(crate) fn dependency_block(dep_updates: &[(&str, &str)]) -> String {
     if dep_updates.is_empty() {
         return String::new();
     }
-    let mut out = String::from("- Dependency updates\n");
+    let mut out = String::from(DEPENDENCY_HEADING);
     for (dep, to_ver) in dep_updates {
-        out.push_str(&format!("  - `{dep}` → `{to_ver}`\n"));
+        out.push_str(&dependency_bullet(dep, to_ver));
+        out.push('\n');
     }
     out
+}
+
+/// One nested update bullet, without its trailing newline.
+pub(crate) fn dependency_bullet(dep: &str, to_ver: &str) -> String {
+    format!("  - `{dep}` → `{to_ver}`")
 }
 
 fn meta_line(date: Option<&str>, compare_url: Option<&str>) -> Option<String> {

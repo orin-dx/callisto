@@ -1,6 +1,8 @@
 use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
-use crate::changelog::render::{commit_bullet, dependency_block, indent_changeset_summary, peer_bullet};
+use crate::changelog::render::{
+    commit_bullet, dependency_bullet, indent_changeset_summary, peer_bullet, DEPENDENCY_HEADING,
+};
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
@@ -280,29 +282,23 @@ fn render_level(body: &mut String, level: Severity, changes: &[&Change]) {
 
 /// The changelog's one nested "Dependency updates" block for the group, each update naming its own packages.
 fn dependency_updates(changes: &[&Change]) -> String {
-    let updates: Vec<&Change> = changes
-        .iter()
-        .copied()
-        .filter(|change| matches!(change.kind, ChangeKind::DependencyUpdate { .. }))
-        .collect();
-    let pairs: Vec<(&str, &str)> = updates
-        .iter()
-        .filter_map(|change| match &change.kind {
-            ChangeKind::DependencyUpdate { dependency, to } => Some((dependency.as_str(), to.as_str())),
-            _ => None,
-        })
-        .collect();
-    let block = dependency_block(&pairs);
-    if block.is_empty() {
-        return block;
+    let mut out = String::new();
+    for change in changes {
+        if let ChangeKind::DependencyUpdate { dependency, to } = &change.kind {
+            if out.is_empty() {
+                out.push_str(DEPENDENCY_HEADING);
+            }
+            let names: Vec<String> = change.members.iter().map(|m| format!("`{}`", m.package)).collect();
+            out.push_str(&format!(
+                "{} · affects {}\n",
+                dependency_bullet(dependency, to),
+                names.join(", ")
+            ));
+        }
     }
-    let mut lines = block.lines();
-    let mut out = format!("{}\n", lines.next().unwrap_or_default());
-    for (line, change) in lines.zip(&updates) {
-        let names: Vec<String> = change.members.iter().map(|m| format!("`{}`", m.package)).collect();
-        out.push_str(&format!("{line} · affects {}\n", names.join(", ")));
+    if !out.is_empty() {
+        out.push('\n');
     }
-    out.push('\n');
     out
 }
 
@@ -1192,6 +1188,66 @@ mod tests {
         let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
 
         insta::assert_snapshot!(body);
+    }
+
+    #[test]
+    fn a_newline_in_a_dependency_name_keeps_each_update_with_its_own_packages() {
+        let dep_bump = |name: &str, dep: &str| {
+            let pkg = PackageId::parse(name).unwrap();
+            let input = crate::changelog::ChangelogInput {
+                style: Default::default(),
+                package: pkg.clone(),
+                from: Version::semver(1, 0, 0),
+                to: Some(Version::semver(1, 0, 1)),
+                entries: vec![crate::changelog::ChangelogEntry {
+                    severity: Severity::Patch,
+                    source: crate::changelog::ChangeSource::DependencyUpdate {
+                        dependency: PackageId::parse(dep).unwrap(),
+                        dep_kind: callisto_model::DepKind::Runtime,
+                        to: Version::semver(2, 0, 0),
+                    },
+                }],
+            };
+            let bump = PlannedBump {
+                package: pkg,
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 0, 1),
+                severity: Severity::Patch,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            };
+            (bump, input)
+        };
+        let (bump_a, input_a) = dep_bump("app-a", "dep\nx");
+        let (bump_b, input_b) = dep_bump("app-b", "dep-y");
+        let plan = VersionPlan {
+            bumps: vec![bump_a, bump_b],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: [("A", input_a), ("B", input_b)]
+                .into_iter()
+                .map(|(n, input)| crate::plan::ChangelogWrite {
+                    changelog_path: std::path::PathBuf::from(format!("{n}/CHANGELOG.md")),
+                    input,
+                })
+                .collect(),
+            consumed_changesets: vec![],
+            archived_changesets: Vec::new(),
+            inferred: Default::default(),
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
+
+        assert!(body.contains("`dep-y` → `2.0.0` · affects `app-b`"), "{body}");
+        assert!(body.contains("→ `2.0.0` · affects `app-a`"), "{body}");
+        assert!(!body.contains("`dep-y` → `2.0.0` · affects `app-a`"), "{body}");
     }
 
     #[test]
