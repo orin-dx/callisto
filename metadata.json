@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M854BARGQY1EB62R4KPSG908",
+  "strategy": "manual-commit",
+  "branch": "worktree-wp-setup-callisto-require",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/eager-lions-run.md",
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/setup-callisto/action.yml",
+    ".github/actions/setup-callisto/scripts/install-callisto.sh",
+    ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+    "crates/callisto-cli/tests/cli_tag_template.rs",
+    "docs/architecture/release.md",
+    "docs/install-in-ci.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 91302,
+    "cache_read_tokens": 3375624,
+    "output_tokens": 18573,
+    "api_call_count": 34
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

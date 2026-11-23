@@ -1,0 +1,96 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M854BARGQY1EB62R4KPSG908",
+  "session_id": "4e30e5b4-b14c-4cdd-b58a-ac5d19822c7c",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T21:17:58.339626Z",
+  "branch": "worktree-wp-setup-callisto-require",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/eager-lions-run.md",
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/setup-callisto/action.yml",
+    ".github/actions/setup-callisto/scripts/install-callisto.sh",
+    ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+    "crates/callisto-cli/tests/cli_tag_template.rs",
+    "docs/architecture/release.md",
+    "docs/install-in-ci.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "7e6c03ba3fcc",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 91302,
+    "cache_read_tokens": 3375624,
+    "output_tokens": 18573,
+    "api_call_count": 34
+  },
+  "session_token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 91302,
+    "cache_read_tokens": 3375624,
+    "output_tokens": 18573,
+    "api_call_count": 34
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Apply a consolidated batch of seven review fixes to PR #640 (setup-callisto installer, docs, changeset, tests) in an existing worktree, add shell tests for version normalisation and download-error handling, run the full gate and review checklist, and commit locally (signed) without pushing.",
+    "outcome": "All seven fixes were applied plus extra doc/action.yml description updates, new shell tests were added, the full gate was rerun and reported all exit codes 0, and a signed local commit was made. The final report of sha, per-gate exit codes and checklist lines was not shown in the transcript, and nothing was pushed.",
+    "learnings": {
+      "repo": [
+        "Gate for this repo is `just pre-push && just lint && just doc-check && just test`, plus the setup-callisto shell tests and `just workflow-contracts`; tests elsewhere read scripts, specs and error registries so workspace-wide runs are required.",
+        "setup-callisto shell tests live in .github/actions/setup-callisto/tests/ and stub curl/gh/tar/unzip as shell functions; `testing/check-comments.sh` rejects comments that narrate history (e.g. 'removed', 'no longer').",
+        "The `version` input is described in both .github/actions/setup-callisto/action.yml and .github/actions/callisto-action/action.yml and documented in docs/architecture/release.md, so changing accepted values requires updating all three (sibling call sites).",
+        "Docs copy-paste blocks in docs/install-in-ci.md should be wrapped in a subshell `( set -euo pipefail ... )` so a failure stops extraction without closing the user's terminal."
+      ],
+      "code": [
+        {
+          "path": ".github/actions/setup-callisto/scripts/install-callisto.sh",
+          "line": 74,
+          "finding": "Download error now distinguishes HTTP 404 ('no prebuilt callisto asset') from other failures after curl retries ('download failed ... retry the job') by capturing `-w '%{http_code}'` from curl."
+        },
+        {
+          "path": ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+          "line": 109,
+          "finding": "Comment narrating history was rewritten to describe current behaviour so check-comments passes."
+        },
+        {
+          "path": "crates/callisto-cli/tests/cli_tag_template.rs",
+          "finding": "Test red_c3_installer_derives_crate_version_from_the_current_tag_template was removed; it read the deleted CRATE_VERSION line, and the unused `Path` import was dropped."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "The initial Python-edit for the `for bad` test list had quoting problems with the `$'0.21.0\\nx'` literal and needed sed and manual Edit fixes.",
+      "The doc-block proof script's awk/sed quoting broke and needed several rewrites, partly due to macOS vs GNU sed differences (`sed -i ''`).",
+      "Late doc edits invalidated an in-progress gate run, so it was stopped and restarted; checking for leftover processes was noisy because other worktrees' cargo processes were running.",
+      "A `[[ ... ]] && TAG_NAME=...` one-liner had to be rewritten as an if block (likely set -e safety)."
+    ],
+    "open_items": [
+      "Lead must read the diff and approve before pushing; push, merge of latest origin/main, ls-remote check, trail link and `entire trail ci-pr` are still pending.",
+      "Final report to lead (PR, sha, gate exit codes, checklist lines including item 11) still needs to be delivered.",
+      "Findings from Entire review were not to be resolved in this batch."
+    ]
+  }
+}
