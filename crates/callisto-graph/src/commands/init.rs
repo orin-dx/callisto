@@ -570,8 +570,8 @@ fn resolve_config_text(root: &Path, text: &str) -> Result<ResolvedConfig, GraphE
     Ok(crate::config::resolve(root, raw)?)
 }
 
-/// The first release `config` would produce, from the plan behind `release --dry-run`, and the changesets
-/// `version` has yet to apply.
+/// The first release `config` would produce, from the plan behind `release --dry-run`, and the packages `version`
+/// has pending work for.
 ///
 /// # Errors
 ///
@@ -581,12 +581,12 @@ pub fn preview<L: ProjectLocator, R: CommandRunner>(
     config: &str,
     locator: &L,
     runner: &R,
-) -> Result<(Option<LocalReleasePlan>, usize), GraphError> {
+) -> Result<(Option<LocalReleasePlan>, Vec<callisto_model::ReleasePackageId>), GraphError> {
     let resolved = resolve_config_text(&facts.root, config)?;
     let workspace = Workspace::load_with_config(facts.root.clone(), resolved, locator, runner)?;
     let plan = plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)?;
-    // Advisory: a changeset `version` cannot read is that command's error to report.
-    let pending = crate::commands::pending_changesets(&workspace).unwrap_or(0);
+    // Advisory: a plan `version` cannot derive is that command's error to report.
+    let pending = crate::commands::pending_version_work(&workspace, &[]).unwrap_or_default();
     Ok((plan, pending))
 }
 

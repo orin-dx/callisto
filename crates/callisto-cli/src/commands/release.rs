@@ -10,7 +10,7 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, ci_release_route, derive_release_commit_decision, derive_selected_release_decision,
-    execute_release, origin_tag_probe, pending_changesets, pending_releases, plan_loaded_release,
+    execute_release, origin_tag_probe, pending_releases, pending_version_work, plan_loaded_release,
     require_sealed_publishes, seal_npm_tarballs, seal_python_distributions, validate_local_release_intent,
     validate_release_intent, verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, ValidatedReleaseIntent,
     VersionOptions,
@@ -53,10 +53,15 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
 pub const TAGS_UNBOUND_NOTE: &str =
     "note: `origin` is missing or not a hosted remote, so tag operations are unbound; a real `callisto release` needs a hosted remote";
 
-/// Stderr note when changesets wait for `callisto version`: a release plans only versions already written.
-fn pending_changesets_note(count: usize) -> String {
+/// Stderr note when `callisto version` has work for the selection: a release plans only versions already written.
+fn pending_version_note(packages: &[callisto_model::ReleasePackageId]) -> String {
+    let names = packages
+        .iter()
+        .map(|package| format!("`{package}`"))
+        .collect::<Vec<_>>();
     format!(
-        "note: {count} pending changeset(s) are not in this plan: run `callisto version` (or merge the release PR) first"
+        "note: pending version work for {} is not in this plan: run `callisto version` (or merge the release PR) first",
+        names.join(", ")
     )
 }
 
@@ -100,9 +105,9 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
     }
     let plan = planned?;
     if global.dry_run {
-        // Advisory: a changeset `version` cannot read is that command's error to report.
-        let pending = pending_changesets(&workspace).unwrap_or(0);
-        write_release_preview(plan.as_ref(), pending, global.format, &mut std::io::stdout())?;
+        // Advisory: a plan `version` cannot derive is that command's error to report.
+        let pending = pending_version_work(&workspace, &selections).unwrap_or_default();
+        write_release_preview(plan.as_ref(), &pending, global.format, &mut std::io::stdout())?;
         return Ok(ExitCode::SUCCESS);
     }
     let Some(plan) = plan else {
@@ -166,7 +171,7 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
 /// Writes a `release --dry-run` preview of `plan`; `init` shows the same one.
 pub(crate) fn write_release_preview(
     plan: Option<&LocalReleasePlan>,
-    pending_changesets: usize,
+    pending: &[callisto_model::ReleasePackageId],
     format: OutputFormat,
     out: &mut dyn std::io::Write,
 ) -> Result<(), CliError> {
@@ -199,8 +204,8 @@ pub(crate) fn write_release_preview(
             eprintln!("warning: {}", diagnostic.message);
         }
     }
-    if pending_changesets > 0 {
-        eprintln!("{}", pending_changesets_note(pending_changesets));
+    if !pending.is_empty() {
+        eprintln!("{}", pending_version_note(pending));
     }
     Ok(())
 }

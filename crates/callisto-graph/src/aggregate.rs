@@ -399,16 +399,21 @@ pub(crate) fn resolve_target_package<'a>(
     }
 }
 
-/// Applies every pending changeset to `agg`: its seeds, changelog entries, and what is consumed or recorded.
-fn apply_changesets<D: DependencyResolver>(
-    agg: &mut Aggregation,
+#[allow(clippy::too_many_arguments)]
+pub fn aggregate<D, I>(
     graph: &D,
     identity: &IdentityIndex,
     config: &ResolvedConfig,
+    git: &GitAccess<'_>,
     tags: &TagIndex,
     base_versions: &BTreeMap<PackageId, Version>,
     pre: Option<&callisto_model::format::PreState>,
-) -> Result<(), GraphError> {
+    inference: &I,
+) -> Result<Aggregation, GraphError>
+where
+    D: DependencyResolver,
+    I: SeverityInference,
+{
     let mut loaded = load_changesets(&config.root, config)?;
     // A v3 cycle archives applied changesets in `pre/`: retained while the cycle runs, consumed with the rest at exit.
     let archived = match pre.map(callisto_model::format::PreState::shape) {
@@ -423,6 +428,63 @@ fn apply_changesets<D: DependencyResolver>(
     let archive_dir = config.pre_archive_dir();
     let is_v3 = pre.map(callisto_model::format::PreState::shape) == Some(callisto_model::format::PreStateShape::V3);
     loaded.extend(archived);
+    let mut agg = Aggregation::default();
+    // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
+    if graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
+        git.require_full_history()?;
+    }
+
+    for pkg in graph.packages() {
+        let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
+        let last_tag = tags.last_tag(&pkg.id);
+        let cur_ver = last_tag
+            .map(|t| t.version.clone())
+            .or_else(|| base_versions.get(&pkg.id).cloned())
+            .ok_or_else(|| {
+                GraphError::Manifest(callisto_model::ManifestError::MissingField {
+                    path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
+                    field: "version",
+                })
+            })?;
+
+        let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
+        let policy = resolve_package_config(&native_names, config)
+            .and_then(|pcfg| pcfg.pre_major_inference)
+            .unwrap_or(PreMajorInferencePolicy::Off);
+
+        // release_trigger: Changeset packages take severity from pending changesets only --
+        // commit inference must not run for them, so neither does resolving its window.
+        let inferred = if pkg.release_trigger == ReleaseTrigger::Auto {
+            let since = last_tag
+                .map(|t| resolve_since(git, tags, t.name.as_str()))
+                .transpose()?;
+            let window = crate::infer::InferenceWindowSpec {
+                pathspecs: &pathspecs,
+                since,
+                current_version: &cur_ver,
+                has_prior_release: last_tag.is_some(),
+                policy,
+            };
+            inference.infer(pkg, git, window)?
+        } else {
+            None
+        };
+
+        if let Some(outcome) = inferred
+            && outcome.severity > Severity::None
+        {
+            agg.add(
+                &pkg.id,
+                outcome.severity,
+                Source::Inference {
+                    commits: outcome.commit_count,
+                    remapped: outcome.remapped,
+                },
+            );
+            agg.inference_commits.insert(pkg.id.clone(), outcome.commits.clone());
+        }
+    }
+
     // During a pre-release cycle (PreMode::Pre) changesets must NOT be consumed:
     // they remain on disk so they can be re-applied when the cycle exits.
     let is_pre_mode = pre
@@ -565,96 +627,6 @@ fn apply_changesets<D: DependencyResolver>(
             }
         }
     }
-    Ok(())
-}
-
-/// How many changesets `version` would apply now: a pre cycle's already-recorded notes are not pending.
-pub(crate) fn pending_changesets<D: DependencyResolver>(
-    graph: &D,
-    identity: &IdentityIndex,
-    config: &ResolvedConfig,
-    tags: &TagIndex,
-    base_versions: &BTreeMap<PackageId, Version>,
-    pre: Option<&callisto_model::format::PreState>,
-) -> Result<usize, GraphError> {
-    let mut agg = Aggregation::default();
-    apply_changesets(&mut agg, graph, identity, config, tags, base_versions, pre)?;
-    Ok(agg.pending_changesets())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn aggregate<D, I>(
-    graph: &D,
-    identity: &IdentityIndex,
-    config: &ResolvedConfig,
-    git: &GitAccess<'_>,
-    tags: &TagIndex,
-    base_versions: &BTreeMap<PackageId, Version>,
-    pre: Option<&callisto_model::format::PreState>,
-    inference: &I,
-) -> Result<Aggregation, GraphError>
-where
-    D: DependencyResolver,
-    I: SeverityInference,
-{
-    let mut agg = Aggregation::default();
-    // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
-    if graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
-        git.require_full_history()?;
-    }
-
-    for pkg in graph.packages() {
-        let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
-        let last_tag = tags.last_tag(&pkg.id);
-        let cur_ver = last_tag
-            .map(|t| t.version.clone())
-            .or_else(|| base_versions.get(&pkg.id).cloned())
-            .ok_or_else(|| {
-                GraphError::Manifest(callisto_model::ManifestError::MissingField {
-                    path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
-                    field: "version",
-                })
-            })?;
-
-        let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
-        let policy = resolve_package_config(&native_names, config)
-            .and_then(|pcfg| pcfg.pre_major_inference)
-            .unwrap_or(PreMajorInferencePolicy::Off);
-
-        // release_trigger: Changeset packages take severity from pending changesets only --
-        // commit inference must not run for them, so neither does resolving its window.
-        let inferred = if pkg.release_trigger == ReleaseTrigger::Auto {
-            let since = last_tag
-                .map(|t| resolve_since(git, tags, t.name.as_str()))
-                .transpose()?;
-            let window = crate::infer::InferenceWindowSpec {
-                pathspecs: &pathspecs,
-                since,
-                current_version: &cur_ver,
-                has_prior_release: last_tag.is_some(),
-                policy,
-            };
-            inference.infer(pkg, git, window)?
-        } else {
-            None
-        };
-
-        if let Some(outcome) = inferred
-            && outcome.severity > Severity::None
-        {
-            agg.add(
-                &pkg.id,
-                outcome.severity,
-                Source::Inference {
-                    commits: outcome.commit_count,
-                    remapped: outcome.remapped,
-                },
-            );
-            agg.inference_commits.insert(pkg.id.clone(), outcome.commits.clone());
-        }
-    }
-
-    apply_changesets(&mut agg, graph, identity, config, tags, base_versions, pre)?;
 
     loop {
         let mut changed = false;

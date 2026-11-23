@@ -10,6 +10,7 @@ use callisto_model::{
     PublishTarget, RegistryBindingDigest, RegistryKey, SemanticInputDigest,
 };
 
+use crate::error::{MaskedUrl, OriginRefusal};
 use crate::registry_endpoint::{
     canonical_registry_url, split_routes_digest, url_parse_error_reason, RegistryBindingV1,
 };
@@ -88,7 +89,7 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     {
         return Err(GraphError::UntrustedNpmRegistry {
             package: package.clone(),
-            url: raw.to_owned(),
+            url: MaskedUrl::new(raw),
         });
     }
     let identity = match (&index, &publish) {
@@ -149,8 +150,8 @@ pub(crate) enum Origin {
     Missing,
     /// A remote tags and the forge repository can bind to.
     Hosted(PreparedGitRemote),
-    /// Anything else, such as a local path: kept as written for the refusal.
-    NotHosted { raw: String, reason: &'static str },
+    /// Anything else, such as a local path: kept only masked for the refusal.
+    NotHosted { url: MaskedUrl, reason: &'static str },
 }
 
 impl Origin {
@@ -173,7 +174,7 @@ impl Origin {
         match canonical_git_remote(raw) {
             Ok(remote) => Self::Hosted(remote),
             Err(reason) => Self::NotHosted {
-                raw: raw.to_owned(),
+                url: MaskedUrl::new(raw),
                 reason,
             },
         }
@@ -181,8 +182,8 @@ impl Origin {
 
     /// A real release: only a hosted remote.
     pub(crate) fn required(self) -> Result<PreparedGitRemote, GraphError> {
-        self.optional()?.ok_or_else(|| GraphError::UnsafeGitRemote {
-            detail: "`origin` has no push URL".to_owned(),
+        self.optional()?.ok_or(GraphError::UnsafeGitRemote {
+            refusal: OriginRefusal::NoPushUrl,
         })
     }
 
@@ -191,8 +192,8 @@ impl Origin {
         match self {
             Self::Missing => Ok(None),
             Self::Hosted(remote) => Ok(Some(remote)),
-            Self::NotHosted { raw, reason } => Err(GraphError::UnsafeGitRemote {
-                detail: format!("`origin` is `{}`, not a hosted remote ({reason})", redacted(&raw)),
+            Self::NotHosted { url, reason } => Err(GraphError::UnsafeGitRemote {
+                refusal: OriginRefusal::NotHosted { url, reason },
             }),
         }
     }
@@ -204,26 +205,6 @@ impl Origin {
             Self::Missing | Self::NotHosted { .. } => None,
         }
     }
-}
-
-/// `raw` with userinfo, query and fragment masked, so a refusal never prints a credential.
-fn redacted(raw: &str) -> String {
-    let Ok(mut url) = url::Url::parse(raw) else {
-        return raw.to_owned();
-    };
-    if url.password().is_some() {
-        url.set_password(Some("***")).ok();
-    }
-    if !url.username().is_empty() && url.username() != "git" {
-        url.set_username("***").ok();
-    }
-    if url.query().is_some() {
-        url.set_query(Some("***"));
-    }
-    if url.fragment().is_some() {
-        url.set_fragment(Some("***"));
-    }
-    url.to_string()
 }
 
 /// Re-reads `origin`'s push URL and refuses unless it is still exactly the
@@ -434,20 +415,34 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_origin_names_its_value_without_credentials() {
+    fn a_refused_origin_is_shown_masked_or_not_at_all() {
         for (raw, shown) in [
             (
                 "https://user:pw@github.com/o/r.git?token=t#f",
-                "https://***:***@github.com/o/r.git?***#***",
+                "`origin` is `https://***:***@github.com/o/r.git?***#***`, not a hosted remote",
             ),
-            ("ssh://deploy@example.test/o/r.git", "ssh://***@example.test/o/r.git"),
-            ("remotes/origin.git", "remotes/origin.git"),
-            ("http://github.com/o/r.git", "http://github.com/o/r.git"),
+            (
+                "ssh://deploy@example.test/o/r.git",
+                "`origin` is `ssh://***@example.test/o/r.git`, not a hosted remote",
+            ),
+            (
+                "http://github.com/o/r.git",
+                "`origin` is `http://github.com/o/r.git`, not a hosted remote",
+            ),
+            ("remotes/origin.git", "`origin` is not a hosted remote"),
+            (
+                "https://user:secret@host:99999/x.git",
+                "`origin` is not a hosted remote",
+            ),
         ] {
-            let Err(GraphError::UnsafeGitRemote { detail }) = Origin::parse(raw).optional() else {
-                panic!("{raw} must be refused");
-            };
-            assert!(detail.contains(&format!("`{shown}`")), "{detail}");
+            let error = Origin::parse(raw).optional().unwrap_err();
+            assert!(error.to_string().contains(shown), "{error}");
+            for text in [error.to_string(), format!("{error:?}")] {
+                assert!(
+                    !text.contains("secret") && !text.contains("pw@") && !text.contains("deploy"),
+                    "{text}"
+                );
+            }
         }
     }
 

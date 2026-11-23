@@ -140,6 +140,7 @@ fn global(root: &Path, format: OutputFormat, dry_run: bool) -> GlobalArgs {
 struct Run {
     result: Result<ExitCode, CliError>,
     out: String,
+    err: String,
     prompter: Scripted,
 }
 
@@ -170,6 +171,7 @@ fn run_init_with_runner<R: CommandRunner>(
     Run {
         result,
         out: out.text(),
+        err: err.text(),
         prompter,
     }
 }
@@ -307,7 +309,7 @@ fn an_unrequested_workflow_that_cannot_be_built_is_skipped_not_fatal() {
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
     assert!(dir.path().join("callisto.toml").exists());
     assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
-    assert!(run.out.contains("Skipping the GitHub Actions workflow"), "{}", run.out);
+    assert!(run.err.contains("Skipping the GitHub Actions workflow"), "{}", run.err);
 }
 
 // The retry the skipped-workflow note advertises works: `--workflow` adds the workflow and leaves `callisto.toml` alone.
@@ -321,9 +323,9 @@ fn the_advertised_workflow_retry_writes_only_the_workflow() {
     let run = run_init_with_runner(dir.path(), first, false, vec![], false, &FakeLsRemote { stdout: "" });
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
     assert!(
-        run.out.contains("Run `callisto init --workflow` to retry."),
+        run.err.contains("Run `callisto init --workflow` to retry."),
         "{}",
-        run.out
+        run.err
     );
     let config = std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap();
 
@@ -1097,8 +1099,8 @@ fn written_workflow_notes_that_merging_publishes() {
         &fake_ls_remote(env!("CARGO_PKG_VERSION")),
     );
     assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
-    assert!(run.out.contains(&format!("{note}\n")), "{}", run.out);
-    assert_eq!(run.out.matches(note).count(), 1, "{}", run.out);
+    assert_eq!(run.err.matches(note).count(), 1, "{}", run.err);
+    assert!(!run.out.contains(note), "{}", run.out);
     assert!(
         run.out.contains(".github/workflows/callisto-release.yml: ") && !run.out.contains("\njobs:"),
         "the path and a summary, not the file: {}",
@@ -1241,7 +1243,7 @@ fn a_dry_run_reports_the_access_hazard_instead_of_refusing() {
     };
     let run = run_init(dir.path(), args, true, vec![], true);
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
-    assert!(run.out.contains("npm/@acme/cli, npm/@acme/core"), "{}", run.out);
+    assert!(run.err.contains("npm/@acme/cli, npm/@acme/core"), "{}", run.err);
     assert!(!dir.path().join("callisto.toml").exists());
 }
 

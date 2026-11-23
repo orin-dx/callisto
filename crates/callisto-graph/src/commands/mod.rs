@@ -30,13 +30,14 @@ pub use release_artifacts::{
     require_sealed_publishes, seal_npm_tarballs, seal_python_distributions, verify_artifact_manifest,
     VerifiedArtifactManifest,
 };
-pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};
+pub use release_decision::{
+    derive_release_commit_decision, derive_release_decision, derive_selected_release_decision, pending_version_work,
+};
 pub use release_execution::execute_release;
 pub use snapshot::{plan_snapshot, validate_tag};
 pub use status::{status, StatusOptions};
 pub use version::{
-    check_partial_run, pending_changesets, plan_version, plan_version_dated, resume_identity_changes,
-    resume_input_changes, VersionOptions,
+    check_partial_run, plan_version, plan_version_dated, resume_identity_changes, resume_input_changes, VersionOptions,
 };
 
 pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool) {

@@ -437,9 +437,14 @@ fn an_origin_that_is_not_hosted_previews_unbound_and_refuses_by_name() {
                     .collect::<String>()
             };
             let refusal = squash(&stderr(&run));
+            // Only a value that parses as a URL can be masked, so only that one is named.
+            let named = if origin.starts_with("file:") {
+                format!("`origin` is `{origin}`")
+            } else {
+                "`origin` is not a hosted remote".to_owned()
+            };
             assert!(
-                refusal.contains(&squash(&format!("`origin` is `{origin}`")))
-                    && refusal.contains("git@host:owner/repo"),
+                refusal.contains(&squash(&named)) && refusal.contains("git@host:owner/repo"),
                 "{}",
                 stderr(&run)
             );
@@ -552,12 +557,63 @@ fn dry_run_with_pending_changesets_points_at_version() {
     );
 }
 
-/// `init` says each note once, not inline and again under Diagnostics.
+/// `--package` narrows the pending-work hint to what the selection would release.
 #[test]
-fn init_prints_each_note_once() {
+fn the_pending_work_hint_follows_the_release_selection() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/core\", \"crates/other\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/other/src")).unwrap();
+    fs::write(
+        root.join("crates/other/Cargo.toml"),
+        "[package]\nname = \"other\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("crates/other/src/lib.rs"), "").unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "add other"]);
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/other:patch", "--summary", "Fix other"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    let rig = Rig::new(&release_commit);
+
+    let selected = rig.run(
+        root,
+        &[
+            "--format",
+            "text",
+            "--dry-run",
+            "release",
+            "--package",
+            "cargo/core-crate",
+        ],
+    );
+    assert!(selected.status.success(), "{}", stderr(&selected));
+    assert!(!stderr(&selected).contains("callisto version"), "{}", stderr(&selected));
+
+    let everything = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(everything.status.success(), "{}", stderr(&everything));
+    assert!(
+        stderr(&everything).contains("pending version work for `cargo/other`"),
+        "{}",
+        stderr(&everything)
+    );
+}
+
+/// A one-crate repository with `origin` set to `origin`, committed.
+fn init_fixture(origin: Option<&str>) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     callisto_fixtures::git::init_repo(root);
+    if let Some(origin) = origin {
+        git(root, &["remote", "add", "origin", origin]);
+    }
     fs::write(
         root.join("Cargo.toml"),
         "[package]\nname = \"solo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
@@ -567,15 +623,138 @@ fn init_prints_each_note_once() {
     fs::write(root.join("src/lib.rs"), "").unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "initial"]);
+    dir
+}
 
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_callisto"))
-        .args(["--format", "text", "--cwd", root.to_str().unwrap(), "init", "--yes"])
+fn init_with(root: &Path, format: &str, env: &[(String, String)]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--format", format, "--cwd", root.to_str().unwrap(), "init", "--yes"])
         .args(["--versioning", "independent"])
+        .envs(env.iter().map(|(key, value)| (key, value)))
         .output()
-        .unwrap();
-    assert!(out.status.success(), "{}", stderr(&out));
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert_eq!(text.matches("No `origin` remote is configured").count(), 1, "{text}");
+        .unwrap()
+}
+
+/// Each `init` note is said once on stderr, in text and JSON alike; JSON also carries it in the report.
+fn assert_said_once(out: &std::process::Output, format: &str, note: &str) {
+    assert!(out.status.success(), "{}", stderr(out));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stderr(out).matches(note).count(), 1, "{format}: {}", stderr(out));
+    if format == "json" {
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let messages = report["diagnostics"].as_array().unwrap();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|d| d["message"].as_str().unwrap().contains(note))
+                .count(),
+            1,
+            "{report}"
+        );
+    } else {
+        assert!(!stdout.contains(note), "{stdout}");
+    }
+}
+
+#[test]
+fn init_says_the_missing_origin_note_once_on_stderr() {
+    for format in ["text", "json"] {
+        let dir = init_fixture(None);
+        let out = init_with(dir.path(), format, &[]);
+        assert_said_once(&out, format, "No `origin` remote is configured");
+    }
+}
+
+#[test]
+fn init_says_why_it_skipped_an_unsupported_workflow_once_on_stderr() {
+    for format in ["text", "json"] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for (path, content) in [
+            (
+                "package.json",
+                r#"{"name":"root","version":"0.0.0","private":true,"workspaces":["web","web-linux-x64-gnu"]}"#,
+            ),
+            (
+                "web/package.json",
+                r#"{"name":"web","version":"1.0.0","optionalDependencies":{"web-linux-x64-gnu":"1.0.0"}}"#,
+            ),
+            (
+                "web-linux-x64-gnu/package.json",
+                r#"{"name":"web-linux-x64-gnu","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
+            ),
+        ] {
+            fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+            fs::write(root.join(path), content).unwrap();
+        }
+        callisto_fixtures::git::init_repo(root);
+        git(
+            root,
+            &["remote", "add", "origin", "https://github.com/example/tools.git"],
+        );
+        git(root, &["add", "."]);
+        git(root, &["commit", "-q", "-m", "fixture"]);
+        let out = init_with(root, format, &[]);
+        assert_said_once(&out, format, "Skipping GitHub Actions workflow generation");
+    }
+}
+
+#[test]
+fn init_advises_protecting_the_release_branch_once_on_stderr() {
+    // The workflow pins Callisto's own release tag: serve it from a local repository instead of GitHub.
+    let upstream = tempfile::tempdir().unwrap();
+    callisto_fixtures::git::init_repo(upstream.path());
+    git(upstream.path(), &["commit", "-q", "--allow-empty", "-m", "release"]);
+    git(
+        upstream.path(),
+        &["tag", &format!("callisto@{}", env!("CARGO_PKG_VERSION"))],
+    );
+    let env = [
+        ("GIT_CONFIG_COUNT".to_owned(), "1".to_owned()),
+        (
+            "GIT_CONFIG_KEY_0".to_owned(),
+            format!("url.file://{}.insteadOf", upstream.path().display()),
+        ),
+        (
+            "GIT_CONFIG_VALUE_0".to_owned(),
+            "https://github.com/orin-dx/callisto.git".to_owned(),
+        ),
+    ];
+    for format in ["text", "json"] {
+        let dir = init_fixture(Some("https://github.com/example/solo.git"));
+        let out = init_with(dir.path(), format, &env);
+        assert!(
+            dir.path().join(".github/workflows/callisto-release.yml").is_file(),
+            "{}",
+            stderr(&out)
+        );
+        assert_said_once(&out, format, "require pull requests and reviews");
+    }
+}
+
+/// A credential in an `origin` that cannot be parsed, so cannot be masked, is never echoed.
+#[test]
+fn an_unparseable_credential_origin_never_reaches_stderr() {
+    const ORIGIN: &str = "https://user:secret@host:99999/x.git";
+    for format in ["text", "json"] {
+        let dir = init_fixture(Some(ORIGIN));
+        let out = init_with(dir.path(), format, &[]);
+        assert!(!out.status.success());
+        assert!(!stderr(&out).contains("secret"), "{}", stderr(&out));
+        assert!(stderr(&out).contains("not a hosted remote"), "{}", stderr(&out));
+    }
+
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    git(root, &["remote", "set-url", "origin", ORIGIN]);
+    let rig = Rig::new(&release_commit);
+    for args in [&["--dry-run", "release"][..], &["release"]] {
+        for format in ["text", "json"] {
+            let out = rig.run(root, &[&["--format", format][..], args].concat());
+            assert!(!stderr(&out).contains("secret"), "{args:?}: {}", stderr(&out));
+        }
+    }
+    assert_no_effects(&rig, root);
 }
 
 /// L1: a mid-run failure writes no receipt; the rerun adopts what landed and writes one.

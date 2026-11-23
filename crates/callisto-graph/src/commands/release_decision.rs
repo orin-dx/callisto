@@ -151,6 +151,32 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
     ReleaseDecisionV1::new(entries).map_err(GraphError::from)
 }
 
+/// The release identities `callisto version` has pending work for that this selection would release: every one when
+/// `selections` is empty, else those `--package` narrows the version plan to.
+///
+/// # Errors
+///
+/// The version plan cannot be derived.
+pub fn pending_version_work<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selections: &[ReleasePackageId],
+) -> Result<Vec<ReleasePackageId>, GraphError> {
+    let options = super::VersionOptions {
+        strict: false,
+        allow_empty_changesets: true,
+    };
+    let plan = super::plan_version(workspace, &crate::infer::CommitInference, &options)?;
+    if plan.bumps.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut entries = derive_release_decision(workspace, &plan)?.entries;
+    if !selections.is_empty() {
+        let owners = ReleaseOwners::of(workspace);
+        entries = expand_selection(workspace, &owners, entries, &selections.iter().collect());
+    }
+    Ok(entries.into_iter().map(|entry| entry.package).collect())
+}
+
 /// Keeps the selected entries plus every entry sharing a fixed or linked group
 /// with a selection. Both release routes narrow `--package` through this.
 fn expand_selection<R: callisto_model::CommandRunner, D: DependencyResolver>(

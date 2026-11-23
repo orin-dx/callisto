@@ -254,7 +254,9 @@ fn origin_url_is_canonicalized() {
     let rejected = repo(&files, Some("https://user:secret@github.com/example/tools.git"));
     let error = detect_in(rejected.path()).unwrap_err();
     assert!(
-        matches!(&error, GraphError::UnsafeGitRemote { detail } if detail.contains("credentials") && !detail.contains("secret")),
+        matches!(&error, GraphError::UnsafeGitRemote { .. })
+            && error.to_string().contains("credentials")
+            && !error.to_string().contains("secret"),
         "{error}"
     );
 

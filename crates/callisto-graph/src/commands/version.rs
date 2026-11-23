@@ -157,25 +157,6 @@ fn read_pre_state<R: CommandRunner, D: DependencyResolver>(
     Ok((Some(state), Some(text)))
 }
 
-/// How many changesets `callisto version` would apply now; notes a pre cycle already recorded are not pending.
-///
-/// # Errors
-///
-/// A manifest, tag, `pre.json` or changeset cannot be read.
-pub fn pending_changesets<R: CommandRunner, D: DependencyResolver>(
-    ws: &Workspace<'_, R, D>,
-) -> Result<usize, GraphError> {
-    let (pre_state, _) = read_pre_state(ws)?;
-    crate::aggregate::pending_changesets(
-        &ws.graph,
-        &ws.identity,
-        &ws.config,
-        ws.tags()?,
-        &ws.base_versions()?,
-        pre_state.as_ref(),
-    )
-}
-
 pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     ws: &Workspace<'_, R, D>,
     inference: &I,

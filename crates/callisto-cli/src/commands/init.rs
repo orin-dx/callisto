@@ -257,7 +257,7 @@ pub fn run<R: CommandRunner>(
     match plan {
         Some((plan, pending)) => {
             writeln!(human, "First release preview (`callisto release --dry-run`):")?;
-            super::release::write_release_preview(plan.as_ref(), pending, OutputFormat::Text, human)?;
+            super::release::write_release_preview(plan.as_ref(), &pending, OutputFormat::Text, human)?;
         }
         None => writeln!(human, "{NO_COMMITS}")?,
     }
@@ -291,10 +291,21 @@ pub fn run<R: CommandRunner>(
         report
     };
     report.diagnostics.extend(diagnostics);
-    if json {
-        emit_report(&mut &mut *out, &report, global.dry_run)?;
+    finish(&report, global, out, err)
+}
+
+/// The one emitter for `init`'s notes and advice: stderr once in every format, and the JSON report carries them too.
+fn finish(
+    report: &InitReport,
+    global: &GlobalArgs,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> Result<ExitCode, CliError> {
+    render::render_diagnostics(&report.diagnostics, None, &mut &mut *err)?;
+    if global.format == OutputFormat::Json {
+        emit_report(&mut &mut *out, report, global.dry_run)?;
     } else {
-        render::render_init(&report, &mut &mut *out)?;
+        render::render_init(report, &mut &mut *out)?;
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -372,12 +383,7 @@ fn run_workflow_only<R: CommandRunner>(
         files: vec![scaffold::workflow_path(&facts.root)],
         diagnostics,
     };
-    if json {
-        emit_report(&mut &mut *out, &report, global.dry_run)?;
-    } else {
-        render::render_init(&report, &mut &mut *out)?;
-    }
-    Ok(ExitCode::SUCCESS)
+    finish(&report, global, out, err)
 }
 
 /// The workflow text and the default branch it triggers on.
