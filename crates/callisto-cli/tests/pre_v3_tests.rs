@@ -629,9 +629,9 @@ fn section_and_reason(root: &Path, package: &str) -> (String, String) {
     (section, reason)
 }
 
-/// A fresh commit triggers the prerelease and is its changelog entry; the retained major note sets the bump.
+/// A fresh commit triggers the prerelease and is its changelog entry and reason, whatever bump a retained note sets.
 #[test]
-fn a_fresh_commit_under_a_retained_major_keeps_its_changelog_entry_and_names_the_major() {
+fn a_fresh_commit_under_a_retained_major_keeps_its_changelog_entry() {
     let dir = tagged_workspace("[[package]]\nmatch = \"cargo/pkg-a\"\nrelease-trigger = \"auto\"\n");
     let root = dir.path();
     enter_beta(root);
@@ -645,13 +645,12 @@ fn a_fresh_commit_under_a_retained_major_keeps_its_changelog_entry_and_names_the
     assert!(section.starts_with("2.0.0-beta.1"), "{section}");
     assert!(section.contains("- repair the parser ("), "{section}");
     assert!(!section.contains("Note breaking."), "{section}");
-    assert_eq!(reason, "Inferred (1 commits); major from `pre/breaking`");
+    assert_eq!(reason, "Inferred (1 commits)");
 }
 
-/// A member released by its group keeps the group note; its own retained major note, which the group's severity
-/// derives from, sets the bump.
+/// A member released by its group keeps the group note and reason, whatever bump a retained note sets.
 #[test]
-fn a_group_released_member_under_a_retained_major_keeps_the_group_note_and_names_the_major() {
+fn a_group_released_member_under_a_retained_major_keeps_the_group_note() {
     for (kind, label) in [("fixed", "Fixed"), ("linked", "Linked")] {
         let dir = tagged_workspace(&format!(
             "[[{kind}-group]]\nname = \"pair\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n"
@@ -666,13 +665,13 @@ fn a_group_released_member_under_a_retained_major_keeps_the_group_note_and_names
         assert!(section.starts_with("2.0.0-beta.1"), "{kind}: {section}");
         assert!(section.contains(&format!("`pair` {kind} group.")), "{kind}: {section}");
         assert!(!section.contains("Note breaking."), "{kind}: {section}");
-        assert_eq!(reason, format!("{label} group `pair`; major from `pre/breaking`"));
+        assert_eq!(reason, format!("{label} group `pair`"));
     }
 }
 
-/// A fresh patch note triggers the prerelease and is its changelog entry; the retained major note sets the bump.
+/// A fresh patch note triggers the prerelease and is its changelog entry and reason, whatever bump a retained note sets.
 #[test]
-fn a_fresh_patch_note_under_a_retained_major_keeps_its_changelog_entry_and_names_the_major() {
+fn a_fresh_patch_note_under_a_retained_major_keeps_its_changelog_entry() {
     let dir = tagged_workspace("");
     let root = dir.path();
     enter_beta(root);
@@ -684,7 +683,7 @@ fn a_fresh_patch_note_under_a_retained_major_keeps_its_changelog_entry_and_names
     assert!(section.starts_with("2.0.0-beta.1"), "{section}");
     assert!(section.contains("- Note fix."), "{section}");
     assert!(!section.contains("Note breaking."), "{section}");
-    assert_eq!(reason, "Changeset (`fix`); major from `pre/breaking`");
+    assert_eq!(reason, "Changeset (`fix`)");
 }
 
 /// Outside a cycle nothing is retained, so the reason is the note alone.

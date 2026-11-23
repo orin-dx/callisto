@@ -15,7 +15,6 @@ use crate::config::{PreMajorInferencePolicy, ResolvedConfig};
 use crate::error::{ConfigError, GraphError};
 use crate::identity::IdentityIndex;
 use crate::infer::SeverityInference;
-use crate::plan::SeveritySources;
 use crate::resolver::DependencyResolver;
 use crate::tags::TagIndex;
 
@@ -218,27 +217,6 @@ impl Seed {
             .filter_map(|(_, other)| other.changeset_id().map(str::to_owned))
             .collect();
         BumpReason::Changeset { changesets }
-    }
-
-    /// The retained changesets asking for `severity` when no fresh changeset or commit asks for as much: they set
-    /// that bump.
-    pub fn severity_sources(&self, severity: Severity) -> SeveritySources {
-        // A group source's severity is derived from its members' sources, retained ones included, so it sets no floor.
-        let floor = self
-            .entries()
-            .filter(|(_, source)| source.is_fresh() && source.is_named())
-            .map(|(s, _)| *s)
-            .max()
-            .unwrap_or(Severity::None);
-        if floor >= severity {
-            return SeveritySources::default();
-        }
-        SeveritySources::new(
-            self.entries()
-                .filter(|(s, source)| *s == severity && !source.is_fresh())
-                .filter_map(|(_, source)| source.changeset_id().map(str::to_owned))
-                .collect(),
-        )
     }
 }
 

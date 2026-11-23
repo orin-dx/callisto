@@ -2072,10 +2072,6 @@ fn test_pre_mode_recorded_changeset_keeps_fresh_inference() {
         "got: {:?}",
         agg.reasons().get(&pkg_a)
     );
-    assert_eq!(
-        agg.seeds[&pkg_a].severity_sources(Severity::Major),
-        SeveritySources::new(vec!["breaking".to_string()])
-    );
 }
 
 /// A fresh changeset on one fixed-group member releases the group at the cycle's retained severity.
@@ -2104,12 +2100,6 @@ fn test_pre_mode_fresh_group_member_releases_retained_member_at_group_severity()
         matches!(reasons.get(&pkg_b), Some(BumpReason::FixedGroupUnion { .. })),
         "got: {reasons:?}"
     );
-    assert_eq!(
-        agg.seeds[&pkg_a].severity_sources(Severity::Major),
-        SeveritySources::new(vec!["breaking".to_string()]),
-        "the group's major is derived from pkg-a's retained note, which sets it"
-    );
-    assert!(agg.seeds[&pkg_b].severity_sources(Severity::Major).is_empty());
 }
 
 /// A fixed group whose members hold only recorded changesets releases nothing.
@@ -2149,11 +2139,6 @@ fn test_pre_mode_fresh_linked_member_releases_at_the_retained_severity() {
         matches!(agg.reasons().get(&pkg_a), Some(BumpReason::LinkedGroupUnion { .. })),
         "the fresh group union, not the recorded changeset, explains the release: {:?}",
         agg.reasons().get(&pkg_a)
-    );
-    assert_eq!(
-        agg.seeds[&pkg_a].severity_sources(Severity::Major),
-        SeveritySources::new(vec!["breaking".to_string()]),
-        "the group's major is derived from pkg-a's retained note, which sets it"
     );
 }
 
@@ -2199,9 +2184,9 @@ fn test_seed_reason_keeps_the_first_source_on_a_tie() {
     assert!(matches!(seed.reason(), BumpReason::Changeset { changesets } if changesets == ["big"]));
 }
 
-/// The fresh notes trigger the release and are its reason; a retained note above them is what raised the bump.
+/// The fresh notes trigger the release and are its reason, even when a retained note sets a higher bump.
 #[test]
-fn test_seed_reason_is_the_fresh_trigger_and_a_retained_note_raises_it() {
+fn test_seed_reason_is_the_fresh_trigger_over_a_higher_retained_note() {
     let mut seed = Seed::new(
         Severity::Major,
         Source::RetainedChangeset {
@@ -2223,15 +2208,6 @@ fn test_seed_reason_is_the_fresh_trigger_and_a_retained_note_raises_it() {
         "got: {:?}",
         seed.reason()
     );
-    assert_eq!(
-        seed.severity_sources(Severity::Major),
-        SeveritySources::new(vec!["old-major".to_string()])
-    );
-    assert_eq!(
-        seed.severity_sources(Severity::Minor),
-        SeveritySources::new(vec!["old-minor".to_string()])
-    );
-    assert!(seed.severity_sources(Severity::Patch).is_empty());
     seed.add(
         Severity::Major,
         Source::FreshChangeset {
@@ -2242,10 +2218,6 @@ fn test_seed_reason_is_the_fresh_trigger_and_a_retained_note_raises_it() {
         matches!(seed.reason(), BumpReason::Changeset { ref changesets } if changesets == &["new-major"]),
         "got: {:?}",
         seed.reason()
-    );
-    assert!(
-        seed.severity_sources(Severity::Major).is_empty(),
-        "the fresh major sets the bump itself"
     );
 }
 

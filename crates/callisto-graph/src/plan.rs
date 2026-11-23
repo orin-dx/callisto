@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::changelog::ChangelogInput;
-pub use crate::commands::pr_body::SeveritySources;
 use callisto_model::format::PreState;
 use callisto_model::{
     BumpReason, BumpRecord, ConfigKey, Diagnostic, LockfileRefreshResult, PackageId, Severity, Version, VersionReport,
@@ -88,10 +87,8 @@ pub struct PlannedBump {
     pub to: Version,
     pub severity: Severity,
     pub governed_by: Option<ConfigKey>,
-    /// What triggered the release; changelog entries never read `severity_sources`.
     pub trigger: Option<BumpReason>,
     pub writes: Vec<VersionWriteTarget>,
-    pub severity_sources: SeveritySources,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -182,7 +179,6 @@ mod platform_write_from_field_tests {
                 governed_by: None,
                 trigger: None,
                 writes: Vec::new(),
-                severity_sources: Default::default(),
             }],
             ..Default::default()
         };

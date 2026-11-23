@@ -91,7 +91,6 @@ fn batched_group_bump_precondition_failure_skips_all_rewrites_in_group() {
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         rewrites: vec![
             crate::cascade::SpecRewrite {
@@ -169,7 +168,6 @@ fn batched_group_skipped_bump_still_writes_a_successful_rewrite_to_disk() {
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         rewrites: vec![crate::cascade::SpecRewrite {
             key: crate::cascade::RewriteKey {
@@ -228,7 +226,6 @@ fn cargo_only_bump_does_not_stage_python_lockfile() {
             governed_by: None,
             trigger: None,
             writes: vec![], // no manifest writes — keeps test self-contained
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -282,7 +279,6 @@ fn git_add_staging_failure_redacts_credential_from_error() {
             governed_by: None,
             trigger: None,
             writes: vec![],
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -326,7 +322,6 @@ fn refresh_lockfiles_calls_cargo_update_workspace_when_cargo_bumped() {
             governed_by: None,
             trigger: None,
             writes: vec![],
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -392,7 +387,6 @@ fn refresh_lockfiles_includes_every_bump_and_dependency_write_ecosystem() {
                 VersionWriteTarget::Manifest(PathBuf::from("Cargo.toml")),
                 VersionWriteTarget::Manifest(package_json.clone()),
             ],
-            severity_sources: Default::default(),
         }],
         rewrites: vec![crate::cascade::SpecRewrite {
             key: crate::cascade::RewriteKey {
@@ -519,7 +513,6 @@ fn refresh_lockfiles_false_does_not_call_cargo_update() {
             governed_by: None,
             trigger: None,
             writes: vec![],
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -551,7 +544,6 @@ fn npm_bump() -> PlannedBump {
         governed_by: None,
         trigger: None,
         writes: vec![],
-        severity_sources: Default::default(),
     }
 }
 
@@ -564,7 +556,6 @@ fn pypi_bump() -> PlannedBump {
         governed_by: None,
         trigger: None,
         writes: vec![],
-        severity_sources: Default::default(),
     }
 }
 
@@ -899,7 +890,6 @@ fn changeset_removal_is_attempted_only_after_generated_state_is_staged() {
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest.clone())],
-            severity_sources: Default::default(),
         }],
         consumed_changesets: vec![changeset.clone()],
         archived_changesets: Vec::new(),
@@ -1056,7 +1046,6 @@ fn apply_is_idempotent_when_manifest_already_at_target_version() {
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         consumed_changesets: vec![cs_rel.clone()],
         archived_changesets: Vec::new(),
@@ -1123,7 +1112,6 @@ fn apply_returns_error_when_manifest_has_unexpected_version() {
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -1180,7 +1168,6 @@ fn apply_stages_changeset_path_even_when_file_already_deleted() {
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         consumed_changesets: vec![cs_rel.clone()],
         archived_changesets: Vec::new(),
@@ -1222,7 +1209,6 @@ fn apply_persists_bumps_loop_write_version_to_disk() {
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -1358,7 +1344,6 @@ fn apply_version_plan_cargo_bump_produces_byte_identical_output_to_direct_mutate
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -1406,7 +1391,6 @@ fn apply_version_plan_npm_bump_produces_byte_identical_output_to_direct_mutate_t
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -1473,7 +1457,6 @@ fn bumps_loop_write_version_error_leaves_manifest_untouched_and_skips_persist() 
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         ..Default::default()
     };
@@ -1528,7 +1511,6 @@ fn an_unwritable_later_bump_target_stops_the_run_before_any_manifest_is_written(
                 governed_by: None,
                 trigger: None,
                 writes: vec![VersionWriteTarget::Manifest(crate_a_rel.clone())],
-                severity_sources: Default::default(),
             },
             PlannedBump {
                 package: PackageId::parse("cargo:crate-b").expect("valid id"),
@@ -1538,7 +1520,6 @@ fn an_unwritable_later_bump_target_stops_the_run_before_any_manifest_is_written(
                 governed_by: None,
                 trigger: None,
                 writes: vec![VersionWriteTarget::Manifest(crate_b_rel.clone())],
-                severity_sources: Default::default(),
             },
         ],
         ..Default::default()
@@ -1711,7 +1692,6 @@ fn classify_manifest_writes_partitions_by_path_with_correct_groups() {
                 governed_by: None,
                 trigger: None,
                 writes: vec![VersionWriteTarget::Manifest(bump_only.clone())],
-                severity_sources: Default::default(),
             },
             PlannedBump {
                 package: PackageId::parse("cargo:both").unwrap(),
@@ -1721,7 +1701,6 @@ fn classify_manifest_writes_partitions_by_path_with_correct_groups() {
                 governed_by: None,
                 trigger: None,
                 writes: vec![VersionWriteTarget::Manifest(both.clone())],
-                severity_sources: Default::default(),
             },
         ],
         rewrites: vec![
@@ -1783,7 +1762,6 @@ fn classify_manifest_writes_excludes_cargo_workspace_package_mixed_path() {
             writes: vec![VersionWriteTarget::CargoWorkspacePackage {
                 root_manifest: p.clone(),
             }],
-            severity_sources: Default::default(),
         }],
         rewrites: vec![crate::cascade::SpecRewrite {
             key: crate::cascade::RewriteKey {
@@ -1839,7 +1817,6 @@ fn batched_group_rewrite_failure_leaves_bump_and_first_rewrite_unpersisted() {
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         rewrites: vec![
             crate::cascade::SpecRewrite {
@@ -1943,7 +1920,6 @@ fn an_unwritable_later_batched_group_stops_the_run_before_the_first_group_is_wri
                 governed_by: None,
                 trigger: None,
                 writes: vec![VersionWriteTarget::Manifest(b_rel.clone())],
-                severity_sources: Default::default(),
             },
             PlannedBump {
                 package: PackageId::parse("cargo:crate-a").unwrap(),
@@ -1953,7 +1929,6 @@ fn an_unwritable_later_batched_group_stops_the_run_before_the_first_group_is_wri
                 governed_by: None,
                 trigger: None,
                 writes: vec![VersionWriteTarget::Manifest(a_rel.clone())],
-                severity_sources: Default::default(),
             },
         ],
         ..Default::default()
@@ -2014,7 +1989,6 @@ fn batched_group_applies_bump_and_multiple_rewrites_preserving_untouched_formatt
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
-            severity_sources: Default::default(),
         }],
         rewrites: vec![
             crate::cascade::SpecRewrite {
@@ -2158,7 +2132,6 @@ fn snapshot_transient_mode_mutates_manifests_but_suppresses_changelogs_changeset
             governed_by: None,
             trigger: None,
             writes: vec![VersionWriteTarget::Manifest(PathBuf::from("Cargo.toml"))],
-            severity_sources: Default::default(),
         }],
         changelog_writes: vec![crate::plan::ChangelogWrite {
             changelog_path: PathBuf::from("CHANGELOG.md"),
@@ -2534,7 +2507,6 @@ fn planned_bump(package: &str, from: &str, to: &str, writes: Vec<VersionWriteTar
         governed_by: None,
         trigger: None,
         writes,
-        severity_sources: Default::default(),
     }
 }
 
@@ -2730,7 +2702,6 @@ fn cargo_bump(name: &str, from: &str, to: &str, writes: Vec<VersionWriteTarget>)
         governed_by: None,
         trigger: None,
         writes,
-        severity_sources: Default::default(),
     }
 }
 
@@ -2844,7 +2815,6 @@ fn bump_of(id: &str, from: &str, to: &str, manifest: &str) -> PlannedBump {
         governed_by: None,
         trigger: None,
         writes: vec![VersionWriteTarget::Manifest(PathBuf::from(manifest))],
-        severity_sources: Default::default(),
     }
 }
 

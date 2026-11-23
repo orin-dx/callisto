@@ -1748,7 +1748,6 @@ mod tests {
             governed_by: None,
             trigger: Some(reason),
             writes: vec![],
-            severity_sources: Default::default(),
         };
         let plan = VersionPlan {
             bumps: vec![
@@ -1783,7 +1782,6 @@ mod tests {
                 governed_by: None,
                 trigger: Some(BumpReason::Changeset { changesets: vec![] }),
                 writes: vec![],
-                severity_sources: Default::default(),
             }],
             ..Default::default()
         }

@@ -7,9 +7,8 @@ use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
 use crate::release_preview::{
-    Change, ChangeKind, Finding, FindingLevel, PackageRelease, PublishOutlook, PublishTargets, ReleasePreview,
-    FINDING_ACTION_REQUIRED, FINDING_BREAKING_BUMP_MISMATCH, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP,
-    FINDING_UNRELEASED_CHANGES,
+    Change, ChangeKind, Finding, FindingLevel, PublishOutlook, PublishTargets, ReleasePreview, FINDING_ACTION_REQUIRED,
+    FINDING_BREAKING_BUMP_MISMATCH, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP, FINDING_UNRELEASED_CHANGES,
 };
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
@@ -82,24 +81,8 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
     }
 }
 
-/// More changesets than this are counted in the Reason column rather than named.
+/// More changesets than this are counted in the Triggered by column rather than named.
 const MAX_NAMED_CHANGESETS: usize = 3;
-
-/// Changesets retained from earlier in a pre cycle that set a bump above what its trigger asks for.
-/// Defined here so only the Reason column can read them: they are never changelog entries.
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
-pub struct SeveritySources(Vec<String>);
-
-impl SeveritySources {
-    pub(crate) fn new(changesets: Vec<String>) -> Self {
-        Self(changesets)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
 
 /// The changesets as code spans, or `None` when there are too many to name.
 fn changeset_names(changesets: &[String]) -> Option<String> {
@@ -107,17 +90,6 @@ fn changeset_names(changesets: &[String]) -> Option<String> {
         let names: Vec<String> = changesets.iter().map(|name| name.replace('|', "\\|")).collect();
         format!("`{}`", names.join("`, `"))
     })
-}
-
-/// The package's reason, then the retained changesets that set its bump above what that reason asks for.
-fn package_reason_cell(package: &PackageRelease) -> String {
-    let reason = reason_cell(&package.reason);
-    let sources = &package.severity_sources.0;
-    if sources.is_empty() {
-        return reason;
-    }
-    let names = changeset_names(sources).unwrap_or_else(|| format!("{} changesets", sources.len()));
-    format!("{reason}; {} from {names}", package.severity)
 }
 
 fn reason_cell(reason: &Option<BumpReason>) -> String {
@@ -213,7 +185,7 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
     // Major-first (the order `notes.packages` already has): a reviewer's real question is "is anything breaking,"
     // and that must be answerable from the top of the table without scanning every row.
     body.push_str("### 📊 Release Summary\n\n");
-    body.push_str("| Package | Ecosystem | Current | Target | Bump | Reason |\n");
+    body.push_str("| Package | Ecosystem | Current | Target | Bump | Triggered by |\n");
     body.push_str("| :--- | :--- | :--- | :--- | :--- | :--- |\n");
     for package in &notes.packages {
         body.push_str(&format!(
@@ -224,7 +196,7 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
             package.to,
             severity_emoji(package.severity),
             package.severity,
-            package_reason_cell(package)
+            reason_cell(&package.reason)
         ));
     }
     body.push('\n');
@@ -688,7 +660,6 @@ mod tests {
                 governed_by: None,
                 trigger: None,
                 writes: vec![],
-                severity_sources: Default::default(),
             };
             let write = crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
@@ -748,7 +719,6 @@ mod tests {
                 governed_by: None,
                 trigger: None,
                 writes: vec![],
-                severity_sources: Default::default(),
             };
             let write = crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
@@ -817,7 +787,6 @@ mod tests {
             governed_by: None,
             trigger: None,
             writes: vec![],
-            severity_sources: Default::default(),
         }
     }
 
@@ -874,7 +843,6 @@ mod tests {
             writes: vec![crate::plan::VersionWriteTarget::Manifest(
                 "core-crate/Cargo.toml".into(),
             )],
-            severity_sources: Default::default(),
         };
 
         let bump_b = PlannedBump {
@@ -887,7 +855,6 @@ mod tests {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
             writes: vec![crate::plan::VersionWriteTarget::Manifest("web-app/package.json".into())],
-            severity_sources: Default::default(),
         };
 
         let plan = VersionPlan {
@@ -947,7 +914,6 @@ mod tests {
                 governed_by: None,
                 trigger: Some(reason),
                 writes: vec![],
-                severity_sources: Default::default(),
             }],
             rewrites: vec![],
             platform_writes: vec![],
@@ -1030,7 +996,6 @@ mod tests {
                 dependency_to: Version::semver(2, 0, 0),
             }),
             writes: vec![],
-            severity_sources: Default::default(),
         };
 
         let input = crate::changelog::ChangelogInput {
@@ -1095,31 +1060,6 @@ mod tests {
         assert_eq!(cell, "Changeset (`a\\|b`)");
     }
 
-    /// More retained sources than can be named are counted after the trigger.
-    #[test]
-    fn many_severity_sources_are_counted_in_the_reason_cell() {
-        let package = |sources: &[&str]| PackageRelease {
-            name: "pkg-a".into(),
-            release_id: None,
-            ecosystem: "cargo".into(),
-            from: "2.0.0-beta.0".into(),
-            to: "2.0.0-beta.1".into(),
-            severity: Severity::Major,
-            reason: Some(BumpReason::Changeset {
-                changesets: vec!["fix".to_string()],
-            }),
-            severity_sources: SeveritySources::new(sources.iter().map(|id| id.to_string()).collect()),
-        };
-        assert_eq!(
-            package_reason_cell(&package(&["a", "b", "c"])),
-            "Changeset (`fix`); major from `a`, `b`, `c`"
-        );
-        assert_eq!(
-            package_reason_cell(&package(&["a", "b", "c", "d"])),
-            "Changeset (`fix`); major from 4 changesets"
-        );
-    }
-
     #[test]
     fn changes_render_as_the_changelog_will_write_them() {
         let pkg = PackageId::parse("pkg-a").unwrap();
@@ -1158,7 +1098,6 @@ mod tests {
                         changesets: vec!["brave-eagles-race".to_string(), "radiant-pandas-roar".to_string()],
                     }),
                     writes: vec![],
-                    severity_sources: Default::default(),
                 },
                 PlannedBump {
                     package: PackageId::parse("pkg-b").unwrap(),
@@ -1170,7 +1109,6 @@ mod tests {
                         changesets: ["a", "b", "c", "d"].map(String::from).to_vec(),
                     }),
                     writes: vec![],
-                    severity_sources: Default::default(),
                 },
             ],
             rewrites: vec![],
@@ -1230,7 +1168,6 @@ mod tests {
                 governed_by: None,
                 trigger: None,
                 writes: vec![],
-                severity_sources: Default::default(),
             }],
             rewrites: vec![],
             platform_writes: vec![],
@@ -1280,7 +1217,6 @@ mod tests {
                 governed_by: None,
                 trigger: None,
                 writes: vec![],
-                severity_sources: Default::default(),
             };
             (bump, input)
         };
@@ -1341,7 +1277,6 @@ mod tests {
                 governed_by: None,
                 trigger: None,
                 writes: vec![],
-                severity_sources: Default::default(),
             };
             (bump, input)
         };
@@ -1392,7 +1327,6 @@ mod tests {
                 dependency_to: Version::semver(2, 0, 0),
             }),
             writes: vec![],
-            severity_sources: Default::default(),
         };
         let bump_b = PlannedBump {
             package: pkg_b.clone(),
@@ -1404,7 +1338,6 @@ mod tests {
                 changesets: vec!["fix-1".to_string()],
             }),
             writes: vec![],
-            severity_sources: Default::default(),
         };
 
         let good_input = crate::changelog::ChangelogInput {
@@ -1487,7 +1420,6 @@ mod tests {
                 dependency_to: Version::semver(2, 0, 0),
             }),
             writes: vec![],
-            severity_sources: Default::default(),
         };
         let plan = VersionPlan {
             bumps: vec![bump_a],
@@ -1539,7 +1471,6 @@ mod tests {
             governed_by: None,
             trigger: None,
             writes: vec![],
-            severity_sources: Default::default(),
         };
         let plan = VersionPlan {
             bumps: vec![bump_a],
@@ -1615,7 +1546,6 @@ mod tests {
                         changesets: vec!["delete-dead-abstractions".to_string()],
                     }),
                     writes: vec![],
-                    severity_sources: Default::default(),
                 },
                 PlannedBump {
                     package: pkg_b.clone(),
@@ -1627,7 +1557,6 @@ mod tests {
                         changesets: vec!["delete-dead-abstractions".to_string()],
                     }),
                     writes: vec![],
-                    severity_sources: Default::default(),
                 },
             ],
             rewrites: vec![],
@@ -1746,7 +1675,6 @@ mod tests {
                 group: callisto_model::GroupName("workspace".to_string()),
             }),
             writes: vec![],
-            severity_sources: Default::default(),
         };
         let plan = VersionPlan {
             bumps: vec![bump_a],
@@ -1826,7 +1754,6 @@ mod tests {
                 changesets: vec![changeset.to_string()],
             }),
             writes: vec![],
-            severity_sources: Default::default(),
         };
 
         let plan = VersionPlan {

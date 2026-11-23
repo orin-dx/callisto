@@ -12,7 +12,7 @@ use crate::changelog::markdown::{extract_markers, MarkerKind};
 use crate::changelog::ChangeSource;
 use crate::commands::LocalReleasePlan;
 use crate::error::GraphError;
-use crate::plan::{PlannedBump, SeveritySources, VersionPlan, VersionWriteTarget};
+use crate::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
 
 pub const RELEASE_PREVIEW_SCHEMA_VERSION: u32 = 1;
 pub const FINDING_MAJOR_BUMP: &str = "major-bump";
@@ -84,8 +84,6 @@ pub struct PackageRelease {
     pub severity: Severity,
     /// The bump's trigger.
     pub reason: Option<BumpReason>,
-    #[serde(default, skip_serializing_if = "SeveritySources::is_empty")]
-    pub severity_sources: SeveritySources,
 }
 
 /// One underlying change, merged across every package it bumps.
@@ -189,7 +187,6 @@ pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {
             to: bump.to.render().to_string(),
             severity: bump.severity,
             reason: bump.trigger.clone(),
-            severity_sources: bump.severity_sources.clone(),
         })
         .collect();
 
@@ -751,7 +748,6 @@ mod tests {
             governed_by: None,
             trigger: None,
             writes: vec![],
-            severity_sources: Default::default(),
         }
     }
 

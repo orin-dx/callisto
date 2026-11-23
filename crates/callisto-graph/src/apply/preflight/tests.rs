@@ -19,7 +19,6 @@ fn bump_writing(paths: &[&str]) -> PlannedBump {
             .iter()
             .map(|path| VersionWriteTarget::Manifest(PathBuf::from(path)))
             .collect(),
-        severity_sources: Default::default(),
     }
 }
 

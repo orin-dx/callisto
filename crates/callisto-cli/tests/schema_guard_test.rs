@@ -650,7 +650,6 @@ fn release_preview_json_has_no_snake_case_keys() {
                 to: "1.3.0".into(),
                 severity: Severity::Minor,
                 reason: bump().reason,
-                severity_sources: serde_json::from_value(json!(["old-major"])).unwrap(),
             }],
             changes: kinds
                 .iter()

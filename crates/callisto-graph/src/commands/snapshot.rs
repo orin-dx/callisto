@@ -66,7 +66,6 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
             governed_by: None,
             trigger: None,
             writes,
-            severity_sources: Default::default(),
         });
 
         bumps.push(callisto_model::BumpRecord {

@@ -285,7 +285,6 @@ pub(crate) mod tests {
                 governed_by: None,
                 trigger: Some(callisto_model::BumpReason::Changeset { changesets: vec![] }),
                 writes: vec![],
-                severity_sources: Default::default(),
             }],
             ..Default::default()
         };
