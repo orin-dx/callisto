@@ -2363,8 +2363,13 @@ fn cascade_reason_names_the_final_version_after_a_fixed_group_realigns() {
 }
 
 /// A fixed pair (released lib-a@1.0.0, untagged lib-b@2.0.0) whose consumer `app` sees lib-b at an intermediate 1.0.1
-/// before a transitive peer escalation through `mid` aligns the pair to 2.0.0.
-fn late_realigned_fixed_pair(app_spec: &str) -> CascadeOutcome {
+/// before a transitive peer escalation through `mid` aligns the pair to 2.0.0. The graph lists only the first
+/// `listed` packages, which sets how many rounds may drop a raise before the solver only keeps them.
+fn late_realigned_fixed_pair(
+    app_deps: &[(&str, DepKind, &str)],
+    bump_severity: CascadeBumpSeverity,
+    listed: usize,
+) -> CascadeOutcome {
     use std::sync::atomic::AtomicUsize;
 
     let [upstream, mid, lib_a, lib_b, app] =
@@ -2374,16 +2379,23 @@ fn late_realigned_fixed_pair(app_spec: &str) -> CascadeOutcome {
         edge.kind = DepKind::Peer;
         edge
     };
+    let mut edges = vec![
+        make_dep_edge(&lib_b, &upstream, "^1.0.0", Ecosystem::Cargo),
+        peer(&mid, &upstream),
+        peer(&lib_a, &mid),
+    ];
+    for &(to, kind, spec) in app_deps {
+        let mut edge = make_dep_edge(&app, &PackageId::parse(to).unwrap(), spec, Ecosystem::Cargo);
+        edge.kind = kind;
+        edges.push(edge);
+    }
     let graph = TestGraph {
-        packages: [&upstream, &mid, &lib_a, &lib_b, &app]
+        packages: [&lib_a, &lib_b, &mid, &upstream, &app]
+            .into_iter()
+            .take(listed)
             .map(package_with_canonical_manifest)
-            .to_vec(),
-        edges: vec![
-            make_dep_edge(&lib_b, &upstream, "^1.0.0", Ecosystem::Cargo),
-            peer(&mid, &upstream),
-            peer(&lib_a, &mid),
-            make_dep_edge(&app, &lib_b, app_spec, Ecosystem::Cargo),
-        ],
+            .collect(),
+        edges,
     };
     let tmp = tempfile::tempdir().unwrap();
     let runner = FakeGitTagRunner {
@@ -2406,7 +2418,7 @@ fn late_realigned_fixed_pair(app_spec: &str) -> CascadeOutcome {
     let groups = GroupTable::try_from_groups(vec![group], vec![]).unwrap();
     let cfg = CascadeConfig {
         mode: CascadeMode::OutOfRange,
-        bump_severity: CascadeBumpSeverity::Patch,
+        bump_severity,
         peer_escalation: true,
         preserve_npm_ranges: false,
     };
@@ -2433,7 +2445,7 @@ fn late_realigned_fixed_pair(app_spec: &str) -> CascadeOutcome {
 
 #[test]
 fn a_consumer_whose_range_accepts_the_final_aligned_version_is_not_released() {
-    let outcome = late_realigned_fixed_pair(">=2.0.0");
+    let outcome = late_realigned_fixed_pair(&[("lib-b", DepKind::Runtime, ">=2.0.0")], CascadeBumpSeverity::Patch, 5);
     let app = PackageId::parse("app").unwrap();
     let lib_b = PackageId::parse("lib-b").unwrap();
 
@@ -2455,7 +2467,7 @@ fn a_consumer_whose_range_accepts_the_final_aligned_version_is_not_released() {
 
 #[test]
 fn a_consumer_whose_range_rejects_the_final_aligned_version_is_released() {
-    let outcome = late_realigned_fixed_pair("^1.0.0");
+    let outcome = late_realigned_fixed_pair(&[("lib-b", DepKind::Runtime, "^1.0.0")], CascadeBumpSeverity::Patch, 5);
     let app = PackageId::parse("app").unwrap();
     let lib_b = PackageId::parse("lib-b").unwrap();
 
@@ -2519,4 +2531,49 @@ fn a_transitive_cascade_releases_every_consumer_on_the_chain() {
     assert_eq!(outcome.rewrites.len(), 2, "{:?}", outcome.rewrites);
     assert_eq!(outcome.reasons.get(&b), Some(&changeset));
     assert!(!outcome.governed_by.contains_key(&b), "{:?}", outcome.governed_by);
+}
+
+/// The stale raise on `app` is required in round 2 and dropped in round 3. With three packages round 3 may still drop
+/// it; with two, round 3 keeps every earlier raise so the run is bounded, and `app` is released.
+#[test]
+fn raises_are_dropped_only_within_one_round_per_package() {
+    let app = PackageId::parse("app").unwrap();
+    let lib_b = PackageId::parse("lib-b").unwrap();
+    let on_lib_b = [("lib-b", DepKind::Runtime, ">=2.0.0")];
+
+    let dropping = late_realigned_fixed_pair(&on_lib_b, CascadeBumpSeverity::Patch, 3);
+    assert!(!dropping.severities.contains_key(&app), "{:?}", dropping.reasons);
+
+    let keeping = late_realigned_fixed_pair(&on_lib_b, CascadeBumpSeverity::Patch, 2);
+    assert_eq!(keeping.severities.get(&app), Some(&Severity::Patch));
+    assert_eq!(keeping.targets.get(&lib_b).unwrap().version().render(), "2.0.0");
+    let Some(BumpReason::Cascade { dependency_to, .. }) = keeping.reasons.get(&app) else {
+        panic!("app keeps its cascade reason: {:?}", keeping.reasons.get(&app));
+    };
+    assert_eq!(
+        dependency_to.render(),
+        "2.0.0",
+        "a kept raise names the released version"
+    );
+}
+
+/// Round 2 escalates `app` to major against lib-b's intermediate 1.1.0; round 3 only needs minor for a-upstream.
+#[test]
+fn once_raises_are_only_kept_a_lower_requirement_never_lowers_one() {
+    let app = PackageId::parse("app").unwrap();
+    let deps = [
+        ("lib-b", DepKind::Peer, ">=2.0.0"),
+        ("a-upstream", DepKind::Runtime, "^1.0.0"),
+    ];
+
+    let exact = late_realigned_fixed_pair(&deps, CascadeBumpSeverity::Minor, 5);
+    assert_eq!(
+        exact.severities.get(&app),
+        Some(&Severity::Minor),
+        "{:?}",
+        exact.reasons
+    );
+
+    let kept = late_realigned_fixed_pair(&deps, CascadeBumpSeverity::Minor, 2);
+    assert_eq!(kept.severities.get(&app), Some(&Severity::Major), "{:?}", kept.reasons);
 }
