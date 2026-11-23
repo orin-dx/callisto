@@ -1,0 +1,87 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M85214DF0YVHNDTYNKENY6YD",
+  "session_id": "d3e11c8c-490f-4872-8eb7-864ff361c337",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T20:37:30.533565Z",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "Cargo.lock",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "0910356b89f8",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 178,
+    "cache_creation_tokens": 172957,
+    "cache_read_tokens": 12315869,
+    "output_tokens": 59851,
+    "api_call_count": 89
+  },
+  "session_token_usage": {
+    "input_tokens": 178,
+    "cache_creation_tokens": 172957,
+    "cache_read_tokens": 12315869,
+    "output_tokens": 59851,
+    "api_call_count": 89
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Spike and replace the callisto add wizard's interactive prompts (dialoguer plus a hand-written Ctrl-C state machine in tty.rs) with inquire, mapping interrupt/cancel to one CliError variant that exits 130, and drop the ctrlc/rustix runtime deps. Trail #487, as a draft PR superseding #638's tty.rs design.",
+    "outcome": "inquire 0.9.4 (0.9.5 was only 8 days old) met the wizard's needs. The add wizard and init were ported, dialoguer/ctrlc/rustix runtime deps removed, a Cancelled error variant added, and an editor SIGINT guard added. All 13 pty tests, cargo test -p callisto-cli (701 ok), just lint and just audit pass. A signed checkpoint was committed locally; the push, draft PR, trail link, and lead report are not done yet.",
+    "learnings": {
+      "repo": [
+        "inquire 0.9.5 was under the two-week stable-age rule, so 0.9.4 (MIT) was pinned with default features disabled.",
+        "Fetching new crates writes to ~/.cargo/registry and just audit needs ~/.cargo/advisory-dbs; both are blocked by the sandbox and must run unsandboxed.",
+        "pty tests need /dev/ptmx, which the sandbox blocks, so they must also run unsandboxed.",
+        "runner::child_command leaves the editor in the same process group as Callisto, so a line-mode editor's Ctrl-C SIGINT reaches Callisto and killed it until a guard was added.",
+        "init still prompted under --format json on a terminal; routing it through the same Prompts::allowed gate was a one-line sibling fix, and the init spec criterion and changeset were updated to match.",
+        "The duplicate unicode-width dependency is already on main and is not introduced by this change.",
+        "docs/specs/cli.json holds add/init acceptance criteria that had to be updated alongside the prompt behaviour changes."
+      ],
+      "code": [],
+      "workflow": [
+        "Check the three-dot diff against origin/main rather than the two-dot diff when the base branch has moved since the PR branch was cut.",
+        "Write the failing pty test first for the editor-SIGINT behaviour, confirm it fails, then implement the guard.",
+        "When a filtered test or lint run exits 101 with no visible failure, rerun with the full log captured."
+      ]
+    },
+    "friction": [
+      "The lead's reference worktree was off-limits to this isolated session, so the lead's uncommitted edits had to be reimplemented from the description.",
+      "Multiple sandbox restrictions (cargo registry, advisory db, ptmx) forced several unsandboxed reruns.",
+      "Test and lint runs exited 101 with no failure lines in the filtered output, which required rerunning with full logs.",
+      "The commit step took several attempts (format and stage, then signed commit)."
+    ],
+    "open_items": [
+      "Merge the latest origin/main, push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link trail #487, and open the draft PR with entire trail ci-pr.",
+      "Write the PR body (via gh pr edit --body-file) stating it supersedes #638's tty.rs design, with lines removed vs added, deps removed/added, test results, and anything inquire can't do.",
+      "Fold in the lead's new items mentioned after the checkpoint, which were not visible in the transcript.",
+      "Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what was run."
+    ]
+  }
+}

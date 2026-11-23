@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M85214DF0YVHNDTYNKENY6YD",
+  "strategy": "manual-commit",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "Cargo.lock",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "docs/specs/cli.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 178,
+    "cache_creation_tokens": 172957,
+    "cache_read_tokens": 12315869,
+    "output_tokens": 59851,
+    "api_call_count": 89
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
