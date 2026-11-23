@@ -217,7 +217,12 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
     /// The GitHub repository a product release publishes to: `[release] forge-repository` when set, else `origin`'s.
     /// No remote, or one not on GitHub, means none; an `origin` that is not hosted refuses a real run and reads as
     /// none in a preview.
-    pub(crate) fn forge_repository(
+    pub fn forge_repository(&self) -> Result<Option<callisto_model::GitHubRepository>, GraphError> {
+        self.forge_repository_for(crate::commands::release::GitRemoteRequirement::Required)
+    }
+
+    /// [`Workspace::forge_repository`] for a real run (`Required`) or a preview (`OptionalForPreview`).
+    pub(crate) fn forge_repository_for(
         &self,
         remote: crate::commands::release::GitRemoteRequirement,
     ) -> Result<Option<callisto_model::GitHubRepository>, GraphError> {

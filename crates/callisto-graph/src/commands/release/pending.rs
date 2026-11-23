@@ -54,7 +54,7 @@ pub fn pending_releases<R: CommandRunner, D: DependencyResolver>(
         .as_ref()
         .and_then(|_| {
             workspace
-                .forge_repository(GitRemoteRequirement::OptionalForPreview)
+                .forge_repository_for(GitRemoteRequirement::OptionalForPreview)
                 .ok()
                 .flatten()
         })

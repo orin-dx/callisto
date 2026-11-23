@@ -796,7 +796,7 @@ fn workflow_or_artifact_target_without_origin_errors() {
         .result
         .unwrap_err();
     assert!(
-        matches!(&error, CliError::InitFlagRequiresOrigin { flag } if *flag == "workflow"),
+        matches!(&error, CliError::InitFlagRequiresOrigin { flag, .. } if *flag == "workflow"),
         "{error}"
     );
     assert!(nothing_written(workflow_dir.path()));
@@ -807,7 +807,7 @@ fn workflow_or_artifact_target_without_origin_errors() {
         .result
         .unwrap_err();
     assert!(
-        matches!(&error, CliError::InitFlagRequiresOrigin { flag } if *flag == "artifact-target"),
+        matches!(&error, CliError::InitFlagRequiresOrigin { flag, .. } if *flag == "artifact-target"),
         "{error}"
     );
     assert!(nothing_written(target_dir.path()));
@@ -1651,4 +1651,25 @@ fn init_previews_with_a_file_url_or_local_path_origin() {
         );
         assert!(run.out.contains("First release preview"), "{url}: {}", run.out);
     }
+}
+
+// A configured but non-hosted origin gets its own wording on the flag error and in the detected facts.
+#[test]
+fn a_flag_that_needs_a_hosted_origin_says_when_origin_is_not_hosted() {
+    let dir = workspace_without_origin(1);
+    git(dir.path(), &["remote", "add", "origin", "/srv/vcs/team-repo.git"]);
+    let args = InitArgs {
+        workflow: true,
+        ..yes(InitVersioning::Independent)
+    };
+    let run = run_init(dir.path(), args, false, vec![], false);
+    let error = run.result.unwrap_err();
+    assert!(
+        matches!(&error, CliError::InitFlagRequiresOrigin { not_hosted: true, .. }),
+        "{error}"
+    );
+    assert!(error.to_string().contains("is not hosted"), "{error}");
+    assert!(run.out.contains("origin: not hosted"), "{}", run.out);
+    assert!(!format!("{error:?}{}", run.out).contains("team-repo"));
+    assert!(nothing_written(dir.path()));
 }

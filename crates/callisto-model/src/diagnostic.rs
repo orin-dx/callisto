@@ -159,8 +159,8 @@ pub enum DiagnosticCode {
     /// selecting the product package itself, so the owner's declared asset has no release to
     /// upload into.
     ProductArtifactOwnerWithoutProduct,
-    /// `callisto init` found no hosted `origin` remote (none, or one that is not hosted): it writes the config but skips the release
-    /// workflow and shipping-binaries questions until one is added.
+    /// `callisto init` found no hosted `origin` remote (none, or one that is not hosted): it writes the config but
+    /// skips the release workflow and shipping-binaries questions until one is added.
     InitOriginMissing,
     /// A discovered package's manifest could not be opened while building the graph, so its publish
     /// targets, dependency edges or platform role are unknown. Loading a workspace to plan a release

@@ -350,12 +350,22 @@ pub enum CliError {
     )]
     InitFlagRequiresArtifactTarget { flag: &'static str },
 
-    #[error("`--{flag}` requires an `origin` remote, and none is configured")]
+    #[error(
+        "`--{flag}` requires a hosted `origin` remote, and {}",
+        if *not_hosted { "the configured one is not hosted" } else { "none is configured" }
+    )]
     #[diagnostic(
         code(E299),
-        help("add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init")
+        help(
+            "{}",
+            if *not_hosted {
+                "point `origin` at the hosted repository (`git remote set-url origin <url>`), then re-run init"
+            } else {
+                "add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init"
+            }
+        )
     )]
-    InitFlagRequiresOrigin { flag: &'static str },
+    InitFlagRequiresOrigin { flag: &'static str, not_hosted: bool },
 
     #[error("workspace is already in pre-release mode")]
     #[diagnostic(code(E243), help("run `callisto pre exit` first"))]

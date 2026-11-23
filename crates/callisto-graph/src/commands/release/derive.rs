@@ -214,7 +214,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     // A preview needs no destination: `origin` is optional for it.
     if workspace.config.product_release.is_some()
         && remote == GitRemoteRequirement::Required
-        && workspace.forge_repository(remote)?.is_none()
+        && workspace.forge_repository_for(remote)?.is_none()
     {
         return Err(GraphError::ReleaseForgeRepositoryMissing);
     }

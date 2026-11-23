@@ -1,5 +1,5 @@
 ---
-callisto-cli: patch
+callisto-cli: minor
 ---
 
 **`init` and `release --dry-run` say less and say what to do next**

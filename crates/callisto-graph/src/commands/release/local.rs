@@ -429,7 +429,7 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
     let artifact_policy = match (&workspace.config.product_release, &source) {
         (Some(_), SourceIdentity::GitCommit { sha }) => {
             workspace
-                .forge_repository(remote)?
+                .forge_repository_for(remote)?
                 .map(|repository| ArtifactBuildPolicy {
                     repository,
                     workflow_path: callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH.to_owned(),

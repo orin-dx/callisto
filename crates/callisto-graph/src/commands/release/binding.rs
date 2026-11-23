@@ -128,9 +128,8 @@ pub(crate) fn canonical_registry_binding(registry: &str, raw: &str) -> Result<Re
     })
 }
 
-/// Maps a [`GitHubRepositoryParseError`] to a specific, static diagnostic
-/// reason for [`GraphError::UnsafeGitRemote`], rather than discarding it
-/// behind one generic message for every distinct parse failure.
+/// Maps a [`GitHubRepositoryParseError`] to a specific, static reason `origin` is not hosted, shown in
+/// [`GraphError::UnsafeGitRemote`], rather than discarding it behind one generic message.
 fn github_repository_parse_error_reason(error: &GitHubRepositoryParseError) -> &'static str {
     match error {
         GitHubRepositoryParseError::MissingSeparator { .. } => "GitHub remote path must be in owner/repo form",
@@ -150,8 +149,8 @@ pub(crate) enum Origin {
     Missing,
     /// A remote tags and the forge repository can bind to.
     Hosted(PreparedGitRemote),
-    /// Anything else, such as a local path; its text is never kept, so no diagnostic can echo it.
-    NotHosted,
+    /// Anything else, such as a local path: only the fixed reason is kept, never the text, so no diagnostic can echo it.
+    NotHosted(&'static str),
 }
 
 impl Origin {
@@ -178,7 +177,7 @@ impl Origin {
     fn parse(raw: &str) -> Self {
         match canonical_git_remote(raw) {
             Ok(remote) => Self::Hosted(remote),
-            Err(_) => Self::NotHosted,
+            Err(reason) => Self::NotHosted(reason),
         }
     }
 
@@ -194,8 +193,8 @@ impl Origin {
         match self {
             Self::Missing => Ok(None),
             Self::Hosted(remote) => Ok(Some(remote)),
-            Self::NotHosted => Err(GraphError::UnsafeGitRemote {
-                refusal: OriginRefusal::NotHosted,
+            Self::NotHosted(reason) => Err(GraphError::UnsafeGitRemote {
+                refusal: OriginRefusal::NotHosted { reason },
             }),
         }
     }
@@ -204,7 +203,7 @@ impl Origin {
     pub(crate) fn preview(self) -> Option<PreparedGitRemote> {
         match self {
             Self::Hosted(remote) => Some(remote),
-            Self::Missing | Self::NotHosted => None,
+            Self::Missing | Self::NotHosted(_) => None,
         }
     }
 }
@@ -354,9 +353,8 @@ mod tests {
 
     /// Answers `git remote get-url` with a failure (no `origin`) and records
     /// whether the probe went through the live-echoing `run_with_timeout` path
-    /// or the quiet one -- `prepared_git_remote`/`optional_git_remote` must
-    /// never let git's own "No such remote" reach the terminal for this
-    /// expected, common case.
+    /// or the quiet one -- `Origin::read` must never let git's own
+    /// "No such remote" reach the terminal for this expected, common case.
     struct NoRemote {
         used_live_echo: std::sync::atomic::AtomicBool,
     }
@@ -432,11 +430,10 @@ mod tests {
         ] {
             let error = Origin::parse(raw).optional().unwrap_err();
             assert!(
-                error
-                    .to_string()
-                    .contains("`origin` is not a hosted remote (use https://"),
+                error.to_string().contains("`origin` is not a hosted remote: "),
                 "{error}"
             );
+            assert!(error.to_string().contains("(use https://"), "{error}");
             for text in [error.to_string(), format!("{error:?}")] {
                 for leak in ["secret", "pw", "deploy", "example.test", "github.com", "remotes/origin"] {
                     assert!(!text.contains(leak), "{text}");
@@ -455,6 +452,18 @@ mod tests {
             "not a url pw",
         ] {
             assert!(!shown(secret).contains("pw"), "{secret}");
+        }
+    }
+
+    #[test]
+    fn a_refused_origin_says_why_in_fixed_words() {
+        for (raw, reason) in [
+            ("https://token@github.com/o/r.git", "HTTPS userinfo is forbidden"),
+            ("http://github.com/o/r.git", "URL scheme must be HTTPS or SSH"),
+            ("remotes/origin.git", "URL has no scheme"),
+        ] {
+            let error = Origin::parse(raw).optional().unwrap_err();
+            assert!(error.to_string().contains(reason), "{raw}: {error}");
         }
     }
 

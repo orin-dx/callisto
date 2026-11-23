@@ -284,7 +284,7 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
     let (origin, origin_not_hosted) = match Origin::read(&root, runner)? {
         Origin::Hosted(remote) => (Some(remote), false),
         Origin::Missing => (None, false),
-        Origin::NotHosted => (None, true),
+        Origin::NotHosted(_) => (None, true),
     };
     let head = runner.run_with_timeout(
         programs::GIT,

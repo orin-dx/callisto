@@ -253,7 +253,7 @@
     },
     {
       "id": "CLI-INIT-09",
-      "criterion": "init exits 1 without writing when callisto.toml already exists (unless `--workflow` is given, which then writes only the workflow and leaves callisto.toml as it is) or when the directory is not inside a Git repository, each with a help line naming the fix. With no `origin` remote configured, init instead writes callisto.toml, skips the workflow and shipping-binaries questions, and emits an `init-origin-missing` warning diagnostic; `--workflow` or `--artifact-target` without `origin` exits 1 naming the fix, and `callisto release` refuses later.",
+      "criterion": "init exits 1 without writing when callisto.toml already exists (unless `--workflow` is given, which then writes only the workflow and leaves callisto.toml as it is) or when the directory is not inside a Git repository, each with a help line naming the fix. With no `origin` remote configured, or one that is not a hosted remote (such as a local path or `file://` URL), init instead writes callisto.toml, skips the workflow and shipping-binaries questions, and emits an `init-origin-missing` warning diagnostic that never shows the `origin` value; `--workflow` or `--artifact-target` without a hosted `origin` exits 1 naming the fix, and `callisto release` refuses later.",
       "is_error_case": true
     },
     {

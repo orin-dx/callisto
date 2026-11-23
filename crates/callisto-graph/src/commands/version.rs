@@ -166,7 +166,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     let base_versions = ws.base_versions()?;
     let tags = ws.tags()?;
     let repository = ws
-        .forge_repository(crate::commands::release::GitRemoteRequirement::OptionalForPreview)
+        .forge_repository_for(crate::commands::release::GitRemoteRequirement::OptionalForPreview)
         .ok()
         .flatten();
 

@@ -141,11 +141,15 @@ pub fn run<R: CommandRunner>(
 
     if facts.origin.is_none() {
         if args.workflow {
-            return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+            return Err(CliError::InitFlagRequiresOrigin {
+                flag: "workflow",
+                not_hosted: facts.origin_not_hosted,
+            });
         }
         if !args.artifact_targets.is_empty() {
             return Err(CliError::InitFlagRequiresOrigin {
                 flag: "artifact-target",
+                not_hosted: facts.origin_not_hosted,
             });
         }
     }
@@ -361,7 +365,10 @@ fn run_workflow_only<R: CommandRunner>(
     let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
     write_facts(&facts, human)?;
     if facts.origin.is_none() {
-        return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+        return Err(CliError::InitFlagRequiresOrigin {
+            flag: "workflow",
+            not_hosted: facts.origin_not_hosted,
+        });
     }
     let shape =
         scaffold::workflow_shape(&facts, scaffold::existing_config_ships_binaries(&facts.root)?).map_err(|reason| {
@@ -444,7 +451,12 @@ fn write_facts(facts: &InitFacts, out: &mut dyn Write) -> Result<(), CliError> {
     let ecosystems: Vec<&str> = facts.ecosystems.iter().map(|ecosystem| ecosystem.prefix()).collect();
     writeln!(out, "Detected:")?;
     writeln!(out, "  ecosystems: {}", ecosystems.join(", "))?;
-    writeln!(out, "  origin: {}", facts.origin.as_deref().unwrap_or("none"))?;
+    let origin = match (&facts.origin, facts.origin_not_hosted) {
+        (Some(origin), _) => origin.as_str(),
+        (None, true) => "not hosted",
+        (None, false) => "none",
+    };
+    writeln!(out, "  origin: {origin}")?;
     writeln!(out, "  packages:")?;
     for package in &facts.packages {
         let tag = package.last_tag.as_ref().map_or("none", |tag| tag.as_str());

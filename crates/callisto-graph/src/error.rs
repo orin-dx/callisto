@@ -1010,15 +1010,16 @@ impl std::fmt::Debug for ShownRegistry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OriginRefusal {
     NoPushUrl,
-    NotHosted,
+    NotHosted { reason: &'static str },
 }
 
 impl std::fmt::Display for OriginRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoPushUrl => f.write_str("`origin` has no push URL"),
-            Self::NotHosted => f.write_str(
-                "`origin` is not a hosted remote (use https://, ssh:// or git@host:owner/repo); see `git remote get-url origin`",
+            Self::NotHosted { reason } => write!(
+                f,
+                "`origin` is not a hosted remote: {reason} (use https://, ssh:// or git@host:owner/repo); see `git remote get-url origin`"
             ),
         }
     }
