@@ -1,0 +1,91 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M84NN1P0K76FVW47ZB75XQKZ",
+  "session_id": "d25b3493-9f23-424e-af21-51d3706f3729",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T17:01:10.568276Z",
+  "branch": "worktree-wp-interactive-cli-compare",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "crates/callisto-cli/src/commands/add.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "4f09131d9f1f",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 164,
+    "cache_creation_tokens": 158717,
+    "cache_read_tokens": 9980116,
+    "output_tokens": 46256,
+    "api_call_count": 82
+  },
+  "session_token_usage": {
+    "input_tokens": 164,
+    "cache_creation_tokens": 158717,
+    "cache_read_tokens": 9980116,
+    "output_tokens": 46256,
+    "api_call_count": 82
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Compare the interactive CLI first-release experience of real @changesets/cli 3.0.3 against callisto 0.22.0 using real pty transcripts (trail #487), put the table and transcripts in the PR body, and implement only the clearly helpful, dialoguer-compatible gaps in `callisto add`.",
+    "outcome": "Captured pty transcripts of both tools and rewrote the `callisto add` wizard (changed packages first and preselected, per-package bump prompts, review before writing, next-step line, Esc cancel, $EDITOR summary, paging), updating unit tests, docs/specs/cli.json and adding a minor changeset. The work was committed (signing needed an out-of-sandbox retry); the push, PR body with comparison table, trail link and report to the lead are not yet done.",
+    "learnings": {
+      "repo": [
+        "The changed-package derivation is `callisto_graph::changed::changed_since_last_tag`, the same one `status` uses; `add` reuses it so the wizard matches reported state.",
+        "Package names in the wizard use `pkg.id.display_name()` so `cargo/foo` and `npm/foo` stay distinct in polyglot workspaces.",
+        "Spec criteria in docs/specs/cli.json must be updated together with behaviour changes.",
+        "`just lint` and `cargo test -p callisto-cli` are the local checks; 4 e2e tests fail in the sandbox because of an npm cache EPERM and blocked crates.io/uv network, not because of `add`.",
+        "Ctrl-C under dialoguer/console exits immediately and can leave the cursor hidden, while Esc is handled and restores it; this was documented in the changeset."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/add.rs",
+          "finding": "`run_wizard` now takes `&[Choice]` (name plus changed flag), orders changed packages first and ticks them via `MultiSelect::defaults`. It then asks major, then minor (the rest are patch), then summary, then a preview with confirm. The `AddPrompter` trait gained prompt and checked params so tests script it, and `wizard_choices` replaced `collect_package_names`."
+        },
+        {
+          "path": "docs/specs/cli.json",
+          "finding": "The spec criterion describing the add wizard was updated to match the new prompts."
+        }
+      ],
+      "workflow": [
+        "Sandbox denies pty allocation ('out of pty devices'), so the pty driver must run outside the sandbox.",
+        "Changesets needs a lockfile (`npm install` in the fixture) to discover workspace packages.",
+        "Signed commits need gpg, so the commit has to run outside the sandbox; a `git merge origin/main` right before pushing was a no-op here.",
+        "The `rtk` wrapper and plain `git` behaved inconsistently, so `/usr/bin/git` was used directly.",
+        "Moving fixture setup into scripts (setup.sh, try.sh, new.sh) and JSON keystroke files made pty runs repeatable."
+      ]
+    },
+    "friction": [
+      "pty allocation blocked in the sandbox; every driver run needed escalation.",
+      "npm cache and network restrictions in the sandbox forced a custom cache dir and caused unrelated test failures.",
+      "Changesets found no packages until the fixture had a lockfile, which cost several fixture-rewrite iterations.",
+      "Esc/Ctrl-C driver runs initially did not wait for the child to exit, so drive.py needed a wait loop to capture cursor state.",
+      "The lead raised the bar mid-task (theme, paging, review screen, editor summary, Esc cancel), expanding scope."
+    ],
+    "open_items": [
+      "Push the branch with `git push origin HEAD:refs/heads/<branch>`, confirm with ls-remote, link trail #487 and open the PR with `entire trail ci-pr`.",
+      "Write the PR body (comparison table and real transcripts) via `gh pr edit --body-file`.",
+      "`callisto init` theming is planned as a second PR.",
+      "Ctrl-C can still leave the cursor hidden; only documented, not fixed.",
+      "Run `cargo mutants --in-diff` on the new decision logic if the lead wants it.",
+      "Report to the lead in under 5 lines: PR, sha, what was run."
+    ]
+  }
+}
