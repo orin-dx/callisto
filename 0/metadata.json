@@ -1,0 +1,107 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M84KMD3GCGM3SAEQSR9047D4",
+  "session_id": "ea07c83a-b6f3-447e-8235-66f40719bc25",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T16:25:52.353086Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/proptest-regressions/cascade/tests.txt"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "0a9b1583a6cd",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 33958,
+    "cache_read_tokens": 5099443,
+    "output_tokens": 7282,
+    "api_call_count": 24
+  },
+  "session_token_usage": {
+    "input_tokens": 242,
+    "cache_creation_tokens": 202449,
+    "cache_read_tokens": 18510642,
+    "output_tokens": 49578,
+    "api_call_count": 115,
+    "subagent_tokens": {
+      "input_tokens": 26,
+      "cache_creation_tokens": 98863,
+      "cache_read_tokens": 937373,
+      "output_tokens": 11729,
+      "api_call_count": 13
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "summary": {
+    "intent": "Land two ordered structural PRs in the callisto repo: (1) introduce a ConvergedTargets type so only the cascade solver's final step can supply targets to range rewrites and E319 checks, (2) move dependency-range rewriting into the Versioning trait. Both were to follow AGENTS.md's invariant ladder and the lead's gating rules.",
+    "outcome": "PR #594 (ConvergedTargets, behaviour-preserving, no changeset) was pushed at de10f438 with all 16 CI checks green and no Entire findings. PR 2 was dropped by the lead before any code was written because of the MIT/FSL license split and because #573 already fixed the epoch bug.",
+    "learnings": {
+      "repo": [
+        "Cascade targets were only correct because cascade.rs ran steps in order; ConvergedTargets::settle now makes the final solver step the only way to build the type that rewrite_edge/rewrite_spec accept.",
+        "Rust cannot narrow visibility to a sibling module (pub(in crate::commands::snapshot) is not allowed on an item in cascade). The fix was to move snapshot's rewrite loop into cascade so the constructor stays pub(super).",
+        "apply.rs makes no coverage, rewrite or E319 decisions; it writes already-computed PlannedBump.to and SpecRewrite.to. Gating it would need a test-util feature for integration tests that build plans directly, which invariant 6 forbids.",
+        "The Versioning trait lives in callisto-model (MIT) while the rewrite code lives in callisto-manifests (FSL), so moving rewriting into the trait would relicense code. Cargo and npm rewrites also differ despite sharing SemVer.",
+        "docs/architecture/versioning.md documents the cascade steps and needed a bullet for the new type; doc-check fails on intra-doc links to now-private items such as rewrite_spec.",
+        "Running cargo-mutants on the diff surfaced an untested behaviour (the peer-escalation changelog entry); a new test in commands/version/tests.rs closed it, giving 34 mutants with 19 caught, 15 unviable and 0 missed."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/cascade/converged.rs",
+          "finding": "New ConvergedTargets/ConvergedTarget types. The reviewer recommended dropping the Deref and Index impls and keeping version() and get(), and tightening the doc comments that overclaimed."
+        },
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "finding": "solve_cascade keeps a local provisional BTreeMap and calls ConvergedTargets::settle once the worklist converges. out.targets is empty during the loop, so later code in raise() reading out.targets would silently get None. rewrite_spec was made pub(crate) because its signature changed."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/snapshot.rs",
+          "line": 87,
+          "end_line": 143,
+          "finding": "The snapshot rewrite loop was moved into cascade (snapshot_rewrites). snapshot_versions is still cloned because platform_version_writes uses it afterwards; moving that call earlier would change which error surfaces first."
+        }
+      ],
+      "workflow": [
+        "CARGO_BUILD_JOBS is cores/5: 18 cores gives 3, taken from getconf _NPROCESSORS_ONLN because sysctl output was empty.",
+        "cargo mutants --in-place mutates the working tree, so edits must not run concurrently with it. It also leaves untracked proptest-regressions files that must be deleted before committing.",
+        "The sandbox blocks the npm cache (~/.npm/_cacache) and the gpg keyring, so just test and signed commits had to run outside it. Local signature checks fail in the sandbox, so verification was done via the GitHub API.",
+        "entire trail ci-pr creates the PR with a placeholder title and body, so it was then edited with gh pr edit while keeping Entire's marker.",
+        "The lead relaxed the gating mid-task (only cargo test -p, just lint, just doc-check; no local just ci, no reviewer, no mutants for behaviour-preserving refactors), so work had to adapt to changed rules.",
+        "Raising design and license concerns before writing code saved a whole PR's worth of effort."
+      ]
+    },
+    "friction": [
+      "Sandbox restrictions on the npm cache and gpg keyring forced re-runs of the test gate and the commit outside the sandbox.",
+      "The mutation run takes about 10 minutes and blocks edits in the same worktree, and it ran twice because the review changes and new test invalidated the first run.",
+      "The lead's mid-task rule change cancelled a running just ci and made earlier review and mutant work partly redundant.",
+      "Dropping Deref and Index required edits across many test call sites and several scratch python edit scripts.",
+      "doc-check broke on an intra-doc link to rewrite_spec after it became private."
+    ],
+    "open_items": [
+      "Reviewer's optional suggestion, not done: build CascadeOutcome after settle instead of threading out through the solver loop, so out.targets is never an empty default during solving.",
+      "PR 2 (moving range rewriting into the Versioning trait so each grammar owns bump and rewrite) was dropped; no change was made to the free-function rewrites in python.rs, npm and cargo.",
+      "Apply remains plain data and is not gated by ConvergedTargets, by decision.",
+      "The graph crate changelog question for the rewrite_spec visibility change was not explicitly resolved."
+    ]
+  }
+}
