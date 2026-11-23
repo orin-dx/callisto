@@ -365,7 +365,7 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
     false
 }
 
-/// A summary whose first line opens `**lead-in**`, with no backtick or `*` inside, yields the lead-in and what
+/// A summary whose first line opens `**lead-in**`, with no backtick, `*` or `[` inside and no space against the markers, yields the lead-in and what
 /// follows it (trimmed); anything else falls back to the generic split.
 fn bold_lead_in(summary: &str) -> Option<(String, &str)> {
     let text = summary.trim_start().strip_prefix("**")?;
@@ -374,8 +374,9 @@ fn bold_lead_in(summary: &str) -> Option<(String, &str)> {
     }
     let first_line = text.lines().next().unwrap_or_default();
     let end = first_line.find("**")?;
-    let lead = text[..end].trim();
-    if lead.is_empty() || lead.contains(['`', '*']) {
+    let lead = &text[..end];
+    let edge_is_space = |c: Option<char>| c.is_none_or(char::is_whitespace);
+    if edge_is_space(lead.chars().next()) || edge_is_space(lead.chars().next_back()) || lead.contains(['`', '*', '[']) {
         return None;
     }
     Some((lead.to_string(), text[end + 2..].trim()))
@@ -1174,6 +1175,12 @@ mod tests {
         assert!(bold_lead_in("**Fix the `**` operator.** more").is_none());
         assert!(bold_lead_in("**Split across\n\nparagraphs.** more").is_none());
         assert!(bold_lead_in("***\nintro\n\n**x** y").is_none());
+    }
+
+    #[test]
+    fn a_bold_lead_in_with_a_link_or_a_space_before_the_closing_marker_falls_back() {
+        assert!(bold_lead_in("**See [the docs](https://x.y).** more").is_none());
+        assert!(bold_lead_in("**Not bold ** more").is_none());
     }
 
     #[test]
