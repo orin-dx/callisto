@@ -51,7 +51,7 @@ jobs:
           ref: refs/tags/${{ needs.release.outputs.tag }}
           path: release
           persist-credentials: false
-      - uses: ./release/.github/actions/setup-callisto
+      - uses: ./release/.github/actions/setup-callisto # zizmor: ignore[self-repository] runs the released action from the checked-out tag
         with:
           version: ${{ needs.release.outputs.tag }}
           verification: require
