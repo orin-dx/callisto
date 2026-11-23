@@ -2172,7 +2172,7 @@ fn test_seed_reason_keeps_the_first_source_on_a_tie() {
     seed.add(Severity::Minor, Source::FreshChangeset { id: "cs".to_string() });
     assert!(matches!(seed.reason(), BumpReason::Inference { commits: 2, .. }));
     seed.add(Severity::Major, Source::FreshChangeset { id: "big".to_string() });
-    assert!(matches!(seed.reason(), BumpReason::Changeset { changesets } if changesets == ["big"]));
+    assert!(matches!(seed.reason(), BumpReason::Changeset { changesets } if changesets == ["cs", "big"]));
 }
 
 struct NoneSeverityInference;

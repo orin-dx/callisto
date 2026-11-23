@@ -100,8 +100,14 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
     }
 }
 
+/// More changesets than this are counted in the Reason column rather than named.
+const MAX_NAMED_CHANGESETS: usize = 3;
+
 fn reason_cell(reason: &Option<BumpReason>) -> String {
     match reason {
+        Some(BumpReason::Changeset { changesets }) if changesets.len() > MAX_NAMED_CHANGESETS => {
+            format!("{} changesets", changesets.len())
+        }
         Some(BumpReason::Changeset { changesets }) => {
             format!("Changeset (`{}`)", changesets.join("`, `"))
         }
@@ -1179,17 +1185,30 @@ mod tests {
             ],
         };
         let plan = VersionPlan {
-            bumps: vec![PlannedBump {
-                package: pkg,
-                from: Version::semver(1, 0, 0),
-                to: Version::semver(1, 0, 1),
-                severity: Severity::Patch,
-                governed_by: None,
-                reason: Some(BumpReason::Changeset {
-                    changesets: vec!["brave-eagles-race".to_string(), "radiant-pandas-roar".to_string()],
-                }),
-                writes: vec![],
-            }],
+            bumps: vec![
+                PlannedBump {
+                    package: pkg,
+                    from: Version::semver(1, 0, 0),
+                    to: Version::semver(1, 0, 1),
+                    severity: Severity::Patch,
+                    governed_by: None,
+                    reason: Some(BumpReason::Changeset {
+                        changesets: vec!["brave-eagles-race".to_string(), "radiant-pandas-roar".to_string()],
+                    }),
+                    writes: vec![],
+                },
+                PlannedBump {
+                    package: PackageId::parse("pkg-b").unwrap(),
+                    from: Version::semver(1, 0, 0),
+                    to: Version::semver(1, 0, 1),
+                    severity: Severity::Patch,
+                    governed_by: None,
+                    reason: Some(BumpReason::Changeset {
+                        changesets: ["a", "b", "c", "d"].map(String::from).to_vec(),
+                    }),
+                    writes: vec![],
+                },
+            ],
             rewrites: vec![],
             platform_writes: vec![],
             optional_dep_updates: vec![],

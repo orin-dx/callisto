@@ -178,6 +178,7 @@ impl Seed {
     }
 
     /// The reason of the first fresh source at the highest fresh severity; the first source when none is fresh.
+    /// A changeset reason names every changeset of the same freshness, not only the winning one.
     pub fn reason(&self) -> BumpReason {
         let mut best = &self.first;
         for entry in self.entries().filter(|(_, source)| source.is_fresh()) {
@@ -185,7 +186,21 @@ impl Seed {
                 best = entry;
             }
         }
-        best.1.reason()
+        match &best.1 {
+            Source::FreshChangeset { .. } | Source::RetainedChangeset { .. } => {
+                let fresh = best.1.is_fresh();
+                let changesets = self
+                    .sources()
+                    .filter(|source| source.is_fresh() == fresh)
+                    .filter_map(|source| match source {
+                        Source::FreshChangeset { id } | Source::RetainedChangeset { id } => Some(id.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                BumpReason::Changeset { changesets }
+            }
+            other => other.reason(),
+        }
     }
 }
 
