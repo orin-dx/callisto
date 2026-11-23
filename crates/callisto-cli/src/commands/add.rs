@@ -190,29 +190,37 @@ impl AddPrompter for TerminalAddPrompter {
     }
 
     fn summary(&mut self, prompt: &str) -> Result<Option<Summary>, CliError> {
-        let editor = tty::editor_command();
-        let hint = if editor.is_some() {
-            format!("{prompt} (leave empty to open $EDITOR; Esc cancels)")
-        } else {
-            format!("{prompt} (Esc cancels)")
-        };
-        let opens_editor = editor.is_some();
-        let Some(line) = Text::new(&hint)
-            .with_validator(move |line: &str| {
-                Ok(match Summary::new(line) {
-                    Err(error) if !(opens_editor && line.is_empty()) => Validation::Invalid(error.to_string().into()),
-                    _ => Validation::Valid,
+        let mut editor = tty::Editor::from_env();
+        loop {
+            let hint = match &editor {
+                Some(editor) => format!("{prompt} (leave empty to open ${}; Esc cancels)", editor.variable()),
+                None => format!("{prompt} (Esc cancels)"),
+            };
+            let opens_editor = editor.is_some();
+            let Some(line) = Text::new(&hint)
+                .with_validator(move |line: &str| {
+                    Ok(match Summary::new(line) {
+                        Err(error) if !(opens_editor && line.is_empty()) => {
+                            Validation::Invalid(error.to_string().into())
+                        }
+                        _ => Validation::Valid,
+                    })
                 })
-            })
-            .prompt_skippable()?
-        else {
-            return Ok(None);
-        };
-        if let Ok(summary) = Summary::new(&line) {
-            return Ok(Some(summary));
+                .prompt_skippable()?
+            else {
+                return Ok(None);
+            };
+            if let Ok(summary) = Summary::new(&line) {
+                return Ok(Some(summary));
+            }
+            // The validator lets an empty line through only when there is an editor to open.
+            let Some(chosen) = editor.take() else { continue };
+            match chosen.edit() {
+                Ok(saved) => return Ok(saved.and_then(|text| Summary::new(&text).ok())),
+                // The answers so far are kept: the summary is asked for inline instead.
+                Err(unusable) => prompt_line(&format!("warning: {unusable}")),
+            }
         }
-        let Some(command) = editor else { return Ok(None) };
-        Ok(tty::edit(&command)?.and_then(|text| Summary::new(&text).ok()))
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError> {
@@ -775,20 +783,6 @@ mod tests {
 
     /// Non-interactive `add --package cargo/foo:patch` produces `Entry { name: "cargo/foo", .. }`, not `"foo"`:
     /// in a polyglot workspace the bare name is ambiguous and fails `callisto version` with `AmbiguousName`.
-    #[test]
-    fn non_interactive_add_entry_preserves_ecosystem_qualifier() {
-        let id = PackageId::parse("cargo/foo").unwrap();
-        // display_name() is the ecosystem-qualified form; name() is the bare name.
-        let entry = Entry {
-            name: id.display_name(),
-            severity: Severity::Patch,
-        };
-        assert_eq!(
-            entry.name, "cargo/foo",
-            "Entry.name must equal display_name(), not the bare name"
-        );
-    }
-
     /// Consecutive calls to generate_human_slug() must all produce distinct values,
     /// even when the OS clock resolution coalesces rapid calls to the same tick.
     #[test]

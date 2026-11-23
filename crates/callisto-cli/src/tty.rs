@@ -1,6 +1,6 @@
 //! The one contract for interactive prompts: where they may run, how they end, and how `$EDITOR` is used.
 
-use std::io::{IsTerminal as _, Read as _, Write as _};
+use std::io::IsTerminal as _;
 #[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(unix)]
@@ -30,36 +30,72 @@ pub const CANCELLED: &str = "Cancelled, nothing written.";
 /// Exit status for Ctrl-C, as shells report SIGINT.
 pub const CANCELLED_BY_CTRL_C: u8 = 130;
 
-/// The editor from `$VISUAL`, else `$EDITOR`; an empty or blank setting is unset.
-pub fn editor_command() -> Option<String> {
-    ["VISUAL", "EDITOR"]
-        .into_iter()
-        .filter_map(|name| std::env::var(name).ok())
-        .find(|command| !command.trim().is_empty())
+/// The editor named by `$VISUAL`, else `$EDITOR`.
+pub struct Editor {
+    variable: &'static str,
+    command: String,
 }
 
-/// Opens `command` on an empty file and returns what was saved. `None` when the editor exits non-zero (an abort, as
-/// `:cq` in Vim). The editor draws on stderr so stdout stays for the report.
-pub fn edit(command: &str) -> Result<Option<String>, CliError> {
-    let mut file = tempfile::Builder::new().prefix("callisto-").suffix(".txt").tempfile()?;
-    file.flush()?;
-    let mut words = shell_words::split(command).unwrap_or_else(|_| vec![command.to_owned()]);
-    if words.is_empty() {
-        return Ok(None);
+/// Why the editor could not be used; its message is the warning to print.
+#[derive(Debug, thiserror::Error)]
+#[error("cannot use ${variable} (`{command}`): {reason}; asking for the summary here instead")]
+pub struct EditorUnusable {
+    variable: &'static str,
+    command: String,
+    reason: String,
+}
+
+impl Editor {
+    /// An empty or blank setting is unset.
+    pub fn from_env() -> Option<Self> {
+        ["VISUAL", "EDITOR"].into_iter().find_map(|variable| {
+            let command = std::env::var(variable).ok()?;
+            (!command.trim().is_empty()).then_some(Self { variable, command })
+        })
     }
-    let program = words.remove(0);
-    let _editor_owns_ctrl_c = EditorOwnsCtrlC::take()?;
-    let status = crate::runner::child_command(&program, &[], &[])
-        .args(words)
-        .arg(file.path())
-        .stdout(std::io::stderr())
-        .status()?;
-    if !status.success() {
-        return Ok(None);
+
+    /// `VISUAL` or `EDITOR`, whichever named it.
+    pub fn variable(&self) -> &'static str {
+        self.variable
     }
-    let mut written = String::new();
-    std::fs::File::open(file.path())?.read_to_string(&mut written)?;
-    Ok(Some(written))
+
+    /// Opens the editor on an empty file and returns what was saved. `None` when the editor exits non-zero (an abort,
+    /// as `:cq` in Vim). The editor draws on stderr so stdout stays for the report.
+    pub fn edit(&self) -> Result<Option<String>, EditorUnusable> {
+        self.try_edit().map_err(|reason| EditorUnusable {
+            variable: self.variable,
+            command: self.command.clone(),
+            reason,
+        })
+    }
+
+    fn try_edit(&self) -> Result<Option<String>, String> {
+        let words =
+            shell_words::split(&self.command).map_err(|error| format!("it does not split into words: {error}"))?;
+        let Some((program, args)) = words.split_first() else {
+            return Err("it names no program".to_owned());
+        };
+        let failed = |error: std::io::Error| error.to_string();
+        let file = tempfile::Builder::new()
+            .prefix("callisto-")
+            .suffix(".txt")
+            .tempfile()
+            .map_err(failed)?;
+        let _editor_owns_ctrl_c = EditorOwnsCtrlC::take().map_err(failed)?;
+        let status = crate::runner::child_command(program, &[], &[])
+            .args(args)
+            .arg(file.path())
+            .stdout(std::io::stderr())
+            .status()
+            .map_err(|error| format!("`{program}` did not start: {error}"))?;
+        if !status.success() {
+            return Ok(None);
+        }
+        let saved = std::fs::read(file.path()).map_err(failed)?;
+        String::from_utf8(saved)
+            .map(Some)
+            .map_err(|error| format!("what it saved is not UTF-8 text: {}", error.utf8_error()))
+    }
 }
 
 /// Ctrl-C in a line-mode editor reaches this process too: as Git's `launch_editor` does, SIGINT is ignored while the

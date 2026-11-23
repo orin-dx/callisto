@@ -59,6 +59,21 @@ impl Session {
 
     /// `callisto <args>` with `env` set; `VISUAL` and `EDITOR` are unset unless `env` names them.
     fn start_with(root: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
+        Self::launch(root, args, env, true)
+    }
+
+    /// `callisto <args>` with stdin and stdout on the terminal and stderr piped; read it with [`Session::stderr`].
+    fn start_with_piped_stderr(root: &Path, args: &[&str]) -> Self {
+        Self::launch(root, args, &[], false)
+    }
+
+    fn stderr(&mut self) -> String {
+        let mut text = String::new();
+        self.child.stderr.take().unwrap().read_to_string(&mut text).unwrap();
+        text
+    }
+
+    fn launch(root: &Path, args: &[&str], env: &[(&str, &str)], stderr_on_terminal: bool) -> Self {
         let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         grantpt(&master).unwrap();
         unlockpt(&master).unwrap();
@@ -87,7 +102,11 @@ impl Session {
             .env("TERM", "xterm-256color")
             .stdin(Stdio::from(tty.try_clone().unwrap()))
             .stdout(Stdio::from(tty.try_clone().unwrap()))
-            .stderr(Stdio::from(tty.try_clone().unwrap()))
+            .stderr(if stderr_on_terminal {
+                Stdio::from(tty.try_clone().unwrap())
+            } else {
+                Stdio::piped()
+            })
             .spawn()
             .unwrap();
         let master = std::fs::File::from(master);
@@ -248,6 +267,46 @@ fn json_format_never_prompts_even_on_a_terminal() {
     assert!(screen.contains("E214") && screen.contains("--package"), "{screen}");
     assert!(!screen.contains("Packages in this change"), "{screen}");
     assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn a_piped_stderr_never_prompts_even_with_a_terminal_on_stdin() {
+    let dir = workspace();
+    let mut add = Session::start_with_piped_stderr(dir.path(), &["add"]);
+    assert_eq!(add.exit_code(), Some(2), "{}", add.screen());
+    let stderr = add.stderr();
+    assert!(stderr.contains("E214") && stderr.contains("--package"), "{stderr}");
+    assert!(!add.screen().contains("Packages in this change"), "{}", add.screen());
+    assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn an_editor_that_saves_nothing_cancels_and_exits_0() {
+    let dir = workspace();
+    let editor = r#"sh -c ': > "$0"'"#;
+    let mut add = Session::start_with(dir.path(), &["add"], &[("EDITOR", editor)]);
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert!(add.screen().contains("Cancelled, nothing written."), "{}", add.screen());
+    assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn an_editor_that_cannot_start_warns_and_asks_for_the_summary_inline() {
+    let dir = workspace();
+    let mut add = Session::start_with(dir.path(), &["add"], &[("EDITOR", "callisto-no-such-editor --wait")]);
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "\r");
+    add.after("Changelog summary", 2, "Fix b\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    let screen = add.screen();
+    assert!(
+        screen.contains("warning: cannot use $EDITOR (`callisto-no-such-editor --wait`)"),
+        "{screen}"
+    );
+    assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
 }
 
 #[test]
