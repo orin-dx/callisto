@@ -117,15 +117,15 @@ features-boundary:
     if grep 'test-util' <<<"$tree"; then exit 1; fi
 
 # The local npm, PyPI and Cargo registries the real-registry suites run against, and the Changesets 2.x and 3.x CLIs
-# the compatibility differential runs against, installed under target/verify-real.
+# the compatibility differential runs against, installed under target/real-tools.
 # gunicorn: pypiserver's default backend does a slow getfqdn() bind. setuptools and wheel: the offline Python build.
-verify-real-tools:
+install-real-tools:
     #!/usr/bin/env bash
     set -euo pipefail
     for tool in npm uv; do
         command -v "$tool" >/dev/null || { echo "$tool is required: the install matrix uses npm, pnpm and uv" >&2; exit 1; }
     done
-    tools=target/verify-real
+    tools=target/real-tools
     mkdir -p "$tools"
     export COREPACK_HOME="$PWD/$tools/corepack/home" COREPACK_ENABLE_AUTO_PIN=0
     npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4 pnpm@11.9.0 @changesets/cli@3.0.3 bun@1.4.5
@@ -147,14 +147,14 @@ verify-real-tools:
     cargo install --locked --root "$tools/cargo" cargo-http-registry@0.1.8
 
 # Rehearses recovery against local npm, PyPI and Cargo registries, then runs the native install matrix.
-verify-real: verify-real-tools
+test-real-tools: install-real-tools
     #!/usr/bin/env bash
     set -euo pipefail
-    tools="$PWD/target/verify-real"
+    tools="$PWD/target/real-tools"
     export PATH="$tools/corepack/bin:$tools/venv/bin:$tools/npm/node_modules/.bin:$tools/cargo/bin:$PATH"
     export COREPACK_HOME="$tools/corepack/home" COREPACK_ENABLE_AUTO_PIN=0 COREPACK_ENABLE_DOWNLOAD_PROMPT=0
     cargo --version && npm --version && pnpm --version && uv --version && yarn --version && bun --version
-    VERIFY_REAL_CHANGESETS_2="$tools/changesets-2/node_modules/.bin/changeset" VERIFY_REAL_WHEELS="$tools/wheels" cargo test -p callisto-cli --test release_verify_real -- --ignored --test-threads=1
+    REAL_TOOLS_CHANGESETS_2="$tools/changesets-2/node_modules/.bin/changeset" REAL_TOOLS_WHEELS="$tools/wheels" cargo test -p callisto-cli --test release_verify_real -- --ignored --test-threads=1
     cargo test -p callisto-cli --test native_resolution_e2e_tests -- --test-threads=1
 
 # Run unused dependency check via cargo-machete

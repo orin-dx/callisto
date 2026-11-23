@@ -1,5 +1,5 @@
 name: 'Install registry test tools'
-description: 'Installs the local npm, PyPI and Cargo registries the real-registry e2e tests run against, through `just verify-real-tools`. Linux only; the tests fail without them under CI.'
+description: 'Installs the local npm, PyPI and Cargo registries the real-registry e2e tests run against, through `just install-real-tools`. Linux only; the tests fail without them under CI.'
 
 runs:
   using: 'composite'
@@ -13,7 +13,7 @@ runs:
       if: runner.os == 'Linux'
       shell: bash
       run: | # zizmor: ignore[github-env] the PATH entries are fixed children of the checkout, not attacker-controlled input.
-        just verify-real-tools
+        just install-real-tools
         for dir in venv/bin npm/node_modules/.bin cargo/bin; do
-          echo "$PWD/target/verify-real/$dir" >> "$GITHUB_PATH"
+          echo "$PWD/target/real-tools/$dir" >> "$GITHUB_PATH"
         done

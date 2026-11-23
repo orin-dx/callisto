@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-//! Recovery rehearsals against real local registries, run by `just verify-real`.
+//! Recovery rehearsals against real local registries, run by `just test-real-tools`.
 //!
 //! Every registry is bound through `[registries]` in `callisto.toml` over `https://`, so the production registry
 //! binding and its https rule are exercised unchanged: the registries serve a self-signed certificate that the
@@ -9,7 +9,7 @@
 //! The Changesets scenarios run the real `@changesets/cli` 2.x and 3.x beside callisto and compare the versions
 //! each produces.
 //!
-//! Ignored by default because they need the registries and CLIs `just verify-real-tools` installs.
+//! Ignored by default because they need the registries and CLIs `just install-real-tools` installs.
 
 #[path = "common/local_registries.rs"]
 mod local_registries;
@@ -272,7 +272,7 @@ fn refusing_the_dependent() -> String {
 }
 
 #[test]
-#[ignore = "needs local registries; run via `just verify-real`"]
+#[ignore = "needs local registries; run via `just test-real-tools`"]
 fn a_partial_npm_publish_is_adopted_by_the_rerun_without_republishing() {
     let npm = NpmRelease::new();
     let release = &npm.release;
@@ -313,7 +313,7 @@ fn a_partial_npm_publish_is_adopted_by_the_rerun_without_republishing() {
 }
 
 #[test]
-#[ignore = "needs local registries; run via `just verify-real`"]
+#[ignore = "needs local registries; run via `just test-real-tools`"]
 fn a_remote_tag_on_another_commit_stops_the_release_with_a_conflict() {
     let npm = NpmRelease::new();
     let release = &npm.release;
@@ -364,7 +364,7 @@ impl PypiRelease {
              publish-url = \"https://127.0.0.1:{upload_port}/\"\nconfirm-timeout = \"{confirm_timeout}\"\n"
         ));
         let mut release = Release::new(fixture, external, tls, PYPI_ORIGIN, &format!("{PYPI_PACKAGE}@0.2.0"));
-        let wheels = std::env::var("VERIFY_REAL_WHEELS").expect("`just verify-real` provides VERIFY_REAL_WHEELS");
+        let wheels = std::env::var("REAL_TOOLS_WHEELS").expect("`just test-real-tools` provides REAL_TOOLS_WHEELS");
         release
             .rig
             .set("TWINE_USERNAME", "callisto-verify")
@@ -448,7 +448,7 @@ fn pypi_release_fixture(registries: &str) -> (tempfile::TempDir, String) {
         root.join("pkg/pyproject.toml"),
         format!(
             "[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n\
-             [project]\nname = \"{PYPI_PACKAGE}\"\nversion = \"0.1.0\"\ndescription = \"verify-real probe\"\n\
+             [project]\nname = \"{PYPI_PACKAGE}\"\nversion = \"0.1.0\"\ndescription = \"test-real-tools probe\"\n\
              requires-python = \">=3.8\"\n"
         ),
     )
@@ -475,7 +475,7 @@ fn pypi_release_fixture(registries: &str) -> (tempfile::TempDir, String) {
             "--package",
             &format!("pypi/{PYPI_PACKAGE}:minor"),
             "--summary",
-            "Ship the verify-real probe",
+            "Ship the test-real-tools probe",
         ],
     );
     assert!(add.status.success(), "add failed: {}", stderr_of(&add));
@@ -495,7 +495,7 @@ fn pypi_release_fixture(registries: &str) -> (tempfile::TempDir, String) {
 }
 
 #[test]
-#[ignore = "needs local registries; run via `just verify-real`"]
+#[ignore = "needs local registries; run via `just test-real-tools`"]
 fn a_python_release_waits_for_a_delayed_index() {
     let pypi = PypiRelease::new("30s");
     let release = &pypi.release;
@@ -525,7 +525,7 @@ fn a_python_release_waits_for_a_delayed_index() {
 }
 
 #[test]
-#[ignore = "needs local registries; run via `just verify-real`"]
+#[ignore = "needs local registries; run via `just test-real-tools`"]
 fn a_python_index_that_never_shows_the_upload_fails_and_the_rerun_adopts_it() {
     let pypi = PypiRelease::new("5s");
     let release = &pypi.release;
@@ -548,7 +548,7 @@ fn a_python_index_that_never_shows_the_upload_fails_and_the_rerun_adopts_it() {
 }
 
 #[test]
-#[ignore = "needs local registries; run via `just verify-real`"]
+#[ignore = "needs local registries; run via `just test-real-tools`"]
 fn a_python_release_with_a_missing_wheel_uploads_only_the_wheel() {
     let pypi = PypiRelease::new("5s");
     let release = &pypi.release;
@@ -686,7 +686,7 @@ fn cargo_release_fixture(registries: &str) -> (tempfile::TempDir, String) {
             crate_dir.join("Cargo.toml"),
             format!(
                 "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\
-                 description = \"verify-real probe\"\nlicense = \"MIT\"\n"
+                 description = \"test-real-tools probe\"\nlicense = \"MIT\"\n"
             ),
         )
         .unwrap();
@@ -723,7 +723,7 @@ fn cargo_release_fixture(registries: &str) -> (tempfile::TempDir, String) {
     for name in CARGO_CRATES {
         add_args.extend(["--package".to_owned(), format!("cargo/{name}:minor")]);
     }
-    add_args.extend(["--summary".to_owned(), "Ship the verify-real probes".to_owned()]);
+    add_args.extend(["--summary".to_owned(), "Ship the test-real-tools probes".to_owned()]);
     let add_args: Vec<&str> = add_args.iter().map(String::as_str).collect();
     let add = callisto(root, &add_args);
     assert!(add.status.success(), "add failed: {}", stderr_of(&add));
@@ -740,7 +740,7 @@ fn cargo_release_fixture(registries: &str) -> (tempfile::TempDir, String) {
 }
 
 #[test]
-#[ignore = "needs local registries; run via `just verify-real`"]
+#[ignore = "needs local registries; run via `just test-real-tools`"]
 fn a_partial_cargo_publish_is_adopted_by_the_rerun_without_republishing() {
     let cargo = CargoRelease::new();
     let release = &cargo.release;
@@ -784,7 +784,7 @@ fn a_partial_cargo_publish_is_adopted_by_the_rerun_without_republishing() {
 }
 
 #[test]
-#[ignore = "needs local registries; run via `just verify-real`"]
+#[ignore = "needs local registries; run via `just test-real-tools`"]
 fn a_cargo_release_waits_for_a_delayed_index() {
     let cargo = CargoRelease::new();
     let release = &cargo.release;
@@ -815,7 +815,7 @@ fn a_cargo_release_waits_for_a_delayed_index() {
 }
 
 #[test]
-#[ignore = "needs local registries; run via `just verify-real`"]
+#[ignore = "needs local registries; run via `just test-real-tools`"]
 fn a_cargo_remote_tag_on_another_commit_stops_the_release_with_a_conflict() {
     let cargo = CargoRelease::new();
     let release = &cargo.release;
@@ -849,11 +849,11 @@ struct Changesets {
 }
 
 impl Changesets {
-    /// The pinned 3.x on `PATH` (installed by `just verify-real-tools`) and the pinned 2.x named by `VERIFY_REAL_CHANGESETS_2`.
+    /// The pinned 3.x on `PATH` (installed by `just install-real-tools`) and the pinned 2.x named by `REAL_TOOLS_CHANGESETS_2`.
     fn pinned() -> [Self; 2] {
-        let v3 = find_on_path("changeset").expect("changeset 3.x must be on PATH: run `just verify-real-tools`");
-        let v2 = std::env::var_os("VERIFY_REAL_CHANGESETS_2")
-            .expect("VERIFY_REAL_CHANGESETS_2 must name the changeset 2.x binary: run `just verify-real`");
+        let v3 = find_on_path("changeset").expect("changeset 3.x must be on PATH: run `just install-real-tools`");
+        let v2 = std::env::var_os("REAL_TOOLS_CHANGESETS_2")
+            .expect("REAL_TOOLS_CHANGESETS_2 must name the changeset 2.x binary: run `just test-real-tools`");
         [Self::new(v3, 3), Self::new(PathBuf::from(v2), 2)]
     }
 
@@ -1011,7 +1011,7 @@ fn callisto_planned_versions(root: &Path) -> Versions {
 /// Changesets' own release plan for a fixed group, reproduced by callisto after `init` over the same workspace.
 /// `init` carries the `fixed` group over into `callisto.toml`.
 #[test]
-#[ignore = "needs the real changeset CLI; run via `just verify-real`"]
+#[ignore = "needs the real changeset CLI; run via `just test-real-tools`"]
 fn a_changesets_fixed_group_release_plan_is_reproduced_after_migration() {
     for changesets in Changesets::pinned() {
         let major = changesets.major;
@@ -1045,7 +1045,7 @@ fn a_changesets_fixed_group_release_plan_is_reproduced_after_migration() {
 
 /// callisto continues a pre cycle Changesets started, and exits it, with the versions Changesets itself would give.
 #[test]
-#[ignore = "needs the real changeset CLI; run via `just verify-real`"]
+#[ignore = "needs the real changeset CLI; run via `just test-real-tools`"]
 fn a_changesets_pre_cycle_is_continued_and_exited_by_callisto() {
     for changesets in Changesets::pinned() {
         let major = changesets.major;
@@ -1091,7 +1091,7 @@ fn assert_workspace_pack_rewrites_sibling(tool: &str, workspace: &NpmWorkspace) 
     let version = Command::new(tool).arg("--version").output();
     assert!(
         version.as_ref().is_ok_and(|output| output.status.success()),
-        "{tool} must be installed by `just verify-real-tools`: {version:?}"
+        "{tool} must be installed by `just install-real-tools`: {version:?}"
     );
     let (dir, release_commit) =
         npm_release_fixture_with(&[(DEPENDENCY, &[]), (DEPENDENT, &[DEPENDENCY])], "", workspace);
@@ -1146,7 +1146,7 @@ fn assert_workspace_pack_rewrites_sibling(tool: &str, workspace: &NpmWorkspace) 
 }
 
 #[test]
-#[ignore = "needs yarn; run via `just verify-real`"]
+#[ignore = "needs yarn; run via `just test-real-tools`"]
 fn yarn_packs_a_workspace_dependency_at_its_released_version() {
     assert_workspace_pack_rewrites_sibling(
         "yarn",
@@ -1163,7 +1163,7 @@ fn yarn_packs_a_workspace_dependency_at_its_released_version() {
 }
 
 #[test]
-#[ignore = "needs bun; run via `just verify-real`"]
+#[ignore = "needs bun; run via `just test-real-tools`"]
 fn bun_packs_a_workspace_dependency_at_its_released_version() {
     assert_workspace_pack_rewrites_sibling(
         "bun",

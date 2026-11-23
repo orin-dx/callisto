@@ -230,8 +230,8 @@ jobs:
       - if: github.head_ref == 'callisto/version-packages'
         run: just check-api
 
-  verify-real:
-    name: Verify Real
+  test-real-tools:
+    name: Real Tool Tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -244,7 +244,7 @@ jobs:
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
       - uses: $/.github/actions/install-registry-test-tools
-      - run: just verify-real
+      - run: just test-real-tools
 
   security:
     name: Security & Advisory Audit (Moon & Just)
