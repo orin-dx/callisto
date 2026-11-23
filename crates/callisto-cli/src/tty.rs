@@ -1,8 +1,8 @@
 //! The one contract for interactive prompts: where they may run, how Ctrl-C ends them, and how `$EDITOR` is used.
 
-use std::io::{IsTerminal as _, Read as _, Write as _};
-use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::io::{ErrorKind, IsTerminal as _, Read as _, Write as _};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Once;
 
 use crate::cli::OutputFormat;
 use crate::error::CliError;
@@ -20,18 +20,11 @@ fn may_prompt(format: OutputFormat) -> bool {
 }
 
 /// Exit status for Ctrl-C, as shells report SIGINT.
-pub const CANCELLED_BY_SIGINT: u8 = 130;
-
-/// How a run of prompts ended.
-pub enum Prompted<T> {
-    Answered(T),
-    /// Ctrl-C: the cursor is restored and the contributor has been told nothing was written.
-    Interrupted,
-}
+const CANCELLED_BY_SIGINT: i32 = 130;
 
 /// What owns the terminal when Ctrl-C arrives.
 const ELSEWHERE: u8 = 0;
-/// dialoguer raises SIGINT for Ctrl-C and then returns `Interrupted`; the handler leaves both to the prompt.
+/// A prompt: Ctrl-C cancels the run, and nothing has been written yet.
 const PROMPT: u8 = 1;
 /// `$EDITOR` shares our process group, so its Ctrl-C reaches us too.
 const EDITOR: u8 = 2;
@@ -40,49 +33,68 @@ static AT: AtomicU8 = AtomicU8::new(ELSEWHERE);
 
 /// Runs `ask` where prompts are allowed, or fails with [`CliError::NotATty`] naming the flags to pass instead.
 ///
-/// Ctrl-C inside `ask` ends as [`Prompted::Interrupted`], decided from the error `ask` returns and not from a signal
-/// handler's timing. The handler only keeps SIGINT from killing the process before that error is returned; outside a
-/// prompt it still exits 130.
-pub fn prompting<T>(format: OutputFormat, ask: impl FnOnce() -> Result<T, CliError>) -> Result<Prompted<T>, CliError> {
+/// Ctrl-C inside `ask`, as a key or a signal, ends the process through [`cancel`]; outside a prompt it exits 130.
+pub fn prompting<T>(format: OutputFormat, ask: impl FnOnce() -> Result<T, CliError>) -> Result<T, CliError> {
     if !may_prompt(format) {
         return Err(CliError::NotATty);
     }
+    terminal::save();
     // Without the handler SIGINT kills the process with the cursor hidden, so a failure to install it is not fatal.
     drop(ctrlc::set_handler(|| match AT.load(Ordering::SeqCst) {
-        PROMPT => {
-            // An OS-delivered SIGINT: nothing is written during a prompt, so end here. The Ctrl-C byte reports once.
-            if report_cancel() {
-                std::process::exit(i32::from(CANCELLED_BY_SIGINT));
-            }
-        }
+        PROMPT => cancel(),
         EDITOR => {}
-        _ => std::process::exit(i32::from(CANCELLED_BY_SIGINT)),
+        _ => std::process::exit(CANCELLED_BY_SIGINT),
     }));
     AT.store(PROMPT, Ordering::SeqCst);
-    match ask() {
-        Err(CliError::Interactive(dialoguer::Error::IO(error))) if error.kind() == std::io::ErrorKind::Interrupted => {
-            // Stay in PROMPT: a handler thread running late must not exit before the caller reports the cancel.
-            report_cancel();
-            Ok(Prompted::Interrupted)
+    let result = ask();
+    if matches!(&result, Err(CliError::Interactive(dialoguer::Error::IO(error))) if error.kind() == ErrorKind::Interrupted)
+    {
+        cancel();
+    }
+    AT.store(ELSEWHERE, Ordering::SeqCst);
+    result
+}
+
+static CLEANUP: Once = Once::new();
+
+/// Restores the terminal and cursor, says nothing was written and exits 130. The signal handler and the prompt may
+/// both get here; the cleanup runs once and the later caller waits for it to finish before exiting.
+fn cancel() -> ! {
+    CLEANUP.call_once(|| {
+        terminal::restore();
+        drop(dialoguer::console::Term::stderr().show_cursor());
+        prompt_line(CANCELLED);
+    });
+    std::process::exit(CANCELLED_BY_SIGINT)
+}
+
+/// The terminal settings from before the first prompt; a prompt killed mid-read leaves the terminal raw.
+#[cfg(unix)]
+mod terminal {
+    use std::sync::OnceLock;
+
+    use rustix::termios::{tcgetattr, tcsetattr, OptionalActions, Termios};
+
+    static SAVED: OnceLock<Termios> = OnceLock::new();
+
+    pub fn save() {
+        if let Ok(settings) = tcgetattr(std::io::stdin()) {
+            drop(SAVED.set(settings));
         }
-        result => {
-            AT.store(ELSEWHERE, Ordering::SeqCst);
-            result.map(Prompted::Answered)
+    }
+
+    pub fn restore() {
+        if let Some(settings) = SAVED.get() {
+            // Best effort: the process is exiting and has nowhere to report a failure.
+            tcsetattr(std::io::stdin(), OptionalActions::Now, settings).ok();
         }
     }
 }
 
-static REPORTED: AtomicBool = AtomicBool::new(false);
-
-/// Restores the cursor and says nothing was written, once however many paths see the interrupt; true for the caller
-/// that did.
-fn report_cancel() -> bool {
-    if REPORTED.swap(true, Ordering::SeqCst) {
-        return false;
-    }
-    drop(dialoguer::console::Term::stderr().show_cursor());
-    prompt_line(CANCELLED);
-    true
+#[cfg(not(unix))]
+mod terminal {
+    pub fn save() {}
+    pub fn restore() {}
 }
 
 /// Printed whenever a prompt run ends without writing.
@@ -107,7 +119,7 @@ pub fn edit(command: &str) -> Result<Option<String>, CliError> {
     }
     let program = words.remove(0);
     let before = AT.swap(EDITOR, Ordering::SeqCst);
-    let status = Command::new(program)
+    let status = crate::runner::child_command(&program, &[], &[])
         .args(words)
         .arg(file.path())
         .stdout(std::io::stderr())

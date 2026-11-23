@@ -11,7 +11,7 @@ use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
 use crate::output::{emit_line, emit_report, log_line, prompt_line};
 use crate::runner::CliCommandRunner;
-use crate::tty::{self, Prompted};
+use crate::tty;
 use crate::workspace::load_workspace;
 
 pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
@@ -54,7 +54,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             });
         }
     } else {
-        let prompted = tty::prompting(global.format, || {
+        let answers = tty::prompting(global.format, || {
             // The same derivation `status` reports as `changed_since_last_tag`.
             let packages: Vec<&callisto_model::Package> = ws.graph.packages().collect();
             let changed = callisto_graph::changed::changed_since_last_tag(&packages, ws.tags()?, ws.git_access())?;
@@ -64,9 +64,6 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             };
             run_wizard(&choices, summary.clone(), &mut prompter)
         })?;
-        let Prompted::Answered(answers) = prompted else {
-            return Ok(ExitCode::from(tty::CANCELLED_BY_SIGINT));
-        };
         let Some((chosen, written)) = answers else {
             return Ok(ExitCode::SUCCESS);
         };

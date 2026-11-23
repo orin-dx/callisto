@@ -44,6 +44,9 @@ tempfile = { workspace = true }
 ctrlc = "3.5.3"
 shell-words = "1"
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", features = ["termios"] }
+
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
 tempfile = { workspace = true }
@@ -56,4 +59,4 @@ base64.workspace = true
 jsonschema = { version = "0.62", default-features = false }
 
 [target.'cfg(unix)'.dev-dependencies]
-rustix = { version = "1.1", features = ["pty", "termios"] }
+rustix = { version = "1.1", features = ["pty"] }

@@ -46,6 +46,8 @@ fn workspace() -> tempfile::TempDir {
 struct Session {
     child: Child,
     master: std::fs::File,
+    /// The child's terminal, kept open to read its settings after the child exits.
+    tty: std::fs::File,
     screen: Arc<Mutex<String>>,
 }
 
@@ -84,7 +86,7 @@ impl Session {
             .env("TERM", "xterm-256color")
             .stdin(Stdio::from(tty.try_clone().unwrap()))
             .stdout(Stdio::from(tty.try_clone().unwrap()))
-            .stderr(Stdio::from(tty))
+            .stderr(Stdio::from(tty.try_clone().unwrap()))
             .spawn()
             .unwrap();
         let master = std::fs::File::from(master);
@@ -98,7 +100,12 @@ impl Session {
                 sink.lock().unwrap().push_str(&String::from_utf8_lossy(&buf[..n]));
             }
         });
-        Session { child, master, screen }
+        Session {
+            child,
+            master,
+            tty,
+            screen,
+        }
     }
 
     fn screen(&self) -> String {
@@ -124,6 +131,21 @@ impl Session {
             .status()
             .unwrap();
         assert!(status.success());
+    }
+
+    /// The terminal is back in line mode with echo, as the shell expects after the child exits.
+    fn assert_terminal_restored(&self) {
+        let out = Command::new("stty")
+            .arg("-a")
+            .stdin(self.tty.try_clone().unwrap())
+            .output()
+            .unwrap();
+        let settings = String::from_utf8_lossy(&out.stdout);
+        let flags: Vec<&str> = settings.split(|c: char| c.is_whitespace() || c == ';').collect();
+        assert!(
+            flags.contains(&"icanon") && flags.contains(&"echo"),
+            "the terminal is left raw:\n{settings}"
+        );
     }
 
     fn exit_code(&mut self) -> Option<i32> {
@@ -181,6 +203,7 @@ fn ctrl_c_at_a_prompt_restores_the_cursor_writes_nothing_and_exits_130() {
         screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
         "the cursor is left hidden:\n{screen:?}"
     );
+    add.assert_terminal_restored();
     assert!(changesets(dir.path()).is_empty());
 }
 
@@ -226,6 +249,7 @@ fn ctrl_c_at_the_text_input_restores_the_cursor_writes_nothing_and_exits_130() {
         screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
         "the cursor is left hidden:\n{screen:?}"
     );
+    add.assert_terminal_restored();
     assert!(changesets(dir.path()).is_empty());
 }
 
@@ -270,6 +294,7 @@ fn a_sigint_delivered_to_the_process_at_a_prompt_cancels_writes_nothing_and_exit
         screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
         "the cursor is left hidden:\n{screen:?}"
     );
+    add.assert_terminal_restored();
     assert!(changesets(dir.path()).is_empty());
 }
 
@@ -294,4 +319,20 @@ fn a_blank_summary_flag_fails_before_the_review_and_writes_nothing() {
         assert!(!add.screen().contains("Packages in this change"), "{}", add.screen());
         assert!(changesets(dir.path()).is_empty());
     }
+}
+
+#[test]
+fn the_editor_does_not_see_registry_tokens() {
+    let dir = workspace();
+    let editor = r#"sh -c 'printf "%s" "${CARGO_REGISTRIES_PRIVATE_TOKEN:-no token}" > "$0"'"#;
+    let mut add = Session::start_with(
+        dir.path(),
+        &["add"],
+        &[("EDITOR", editor), ("CARGO_REGISTRIES_PRIVATE_TOKEN", "secret")],
+    );
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nno token\n"]);
 }
