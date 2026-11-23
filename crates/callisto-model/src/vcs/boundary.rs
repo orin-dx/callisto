@@ -38,6 +38,16 @@ impl Pathspec {
     }
 }
 
+/// `path` as a `git check-ignore` argument. That command rejects `:(literal)`, so a relative path gets a `./` prefix,
+/// which keeps a leading `:` from being read as pathspec magic.
+pub fn check_ignore_arg(path: &Path) -> String {
+    if path.is_absolute() {
+        path.to_string_lossy().into_owned()
+    } else {
+        format!("./{}", path.to_string_lossy())
+    }
+}
+
 /// What a Git command that exited 0 printed.
 #[derive(Debug)]
 pub struct GitStdout(String);
