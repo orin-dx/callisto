@@ -1,6 +1,6 @@
 use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
-use crate::changelog::markdown::{rebase_headings, split_summary};
+use crate::changelog::markdown::{rebase_headings, split_summary, HEADLINE_MAX_CHARS};
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
@@ -376,7 +376,11 @@ fn bold_lead_in(summary: &str) -> Option<(String, &str)> {
     let end = first_line.find("**")?;
     let lead = &text[..end];
     let edge_is_space = |c: Option<char>| c.is_none_or(char::is_whitespace);
-    if edge_is_space(lead.chars().next()) || edge_is_space(lead.chars().next_back()) || lead.contains(['`', '*', '[']) {
+    if edge_is_space(lead.chars().next())
+        || edge_is_space(lead.chars().next_back())
+        || lead.contains(['`', '*', '['])
+        || lead.chars().count() > HEADLINE_MAX_CHARS
+    {
         return None;
     }
     Some((lead.to_string(), text[end + 2..].trim()))
@@ -1175,6 +1179,13 @@ mod tests {
         assert!(bold_lead_in("**Fix the `**` operator.** more").is_none());
         assert!(bold_lead_in("**Split across\n\nparagraphs.** more").is_none());
         assert!(bold_lead_in("***\nintro\n\n**x** y").is_none());
+    }
+
+    #[test]
+    fn a_bold_lead_in_over_the_title_limit_falls_back() {
+        let at_limit = "a".repeat(HEADLINE_MAX_CHARS);
+        assert!(bold_lead_in(&format!("**{at_limit}** more")).is_some());
+        assert!(bold_lead_in(&format!("**{at_limit}a** more")).is_none());
     }
 
     #[test]

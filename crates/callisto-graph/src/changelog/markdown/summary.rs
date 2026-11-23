@@ -3,7 +3,7 @@
 use super::fences::{fence_opening, strip_list_marker};
 use super::headings::atx_level;
 
-const HEADLINE_MAX_CHARS: usize = 120;
+pub(crate) const HEADLINE_MAX_CHARS: usize = 120;
 
 /// A changeset summary split into a one-line headline and the rest.
 #[derive(Clone, Debug, PartialEq, Eq)]
