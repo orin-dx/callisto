@@ -2199,3 +2199,12 @@ fn test_inference_of_no_bump_seeds_nothing() {
     let agg = aggregate_pre_cycle(&["pkg-a"], &[], &[], None, &NoneSeverityInference);
     assert!(agg.seeds.is_empty(), "got: {:?}", agg.seeds);
 }
+
+#[test]
+fn a_changeset_named_twice_for_one_package_is_one_source_at_the_higher_severity() {
+    let source = || Source::FreshChangeset { id: "cs".into() };
+    let mut seed = Seed::new(Severity::Patch, source());
+    seed.add(Severity::Minor, source());
+    assert_eq!(seed.sources().count(), 1);
+    assert_eq!(seed.severity(), Severity::Minor);
+}

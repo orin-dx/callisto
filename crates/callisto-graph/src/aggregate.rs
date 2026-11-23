@@ -150,7 +150,15 @@ impl Seed {
         }
     }
 
+    /// A source already recorded (a changeset naming one package under two selectors) keeps one entry at the higher severity.
     fn add(&mut self, severity: Severity, source: Source) {
+        if let Some(entry) = std::iter::once(&mut self.first)
+            .chain(self.rest.iter_mut())
+            .find(|(_, existing)| *existing == source)
+        {
+            entry.0 = entry.0.max(severity);
+            return;
+        }
         self.rest.push((severity, source));
     }
 

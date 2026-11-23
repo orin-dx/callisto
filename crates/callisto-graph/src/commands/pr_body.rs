@@ -368,9 +368,29 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
 /// follows it (trimmed). The lead-in is the whole title, so it is never truncated.
 fn bold_lead_in(summary: &str) -> Option<(String, &str)> {
     let text = summary.trim().strip_prefix("**")?;
-    let end = text.find("**")?;
+    let end = closing_bold(text)?;
     let lead = text[..end].split_whitespace().collect::<Vec<_>>().join(" ");
     (!lead.is_empty()).then(|| (lead, text[end + 2..].trim()))
+}
+
+/// The byte offset of the closing `**`, skipping code spans; without a clean close outside them, the first `**`.
+fn closing_bold(text: &str) -> Option<usize> {
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &text[i..];
+        if rest.starts_with("**") {
+            return Some(i);
+        }
+        if let Some(after) = rest.strip_prefix('`') {
+            match after.find('`') {
+                Some(len) => i += len + 2,
+                None => break,
+            }
+        } else {
+            i += rest.chars().next().map_or(1, char::len_utf8);
+        }
+    }
+    text.find("**")
 }
 
 /// Markdown is not interpreted inside a raw-HTML `<summary>`, so code spans become `<code>` and everything else is
@@ -1156,6 +1176,15 @@ mod tests {
             "body must NOT contain the fallback Cascade text when render_section succeeded; body: {}",
             report.body
         );
+    }
+
+    #[test]
+    fn a_bold_lead_in_skips_a_double_star_inside_a_code_span() {
+        let (lead, rest) = bold_lead_in("**Fix the `**` operator.** more").unwrap();
+        assert_eq!(lead, "Fix the `**` operator.");
+        assert_eq!(rest, "more");
+        let (lead, _) = bold_lead_in("**Unclosed ` tick** more").unwrap();
+        assert_eq!(lead, "Unclosed ` tick");
     }
 
     #[test]
