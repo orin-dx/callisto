@@ -1,0 +1,82 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M84VKHPDR2Y3JGXXMCQWF6G7",
+  "session_id": "233c3b52-948b-4487-91dd-1b4d7eba4085",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T18:45:12.277752Z",
+  "branch": "worktree-wp-setup-callisto-thin",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/zz-spike-setup-callisto.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "8dd35e26730a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 83834,
+    "cache_read_tokens": 1529881,
+    "output_tokens": 9490,
+    "api_call_count": 18
+  },
+  "session_token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 83834,
+    "cache_read_tokens": 1529881,
+    "output_tokens": 9490,
+    "api_call_count": 18
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 2,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Spike whether the hand-written setup-callisto installer (scripts/install-callisto.sh plus three shell tests) can be replaced by a thin composite action using cargo-binstall metadata, taiki-e/install-action, and gh attestation verify for verification: require, proven in real CI runs on ubuntu-latest and macos-latest.",
+    "outcome": "Added [package.metadata.binstall] and a temporary spike workflow, ran it on both runners (run 45237152860), and the spike failed on step (c), the attestation verification. The temporary workflow was removed and pushed, and step 2 (replacing the action) was not started. The transcript does not show the exact failure details, so the report to the lead is still pending.",
+    "learnings": {
+      "repo": [
+        "The setup-callisto action lives at .github/actions/setup-callisto with scripts/ and tests/ subdirectories. install-callisto.sh and the three shell tests are referenced from the action, the justfile, workflows, .github/tests/*.sh, graph templates and docs (stability.md, architecture/release.md).",
+        "Release assets are named callisto-<target>.tar.gz under tag callisto@<version>, built by .github/scripts/build-release-artifact.sh and attested via callisto-release.yml. The binstall metadata used pkg-url = \"{ repo }/releases/download/callisto@{ version }/callisto-{ target }.tar.gz\", pkg-fmt = tgz and bin-dir = callisto{ binary-ext }.",
+        "The spike pinned taiki-e/install-action at fe3acb53a98b62c772db35de75ce0e4595e7ca8c (v2.90.8) with tool callisto-cli@0.22.0 and fallback cargo-binstall.",
+        "Attestation verification was tried against the installed binary and, as a control, against the release tarball, using --repo, --signer-workflow callisto-release.yml, --deny-self-hosted-runners and --source-ref refs/heads/main. The binary-verification step ran with continue-on-error, and the control step compared tarball and installed-binary sha256 to show why verifying the binary may not match the attested subject."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/Cargo.toml",
+          "finding": "Binstall metadata was inserted just before [lints] workspace = true. This is the only product-code change from the spike, and it is still on the branch."
+        }
+      ],
+      "workflow": [
+        "Inside the sandbox, gh TLS fails and gpg-signed commits fail. Both had to be retried outside the sandbox, and the first push after the failed commit sent only the base commit.",
+        "macOS runners queue for a long time, so use a background gh run watch with --exit-status and read the task output afterward.",
+        "Temporary spike workflows should be named zz-* and triggered on push to the branch only, and removed in a follow-up commit once the run links are captured."
+      ]
+    },
+    "friction": [
+      "The sandbox blocked gh network access and gpg signing, which forced retries outside it.",
+      "The first commit failed silently enough that a push went out without the spike commit.",
+      "Some commands were run twice with variants (rtk-prefixed grep and ls), and the log-grep pipelines needed several iterations to extract useful output.",
+      "macOS runner queueing delayed the spike result."
+    ],
+    "open_items": [
+      "Report to the lead (close-gap-for-alpha) exactly what install-action/binstall cannot do for step (c), with run link https://github.com/orin-dx/callisto/actions/runs/45237152860 and job ids 137911790341 and 137911790778. The failure reason is not in the transcript.",
+      "Step 2 (replace the action, delete scripts/ and the three shell tests, update docs, snapshot and changeset) was not done because the spike failed.",
+      "The [package.metadata.binstall] change in crates/callisto-cli/Cargo.toml remains on the branch. Decide whether to keep or revert it, since no PR or trail link was made.",
+      "Nothing is linked to trail #459 yet, and no PR was opened."
+    ]
+  }
+}

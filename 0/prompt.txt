@@ -1,0 +1,25 @@
+Replace the hand-written setup-callisto installer. Trail #459 (verified artifacts). Worktree wp-setup-callisto-thin. Today .github/actions/setup-callisto runs scripts/install-callisto.sh (179 lines) with three shell tests (550 lines): it resolves a version, downloads the release asset for the runner, optionally verifies its GitHub attestation, and falls back to crates.io. Step 1, spike: can the action become a thin composite (about 20-30 lines of YAML, no script files) with the same inputs (version, verification, plus any others in action.yml) by (a) adding [package.metadata.binstall] to crates/callisto-cli/Cargo.toml so cargo-binstall finds our GitHub release asset names, (b) installing with taiki-e/install-action (tool: callisto-cli@<version>; it uses cargo-binstall for tools it doesn't know), and (c) when verification is require, running gh attestation verify on the installed binary or the downloaded asset, failing the step if it doesn't verify (no silent crates.io fallback)? Check how the version is resolved when the input is empty (the action's own ref, today in install-callisto.sh); keep that behaviour if it's one or two lines of expression, else say so. Prove it in a real workflow run on your branch (a temporary push-triggered job is fine, remove it after) on ubuntu-latest and macos-latest, for an explicit version and for require. Step 2, only if the spike works: replace the action, delete scripts/ and the three shell tests, keep the action's inputs and outputs compatible so users' pinned 'uses: orin-dx/callisto/.github/actions/setup-callisto@<sha>' lines keep working, update docs and the generated-workflow snapshot only if the rendered text changes. Patch changeset for users only if behaviour changes (verification: require now fails instead of falling back). If the spike fails, stop and report exactly what install-action/binstall can't do. Report: lines deleted, the real run links. Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<task-notification>
+<task-id>bra63uy4a</task-id>
+<tool-use-id>toolu_01XYm4Hg4fmaKA9XrZaeUvdo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/233c3b52-948b-4487-91dd-1b4d7eba4085/tasks/bra63uy4a.output</output-file>
+<status>completed</status>
+<summary>Background command "gh run list --repo orin-dx/callisto --branch wp-setup-callisto-thin --workflow spike-setup-callisto --json databaseId,url,status --limit 1; gh run watch --repo orin-dx/callisto $(gh run list --repo orin-dx/callisto --branch wp-setup-callisto-thin --workflow spike-setup-callisto --json databaseId --jq '.[0].databaseId') --exit-status &gt;/dev/null; echo exit=$?" completed (exit code 0)</summary>
+</task-notification>
