@@ -1276,6 +1276,7 @@ fn base_branch_sets_the_generated_workflow_branch_filter() {
         "{}",
         err.text()
     );
+    assert!(err.text().contains("on each push to `release`"), "{}", err.text());
     assert!(!report_diagnostics(&out)
         .iter()
         .any(|d| d["message"].as_str().unwrap().contains("`baseBranch`")));

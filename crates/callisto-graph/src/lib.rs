@@ -199,8 +199,12 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
     }
 
     /// The GitHub repository a product release publishes to: `[release] forge-repository` when set, else `origin`'s.
-    /// No remote, or one that is not on GitHub, means none; an `origin` that cannot be read safely is an error.
-    pub fn forge_repository(&self) -> Result<Option<callisto_model::GitHubRepository>, GraphError> {
+    /// No remote, or one not on GitHub, means none; an `origin` that is not hosted refuses a real run and reads as
+    /// none in a preview.
+    pub(crate) fn forge_repository(
+        &self,
+        remote: crate::commands::release::GitRemoteRequirement,
+    ) -> Result<Option<callisto_model::GitHubRepository>, GraphError> {
         if let Some(configured) = self
             .config
             .product_release
@@ -209,8 +213,12 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         {
             return Ok(Some(configured));
         }
-        Ok(crate::commands::release::optional_git_remote(&self.root, self.runner)?
-            .and_then(|remote| remote.github_repository))
+        let origin = crate::commands::release::Origin::read(&self.root, self.runner)?;
+        let remote = match remote {
+            crate::commands::release::GitRemoteRequirement::Required => origin.optional()?,
+            crate::commands::release::GitRemoteRequirement::OptionalForPreview => origin.preview(),
+        };
+        Ok(remote.and_then(|remote| remote.github_repository))
     }
 
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {

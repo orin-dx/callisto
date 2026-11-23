@@ -10,8 +10,8 @@ use callisto_model::{
 
 use crate::commands::registry_argv::npm_default_access;
 use crate::commands::release::{
-    canonical_root, is_platform_package, optional_git_remote, plan_workspace_release, programs, timeouts,
-    LocalReleasePlan, LocalReleaseSource,
+    canonical_root, is_platform_package, plan_workspace_release, programs, timeouts, LocalReleasePlan,
+    LocalReleaseSource, Origin,
 };
 use crate::error::GraphError;
 use crate::{DependencyResolver, ProjectLocator, ResolvedConfig, Workspace};
@@ -279,7 +279,7 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
     if git_dir.exit_code != Some(0) {
         return Err(GraphError::InitNotGitRepository { root });
     }
-    let origin = optional_git_remote(&root, runner)?;
+    let origin = Origin::read(&root, runner)?.optional()?;
     let head = runner.run_with_timeout(
         programs::GIT,
         &["rev-parse", "--verify", "--quiet", "HEAD"],
@@ -570,7 +570,8 @@ fn resolve_config_text(root: &Path, text: &str) -> Result<ResolvedConfig, GraphE
     Ok(crate::config::resolve(root, raw)?)
 }
 
-/// The first release `config` would produce, from the plan behind `release --dry-run`.
+/// The first release `config` would produce, from the plan behind `release --dry-run`, and the changesets
+/// `version` has yet to apply.
 ///
 /// # Errors
 ///
@@ -580,10 +581,13 @@ pub fn preview<L: ProjectLocator, R: CommandRunner>(
     config: &str,
     locator: &L,
     runner: &R,
-) -> Result<Option<LocalReleasePlan>, GraphError> {
+) -> Result<(Option<LocalReleasePlan>, usize), GraphError> {
     let resolved = resolve_config_text(&facts.root, config)?;
     let workspace = Workspace::load_with_config(facts.root.clone(), resolved, locator, runner)?;
-    plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)
+    let plan = plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)?;
+    // Advisory: a changeset `version` cannot read is that command's error to report.
+    let pending = crate::commands::pending_changesets(&workspace).unwrap_or(0);
+    Ok((plan, pending))
 }
 
 /// Validates artifact target triples.

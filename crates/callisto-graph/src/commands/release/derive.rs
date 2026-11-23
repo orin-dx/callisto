@@ -16,7 +16,7 @@ use callisto_model::{
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::binding::{prepared_git_remote, prepared_registry_binding, preview_git_remote, PreparedGitRemote};
+use super::binding::{prepared_registry_binding, Origin, PreparedGitRemote};
 use super::notes::group_release_notes;
 use super::provider::{
     ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
@@ -58,7 +58,7 @@ pub(crate) struct PreparedDerivation {
     pub(crate) git_remote: Option<PreparedGitRemote>,
 }
 
-/// Whether a missing `origin` push URL fails derivation or leaves tags unbound.
+/// Whether an `origin` that is missing or not hosted fails derivation or leaves tags unbound.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GitRemoteRequirement {
     Required,
@@ -214,7 +214,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     // A preview needs no destination: `origin` is optional for it.
     if workspace.config.product_release.is_some()
         && remote == GitRemoteRequirement::Required
-        && workspace.forge_repository()?.is_none()
+        && workspace.forge_repository(remote)?.is_none()
     {
         return Err(GraphError::ReleaseForgeRepositoryMissing);
     }
@@ -305,8 +305,8 @@ fn prepare_remote<R: CommandRunner, D: DependencyResolver>(
     let requires_git_remote = selected.values().any(|(package, _)| package.is_release_point());
     let git_remote = match (requires_git_remote, remote) {
         (false, _) => None,
-        (true, GitRemoteRequirement::Required) => Some(prepared_git_remote(&workspace.root, workspace.runner)?),
-        (true, GitRemoteRequirement::OptionalForPreview) => preview_git_remote(&workspace.root, workspace.runner)?,
+        (true, GitRemoteRequirement::Required) => Some(Origin::read(&workspace.root, workspace.runner)?.required()?),
+        (true, GitRemoteRequirement::OptionalForPreview) => Origin::read(&workspace.root, workspace.runner)?.preview(),
     };
     if let Some(policy) = artifact_policy {
         match git_remote.as_ref().and_then(|remote| remote.github_repository.as_ref()) {

@@ -35,7 +35,8 @@ pub use release_execution::execute_release;
 pub use snapshot::{plan_snapshot, validate_tag};
 pub use status::{status, StatusOptions};
 pub use version::{
-    check_partial_run, plan_version, plan_version_dated, resume_identity_changes, resume_input_changes, VersionOptions,
+    check_partial_run, pending_changesets, plan_version, plan_version_dated, resume_identity_changes,
+    resume_input_changes, VersionOptions,
 };
 
 pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool) {

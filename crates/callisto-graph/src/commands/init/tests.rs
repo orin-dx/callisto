@@ -254,7 +254,7 @@ fn origin_url_is_canonicalized() {
     let rejected = repo(&files, Some("https://user:secret@github.com/example/tools.git"));
     let error = detect_in(rejected.path()).unwrap_err();
     assert!(
-        matches!(error, GraphError::UnsafeGitRemote { reason } if reason.contains("credentials")),
+        matches!(&error, GraphError::UnsafeGitRemote { detail } if detail.contains("credentials") && !detail.contains("secret")),
         "{error}"
     );
 
@@ -445,7 +445,7 @@ fn preview_matches_release_dry_run_without_writing() {
     let facts = detect_in(dir.path()).unwrap();
     let config = render_config(&facts, &INDEPENDENT);
     let locator = IgnoreWalkLocator::new(dir.path());
-    let preview = preview(&facts, &config, &locator, &RealGitRunner).unwrap().unwrap();
+    let preview = preview(&facts, &config, &locator, &RealGitRunner).unwrap().0.unwrap();
     assert!(!dir.path().join("callisto.toml").exists());
     let released: Vec<String> = preview
         .intent
@@ -473,6 +473,7 @@ fn preview_includes_artifact_uploads() {
     let config = render_config(&facts, &release(&["x86_64-unknown-linux-gnu"]));
     let plan = preview(&facts, &config, &IgnoreWalkLocator::new(dir.path()), &RealGitRunner)
         .unwrap()
+        .0
         .unwrap();
     assert!(plan.intent.operations.iter().any(|operation| matches!(
         operation.id().role,

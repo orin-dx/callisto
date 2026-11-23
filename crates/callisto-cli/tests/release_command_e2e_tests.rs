@@ -396,29 +396,138 @@ fn dry_run_without_origin_notes_unbound_tags() {
     assert_no_effects(&rig, root);
 }
 
-/// A local-path `origin` previews like no `origin`, with one note; the real release still refuses.
+/// An `origin` that is not a hosted remote previews exactly like no `origin`, with or without a product release; a
+/// real release refuses it by name.
 #[test]
-fn dry_run_with_a_local_path_origin_previews_with_one_note() {
+fn an_origin_that_is_not_hosted_previews_unbound_and_refuses_by_name() {
+    let local = tempfile::tempdir().unwrap();
+    let local = local.path().to_str().unwrap();
+    for origin in [
+        local,
+        "file:///srv/git/core-crate.git",
+        ".mirror:team/x",
+        "remotes/origin.git",
+    ] {
+        for product_release in [false, true] {
+            let (dir, release_commit) = release_commit_fixture_with_product_release(product_release);
+            let root = dir.path();
+            git(root, &["checkout", "-q", "main"]);
+            git(root, &["remote", "set-url", "origin", origin]);
+            let rig = Rig::new(&release_commit);
+
+            let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+            assert!(preview.status.success(), "{origin}: {}", stderr(&preview));
+            let text = String::from_utf8_lossy(&preview.stdout);
+            assert!(text.contains("cargo/core-crate 0.2.0"), "{origin}: {text}");
+            assert_eq!(
+                stderr(&preview).matches("not a hosted remote").count(),
+                1,
+                "{origin}: {}",
+                stderr(&preview)
+            );
+            if product_release {
+                continue;
+            }
+            let run = rig.run(root, &["release"]);
+            assert!(!run.status.success());
+            // The report wraps long values, so compare without its layout.
+            let squash = |text: &str| {
+                text.chars()
+                    .filter(|c| !c.is_whitespace() && *c != '│')
+                    .collect::<String>()
+            };
+            let refusal = squash(&stderr(&run));
+            assert!(
+                refusal.contains(&squash(&format!("`origin` is `{origin}`")))
+                    && refusal.contains("git@host:owner/repo"),
+                "{}",
+                stderr(&run)
+            );
+            assert_no_effects(&rig, root);
+        }
+    }
+}
+
+/// A hosted `origin`, as an HTTPS URL or scp-style, binds the preview's tags.
+#[test]
+fn a_hosted_origin_binds_the_preview() {
+    for origin in [
+        "https://github.com/example/core-crate.git",
+        "git@github.com:example/core-crate.git",
+    ] {
+        let (dir, release_commit) = on_branch();
+        let root = dir.path();
+        git(root, &["remote", "set-url", "origin", origin]);
+        let rig = Rig::new(&release_commit);
+        let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+        assert!(preview.status.success(), "{origin}: {}", stderr(&preview));
+        assert!(
+            String::from_utf8_lossy(&preview.stdout).contains("create git tag"),
+            "{origin}"
+        );
+        assert!(
+            !stderr(&preview).contains("not a hosted remote"),
+            "{origin}: {}",
+            stderr(&preview)
+        );
+    }
+}
+
+/// A released version plus a new changeset has nothing to release yet, so the preview points at `callisto version`.
+#[test]
+fn nothing_to_release_with_a_new_changeset_points_at_version() {
     let (dir, release_commit) = on_branch();
     let root = dir.path();
-    let remote = tempfile::tempdir().unwrap();
-    git(root, &["remote", "set-url", "origin", remote.path().to_str().unwrap()]);
     let rig = Rig::new(&release_commit);
+    let run = rig.run(root, &["release"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
 
     let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
     assert!(preview.status.success(), "{}", stderr(&preview));
-    let text = String::from_utf8_lossy(&preview.stdout);
-    assert!(text.contains("cargo/core-crate 0.2.0"), "{text}");
+    assert_eq!(String::from_utf8_lossy(&preview.stdout), "Nothing to release.\n");
     assert_eq!(
-        stderr(&preview).matches("not a hosted remote").count(),
+        stderr(&preview).matches("callisto version").count(),
         1,
         "{}",
         stderr(&preview)
     );
+}
 
-    let run = rig.run(root, &["release"]);
-    assert!(!run.status.success());
-    assert_no_effects(&rig, root);
+/// A prerelease note `version` already applied stays on disk but is not pending, so the hint goes away.
+#[test]
+fn retained_prerelease_notes_are_not_pending() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    for args in [
+        &["pre", "enter", "beta"][..],
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    ] {
+        let out = callisto(root, args);
+        assert!(out.status.success(), "{args:?}: {}", stderr(&out));
+    }
+    let hints = |rig: &Rig| {
+        let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+        assert!(preview.status.success(), "{}", stderr(&preview));
+        stderr(&preview).matches("callisto version").count()
+    };
+    assert_eq!(hints(&rig), 1);
+
+    let versioned = callisto(root, &["version"]);
+    assert!(versioned.status.success(), "{}", stderr(&versioned));
+    assert!(
+        fs::read_dir(root.join(".changeset"))
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.path().extension().is_some_and(|ext| ext == "md")),
+        "the note is retained for the prerelease cycle"
+    );
+    assert_eq!(hints(&rig), 0);
 }
 
 /// A preview plans what is already versioned, so pending changesets get a pointer to `callisto version`.

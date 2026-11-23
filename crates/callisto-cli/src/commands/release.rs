@@ -10,9 +10,10 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, ci_release_route, derive_release_commit_decision, derive_selected_release_decision,
-    execute_release, origin_tag_probe, pending_releases, plan_loaded_release, require_sealed_publishes,
-    seal_npm_tarballs, seal_python_distributions, validate_local_release_intent, validate_release_intent,
-    verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, ValidatedReleaseIntent, VersionOptions,
+    execute_release, origin_tag_probe, pending_changesets, pending_releases, plan_loaded_release,
+    require_sealed_publishes, seal_npm_tarballs, seal_python_distributions, validate_local_release_intent,
+    validate_release_intent, verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, ValidatedReleaseIntent,
+    VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::GraphError;
@@ -52,7 +53,7 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
 pub const TAGS_UNBOUND_NOTE: &str =
     "note: `origin` is missing or not a hosted remote, so tag operations are unbound; a real `callisto release` needs a hosted remote";
 
-/// Stderr note when a preview plans versions already written while changesets are still pending.
+/// Stderr note when changesets wait for `callisto version`: a release plans only versions already written.
 fn pending_changesets_note(count: usize) -> String {
     format!(
         "note: {count} pending changeset(s) are not in this plan: run `callisto version` (or merge the release PR) first"
@@ -99,7 +100,9 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
     }
     let plan = planned?;
     if global.dry_run {
-        write_release_preview(plan.as_ref(), global.format, &mut std::io::stdout())?;
+        // Advisory: a changeset `version` cannot read is that command's error to report.
+        let pending = pending_changesets(&workspace).unwrap_or(0);
+        write_release_preview(plan.as_ref(), pending, global.format, &mut std::io::stdout())?;
         return Ok(ExitCode::SUCCESS);
     }
     let Some(plan) = plan else {
@@ -163,6 +166,7 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
 /// Writes a `release --dry-run` preview of `plan`; `init` shows the same one.
 pub(crate) fn write_release_preview(
     plan: Option<&LocalReleasePlan>,
+    pending_changesets: usize,
     format: OutputFormat,
     out: &mut dyn std::io::Write,
 ) -> Result<(), CliError> {
@@ -191,12 +195,12 @@ pub(crate) fn write_release_preview(
         if plan.tags_unbound {
             eprintln!("{TAGS_UNBOUND_NOTE}");
         }
-        if plan.pending_changesets > 0 {
-            eprintln!("{}", pending_changesets_note(plan.pending_changesets));
-        }
         for diagnostic in &plan.diagnostics {
             eprintln!("warning: {}", diagnostic.message);
         }
+    }
+    if pending_changesets > 0 {
+        eprintln!("{}", pending_changesets_note(pending_changesets));
     }
     Ok(())
 }

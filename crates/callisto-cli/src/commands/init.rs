@@ -255,14 +255,14 @@ pub fn run<R: CommandRunner>(
         writeln!(human, "\ncallisto.toml:\n{config}")?;
     }
     match plan {
-        Some(plan) => {
+        Some((plan, pending)) => {
             writeln!(human, "First release preview (`callisto release --dry-run`):")?;
-            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human)?;
+            super::release::write_release_preview(plan.as_ref(), pending, OutputFormat::Text, human)?;
         }
         None => writeln!(human, "{NO_COMMITS}")?,
     }
-    if workflow.is_some() {
-        writeln!(human, "\n{}", workflow_summary(&facts.root))?;
+    if let Some((_, branch)) = &workflow {
+        writeln!(human, "\n{}", workflow_summary(&facts.root, branch))?;
     }
 
     // Computed before any write, so the `.changeset/README.md` existence check sees disk state as-is.
@@ -300,9 +300,9 @@ pub fn run<R: CommandRunner>(
 }
 
 /// The workflow's path and what it does, in place of its text.
-fn workflow_summary(root: &std::path::Path) -> String {
+fn workflow_summary(root: &std::path::Path, branch: &BranchName) -> String {
     format!(
-        "{}: on a merge to the default branch, opens a release PR while changesets are pending and publishes once it merges.",
+        "{}: on each push to `{branch}`, opens a release PR while version work is pending and publishes once it merges.",
         scaffold::workflow_path(root).display()
     )
 }
@@ -350,7 +350,7 @@ fn run_workflow_only<R: CommandRunner>(
         })?;
     let base_branch = changesets::base_branch(root);
     let (workflow, branch) = build_workflow(&facts, shape, base_branch.as_ref(), runner, human)?;
-    writeln!(human, "\n{}", workflow_summary(&facts.root))?;
+    writeln!(human, "\n{}", workflow_summary(&facts.root, &branch))?;
     let mut diagnostics = Vec::new();
     if !global.dry_run {
         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");

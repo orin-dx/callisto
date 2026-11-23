@@ -140,6 +140,42 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     plan_version_dated(ws, inference, opts, None)
 }
 
+/// `pre.json`, resolved against the workspace, and its text as read.
+fn read_pre_state<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+) -> Result<(Option<callisto_model::format::PreState>, Option<String>), GraphError> {
+    let pre_path = ws.root.join(ws.config.pre_json_path());
+    let pre_text = callisto_model::strict_fs::read_optional(&pre_path).map_err(|e| GraphError::PreJsonRead {
+        path: pre_path.clone(),
+        message: e.to_string(),
+    })?;
+    let Some(text) = pre_text else {
+        return Ok((None, None));
+    };
+    let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
+    let state = ws.resolve_pre_state_from_json(state, &text)?;
+    Ok((Some(state), Some(text)))
+}
+
+/// How many changesets `callisto version` would apply now; notes a pre cycle already recorded are not pending.
+///
+/// # Errors
+///
+/// A manifest, tag, `pre.json` or changeset cannot be read.
+pub fn pending_changesets<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+) -> Result<usize, GraphError> {
+    let (pre_state, _) = read_pre_state(ws)?;
+    crate::aggregate::pending_changesets(
+        &ws.graph,
+        &ws.identity,
+        &ws.config,
+        ws.tags()?,
+        &ws.base_versions()?,
+        pre_state.as_ref(),
+    )
+}
+
 pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     ws: &Workspace<'_, R, D>,
     inference: &I,
@@ -148,20 +184,12 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
 ) -> Result<VersionPlan, GraphError> {
     let base_versions = ws.base_versions()?;
     let tags = ws.tags()?;
-    let repository = ws.forge_repository().ok().flatten();
+    let repository = ws
+        .forge_repository(crate::commands::release::GitRemoteRequirement::OptionalForPreview)
+        .ok()
+        .flatten();
 
-    let pre_path = ws.root.join(ws.config.pre_json_path());
-    let pre_text = callisto_model::strict_fs::read_optional(&pre_path).map_err(|e| GraphError::PreJsonRead {
-        path: pre_path.clone(),
-        message: e.to_string(),
-    })?;
-    let (pre_state, pre_json_original_text) = if let Some(text) = pre_text {
-        let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
-        let state = ws.resolve_pre_state_from_json(state, &text)?;
-        (Some(state), Some(text))
-    } else {
-        (None, None)
-    };
+    let (pre_state, pre_json_original_text) = read_pre_state(ws)?;
 
     let agg = aggregate(
         &ws.graph,
@@ -324,16 +352,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
         }
     }
 
-    let is_pre_mode = pre_state
-        .as_ref()
-        .map(|s| s.mode == callisto_model::format::PreMode::Pre)
-        .unwrap_or(false);
-    // In pre mode a changeset already recorded in pre.json is not pending: a rerun plans nothing for it.
-    let nothing_pending = if is_pre_mode {
-        agg.new_pre_changesets.is_empty()
-    } else {
-        agg.consumed.is_empty()
-    };
+    let nothing_pending = agg.pending_changesets() == 0;
 
     // Reading the changesets comes first: an entry that names no package leaves its changeset on disk.
     let mut diagnostics = agg.diagnostics.clone();

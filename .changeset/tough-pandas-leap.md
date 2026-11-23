@@ -6,7 +6,8 @@ callisto-cli: patch
 
 `init` prints each note once and a one-line summary of the generated workflow instead of its whole text, and `release --dry-run` now points the way when it cannot show what you expect.
 
-- `init` no longer repeats its notes under Diagnostics, and shows the workflow path instead of the file contents.
-- `release --dry-run` with pending changesets says to run `callisto version` (or merge the release PR) first.
-- `release --dry-run` treats a local-path `origin` like no `origin`: it previews with one note that a real release needs a hosted remote.
-  - A real `callisto release` still refuses a local-path `origin`.
+- `init` no longer repeats its notes under Diagnostics, and names the workflow file, the branch it runs on and what it does, instead of printing the file.
+- `release --dry-run` says to run `callisto version` (or merge the release PR) first while changesets are waiting for it, including when there is nothing to release yet.
+  - In a prerelease cycle, notes `callisto version` already applied do not count.
+- An `origin` that is not a hosted remote, such as a local path or a `file://` URL, previews like no `origin`: the dry run shows the plan with one note that tags are unbound.
+  - A real `callisto release` refuses it with an error that names the `origin` value and the accepted forms: an `https://` or `ssh://git@` URL, or `git@host:owner/repo`.

@@ -567,7 +567,7 @@ mod tests {
             _artifacts: Option<&VerifiedArtifactManifest<'_>>,
         ) -> Result<ReleasePreflight, GraphError> {
             use crate::commands::release::provider::{tag::TagProvider, ProviderContext, ReleaseProvider};
-            let remote = crate::commands::release::optional_git_remote(self.root, self.runner)?;
+            let remote = crate::commands::release::Origin::read(self.root, self.runner)?.optional()?;
             TagProvider.preflight(
                 &ProviderContext::new(self.root, self.runner, remote.as_ref()),
                 &self.request(id),

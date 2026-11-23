@@ -12,6 +12,7 @@ use callisto_model::{CommandRunner, CommitSha, PublishTarget, ReleaseDecisionV1,
 
 use super::github::{github_release_for_tag, GitHubReleaseLookup};
 use super::provider::ProviderContext;
+use super::GitRemoteRequirement;
 use crate::commands::release_decision::{tag_of_version, ReleaseOwners};
 use crate::{DependencyResolver, GraphError, TagIndex, Workspace};
 
@@ -51,7 +52,12 @@ pub fn pending_releases<R: CommandRunner, D: DependencyResolver>(
         .config
         .product_release
         .as_ref()
-        .and_then(|_| workspace.forge_repository().ok().flatten())
+        .and_then(|_| {
+            workspace
+                .forge_repository(GitRemoteRequirement::OptionalForPreview)
+                .ok()
+                .flatten()
+        })
         .map(|repository| format!("{}/{}", repository.owner(), repository.repo()));
     let context = ProviderContext::new(&workspace.root, workspace.runner, None);
 

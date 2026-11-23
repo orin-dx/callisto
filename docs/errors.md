@@ -197,7 +197,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E125 | Cannot read a release input file | Ensure the release manifest and configuration files remain readable until validation completes. |
 | E126 | Registry binding is not a credential-free canonical URL | Use a URL without userinfo, query parameters, or fragments in callisto.toml. |
 | E127 | Release execution state is invalid | Regenerate the release intent; no release operation was authorized. |
-| E132 | Git push remote is unsafe | Configure origin with a credential-free HTTPS or SSH URL. |
+| E132 | `origin` is missing or not a hosted Git remote | Set origin to an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials. |
 | E136 | Artifact manifest is not authorized by this release intent | Regenerate the artifact manifest for this exact release intent; no artifact was uploaded. |
 | E137 | Artifact path is unsafe (e.g. escapes the artifact directory) | Place the built asset directly beneath the explicit artifact directory without symbolic links. |
 | E138 | Cannot read a build artifact | Ensure the build artifact is readable and has not changed since it was attested. |
