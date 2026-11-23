@@ -368,9 +368,29 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
 /// follows it (trimmed). The lead-in is the whole title, so it is never truncated.
 fn bold_lead_in(summary: &str) -> Option<(String, &str)> {
     let text = summary.trim().strip_prefix("**")?;
+    if text.starts_with('*') {
+        return None;
+    }
     let end = closing_bold(text)?;
-    let lead = text[..end].split_whitespace().collect::<Vec<_>>().join(" ");
+    let lead = one_line(&text[..end]);
     (!lead.is_empty()).then(|| (lead, text[end + 2..].trim()))
+}
+
+/// Collapses whitespace runs to one space outside code spans; inside them only newlines become spaces.
+fn one_line(text: &str) -> String {
+    let squeeze = |plain: &str| {
+        let mut out = String::new();
+        for c in plain.chars() {
+            if !c.is_whitespace() {
+                out.push(c);
+            } else if !out.ends_with(' ') {
+                out.push(' ');
+            }
+        }
+        out
+    };
+    let joined = map_code_spans(text, squeeze, |code| format!("`{}`", code.replace('\n', " ")));
+    joined.trim().to_string()
 }
 
 /// The byte offset of the closing `**`, skipping code spans; without a clean close outside them, the first `**`.
@@ -1185,6 +1205,13 @@ mod tests {
         assert_eq!(rest, "more");
         let (lead, _) = bold_lead_in("**Unclosed ` tick** more").unwrap();
         assert_eq!(lead, "Unclosed ` tick");
+    }
+
+    #[test]
+    fn a_bold_lead_in_keeps_spacing_inside_code_and_ignores_a_thematic_break() {
+        let (lead, _) = bold_lead_in("**Fix  the\n `a  b`  op.** more").unwrap();
+        assert_eq!(lead, "Fix the `a  b` op.");
+        assert!(bold_lead_in("***\nintro\n\n**x** y").is_none());
     }
 
     #[test]
