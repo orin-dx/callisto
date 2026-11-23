@@ -15,6 +15,7 @@ use crate::config::{PreMajorInferencePolicy, ResolvedConfig};
 use crate::error::{ConfigError, GraphError};
 use crate::identity::IdentityIndex;
 use crate::infer::SeverityInference;
+use crate::plan::SeveritySources;
 use crate::resolver::DependencyResolver;
 use crate::tags::TagIndex;
 
@@ -192,25 +193,44 @@ impl Seed {
         self.sources().any(Source::is_named)
     }
 
-    /// The reason of the first source at the planned severity, so the explanation matches the decision.
-    /// A changeset reason names every changeset at that severity, fresh or retained.
-    pub fn reason(&self) -> BumpReason {
+    /// The first fresh source at the highest fresh severity, which triggers the release; the first source when none is
+    /// fresh.
+    fn trigger(&self) -> &(Severity, Source) {
         let mut best = &self.first;
-        for entry in &self.rest {
-            if entry.0 > best.0 {
+        for entry in self.entries().filter(|(_, source)| source.is_fresh()) {
+            if !best.1.is_fresh() || entry.0 > best.0 {
                 best = entry;
             }
         }
-        if best.1.changeset_id().is_some() {
-            let changesets = self
-                .entries()
-                .filter(|(severity, _)| *severity == best.0)
-                .filter_map(|(_, source)| source.changeset_id().map(str::to_owned))
-                .collect();
-            BumpReason::Changeset { changesets }
-        } else {
-            best.1.reason()
+        best
+    }
+
+    /// The trigger's reason, which the changelog entries are written from. A changeset reason names every changeset
+    /// of the trigger's freshness at its severity.
+    pub fn reason(&self) -> BumpReason {
+        let (severity, source) = self.trigger();
+        if source.changeset_id().is_none() {
+            return source.reason();
         }
+        let changesets = self
+            .entries()
+            .filter(|(s, other)| s == severity && other.is_fresh() == source.is_fresh())
+            .filter_map(|(_, other)| other.changeset_id().map(str::to_owned))
+            .collect();
+        BumpReason::Changeset { changesets }
+    }
+
+    /// The retained changesets asking for `severity` when the trigger asks for less: they set that bump.
+    pub fn severity_sources(&self, severity: Severity) -> SeveritySources {
+        if self.trigger().0 >= severity {
+            return SeveritySources::default();
+        }
+        SeveritySources::new(
+            self.entries()
+                .filter(|(s, source)| *s == severity && !source.is_fresh())
+                .filter_map(|(_, source)| source.changeset_id().map(str::to_owned))
+                .collect(),
+        )
     }
 }
 

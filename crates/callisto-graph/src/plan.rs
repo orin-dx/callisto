@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::changelog::ChangelogInput;
+pub use crate::commands::pr_body::SeveritySources;
 use callisto_model::format::PreState;
 use callisto_model::{
     BumpReason, BumpRecord, ConfigKey, Diagnostic, LockfileRefreshResult, PackageId, Severity, Version, VersionReport,
@@ -87,8 +88,10 @@ pub struct PlannedBump {
     pub to: Version,
     pub severity: Severity,
     pub governed_by: Option<ConfigKey>,
-    pub reason: Option<BumpReason>,
+    /// What triggered the release: the only input to its changelog entries.
+    pub trigger: Option<BumpReason>,
     pub writes: Vec<VersionWriteTarget>,
+    pub severity_sources: SeveritySources,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -125,7 +128,7 @@ impl VersionPlan {
     pub fn to_report(&self, ids: &ReportIds, lockfiles: Option<Vec<LockfileRefreshResult>>) -> VersionReport {
         let mut bumps = Vec::new();
         for b in &self.bumps {
-            let mut reason = b.reason.clone();
+            let mut reason = b.trigger.clone();
             if let Some(reason) = &mut reason {
                 ids.reason(reason);
             }
@@ -177,8 +180,9 @@ mod platform_write_from_field_tests {
                 to: Version::semver(1, 1, 0),
                 severity: Severity::Minor,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: Vec::new(),
+                severity_sources: Default::default(),
             }],
             ..Default::default()
         };

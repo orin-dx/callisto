@@ -526,3 +526,171 @@ fn status_check_reports_an_archived_note_whose_name_became_ambiguous() {
         .collect();
     assert_eq!(ambiguous, [".changeset/pre/bare.md"], "{report}");
 }
+
+/// A two-package Cargo workspace at 1.0.0, tagged, with `config` as its `callisto.toml`.
+fn tagged_workspace(config: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"a\", \"b\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    for name in ["a", "b"] {
+        fs::create_dir_all(root.join(name).join("src")).unwrap();
+        fs::write(
+            root.join(name).join("Cargo.toml"),
+            format!("[package]\nname = \"pkg-{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n"),
+        )
+        .unwrap();
+        fs::write(root.join(name).join("src/lib.rs"), "pub fn f() {}\n").unwrap();
+    }
+    fs::write(root.join("callisto.toml"), config).unwrap();
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "chore: initial"]);
+    for name in ["a", "b"] {
+        run_git(root, &["tag", "-m", "release", &format!("pkg-{name}@1.0.0")]);
+    }
+    dir
+}
+
+fn enter_beta(root: &Path) {
+    fs::write(
+        root.join(".changeset/pre.json"),
+        "{\"mode\":\"pre\",\"tag\":\"beta\"}\n",
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "chore: enter beta"]);
+}
+
+fn note(root: &Path, id: &str, package: &str, bump: &str) {
+    fs::write(
+        root.join(format!(".changeset/{id}.md")),
+        format!("---\ncargo/{package}: {bump}\n---\n\nNote {id}.\n"),
+    )
+    .unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", &format!("chore: note {id}")]);
+}
+
+/// Versions and tags every bumped package, as a merged release PR would.
+fn release_beta(root: &Path, tags: &[&str]) {
+    version(root);
+    for tag in tags {
+        run_git(root, &["tag", "-m", "release", tag]);
+    }
+}
+
+/// Versions with a preview; returns `package`'s newest changelog section and its release PR Reason cell.
+fn section_and_reason(root: &Path, package: &str) -> (String, String) {
+    let preview = root.join("preview.json");
+    let out = callisto(
+        root,
+        &[
+            "version",
+            "--no-refresh-lockfiles",
+            "--emit-preview",
+            preview.to_str().unwrap(),
+        ],
+    );
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let dir = &package["pkg-".len()..];
+    let changelog = fs::read_to_string(root.join(dir).join("CHANGELOG.md")).unwrap();
+    let section = changelog
+        .split("\n## ")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no section: {changelog}"))
+        .to_string();
+    let composed = callisto(
+        root,
+        &[
+            "--format",
+            "json",
+            "compose-pr-body",
+            "--preview",
+            preview.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        composed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&composed.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&composed.stdout).unwrap();
+    let body = report["body"].as_str().unwrap();
+    let row = body
+        .lines()
+        .find(|line| line.starts_with(&format!("| `{package}` |")))
+        .unwrap_or_else(|| panic!("no row for {package}: {body}"));
+    let reason = row.trim_end_matches(" |").rsplit(" | ").next().unwrap().to_string();
+    (section, reason)
+}
+
+/// A fresh commit triggers the prerelease and is its changelog entry; the retained major note sets the bump.
+#[test]
+fn a_fresh_commit_under_a_retained_major_keeps_its_changelog_entry_and_names_the_major() {
+    let dir = tagged_workspace("[[package]]\nmatch = \"cargo/pkg-a\"\nrelease-trigger = \"auto\"\n");
+    let root = dir.path();
+    enter_beta(root);
+    note(root, "breaking", "pkg-a", "major");
+    release_beta(root, &["pkg-a@2.0.0-beta.0"]);
+    fs::write(root.join("a/src/lib.rs"), "pub fn f() {}\npub fn g() {}\n").unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-q", "-m", "fix: repair the parser"]);
+
+    let (section, reason) = section_and_reason(root, "pkg-a");
+    assert!(section.starts_with("2.0.0-beta.1"), "{section}");
+    assert!(section.contains("- repair the parser ("), "{section}");
+    assert!(!section.contains("Note breaking."), "{section}");
+    assert_eq!(reason, "Inferred (1 commits); major from `pre/breaking`");
+}
+
+/// A member released by its fixed group keeps the group note; the group carries its retained major note's bump.
+#[test]
+fn a_group_released_member_under_a_retained_major_keeps_the_group_note() {
+    let dir = tagged_workspace("[[fixed-group]]\nname = \"pair\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n");
+    let root = dir.path();
+    enter_beta(root);
+    note(root, "breaking", "pkg-a", "major");
+    release_beta(root, &["pkg-a@2.0.0-beta.0", "pkg-b@2.0.0-beta.0"]);
+    note(root, "small-fix", "pkg-b", "patch");
+
+    let (section, reason) = section_and_reason(root, "pkg-a");
+    assert!(section.starts_with("2.0.0-beta.1"), "{section}");
+    assert!(section.contains("`pair` fixed group."), "{section}");
+    assert!(!section.contains("Note breaking."), "{section}");
+    assert_eq!(reason, "Fixed group `pair`", "the group asks for the major itself");
+}
+
+/// A fresh patch note triggers the prerelease and is its changelog entry; the retained major note sets the bump.
+#[test]
+fn a_fresh_patch_note_under_a_retained_major_keeps_its_changelog_entry_and_names_the_major() {
+    let dir = tagged_workspace("");
+    let root = dir.path();
+    enter_beta(root);
+    note(root, "breaking", "pkg-a", "major");
+    release_beta(root, &["pkg-a@2.0.0-beta.0"]);
+    note(root, "fix", "pkg-a", "patch");
+
+    let (section, reason) = section_and_reason(root, "pkg-a");
+    assert!(section.starts_with("2.0.0-beta.1"), "{section}");
+    assert!(section.contains("- Note fix."), "{section}");
+    assert!(!section.contains("Note breaking."), "{section}");
+    assert_eq!(reason, "Changeset (`fix`); major from `pre/breaking`");
+}
+
+/// Outside a cycle nothing is retained, so the reason is the note alone.
+#[test]
+fn a_plain_patch_note_is_its_own_changelog_entry_and_reason() {
+    let dir = tagged_workspace("");
+    let root = dir.path();
+    note(root, "fix", "pkg-a", "patch");
+
+    let (section, reason) = section_and_reason(root, "pkg-a");
+    assert!(section.starts_with("1.0.1"), "{section}");
+    assert!(section.contains("- Note fix."), "{section}");
+    assert_eq!(reason, "Changeset (`fix`)");
+}

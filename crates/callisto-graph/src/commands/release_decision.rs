@@ -77,7 +77,7 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
                     &workspace.graph,
                     &bump.package,
                     id,
-                    bump.reason.as_ref(),
+                    bump.trigger.as_ref(),
                     &package_ids,
                 )?],
             });
@@ -1746,8 +1746,9 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: callisto_model::Severity::Minor,
             governed_by: None,
-            reason: Some(reason),
+            trigger: Some(reason),
             writes: vec![],
+            severity_sources: Default::default(),
         };
         let plan = VersionPlan {
             bumps: vec![
@@ -1780,8 +1781,9 @@ mod tests {
                 to: Version::semver(1, 1, 0),
                 severity: callisto_model::Severity::Minor,
                 governed_by: None,
-                reason: Some(BumpReason::Changeset { changesets: vec![] }),
+                trigger: Some(BumpReason::Changeset { changesets: vec![] }),
                 writes: vec![],
+                severity_sources: Default::default(),
             }],
             ..Default::default()
         }

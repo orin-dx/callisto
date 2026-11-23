@@ -14,11 +14,12 @@ fn bump_writing(paths: &[&str]) -> PlannedBump {
         to: version("1.1.0"),
         severity: Severity::Minor,
         governed_by: None,
-        reason: None,
+        trigger: None,
         writes: paths
             .iter()
             .map(|path| VersionWriteTarget::Manifest(PathBuf::from(path)))
             .collect(),
+        severity_sources: Default::default(),
     }
 }
 

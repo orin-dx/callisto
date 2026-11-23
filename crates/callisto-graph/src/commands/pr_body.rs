@@ -7,8 +7,9 @@ use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
 use crate::release_preview::{
-    Change, ChangeKind, Finding, FindingLevel, PublishOutlook, PublishTargets, ReleasePreview, FINDING_ACTION_REQUIRED,
-    FINDING_BREAKING_BUMP_MISMATCH, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP, FINDING_UNRELEASED_CHANGES,
+    Change, ChangeKind, Finding, FindingLevel, PackageRelease, PublishOutlook, PublishTargets, ReleasePreview,
+    FINDING_ACTION_REQUIRED, FINDING_BREAKING_BUMP_MISMATCH, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP,
+    FINDING_UNRELEASED_CHANGES,
 };
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
@@ -84,15 +85,47 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
 /// More changesets than this are counted in the Reason column rather than named.
 const MAX_NAMED_CHANGESETS: usize = 3;
 
+/// Changesets retained from earlier in a pre cycle that set a bump above what its trigger asks for.
+/// Defined here so only the Reason column can read them: they are never changelog entries.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct SeveritySources(Vec<String>);
+
+impl SeveritySources {
+    pub(crate) fn new(changesets: Vec<String>) -> Self {
+        Self(changesets)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// The changesets as code spans, or `None` when there are too many to name.
+fn changeset_names(changesets: &[String]) -> Option<String> {
+    (changesets.len() <= MAX_NAMED_CHANGESETS).then(|| {
+        let names: Vec<String> = changesets.iter().map(|name| name.replace('|', "\\|")).collect();
+        format!("`{}`", names.join("`, `"))
+    })
+}
+
+/// The package's reason, then the retained changesets that set its bump above what that reason asks for.
+fn package_reason_cell(package: &PackageRelease) -> String {
+    let reason = reason_cell(&package.reason);
+    let sources = &package.severity_sources.0;
+    if sources.is_empty() {
+        return reason;
+    }
+    let names = changeset_names(sources).unwrap_or_else(|| format!("{} changesets", sources.len()));
+    format!("{reason}; {} from {names}", package.severity)
+}
+
 fn reason_cell(reason: &Option<BumpReason>) -> String {
     match reason {
-        Some(BumpReason::Changeset { changesets }) if changesets.len() > MAX_NAMED_CHANGESETS => {
-            format!("{} changesets", changesets.len())
-        }
-        Some(BumpReason::Changeset { changesets }) => {
-            let names: Vec<String> = changesets.iter().map(|name| name.replace('|', "\\|")).collect();
-            format!("Changeset (`{}`)", names.join("`, `"))
-        }
+        Some(BumpReason::Changeset { changesets }) => match changeset_names(changesets) {
+            Some(names) => format!("Changeset ({names})"),
+            None => format!("{} changesets", changesets.len()),
+        },
         Some(BumpReason::Cascade { via, .. }) => {
             format!("Cascade from `{}`", via.display_name())
         }
@@ -191,7 +224,7 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
             package.to,
             severity_emoji(package.severity),
             package.severity,
-            reason_cell(&package.reason)
+            package_reason_cell(package)
         ));
     }
     body.push('\n');
@@ -653,8 +686,9 @@ mod tests {
                 to: Version::semver(1, 1, 0),
                 severity: Severity::Minor,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: vec![],
+                severity_sources: Default::default(),
             };
             let write = crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
@@ -712,8 +746,9 @@ mod tests {
                 to: Version::semver(2, 0, 0),
                 severity,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: vec![],
+                severity_sources: Default::default(),
             };
             let write = crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
@@ -780,8 +815,9 @@ mod tests {
             to,
             severity,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![],
+            severity_sources: Default::default(),
         }
     }
 
@@ -832,12 +868,13 @@ mod tests {
             to: Version::semver(0, 2, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::Changeset {
+            trigger: Some(BumpReason::Changeset {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
             writes: vec![crate::plan::VersionWriteTarget::Manifest(
                 "core-crate/Cargo.toml".into(),
             )],
+            severity_sources: Default::default(),
         };
 
         let bump_b = PlannedBump {
@@ -846,10 +883,11 @@ mod tests {
             to: Version::semver(1, 0, 1),
             severity: Severity::Patch,
             governed_by: None,
-            reason: Some(BumpReason::Changeset {
+            trigger: Some(BumpReason::Changeset {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
             writes: vec![crate::plan::VersionWriteTarget::Manifest("web-app/package.json".into())],
+            severity_sources: Default::default(),
         };
 
         let plan = VersionPlan {
@@ -907,8 +945,9 @@ mod tests {
                 to: Version::semver(1, 1, 0),
                 severity: Severity::Minor,
                 governed_by: None,
-                reason: Some(reason),
+                trigger: Some(reason),
                 writes: vec![],
+                severity_sources: Default::default(),
             }],
             rewrites: vec![],
             platform_writes: vec![],
@@ -984,13 +1023,14 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::Cascade {
+            trigger: Some(BumpReason::Cascade {
                 via: PackageId::parse("pkg-core").unwrap(),
                 dep_kind: callisto_model::DepKind::Runtime,
                 spec: "^1.0.0".to_string(),
                 dependency_to: Version::semver(2, 0, 0),
             }),
             writes: vec![],
+            severity_sources: Default::default(),
         };
 
         let input = crate::changelog::ChangelogInput {
@@ -1089,10 +1129,11 @@ mod tests {
                     to: Version::semver(1, 0, 1),
                     severity: Severity::Patch,
                     governed_by: None,
-                    reason: Some(BumpReason::Changeset {
+                    trigger: Some(BumpReason::Changeset {
                         changesets: vec!["brave-eagles-race".to_string(), "radiant-pandas-roar".to_string()],
                     }),
                     writes: vec![],
+                    severity_sources: Default::default(),
                 },
                 PlannedBump {
                     package: PackageId::parse("pkg-b").unwrap(),
@@ -1100,10 +1141,11 @@ mod tests {
                     to: Version::semver(1, 0, 1),
                     severity: Severity::Patch,
                     governed_by: None,
-                    reason: Some(BumpReason::Changeset {
+                    trigger: Some(BumpReason::Changeset {
                         changesets: ["a", "b", "c", "d"].map(String::from).to_vec(),
                     }),
                     writes: vec![],
+                    severity_sources: Default::default(),
                 },
             ],
             rewrites: vec![],
@@ -1161,8 +1203,9 @@ mod tests {
                 to: Version::semver(1, 1, 0),
                 severity: Severity::Minor,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: vec![],
+                severity_sources: Default::default(),
             }],
             rewrites: vec![],
             platform_writes: vec![],
@@ -1210,8 +1253,9 @@ mod tests {
                 to: Version::semver(1, 0, 1),
                 severity: Severity::Patch,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: vec![],
+                severity_sources: Default::default(),
             };
             (bump, input)
         };
@@ -1270,8 +1314,9 @@ mod tests {
                 to: Version::semver(1, 0, 1),
                 severity: Severity::Patch,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: vec![],
+                severity_sources: Default::default(),
             };
             (bump, input)
         };
@@ -1315,13 +1360,14 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::Cascade {
+            trigger: Some(BumpReason::Cascade {
                 via: PackageId::parse("pkg-core").unwrap(),
                 dep_kind: callisto_model::DepKind::Runtime,
                 spec: "^1.0.0".to_string(),
                 dependency_to: Version::semver(2, 0, 0),
             }),
             writes: vec![],
+            severity_sources: Default::default(),
         };
         let bump_b = PlannedBump {
             package: pkg_b.clone(),
@@ -1329,10 +1375,11 @@ mod tests {
             to: Version::semver(1, 0, 1),
             severity: Severity::Patch,
             governed_by: None,
-            reason: Some(BumpReason::Changeset {
+            trigger: Some(BumpReason::Changeset {
                 changesets: vec!["fix-1".to_string()],
             }),
             writes: vec![],
+            severity_sources: Default::default(),
         };
 
         let good_input = crate::changelog::ChangelogInput {
@@ -1408,13 +1455,14 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::Cascade {
+            trigger: Some(BumpReason::Cascade {
                 via: PackageId::parse("pkg-core").unwrap(),
                 dep_kind: callisto_model::DepKind::Runtime,
                 spec: "^1.0.0".to_string(),
                 dependency_to: Version::semver(2, 0, 0),
             }),
             writes: vec![],
+            severity_sources: Default::default(),
         };
         let plan = VersionPlan {
             bumps: vec![bump_a],
@@ -1464,8 +1512,9 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![],
+            severity_sources: Default::default(),
         };
         let plan = VersionPlan {
             bumps: vec![bump_a],
@@ -1537,10 +1586,11 @@ mod tests {
                     to: Version::semver(1, 1, 0),
                     severity: Severity::Minor,
                     governed_by: None,
-                    reason: Some(BumpReason::Changeset {
+                    trigger: Some(BumpReason::Changeset {
                         changesets: vec!["delete-dead-abstractions".to_string()],
                     }),
                     writes: vec![],
+                    severity_sources: Default::default(),
                 },
                 PlannedBump {
                     package: pkg_b.clone(),
@@ -1548,10 +1598,11 @@ mod tests {
                     to: Version::semver(1, 1, 0),
                     severity: Severity::Minor,
                     governed_by: None,
-                    reason: Some(BumpReason::Changeset {
+                    trigger: Some(BumpReason::Changeset {
                         changesets: vec!["delete-dead-abstractions".to_string()],
                     }),
                     writes: vec![],
+                    severity_sources: Default::default(),
                 },
             ],
             rewrites: vec![],
@@ -1666,10 +1717,11 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::FixedGroupUnion {
+            trigger: Some(BumpReason::FixedGroupUnion {
                 group: callisto_model::GroupName("workspace".to_string()),
             }),
             writes: vec![],
+            severity_sources: Default::default(),
         };
         let plan = VersionPlan {
             bumps: vec![bump_a],
@@ -1745,10 +1797,11 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity,
             governed_by: None,
-            reason: Some(BumpReason::Changeset {
+            trigger: Some(BumpReason::Changeset {
                 changesets: vec![changeset.to_string()],
             }),
             writes: vec![],
+            severity_sources: Default::default(),
         };
 
         let plan = VersionPlan {

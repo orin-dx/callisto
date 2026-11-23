@@ -248,8 +248,13 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
             to: to.clone(),
             severity: sev,
             governed_by: outcome.governed_by.get(id).cloned(),
-            reason: outcome.reasons.get(id).cloned(),
+            trigger: outcome.reasons.get(id).cloned(),
             writes,
+            severity_sources: agg
+                .seeds
+                .get(id)
+                .map(|seed| seed.severity_sources(sev))
+                .unwrap_or_default(),
         });
 
         if let Some(ch_path) = &pkg.changelog {
