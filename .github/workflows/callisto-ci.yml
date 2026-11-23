@@ -141,6 +141,7 @@ jobs:
 
   release-artifact-preflight:
     name: Release Artifact Preflight (${{ matrix.id }})
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
