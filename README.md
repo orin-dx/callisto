@@ -158,11 +158,11 @@ Available targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknow
 
 ## Quick start
 
-Start in a Git repository with an `origin` push URL and registry credentials. This example publishes from your machine; to publish from CI instead, keep the workflow `init` writes and see [releasing](docs/releasing.md).
+Start in a Git repository whose `origin` is a hosted HTTPS or SSH URL (Callisto refuses a local path or `file://` remote) and with registry credentials. This example publishes from your machine; to publish from CI instead, keep the workflow `init` writes and see [releasing](docs/releasing.md).
 
 ```bash
 # 1. Detect packages, write callisto.toml and .changeset/, preview the first release.
-#    With a GitHub origin it also writes the release workflow, and it prints what to do next.
+#    --no-workflow skips the GitHub Actions release workflow it writes for a GitHub origin.
 callisto init --yes --no-workflow
 
 # 2. Record a pending change against a package

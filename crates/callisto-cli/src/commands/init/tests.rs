@@ -346,6 +346,8 @@ fn the_advertised_workflow_retry_writes_only_the_workflow() {
         config
     );
     assert!(run.out.contains("Next steps:"), "{}", run.out);
+    assert!(!run.out.contains("Initialized callisto configuration"), "{}", run.out);
+    assert!(run.out.contains("Wrote "), "{}", run.out);
 }
 
 // An existing config without `--workflow` is still refused.

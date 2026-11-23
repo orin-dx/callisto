@@ -196,6 +196,11 @@ pub(crate) fn recheck_git_remote(
 }
 
 pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
+    if raw.starts_with(['/', '.']) || raw.starts_with("file:") {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "origin is a local path, and releases need a hosted HTTPS or SSH remote",
+        });
+    }
     let ssh_url = if raw.starts_with("git@") && !raw.contains("//") {
         let (host, path) =
             raw.strip_prefix("git@")
@@ -452,6 +457,19 @@ mod tests {
             Some("example/release-fixture".to_string())
         );
         assert!(canonical_git_remote("https://token@github.com/example/release-fixture.git").is_err());
+    }
+
+    #[test]
+    fn a_local_remote_is_named_as_local_rather_than_as_a_malformed_url() {
+        for raw in ["/srv/git/tools.git", "../tools.git", "file:///srv/git/tools.git"] {
+            assert!(
+                matches!(
+                    canonical_git_remote(raw),
+                    Err(GraphError::UnsafeGitRemote { reason }) if reason.contains("local")
+                ),
+                "{raw}"
+            );
+        }
     }
 
     #[test]
