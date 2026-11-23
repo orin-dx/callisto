@@ -1,0 +1,52 @@
+Fix a regression on PR #630 (branch wp-pr-summary-headline; check it out in a worktree at origin's head). Trail #250. Read the open finding: entire trail finding list 250 --json. Cause: BumpReason has two jobs: it is the release PR Reason text AND the input the version planner uses to write changelog entries (an inference reason emits the commit subject and SHA, commands/version.rs 54-64 and 269-295; a group reason emits the group note). Commit 301d3ca6b changed Seed::reason (crates/callisto-graph/src/aggregate.rs 195-215) to pick the changesets at the planned severity, so a prerelease triggered by a fresh inferred commit while a retained major sets the severity now gets a changeset reason, and the new changelog section loses the commit (retained notes are excluded from new entries, aggregate.rs 588-594). Design, don't patch: split the two meanings. (1) Seed::reason goes back to the fresh trigger (the selection before 301d3ca6b: highest fresh severity, first fresh source; a changeset reason names the fresh changesets at that severity), so changelog generation is exactly as before. (2) Add to the plan entry the retained changesets whose severity is higher than the trigger's (empty in the common case), carried through the version plan and release preview by the existing types. (3) The Reason cell renders the trigger reason plus 'major from <changeset>' (or 'N changesets') when that list is non-empty. Tests first, each asserting BOTH the written changelog section and the Reason cell: fresh inferred commit + retained major; fresh group-triggered member + retained major; fresh patch changeset + retained major (the original finding); plain non-prerelease patch (unchanged). Then grep for every other consumer of BumpReason and confirm each still gets the trigger meaning it expects. Run the checklist in /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md on the full PR diff, cargo test -p callisto-graph and -p callisto-cli, just lint. Commit locally; report worktree, sha, the list of BumpReason consumers and what each expects, checklist lines. Do NOT push and do NOT resolve the finding. Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Every push triggers a paid review. Before reporting, run the checklist in /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md against your full diff. Push once, only after the lead has read your diff and says push; for an existing PR, commit locally and report the worktree and sha first.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<task-notification>
+<task-id>bf3a7y6cw</task-id>
+<tool-use-id>toolu_01X87LkXzck1wLJLHHZjCe8b</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a8586ed-1f2a-4b4f-a025-bb0907ba51c2/tasks/bf3a7y6cw.output</output-file>
+<status>completed</status>
+<summary>Background command "CARGO_BUILD_JOBS=3 cargo test -p callisto-cli 2&gt;&amp;1 | grep -E "^error|panicked|FAILED|test result: FAILED" | head -30; echo "exit ${pipestatus[1]}"" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: the owner approved a type-level design; align your fix with section 1 of /Users/gabe/Projects/callisto/.claude/plans/DESIGN-type-level-invariants.md. The plan entry carries two fields with one job each: trigger (the fresh reason; the only input to changelog generation) and severity_sources (retained changesets whose severity is higher than the trigger's; the only input to the 'major from <changeset>' explanation). Make it a type distinction so changelog code cannot read severity_sources. severity_sources travels through the release preview JSON that compose-pr-body reads: a new preview key is approved; keep it out of version --format json. Update the preview schema guard/snapshots. Before reporting: the full gate (just pre-push && just lint && just doc-check && just test), the checklist including item 11 with the list of every BumpReason consumer and what it now reads. Commit locally; don't push.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bid8af075</task-id>
+<tool-use-id>toolu_01WH6V7oCNxREAk5AuN85eXe</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a8586ed-1f2a-4b4f-a025-bb0907ba51c2/tasks/bid8af075.output</output-file>
+<status>completed</status>
+<summary>Background command "CARGO_BUILD_JOBS=3 cargo test -p callisto-cli --no-fail-fast 2&gt;&amp;1 | rtk grep -E "^error|panicked|FAILED|test result: FAILED"; echo "exit ${pipestatus[1]}"" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bfolpbd5t</task-id>
+<tool-use-id>toolu_01PDL2VUUWfq9nnwN8tqqLbV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a8586ed-1f2a-4b4f-a025-bb0907ba51c2/tasks/bfolpbd5t.output</output-file>
+<status>completed</status>
+<summary>Background command "export CARGO_BUILD_JOBS=3; just pre-push &gt; $TMPDIR/gate-prepush.log 2&gt;&amp;1; echo "pre-push=$?"; just lint &gt; $TMPDIR/gate-lint.log 2&gt;&amp;1; echo "lint=$?"; just doc-check &gt; $TMPDIR/gate-doc.log 2&gt;&amp;1; echo "doc-check=$?"; just test &gt; $TMPDIR/gate-test.log 2&gt;&amp;1; echo "test=$?"" completed (exit code 0)</summary>
+</task-notification>
