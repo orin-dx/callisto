@@ -288,6 +288,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "shell-words",
  "similar 3.2.1",
  "tempfile",
  "thiserror",

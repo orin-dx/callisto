@@ -51,6 +51,11 @@ struct Session {
 
 impl Session {
     fn start(root: &Path) -> Self {
+        Self::start_with(root, &["add"], &[])
+    }
+
+    /// `callisto <args>` with `env` set; `VISUAL` and `EDITOR` are unset unless `env` names them.
+    fn start_with(root: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
         let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         grantpt(&master).unwrap();
         unlockpt(&master).unwrap();
@@ -71,7 +76,11 @@ impl Session {
         )
         .unwrap();
         let child = Command::new(env!("CARGO_BIN_EXE_callisto"))
-            .args(["--cwd", root.to_str().unwrap(), "add"])
+            .args(["--cwd", root.to_str().unwrap()])
+            .args(args)
+            .env_remove("VISUAL")
+            .env_remove("EDITOR")
+            .envs(env.iter().copied())
             .env("TERM", "xterm-256color")
             .stdin(Stdio::from(tty.try_clone().unwrap()))
             .stdout(Stdio::from(tty.try_clone().unwrap()))
@@ -174,5 +183,66 @@ fn esc_at_a_prompt_writes_nothing_and_exits_0() {
     add.after("MAJOR", 1, "\x1b");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     assert!(add.screen().contains("Cancelled, nothing written."), "{}", add.screen());
+    assert!(changesets(dir.path()).is_empty());
+}
+
+/// Walks the wizard to the summary question.
+fn to_summary(add: &mut Session) {
+    add.after("Packages in this change", 1, "\r");
+    add.after("MAJOR", 1, "\r");
+    add.after("MINOR", 1, "\r");
+}
+
+#[test]
+fn json_format_never_prompts_even_on_a_terminal() {
+    let dir = workspace();
+    let mut add = Session::start_with(dir.path(), &["--format", "json", "add"], &[]);
+    assert_eq!(add.exit_code(), Some(2), "{}", add.screen());
+    let screen = add.screen();
+    assert!(screen.contains("E214") && screen.contains("--package"), "{screen}");
+    assert!(!screen.contains("Packages in this change"), "{screen}");
+    assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn ctrl_c_at_the_text_input_restores_the_cursor_writes_nothing_and_exits_130() {
+    let dir = workspace();
+    let mut add = Session::start(dir.path());
+    to_summary(&mut add);
+    add.after("Ctrl-C to cancel", 1, "\x03");
+    assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
+    let screen = add.screen();
+    assert!(screen.contains("Cancelled, nothing written."), "{screen}");
+    assert!(
+        screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
+        "the cursor is left hidden:\n{screen:?}"
+    );
+    assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn an_empty_editor_setting_is_unset_and_the_summary_is_asked_inline() {
+    let dir = workspace();
+    let mut add = Session::start_with(dir.path(), &["add"], &[("VISUAL", ""), ("EDITOR", "")]);
+    to_summary(&mut add);
+    // An empty answer re-asks instead of opening an editor.
+    add.after("Changelog summary", 1, "\r");
+    add.after("Changelog summary", 1, "Fix b\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
+}
+
+#[test]
+fn an_editor_that_exits_non_zero_cancels_even_after_saving() {
+    let dir = workspace();
+    let editor = r#"sh -c 'echo draft > "$0"; exit 1'"#;
+    let mut add = Session::start_with(dir.path(), &["add"], &[("EDITOR", editor)]);
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    let screen = add.screen();
+    assert!(screen.contains("Cancelled, nothing written."), "{screen}");
+    assert!(!screen.contains("Write this changeset?"), "{screen}");
     assert!(changesets(dir.path()).is_empty());
 }

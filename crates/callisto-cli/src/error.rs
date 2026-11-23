@@ -161,7 +161,9 @@ pub enum CliError {
         path: Option<std::path::PathBuf>,
     },
 
-    #[error("refusing to prompt interactively: stdin is not a terminal; missing: --package")]
+    #[error(
+        "refusing to prompt interactively: prompts need a terminal on stdin and stderr and `--format text`; missing: --package"
+    )]
     #[diagnostic(
         code(E214),
         help("specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments")

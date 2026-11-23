@@ -12,9 +12,9 @@
     {
       "name": "add",
       "signature": "callisto add [--package <NAME:SEVERITY>]... [--summary <TEXT>]",
-      "description": "Writes one changeset to .changeset/<adjective>-<noun>-<verb>.md, from flags or, with no --package and a terminal stdin, from an interactive wizard.",
+      "description": "Writes one changeset to .changeset/<adjective>-<noun>-<verb>.md, from flags or, with no --package and a terminal stdin, from an interactive wizard (never with --format json).",
       "error_conditions": [
-        "No --package and stdin is not a terminal.",
+        "No --package and stdin or stderr is not a terminal, or --format json.",
         "--package given without --summary, or with a blank summary.",
         "A --package value without `:severity`, with a severity other than none, patch, minor or major, or naming a package not in the workspace."
       ]
@@ -201,11 +201,11 @@
     },
     {
       "id": "CLI-ADD-03",
-      "criterion": "`callisto add` with no --package and a terminal stdin runs a wizard asking, in order, which packages to include (packages changed since their last tag, as `status` reports them, listed first, marked `(changed)` and ticked), which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given (an empty answer opens $EDITOR for a multi-line one), and a confirmation after a review of each package's bump and the summary. Esc at a question, declining the confirmation or saving an empty editor writes nothing, prints `Cancelled, nothing written.` and exits 0; Ctrl-C at a question does the same with the cursor shown and exits 130. After writing, it prints the path and the next step. Every wizard prompt, review and next-step line prints to stderr, not stdout."
+      "criterion": "`callisto add` with no --package, stdin and stderr terminals and --format text runs a wizard asking, in order, which packages to include (packages changed since their last tag, as `status` reports them, listed first, marked `(changed)` and ticked), which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given (an empty answer opens the editor named by $VISUAL, else $EDITOR, for a multi-line one; when neither is set the summary is required inline; an editor that exits non-zero cancels), and a confirmation after a review of each package's bump and the summary. Esc at a choice question (the summary prompt says Ctrl-C), declining the confirmation or saving an empty editor writes nothing, prints `Cancelled, nothing written.` and exits 0; Ctrl-C at a question does the same with the cursor shown and exits 130. After writing, it prints the path and the next step. Every wizard prompt, review and next-step line prints to stderr, not stdout."
     },
     {
       "id": "CLI-ADD-04",
-      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 2 with error `E214` whose help names `callisto add --package <name>:<severity>`.",
+      "criterion": "`callisto add` with no --package, and stdin or stderr not a terminal or --format json, exits 2 with error `E214` whose help names `callisto add --package <name>:<severity>`.",
       "is_error_case": true
     },
     {

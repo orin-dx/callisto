@@ -46,7 +46,7 @@ fn test_add_non_interactive_via_pipe() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("stdin is not a terminal") || stderr.contains("not_a_tty"),
+        stderr.contains("refusing to prompt") || stderr.contains("not_a_tty"),
         "stderr should mention the TTY check; got: {stderr}"
     );
     // The error must name the flags needed to

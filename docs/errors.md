@@ -260,7 +260,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E211 | Wraps a registry client error (message is the underlying error's own text) | verify registry credentials/authentication and network connectivity, then retry |
 | E212 | Wraps a `.changeset/pre.json` parse error (message is the underlying error's own text) | Check that .changeset/pre.json is valid JSON and was not partially written. |
 | E213 | An I/O error, optionally naming the path being accessed | check that the path exists and that you have permission to access it |
-| E214 | Refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given | specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments |
+| E214 | Refusing to prompt interactively: prompts need a terminal on stdin and stderr and `--format text`, and no non-interactive flags were given | specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments |
 | E215 | Release intent's schema version doesn't match what this build reads | re-run `callisto release plan` to derive a fresh intent: an intent is bound to one build's operation graph and is never reused across versions |
 | E219 | Release intent declares no binary artifact slots; no artifact manifest can be created | plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots |
 | E220 | Artifact manifests require a Git commit release source | plan the release from a Git commit source |

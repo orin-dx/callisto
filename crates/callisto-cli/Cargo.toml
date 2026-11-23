@@ -42,6 +42,7 @@ dialoguer = "0.12"
 dunce = { workspace = true }
 tempfile = { workspace = true }
 ctrlc = "3.5.3"
+shell-words = "1"
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }

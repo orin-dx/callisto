@@ -5,13 +5,13 @@ use callisto_graph::DependencyResolver;
 use callisto_model::format::{Changeset, Entry};
 use callisto_model::{AddReport, ApplyPermit, Severity, SCHEMA_VERSION};
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Confirm, Editor, Input, MultiSelect};
+use dialoguer::{Confirm, Input, MultiSelect};
 
 use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
 use crate::output::{emit_line, emit_report, log_line, prompt_line};
 use crate::runner::CliCommandRunner;
-use crate::tty;
+use crate::tty::{self, Prompted};
 use crate::workspace::load_workspace;
 
 pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
@@ -52,22 +52,26 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 severity,
             });
         }
-    } else if tty::is_interactive() {
-        // The same derivation `status` reports as `changed_since_last_tag`.
-        let packages: Vec<&callisto_model::Package> = ws.graph.packages().collect();
-        let changed = callisto_graph::changed::changed_since_last_tag(&packages, ws.tags()?, ws.git_access())?;
-        let choices = wizard_choices(packages.iter().copied(), &changed);
-        let mut prompter = TerminalAddPrompter {
-            theme: ColorfulTheme::default(),
+    } else {
+        let prompted = tty::prompting(global.format, || {
+            // The same derivation `status` reports as `changed_since_last_tag`.
+            let packages: Vec<&callisto_model::Package> = ws.graph.packages().collect();
+            let changed = callisto_graph::changed::changed_since_last_tag(&packages, ws.tags()?, ws.git_access())?;
+            let choices = wizard_choices(packages.iter().copied(), &changed);
+            let mut prompter = TerminalAddPrompter {
+                theme: ColorfulTheme::default(),
+            };
+            run_wizard(&choices, summary.clone(), &mut prompter)
+        })?;
+        let Prompted::Answered(answers) = prompted else {
+            return Ok(ExitCode::from(tty::CANCELLED_BY_SIGINT));
         };
-        let Some((chosen, written)) = tty::prompting(|| run_wizard(&choices, summary.clone(), &mut prompter))? else {
+        let Some((chosen, written)) = answers else {
             return Ok(ExitCode::SUCCESS);
         };
         entries = chosen;
         summary = Some(written);
         wizard = true;
-    } else {
-        return Err(CliError::NotATty);
     }
 
     let raw_summary = summary.ok_or(CliError::AddSummaryRequired)?;
@@ -120,10 +124,10 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         }
         OutputFormat::Text => {
             log_line(global.format, &format!("Added changeset: {rel_path}"))?;
-            if wizard {
-                prompt_line("Next: commit it with your change; `callisto release --dry-run` previews the release.");
-            }
         }
+    }
+    if wizard {
+        prompt_line("Next: commit it with your change; `callisto release --dry-run` previews the release.");
     }
 
     Ok(ExitCode::SUCCESS)
@@ -167,15 +171,21 @@ impl AddPrompter for TerminalAddPrompter {
     }
 
     fn summary(&mut self, prompt: &str) -> Result<Option<String>, CliError> {
+        let editor = tty::editor_command();
+        // dialoguer cannot return Esc from a text input, so the prompt names Ctrl-C.
+        let hint = if editor.is_some() {
+            format!("{prompt} (leave empty to open $EDITOR; Ctrl-C to cancel)")
+        } else {
+            format!("{prompt} (Ctrl-C to cancel)")
+        };
         let line: String = Input::with_theme(&self.theme)
-            .with_prompt(prompt)
-            .allow_empty(true)
+            .with_prompt(hint)
+            .allow_empty(editor.is_some())
             .interact_text()?;
         if !line.trim().is_empty() {
             return Ok(Some(line));
         }
-        let written = tty::with_editor(|| Editor::new().edit(""))?;
-        Ok(written.filter(|text| !text.trim().is_empty()))
+        editor.map_or(Ok(None), |command| tty::edit(&command))
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError> {
@@ -202,7 +212,7 @@ fn run_wizard(
 ) -> Result<Option<(Vec<Entry>, String)>, CliError> {
     let answers = ask(choices, summary, prompter)?;
     if answers.is_none() {
-        prompt_line("Cancelled, nothing written.");
+        prompt_line(tty::CANCELLED);
     }
     Ok(answers)
 }
@@ -290,7 +300,7 @@ fn ask(
 
     let summary = match summary {
         Some(summary) => summary,
-        None => match prompter.summary("Changelog summary (leave empty to open $EDITOR)")? {
+        None => match prompter.summary("Changelog summary")? {
             Some(summary) => summary,
             None => return Ok(None),
         },
