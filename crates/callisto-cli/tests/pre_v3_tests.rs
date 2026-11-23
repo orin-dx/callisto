@@ -648,21 +648,26 @@ fn a_fresh_commit_under_a_retained_major_keeps_its_changelog_entry_and_names_the
     assert_eq!(reason, "Inferred (1 commits); major from `pre/breaking`");
 }
 
-/// A member released by its fixed group keeps the group note; the group carries its retained major note's bump.
+/// A member released by its group keeps the group note; its own retained major note, which the group's severity
+/// derives from, sets the bump.
 #[test]
-fn a_group_released_member_under_a_retained_major_keeps_the_group_note() {
-    let dir = tagged_workspace("[[fixed-group]]\nname = \"pair\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n");
-    let root = dir.path();
-    enter_beta(root);
-    note(root, "breaking", "pkg-a", "major");
-    release_beta(root, &["pkg-a@2.0.0-beta.0", "pkg-b@2.0.0-beta.0"]);
-    note(root, "small-fix", "pkg-b", "patch");
+fn a_group_released_member_under_a_retained_major_keeps_the_group_note_and_names_the_major() {
+    for (kind, label) in [("fixed", "Fixed"), ("linked", "Linked")] {
+        let dir = tagged_workspace(&format!(
+            "[[{kind}-group]]\nname = \"pair\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n"
+        ));
+        let root = dir.path();
+        enter_beta(root);
+        note(root, "breaking", "pkg-a", "major");
+        release_beta(root, &["pkg-a@2.0.0-beta.0", "pkg-b@2.0.0-beta.0"]);
+        note(root, "small-fix", "pkg-b", "patch");
 
-    let (section, reason) = section_and_reason(root, "pkg-a");
-    assert!(section.starts_with("2.0.0-beta.1"), "{section}");
-    assert!(section.contains("`pair` fixed group."), "{section}");
-    assert!(!section.contains("Note breaking."), "{section}");
-    assert_eq!(reason, "Fixed group `pair`", "the group asks for the major itself");
+        let (section, reason) = section_and_reason(root, "pkg-a");
+        assert!(section.starts_with("2.0.0-beta.1"), "{kind}: {section}");
+        assert!(section.contains(&format!("`pair` {kind} group.")), "{kind}: {section}");
+        assert!(!section.contains("Note breaking."), "{kind}: {section}");
+        assert_eq!(reason, format!("{label} group `pair`; major from `pre/breaking`"));
+    }
 }
 
 /// A fresh patch note triggers the prerelease and is its changelog entry; the retained major note sets the bump.

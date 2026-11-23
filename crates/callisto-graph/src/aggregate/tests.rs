@@ -2104,12 +2104,12 @@ fn test_pre_mode_fresh_group_member_releases_retained_member_at_group_severity()
         matches!(reasons.get(&pkg_b), Some(BumpReason::FixedGroupUnion { .. })),
         "got: {reasons:?}"
     );
-    for id in [&pkg_a, &pkg_b] {
-        assert!(
-            agg.seeds[id].severity_sources(Severity::Major).is_empty(),
-            "the group asks for major itself"
-        );
-    }
+    assert_eq!(
+        agg.seeds[&pkg_a].severity_sources(Severity::Major),
+        SeveritySources::new(vec!["breaking".to_string()]),
+        "the group's major is derived from pkg-a's retained note, which sets it"
+    );
+    assert!(agg.seeds[&pkg_b].severity_sources(Severity::Major).is_empty());
 }
 
 /// A fixed group whose members hold only recorded changesets releases nothing.
@@ -2150,9 +2150,10 @@ fn test_pre_mode_fresh_linked_member_releases_at_the_retained_severity() {
         "the fresh group union, not the recorded changeset, explains the release: {:?}",
         agg.reasons().get(&pkg_a)
     );
-    assert!(
-        agg.seeds[&pkg_a].severity_sources(Severity::Major).is_empty(),
-        "the group asks for major itself"
+    assert_eq!(
+        agg.seeds[&pkg_a].severity_sources(Severity::Major),
+        SeveritySources::new(vec!["breaking".to_string()]),
+        "the group's major is derived from pkg-a's retained note, which sets it"
     );
 }
 

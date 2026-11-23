@@ -88,7 +88,7 @@ pub struct PlannedBump {
     pub to: Version,
     pub severity: Severity,
     pub governed_by: Option<ConfigKey>,
-    /// What triggered the release: the only input to its changelog entries.
+    /// What triggered the release; changelog entries never read `severity_sources`.
     pub trigger: Option<BumpReason>,
     pub writes: Vec<VersionWriteTarget>,
     pub severity_sources: SeveritySources,

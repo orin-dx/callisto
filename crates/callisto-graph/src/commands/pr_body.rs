@@ -1095,6 +1095,31 @@ mod tests {
         assert_eq!(cell, "Changeset (`a\\|b`)");
     }
 
+    /// More retained sources than can be named are counted after the trigger.
+    #[test]
+    fn many_severity_sources_are_counted_in_the_reason_cell() {
+        let package = |sources: &[&str]| PackageRelease {
+            name: "pkg-a".into(),
+            release_id: None,
+            ecosystem: "cargo".into(),
+            from: "2.0.0-beta.0".into(),
+            to: "2.0.0-beta.1".into(),
+            severity: Severity::Major,
+            reason: Some(BumpReason::Changeset {
+                changesets: vec!["fix".to_string()],
+            }),
+            severity_sources: SeveritySources::new(sources.iter().map(|id| id.to_string()).collect()),
+        };
+        assert_eq!(
+            package_reason_cell(&package(&["a", "b", "c"])),
+            "Changeset (`fix`); major from `a`, `b`, `c`"
+        );
+        assert_eq!(
+            package_reason_cell(&package(&["a", "b", "c", "d"])),
+            "Changeset (`fix`); major from 4 changesets"
+        );
+    }
+
     #[test]
     fn changes_render_as_the_changelog_will_write_them() {
         let pkg = PackageId::parse("pkg-a").unwrap();

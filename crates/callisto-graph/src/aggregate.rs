@@ -220,9 +220,17 @@ impl Seed {
         BumpReason::Changeset { changesets }
     }
 
-    /// The retained changesets asking for `severity` when the trigger asks for less: they set that bump.
+    /// The retained changesets asking for `severity` when no fresh changeset or commit asks for as much: they set
+    /// that bump.
     pub fn severity_sources(&self, severity: Severity) -> SeveritySources {
-        if self.trigger().0 >= severity {
+        // A group source's severity is derived from its members' sources, retained ones included, so it sets no floor.
+        let floor = self
+            .entries()
+            .filter(|(_, source)| source.is_fresh() && source.is_named())
+            .map(|(s, _)| *s)
+            .max()
+            .unwrap_or(Severity::None);
+        if floor >= severity {
             return SeveritySources::default();
         }
         SeveritySources::new(
