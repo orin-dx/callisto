@@ -1,6 +1,6 @@
 use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
-use crate::changelog::render::indent_changeset_summary;
+use crate::changelog::render::{commit_bullet, dependency_block, indent_changeset_summary, peer_bullet};
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
@@ -26,30 +26,9 @@ fn severity_emoji(severity: Severity) -> &'static str {
     }
 }
 
-/// One change's bullet text. `None` for a change with nothing to say.
-fn entry_text(kind: &ChangeKind) -> Option<String> {
-    match kind {
-        ChangeKind::Changeset { summary, .. } => Some(summary.trim().to_owned()),
-        ChangeKind::Commit { subject, short_sha, .. } => Some(format!("{subject} ({short_sha})")),
-        ChangeKind::DependencyUpdate { dependency, to } => Some(format!("`{dependency}` → `{to}`")),
-        ChangeKind::PeerEscalation { dependency, to } => {
-            Some(format!("Peer dependency `{dependency}` requires `{to}`"))
-        }
-        ChangeKind::Fallback { reason } => Some(fallback_reason_text(reason)),
-    }
-}
-
-/// A short, stable label for a change's `<summary>`, from its identity and never from its free-text body.
-fn change_label(kind: &ChangeKind) -> String {
-    match kind {
-        ChangeKind::Changeset { filename, .. } => {
-            format!("`{}`", filename.strip_suffix(".md").unwrap_or(filename))
-        }
-        ChangeKind::Commit { short_sha, .. } => format!("Commit `{short_sha}`"),
-        ChangeKind::PeerEscalation { dependency, to } => format!("Peer dependency `{dependency}` → `{to}`"),
-        ChangeKind::DependencyUpdate { dependency, to } => format!("Dependency `{dependency}` → `{to}`"),
-        ChangeKind::Fallback { .. } => unreachable!("Fallback changes render via their sole member, not this label"),
-    }
+/// A changeset's label when its summary is empty, from its filename.
+fn changeset_label(filename: &str) -> String {
+    format!("`{}`", filename.strip_suffix(".md").unwrap_or(filename))
 }
 
 /// Text for a package with no renderable changelog entries, from why it bumps.
@@ -260,8 +239,12 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
     body
 }
 
-/// Changes are grouped by their highest bump; a bump of `none` reads as a patch.
+/// Changes are grouped by their highest bump; a bump of `none` reads as a patch, and a dependency update is always a
+/// patch, as in the changelog.
 fn change_level(change: &Change) -> Severity {
+    if matches!(change.kind, ChangeKind::DependencyUpdate { .. }) {
+        return Severity::Patch;
+    }
     match change.max_severity() {
         Severity::None => Severity::Patch,
         level => level,
@@ -285,25 +268,59 @@ fn render_level(body: &mut String, level: Severity, changes: &[&Change]) {
         level_title(level),
         changes.len()
     ));
-    for change in changes {
+    for change in changes
+        .iter()
+        .filter(|change| !matches!(change.kind, ChangeKind::DependencyUpdate { .. }))
+    {
         body.push_str(&change_bullet(change));
     }
+    body.push_str(&dependency_updates(changes));
     body.push_str("</details>\n\n");
+}
+
+/// The changelog's one nested "Dependency updates" block for the group, then everyone it affects.
+fn dependency_updates(changes: &[&Change]) -> String {
+    let updates: Vec<&Change> = changes
+        .iter()
+        .copied()
+        .filter(|change| matches!(change.kind, ChangeKind::DependencyUpdate { .. }))
+        .collect();
+    let pairs: Vec<(&str, &str)> = updates
+        .iter()
+        .filter_map(|change| match &change.kind {
+            ChangeKind::DependencyUpdate { dependency, to } => Some((dependency.as_str(), to.as_str())),
+            _ => None,
+        })
+        .collect();
+    let mut affected: Vec<&str> = Vec::new();
+    for member in updates.iter().flat_map(|change| &change.members) {
+        if !affected.contains(&member.package.as_str()) {
+            affected.push(&member.package);
+        }
+    }
+    let block = dependency_block(&pairs);
+    if block.is_empty() {
+        return block;
+    }
+    let names: Vec<String> = affected.iter().map(|name| format!("`{name}`")).collect();
+    format!("{block}\n  Affects {}\n\n", names.join(", "))
 }
 
 /// The changelog's bullet for the change, then who it affects and the pull request that added it.
 fn change_bullet(change: &Change) -> String {
     let mut bullet = match &change.kind {
-        ChangeKind::Changeset { summary, .. } => match indent_changeset_summary(summary) {
+        ChangeKind::Changeset { summary, filename, .. } => match indent_changeset_summary(summary) {
             Some(indented) => format!("- {indented}\n"),
-            None => format!("- {}\n", change_label(&change.kind)),
+            None => format!("- {}\n", changeset_label(filename)),
         },
         ChangeKind::Fallback { reason } => {
             let text = fallback_reason_text(reason);
             let text = text.trim().trim_start_matches("- ");
             format!("- `{}`: {text}\n", change.members[0].package)
         }
-        kind => format!("- {}\n", entry_text(kind).unwrap_or_default()),
+        ChangeKind::Commit { subject, short_sha, .. } => commit_bullet(subject, short_sha),
+        ChangeKind::PeerEscalation { dependency, to } => peer_bullet(dependency, to),
+        ChangeKind::DependencyUpdate { .. } => unreachable!("dependency updates render as one block, not per change"),
     };
     if !matches!(change.kind, ChangeKind::Fallback { .. }) {
         let affected: Vec<String> = change
@@ -1097,6 +1114,64 @@ mod tests {
                     writes: vec![],
                 },
             ],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input,
+            }],
+            consumed_changesets: vec![],
+            archived_changesets: Vec::new(),
+            inferred: Default::default(),
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
+
+        insta::assert_snapshot!(body);
+    }
+
+    #[test]
+    fn dependency_updates_nest_under_patch_as_the_changelog_writes_them() {
+        let pkg = PackageId::parse("pkg-a").unwrap();
+        let input = crate::changelog::ChangelogInput {
+            style: Default::default(),
+            package: pkg.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Some(Version::semver(1, 1, 0)),
+            entries: vec![
+                crate::changelog::ChangelogEntry {
+                    severity: Severity::Minor,
+                    source: crate::changelog::ChangeSource::Changeset {
+                        filename: "adds-flag.md".to_string(),
+                        summary: "**Adds a flag.** Use it.".to_string(),
+                    },
+                },
+                crate::changelog::ChangelogEntry {
+                    severity: Severity::Minor,
+                    source: crate::changelog::ChangeSource::DependencyUpdate {
+                        dependency: PackageId::parse("pkg-core").unwrap(),
+                        dep_kind: callisto_model::DepKind::Runtime,
+                        to: Version::semver(2, 0, 0),
+                    },
+                },
+            ],
+        };
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: pkg,
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 1, 0),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            }],
             rewrites: vec![],
             platform_writes: vec![],
             optional_dep_updates: vec![],

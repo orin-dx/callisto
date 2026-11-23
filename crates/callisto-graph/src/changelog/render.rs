@@ -1,4 +1,4 @@
-use callisto_model::{GroupKind, PackageId, Severity, Version};
+use callisto_model::{GroupKind, Severity};
 
 use crate::changelog::{ChangeSource, ChangelogError, ChangelogInput, ChangelogLayout};
 
@@ -36,13 +36,9 @@ fn entry_bullet(source: &ChangeSource) -> Option<String> {
         ChangeSource::Changeset { summary, .. } => {
             indent_changeset_summary(summary).map(|indented| format!("- {indented}\n"))
         }
-        ChangeSource::Commit { subject, sha } => Some(format!("- {subject} ({})\n", sha.short())),
+        ChangeSource::Commit { subject, sha } => Some(commit_bullet(subject, sha.short())),
         ChangeSource::DependencyUpdate { .. } => None,
-        ChangeSource::PeerEscalation { dependency, to } => Some(format!(
-            "- Peer dependency `{}` requires `{}`\n",
-            dependency.display_name(),
-            to.render()
-        )),
+        ChangeSource::PeerEscalation { dependency, to } => Some(peer_bullet(&dependency.display_name(), to.render())),
         ChangeSource::GroupUnion { group, kind } => {
             let k_str = match kind {
                 GroupKind::Fixed => "fixed",
@@ -54,13 +50,22 @@ fn entry_bullet(source: &ChangeSource) -> Option<String> {
     }
 }
 
-fn dependency_block(dep_updates: &[(&PackageId, &Version)]) -> String {
+pub(crate) fn commit_bullet(subject: &str, short_sha: &str) -> String {
+    format!("- {subject} ({short_sha})\n")
+}
+
+pub(crate) fn peer_bullet(dependency: &str, to: &str) -> String {
+    format!("- Peer dependency `{dependency}` requires `{to}`\n")
+}
+
+/// The nested "Dependency updates" bullet; empty when there are none.
+pub(crate) fn dependency_block(dep_updates: &[(&str, &str)]) -> String {
     if dep_updates.is_empty() {
         return String::new();
     }
     let mut out = String::from("- Dependency updates\n");
     for (dep, to_ver) in dep_updates {
-        out.push_str(&format!("  - `{}` → `{}`\n", dep.display_name(), to_ver.render()));
+        out.push_str(&format!("  - `{dep}` → `{to_ver}`\n"));
     }
     out
 }
@@ -95,14 +100,17 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
     out.push('\n');
     out.push('\n');
 
-    let dep_updates: Vec<(&PackageId, &Version)> = input
+    let rendered: Vec<(String, String)> = input
         .entries
         .iter()
         .filter_map(|entry| match &entry.source {
-            ChangeSource::DependencyUpdate { dependency, to, .. } => Some((dependency, to)),
+            ChangeSource::DependencyUpdate { dependency, to, .. } => {
+                Some((dependency.display_name().to_string(), to.render().to_string()))
+            }
             _ => None,
         })
         .collect();
+    let dep_updates: Vec<(&str, &str)> = rendered.iter().map(|(dep, to)| (dep.as_str(), to.as_str())).collect();
 
     match input.style.layout {
         ChangelogLayout::Flat => {
