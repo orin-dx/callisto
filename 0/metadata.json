@@ -1,0 +1,92 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M851WJR29T6S2WAMH2Z0NNVB",
+  "session_id": "dffb9c7b-d79a-4368-ab92-6501799c509f",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T20:35:00.578068Z",
+  "branch": "worktree-wp-pr-summary-headline-fix",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/swift-otters-run.md",
+    "crates/callisto-cli/tests/pre_v3_tests.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "839b57801666",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 105269,
+    "cache_read_tokens": 3959191,
+    "output_tokens": 21058,
+    "api_call_count": 41
+  },
+  "session_token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 105269,
+    "cache_read_tokens": 3959191,
+    "output_tokens": 21058,
+    "api_call_count": 41
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Fix a verified bug on PR #630 where Seed::reason named only fresh changesets instead of those at the planned severity in prerelease cycles, then hunt sibling cases (retained changesets in Read-before-merging, pre-exit CHANGELOG, group Bump/Reason agreement, duplicate display) with failing tests first, run the review checklist, and commit locally without pushing.",
+    "outcome": "Fixed Seed::reason to list changesets at seed.severity() (fresh or retained, source order), updated two old tests, added reason assertions for the fixed group and changelog assertions in the v3 exit test, tightened the PR changeset wording, and committed signed locally. Sibling cases (b), (d) were confirmed non-bugs with the real binary; marker/bump mismatch is by design. The transcript does not show a final conclusion for (a) or (c) beyond added assertions, and the final report to the lead is not shown.",
+    "learnings": {
+      "repo": [
+        "PR changes and 'Read before merging' markers derive from plan.changelog_writes entries, the same input the changelog renders, so (a), (b), (d) depend on which changesets those entries contain per pre-cycle phase.",
+        "Seed::reason feeds only display and the decision's group-convergence check, which is already skipped whenever a changeset explains a member, so changing it does not alter decisions.",
+        "The marker/bump mismatch finding compares a note's own severity against bumps by documented design (same outside pre cycles), so it is not part of the shown-vs-decided seam.",
+        "Freshness should only decide whether a release triggers; the Reason column now follows the planned severity.",
+        "Tests in pre_v3_tests.rs exercise pre enter/exit with the real binary and are the place for changelog exactly-once assertions."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 180,
+          "end_line": 215,
+          "finding": "Seed::severity takes the max over all sources including retained, while Seed::reason (previously) listed only changesets with the winner's freshness, so Major rows could name only patch notes. Reason now lists changesets at seed.severity()."
+        },
+        {
+          "path": ".changeset/swift-otters-run.md",
+          "line": 1,
+          "end_line": 1,
+          "finding": "The PR's changeset claimed the Reason column 'names every changeset behind a bump', which became inaccurate after the fix and was reworded."
+        }
+      ],
+      "workflow": [
+        "Under zsh, PIPESTATUS is unavailable and exit codes were lost when piping; rerun checks and capture exit codes directly.",
+        "The sandbox blocked writes to the worktree's git metadata, so the signed commit had to run outside the sandbox.",
+        "The sandbox also blocks registry.npmjs.org and writes to ~/.npm, causing the registry_argv real-npm test to fail unrelatedly; it should not be counted against the diff.",
+        "Existing tests encoding the old rule must be updated deliberately after verifying nothing decides on the reason."
+      ]
+    },
+    "friction": [
+      "registry_argv test fails in sandbox because of network and ~/.npm write denial, obscuring the full cargo test -p callisto-graph result.",
+      "Exit code lost through zsh PIPESTATUS, requiring a rerun of lint and tests.",
+      "Sandbox blocked git metadata writes in the pre-existing worktree, forcing the commit outside the sandbox.",
+      "Two existing pre-mode tests encoded the old freshness-picks-explanation behavior and had to be rewritten."
+    ],
+    "open_items": [
+      "Lead must read the diff, then push and resolve the finding; no push was done.",
+      "Final sha, worktree, confirmed vs. not-confirmed list, and checklist lines still need to be reported to the lead.",
+      "registry_argv failure should be confirmed as environment-only in GitHub CI.",
+      "Outcomes for (a) Read-before-merging retained Breaking/Action paragraphs and (c) group Bump/Reason agreement are not clearly stated in the transcript and should be confirmed in the report."
+    ]
+  }
+}
