@@ -390,7 +390,7 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
 
         let mut publishes = Vec::new();
         for target in &package.publish_to {
-            if target.ecosystem() == Some(id.ecosystem()) {
+            if target_publishes_distribution(target, id) {
                 let binding = prepared_registry_binding(workspace, target, &package.id)?;
                 let binding_id = RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?;
                 let operation =
@@ -473,6 +473,19 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
         publishes_by_package.insert(id.clone(), publishes);
     }
     Ok(())
+}
+
+/// Whether `target` is the registry publish of the `distribution` (the one in its ecosystem).
+fn target_publishes_distribution(target: &PublishTarget, distribution: &ReleasePackageId) -> bool {
+    target.ecosystem() == Some(distribution.ecosystem())
+}
+
+/// Whether `package` runs a registry publish for `distribution`; publish construction and the selection check share it.
+fn publishes_distribution(package: &callisto_model::Package, distribution: &ReleasePackageId) -> bool {
+    package
+        .publish_to
+        .iter()
+        .any(|target| target_publishes_distribution(target, distribution))
 }
 
 /// Every `(dependent, dependency, kind)` wait between published distributions.
@@ -854,6 +867,9 @@ fn require_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<(), GraphError> {
     let mut base_versions = None;
     for (id, (package, _)) in selected {
+        if !publishes_distribution(package, id) {
+            continue;
+        }
         for edge in workspace.graph.dependencies_of(&package.id) {
             if !matches!(edge.kind, DepKind::Runtime | DepKind::Optional | DepKind::Peer)
                 || package_ids.contains_key(&edge.to)
@@ -869,12 +885,7 @@ fn require_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
             };
             let dependency_ids =
                 crate::commands::release_decision::release_package_ids(&workspace.identity, dependency)?;
-            let published = |distribution: &ReleasePackageId| {
-                dependency
-                    .publish_to
-                    .iter()
-                    .any(|target| target.ecosystem() == Some(distribution.ecosystem()))
-            };
+            let published = |distribution: &ReleasePackageId| publishes_distribution(dependency, distribution);
             if waited_distributions(id, edge, &dependency_ids, published).is_empty() {
                 continue;
             }
@@ -2194,10 +2205,18 @@ mod tests {
 
     /// The registry publishes `callisto release --dry-run` plans for every unreleased package, with their waits.
     fn planned_publishes(dir: &tempfile::TempDir) -> Result<Vec<(String, usize)>, GraphError> {
+        planned_publishes_of(dir, &[])
+    }
+
+    /// [`planned_publishes`] for an explicit selection.
+    fn planned_publishes_of(
+        dir: &tempfile::TempDir,
+        selections: &[ReleasePackageId],
+    ) -> Result<Vec<(String, usize)>, GraphError> {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
-        let plan = super::super::local::plan_workspace_release_offline(&workspace, &[])?.unwrap();
+        let plan = super::super::local::plan_workspace_release_offline(&workspace, selections)?.unwrap();
         Ok(plan
             .intent
             .operations
@@ -2252,6 +2271,29 @@ mod tests {
 
         let published = dual_pair_repo_to([r#""crates-io""#; 2], on_b, "", "", "");
         let error = derive(&published, &only_a).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::ReleaseSelectionInvalid {
+                    reason: ReleaseSelectionInvalidReason::DependencyNotSelected,
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+    }
+
+    /// Selecting a dependent whose npm manifest depends on an unreleased package does not require it when the dependent
+    /// publishes only to Cargo, since no npm publish is created for it.
+    #[test]
+    fn a_dependent_that_does_not_publish_its_npm_distribution_needs_no_npm_dependency() {
+        let dir = dual_pair_repo_to([r#""crates-io""#, r#""npm""#], "", "", r#""b":"^1.0.0""#, "");
+        let a = ReleasePackageId::new(Ecosystem::Cargo, "a").unwrap();
+        assert_eq!(planned_publishes_of(&dir, &[a]).unwrap(), [("cargo/a".to_string(), 0)]);
+
+        let both = dual_pair_repo_to([r#""crates-io", "npm""#; 2], "", "", r#""b":"^1.0.0""#, "");
+        let npm_a = ReleasePackageId::new(Ecosystem::Npm, "a").unwrap();
+        let error = planned_publishes_of(&both, &[npm_a]).unwrap_err();
         assert!(
             matches!(
                 error,
