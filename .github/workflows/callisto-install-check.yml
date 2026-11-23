@@ -27,7 +27,7 @@ jobs:
         run: |
           tag=$(gh release view --repo orin-dx/callisto --json tagName --jq .tagName)
           echo "version=${tag#callisto@}" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/setup-callisto
+      - uses: $/.github/actions/setup-callisto
         with:
           verification: require
       - name: Version matches the latest release
