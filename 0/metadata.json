@@ -1,0 +1,85 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M84QDB6J83QDM0MKP802TWNA",
+  "session_id": "711dbd44-69cb-418b-b109-50641ed2cf3f",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T17:31:53.220176Z",
+  "branch": "wt-cascade-selfsustain",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/cascade.rs",
+    "crates/callisto-graph/src/cascade/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "9fb5840b37a6",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 92701,
+    "cache_read_tokens": 2948071,
+    "output_tokens": 23643,
+    "api_call_count": 32
+  },
+  "session_token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 92701,
+    "cache_read_tokens": 2948071,
+    "output_tokens": 23643,
+    "api_call_count": 32
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Fix a regression found in review on PR #637 (trail #462): a temporary cascade raise could become self-sustaining through a linked group with an exact-pin addon. Write a failing test first, then apply a minimal reachability-prune fix to the fixed-point solver, and push to the PR branch.",
+    "outcome": "Wrote the regression test (fails on PR branch, passes on main's solver), implemented the reachability prune in cascade.rs, updated two existing tests and the termination bound (now 4p+2), and got cascade tests, lint and mutants (16 viable all caught) passing. The signed commit was made after a format fix, but merging origin/main, pushing, ls-remote confirmation, PR body update, finding resolution and the report to the lead are not shown as done.",
+    "learnings": {
+      "repo": [
+        "Pre-commit hook enforces formatting; commit fails until cargo fmt is run, so format before committing.",
+        "cargo mutants runs can leave a proptest regression file that must be checked against real code and removed, never committed.",
+        "The termination bound for the cascade fixed-point solver is documented and tested; the prune changed it to 4p+2, so the PR body needs the updated argument."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/cascade/tests.rs",
+          "line": 2366,
+          "finding": "late_realigned_fixed_pair helper was extended with an optional linked `addon` (exact pin to app@0.1.0) so existing call sites stay unchanged while the new regression is covered."
+        },
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "finding": "Reachability prune before accepting a fixed point drops raises not reachable from an explicit seed via active edges; this made the old keep-phase test's stale `app` raise correctly pruned and changed the bound test."
+        }
+      ],
+      "workflow": [
+        "Verify a regression test fails on the PR branch and passes on origin/main's solver before fixing.",
+        "Use --no-fail-fast when running crate tests so sandbox-induced unrelated failures don't hide the rest.",
+        "Sandbox blocks network (registry.npmjs.org) and writes to ~/.npm, causing unrelated callisto-graph test failures that CI covers; gh/entire CLI calls needed to run outside the sandbox due to TLS verification failures."
+      ]
+    },
+    "friction": [
+      "TLS verification failed inside the sandbox when reading the entire trail finding; had to rerun outside the sandbox.",
+      "Sandbox network block on registry.npmjs.org and ~/.npm write block caused unrelated callisto-graph test failures.",
+      "Pre-commit format check failed on first commit, requiring a format and recommit.",
+      "Lint required a follow-up change (factoring a return type) after the first run."
+    ],
+    "open_items": [
+      "Merge latest origin/main, push with git push origin HEAD:refs/heads/wp-cascade-fixpoint, and confirm with git ls-remote.",
+      "Update the PR #637 body with the new termination argument (bound 4p+2) via gh pr edit --body-file.",
+      "Resolve finding 01M84PQDCV8TVP1NY6CTXHK1Z0 with entire trail finding resolve --trail 462.",
+      "Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what was run.",
+      "The two npm-related callisto-graph test failures were not verified locally; rely on GitHub CI."
+    ]
+  }
+}
