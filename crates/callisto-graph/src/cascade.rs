@@ -208,8 +208,11 @@ struct Round {
 /// Each round starts again from the explicit seeds (changesets, inference) plus the cascade raises the previous
 /// round required, aligns linked and fixed groups, and derives the raises its settled targets require. A raise
 /// required only by an intermediate target is dropped once the final target satisfies the consumer's range. The run
-/// stops when a round requires exactly the raises it started from. After one round per package, each round also
-/// keeps the previous raises, so the raise map only grows and settles within `4 * packages + 1` rounds; otherwise
+/// stops when a round requires exactly the raises it started from and each is reached from an explicit seed through
+/// edges active under the settled targets; unreached raises (a group sustaining a raise no seed requires) are dropped
+/// and the round settled again. After one round per package, each round also keeps the previous raises, so the raise
+/// map only grows (at most `3 * packages` times); dropping unreached raises there leaves the reached packages' targets
+/// unchanged, so the next round is a fixed point. The run settles within `4 * packages + 2` rounds; otherwise
 /// [`GraphError::CascadeNotConverged`] reports the bug.
 ///
 /// A genuine cross-grammar coverage failure (`coverage`'s `Err`, e.g.
@@ -232,7 +235,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             return Err(GraphError::CascadeNotConverged { iterations: rounds });
         }
         let round = settle_round(&input, &raises)?;
-        let (mut required, diagnostics) = required_raises(&input, &round)?;
+        let (mut required, active, diagnostics) = required_raises(&input, &round)?;
         if rounds > packages {
             for (id, kept) in &raises {
                 if required.get(id).is_none_or(|r| r.severity <= kept.severity) {
@@ -241,7 +244,11 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             }
         }
         if required == raises {
-            break (round, diagnostics);
+            let reached = reached_from_seeds(&input, &round, &active);
+            if raises.keys().all(|id| reached.contains(id)) {
+                break (round, diagnostics);
+            }
+            required.retain(|id, _| reached.contains(id));
         }
         raises = required;
     };
@@ -518,12 +525,19 @@ fn settle_round<D: DependencyResolver>(
     Ok(round)
 }
 
-/// The raise each consumer needs for the targets `round` settled, and a warning per range that cannot be tested.
+type RaiseMap = BTreeMap<PackageId, Raise>;
+
+/// Per released package, the dependents its settled target raises.
+type ActiveEdges = BTreeMap<PackageId, BTreeSet<PackageId>>;
+
+/// The raise each consumer needs for the targets `round` settled, the edges that raise one, and a warning per range
+/// that cannot be tested.
 fn required_raises<D: DependencyResolver>(
     input: &CascadeInput<'_, D>,
     round: &Round,
-) -> Result<(BTreeMap<PackageId, Raise>, Vec<Diagnostic>), GraphError> {
+) -> Result<(RaiseMap, ActiveEdges, Vec<Diagnostic>), GraphError> {
     let mut required: BTreeMap<PackageId, Raise> = BTreeMap::new();
+    let mut active = ActiveEdges::new();
     let mut diagnostics = Vec::new();
     for (pkg, new_version) in &round.targets {
         let src_sev = round.severities[pkg];
@@ -555,6 +569,9 @@ fn required_raises<D: DependencyResolver>(
                 });
             }
 
+            if d.severity > Severity::None {
+                active.entry(pkg.clone()).or_default().insert(edge.from.clone());
+            }
             if d.severity > required.get(&edge.from).map_or(Severity::None, |r| r.severity) {
                 let reason = if d.escalated {
                     BumpReason::PeerEscalation {
@@ -580,7 +597,36 @@ fn required_raises<D: DependencyResolver>(
             }
         }
     }
-    Ok((required, diagnostics))
+    Ok((required, active, diagnostics))
+}
+
+/// Released packages reached from an explicit seed through `active` edges and the groups of reached members.
+fn reached_from_seeds<D: DependencyResolver>(
+    input: &CascadeInput<'_, D>,
+    round: &Round,
+    active: &ActiveEdges,
+) -> BTreeSet<PackageId> {
+    let mut reached = BTreeSet::new();
+    let mut queue: Vec<PackageId> = input.seed.keys().cloned().collect();
+    while let Some(id) = queue.pop() {
+        if !round.targets.contains_key(&id) || !reached.insert(id.clone()) {
+            continue;
+        }
+        let fixed = input.groups.fixed_group_of(&id);
+        let linked = input
+            .groups
+            .linked_of
+            .get(&id)
+            .and_then(|name| input.groups.linked.get(name));
+        queue.extend(
+            [fixed, linked]
+                .into_iter()
+                .flatten()
+                .flat_map(|g| g.package_members().cloned()),
+        );
+        queue.extend(active.get(&id).into_iter().flatten().cloned());
+    }
+    reached
 }
 
 fn bump_target<D: DependencyResolver>(
@@ -677,7 +723,7 @@ pub(crate) fn snapshot_rewrites<D: DependencyResolver>(
 }
 
 pub(crate) fn convergence_bound(package_count: usize) -> usize {
-    4 * package_count + 1
+    4 * package_count + 2
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
