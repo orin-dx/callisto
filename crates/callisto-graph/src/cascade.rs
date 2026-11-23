@@ -185,14 +185,32 @@ pub(crate) fn dependency_rewrite_key(edge: &DepEdge) -> RewriteKey {
     }
 }
 
-/// Propagates `input.seed`'s severities outward to dependents until no
-/// target version changes, or `convergence_bound`'s iteration cap is
-/// exceeded ([`GraphError::CascadeNotConverged`]) -- turns a would-be
-/// infinite loop into a reportable bug, bound derived from package count.
+/// One cascade raise on a consumer, derived from the targets a round settled.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Raise {
+    severity: Severity,
+    reason: BumpReason,
+    governed_by: Option<ConfigKey>,
+}
+
+/// The explicit seeds plus one set of cascade raises, with every group aligned.
+#[derive(Default)]
+struct Round {
+    severities: BTreeMap<PackageId, Severity>,
+    reasons: BTreeMap<PackageId, BumpReason>,
+    governed_by: BTreeMap<PackageId, ConfigKey>,
+    targets: BTreeMap<PackageId, Version>,
+    diagnostics: Vec<Diagnostic>,
+}
+
+/// Releases `input.seed` and every consumer whose range rejects a released package's final target.
 ///
-/// One pass: pop a package, compute its bumped target, walk every
-/// dependent edge, apply [`cascade_action`] to decide if that dependent's
-/// severity/target changes and gets re-queued.
+/// Each round starts again from the explicit seeds (changesets, inference) plus the cascade raises the previous
+/// round required, aligns linked and fixed groups, and derives the raises its settled targets require. A raise
+/// required only by an intermediate target is dropped once the final target satisfies the consumer's range. The run
+/// stops when a round requires exactly the raises it started from. After one round per package, each round also
+/// keeps the previous raises, so the raise map only grows and settles within `4 * packages + 1` rounds; otherwise
+/// [`GraphError::CascadeNotConverged`] reports the bug.
 ///
 /// A genuine cross-grammar coverage failure (`coverage`'s `Err`, e.g.
 /// SemVer target vs. PEP440 spec) aborts the whole cascade with
@@ -204,211 +222,43 @@ pub(crate) fn dependency_rewrite_key(edge: &DepEdge) -> RewriteKey {
 /// is a different step: `rewrite_spec`, when a mechanical range rewrite
 /// (not a coverage test) fails on an otherwise-known-coverage spec.
 pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError> {
-    let mut out = CascadeOutcome {
-        severities: input.seed.clone(),
-        reasons: input.reasons.clone(),
-        ..Default::default()
+    let packages = input.graph.packages().count();
+    let bound = convergence_bound(packages);
+    let mut raises: BTreeMap<PackageId, Raise> = BTreeMap::new();
+    let mut rounds = 0;
+    let (round, coverage_diagnostics) = loop {
+        rounds += 1;
+        if rounds > bound {
+            return Err(GraphError::CascadeNotConverged { iterations: rounds });
+        }
+        let round = settle_round(&input, &raises)?;
+        let (mut required, diagnostics) = required_raises(&input, &round)?;
+        if rounds > packages {
+            for (id, kept) in &raises {
+                if required.get(id).is_none_or(|r| r.severity <= kept.severity) {
+                    required.insert(id.clone(), kept.clone());
+                }
+            }
+        }
+        if required == raises {
+            break (round, diagnostics);
+        }
+        raises = required;
     };
 
-    // Provisional: the loop below may still move them, so nothing here may rewrite a range from them.
-    let mut targets: BTreeMap<PackageId, Version> = BTreeMap::new();
-    for (id, &sev) in input.seed {
-        let t = bump_target(id, sev, &input)?;
-        targets.insert(id.clone(), t);
-    }
-
-    let mut worklist: BTreeSet<PackageId> = targets.keys().cloned().collect();
-    let mut iterations = 0;
-    let bound = convergence_bound(input.graph.packages().count());
+    let mut out = CascadeOutcome {
+        severities: round.severities,
+        targets: ConvergedTargets::settle(round.targets),
+        reasons: round.reasons,
+        governed_by: round.governed_by,
+        diagnostics: round.diagnostics,
+        ..Default::default()
+    };
+    out.diagnostics.extend(coverage_diagnostics);
     // Edges already run through rewrite_spec, so the floor-raise pass below doesn't re-diagnose them.
     let mut rewrite_attempted: BTreeSet<RewriteKey> = BTreeSet::new();
 
-    let mut changed = true;
-    while changed {
-        changed = false;
-
-        while let Some(pkg) = worklist.pop_first() {
-            iterations += 1;
-            if iterations > bound {
-                return Err(GraphError::CascadeNotConverged { iterations });
-            }
-
-            let new_version = targets[&pkg].clone();
-            let src_sev = out.severities[&pkg];
-
-            let dependents: Vec<DepEdge> = input.graph.dependents_of(&pkg).cloned().collect();
-            for edge in dependents {
-                let cov = coverage(&edge.spec, &new_version).map_err(|source| GraphError::GrammarMismatch {
-                    from: edge.from.clone(),
-                    to: edge.to.clone(),
-                    source,
-                })?;
-
-                let d = cascade_action(edge.kind, cov, src_sev, input.cfg);
-
-                if d.unknown_coverage && !matches!(edge.spec, DepSpec::Opaque(_)) {
-                    let code = match edge.spec {
-                        DepSpec::Catalog(_) => DiagnosticCode::CatalogSpecNotRewritten,
-                        _ => DiagnosticCode::RangeNotRoundTrippable,
-                    };
-                    out.diagnostics.push(Diagnostic {
-                        code,
-                        severity: DiagnosticSeverity::Warning,
-                        message: format!(
-                            "spec `{}` for `{}` could not be tested for coverage",
-                            edge.spec.render(),
-                            edge.to.display_name()
-                        ),
-                        package: Some(edge.from.clone()),
-                        path: Some(edge.from_manifest.clone()),
-                        governed_by: Some(ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
-                        escalated_by: None,
-                    });
-                }
-
-                let cur_sev = out.severities.get(&edge.from).copied().unwrap_or(Severity::None);
-                if d.severity > cur_sev {
-                    raise(
-                        &edge.from,
-                        d.severity,
-                        &d,
-                        &pkg,
-                        &edge,
-                        &new_version,
-                        &mut out,
-                        &mut targets,
-                        input.groups,
-                        &mut worklist,
-                        &input,
-                    )?;
-                }
-            }
-        }
-
-        // Linked group release severity propagation
-        for g in input.groups.linked.values() {
-            let max_sev = g.max_severity(&out.severities);
-            if max_sev == Severity::None {
-                continue;
-            }
-
-            // Skip members absent from `input.base`: `bump_target` would hit `MissingField`.
-            let mut live_members = Vec::new();
-            for id in g.package_members() {
-                if !input.base.contains_key(id) {
-                    out.diagnostics.push(Diagnostic {
-                        code: DiagnosticCode::UnknownPackage,
-                        severity: DiagnosticSeverity::Warning,
-                        message: format!(
-                            "Linked group `{}` references package `{}` which is not in the \
-                             workspace; the stale group member is skipped. Remove it from \
-                             callisto.toml to silence this warning.",
-                            g.name,
-                            id.display_name()
-                        ),
-                        package: Some(id.clone()),
-                        path: None,
-                        governed_by: Some(ConfigKey::LINKED_GROUP),
-                        escalated_by: None,
-                    });
-                    continue;
-                }
-                live_members.push(id.clone());
-                let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
-                if max_sev > cur_sev {
-                    out.severities.insert(id.clone(), max_sev);
-                }
-            }
-
-            let mut winner: Option<Version> = None;
-            for id in &live_members {
-                let candidate = bump_target(id, max_sev, &input)?;
-                winner = Some(match winner {
-                    None => candidate,
-                    Some(best) => {
-                        let cmp = Version::compare(&candidate, &best).map_err(|_grammar_mismatch| {
-                            GraphError::GroupGrammarMismatch {
-                                group: g.name.clone(),
-                                members: live_members
-                                    .iter()
-                                    .filter_map(|m| targets.get(m).map(|v| (m.clone(), v.clone())))
-                                    .collect(),
-                            }
-                        })?;
-                        if cmp.is_gt() {
-                            candidate
-                        } else {
-                            best
-                        }
-                    }
-                });
-            }
-            let Some(winner) = winner else { continue };
-
-            for id in live_members {
-                if targets.get(&id) != Some(&winner) {
-                    targets.insert(id.clone(), winner.clone());
-                    out.reasons
-                        .insert(id.clone(), BumpReason::LinkedGroupUnion { group: g.name.clone() });
-                    worklist.insert(id.clone());
-                    changed = true;
-                }
-            }
-        }
-
-        // Fixed groups converge on `fixed_group_target`, not the max of per-member candidates.
-        for g in input.groups.fixed.values() {
-            let max_sev = g.max_severity(&out.severities);
-            if max_sev == Severity::None {
-                continue;
-            }
-
-            // Skip members absent from `input.base`: they would reach `out.severities` and panic in `plan_version`.
-            let mut live_members = Vec::new();
-            for id in g.package_members() {
-                if !input.base.contains_key(id) {
-                    out.diagnostics.push(Diagnostic {
-                        code: DiagnosticCode::UnknownPackage,
-                        severity: DiagnosticSeverity::Warning,
-                        message: format!(
-                            "Fixed group `{}` references package `{}` which is not in the \
-                             workspace; the stale group member is skipped. Remove it from \
-                             callisto.toml to silence this warning.",
-                            g.name,
-                            id.display_name()
-                        ),
-                        package: Some(id.clone()),
-                        path: None,
-                        governed_by: Some(ConfigKey::FIXED_GROUP),
-                        escalated_by: None,
-                    });
-                    continue;
-                }
-                live_members.push(id.clone());
-                let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
-                if max_sev > cur_sev {
-                    out.severities.insert(id.clone(), max_sev);
-                }
-            }
-
-            let winner =
-                crate::groups::fixed_group_target(&g.name, &live_members, input.base, max_sev, input.tags, input.pre)?;
-
-            for id in live_members {
-                if targets.get(&id) != Some(&winner) {
-                    targets.insert(id.clone(), winner.clone());
-                    out.reasons
-                        .insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
-                    worklist.insert(id.clone());
-                    changed = true;
-                }
-            }
-        }
-    }
-
-    out.targets = ConvergedTargets::settle(targets);
-
-    // A fixed group can realign `via` after the step that recorded the reason, so name the version that is released.
+    // A raise kept from an earlier round can name an intermediate version of `via`, so name the one that is released.
     for reason in out.reasons.values_mut() {
         if let BumpReason::Cascade { via, dependency_to, .. } = reason
             && let Some(settled) = out.targets.get(via)
@@ -417,8 +267,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
         }
     }
 
-    // Group alignment can move a target after the worklist first visited it, so rewrites and rejections are derived
-    // from the converged targets only.
+    // Rewrites and rejections are derived from the converged targets only.
     for (pkg, new_version) in out.targets.iter() {
         let src_sev = out.severities[pkg];
         for edge in input.graph.dependents_of(pkg) {
@@ -525,6 +374,215 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
     Ok(out)
 }
 
+/// Severities, reasons and group-aligned targets for the explicit seeds plus `raises`.
+fn settle_round<D: DependencyResolver>(
+    input: &CascadeInput<'_, D>,
+    raises: &BTreeMap<PackageId, Raise>,
+) -> Result<Round, GraphError> {
+    let mut round = Round {
+        severities: input.seed.clone(),
+        reasons: input.reasons.clone(),
+        ..Default::default()
+    };
+    for (id, raise) in raises {
+        if raise.severity > round.severities.get(id).copied().unwrap_or(Severity::None) {
+            round.severities.insert(id.clone(), raise.severity);
+            round.reasons.insert(id.clone(), raise.reason.clone());
+            if let Some(gov) = &raise.governed_by {
+                round.governed_by.insert(id.clone(), gov.clone());
+            }
+        }
+    }
+    for (id, &sev) in &round.severities {
+        round.targets.insert(id.clone(), bump_target(id, sev, input)?);
+    }
+
+    // Linked group release severity propagation
+    for g in input.groups.linked.values() {
+        let max_sev = g.max_severity(&round.severities);
+        if max_sev == Severity::None {
+            continue;
+        }
+
+        // Skip members absent from `input.base`: `bump_target` would hit `MissingField`.
+        let mut live_members = Vec::new();
+        for id in g.package_members() {
+            if !input.base.contains_key(id) {
+                round.diagnostics.push(Diagnostic {
+                    code: DiagnosticCode::UnknownPackage,
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!(
+                        "Linked group `{}` references package `{}` which is not in the \
+                         workspace; the stale group member is skipped. Remove it from \
+                         callisto.toml to silence this warning.",
+                        g.name,
+                        id.display_name()
+                    ),
+                    package: Some(id.clone()),
+                    path: None,
+                    governed_by: Some(ConfigKey::LINKED_GROUP),
+                    escalated_by: None,
+                });
+                continue;
+            }
+            live_members.push(id.clone());
+            let cur_sev = round.severities.get(id).copied().unwrap_or(Severity::None);
+            if max_sev > cur_sev {
+                round.severities.insert(id.clone(), max_sev);
+            }
+        }
+
+        let mut winner: Option<Version> = None;
+        for id in &live_members {
+            let candidate = bump_target(id, max_sev, input)?;
+            winner = Some(match winner {
+                None => candidate,
+                Some(best) => {
+                    let cmp = Version::compare(&candidate, &best).map_err(|_grammar_mismatch| {
+                        GraphError::GroupGrammarMismatch {
+                            group: g.name.clone(),
+                            members: live_members
+                                .iter()
+                                .filter_map(|m| round.targets.get(m).map(|v| (m.clone(), v.clone())))
+                                .collect(),
+                        }
+                    })?;
+                    if cmp.is_gt() {
+                        candidate
+                    } else {
+                        best
+                    }
+                }
+            });
+        }
+        let Some(winner) = winner else { continue };
+
+        for id in live_members {
+            if round.targets.get(&id) != Some(&winner) {
+                round.targets.insert(id.clone(), winner.clone());
+                round
+                    .reasons
+                    .insert(id.clone(), BumpReason::LinkedGroupUnion { group: g.name.clone() });
+            }
+        }
+    }
+
+    // Fixed groups converge on `fixed_group_target`, not the max of per-member candidates.
+    for g in input.groups.fixed.values() {
+        let max_sev = g.max_severity(&round.severities);
+        if max_sev == Severity::None {
+            continue;
+        }
+
+        // Skip members absent from `input.base`: they would reach `round.severities` and panic in `plan_version`.
+        let mut live_members = Vec::new();
+        for id in g.package_members() {
+            if !input.base.contains_key(id) {
+                round.diagnostics.push(Diagnostic {
+                    code: DiagnosticCode::UnknownPackage,
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!(
+                        "Fixed group `{}` references package `{}` which is not in the \
+                         workspace; the stale group member is skipped. Remove it from \
+                         callisto.toml to silence this warning.",
+                        g.name,
+                        id.display_name()
+                    ),
+                    package: Some(id.clone()),
+                    path: None,
+                    governed_by: Some(ConfigKey::FIXED_GROUP),
+                    escalated_by: None,
+                });
+                continue;
+            }
+            live_members.push(id.clone());
+            let cur_sev = round.severities.get(id).copied().unwrap_or(Severity::None);
+            if max_sev > cur_sev {
+                round.severities.insert(id.clone(), max_sev);
+            }
+        }
+
+        let winner =
+            crate::groups::fixed_group_target(&g.name, &live_members, input.base, max_sev, input.tags, input.pre)?;
+
+        for id in live_members {
+            if round.targets.get(&id) != Some(&winner) {
+                round.targets.insert(id.clone(), winner.clone());
+                round
+                    .reasons
+                    .insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
+            }
+        }
+    }
+
+    Ok(round)
+}
+
+/// The raise each consumer needs for the targets `round` settled, and a warning per range that cannot be tested.
+fn required_raises<D: DependencyResolver>(
+    input: &CascadeInput<'_, D>,
+    round: &Round,
+) -> Result<(BTreeMap<PackageId, Raise>, Vec<Diagnostic>), GraphError> {
+    let mut required: BTreeMap<PackageId, Raise> = BTreeMap::new();
+    let mut diagnostics = Vec::new();
+    for (pkg, new_version) in &round.targets {
+        let src_sev = round.severities[pkg];
+        for edge in input.graph.dependents_of(pkg) {
+            let cov = coverage(&edge.spec, new_version).map_err(|source| GraphError::GrammarMismatch {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                source,
+            })?;
+            let d = cascade_action(edge.kind, cov, src_sev, input.cfg);
+
+            if d.unknown_coverage && !matches!(edge.spec, DepSpec::Opaque(_)) {
+                let code = match edge.spec {
+                    DepSpec::Catalog(_) => DiagnosticCode::CatalogSpecNotRewritten,
+                    _ => DiagnosticCode::RangeNotRoundTrippable,
+                };
+                diagnostics.push(Diagnostic {
+                    code,
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!(
+                        "spec `{}` for `{}` could not be tested for coverage",
+                        edge.spec.render(),
+                        edge.to.display_name()
+                    ),
+                    package: Some(edge.from.clone()),
+                    path: Some(edge.from_manifest.clone()),
+                    governed_by: Some(ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
+                    escalated_by: None,
+                });
+            }
+
+            if d.severity > required.get(&edge.from).map_or(Severity::None, |r| r.severity) {
+                let reason = if d.escalated {
+                    BumpReason::PeerEscalation {
+                        via: pkg.clone(),
+                        spec: edge.spec.render(),
+                    }
+                } else {
+                    BumpReason::Cascade {
+                        via: pkg.clone(),
+                        dep_kind: edge.kind,
+                        spec: edge.spec.render(),
+                        dependency_to: new_version.clone(),
+                    }
+                };
+                required.insert(
+                    edge.from.clone(),
+                    Raise {
+                        severity: d.severity,
+                        reason,
+                        governed_by: d.governed_by,
+                    },
+                );
+            }
+        }
+    }
+    Ok((required, diagnostics))
+}
+
 fn bump_target<D: DependencyResolver>(
     id: &PackageId,
     sev: Severity,
@@ -551,73 +609,6 @@ fn bump_target<D: DependencyResolver>(
 
     // PreMode::Exit falls through to a plain `versioning.bump`, which strips a matching pre-release tag directly.
     crate::groups::versioned_bump(id, &base, sev, input.pre)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn raise<D: DependencyResolver>(
-    pkg: &PackageId,
-    sev: Severity,
-    decision: &CascadeDecision,
-    via: &PackageId,
-    edge: &DepEdge,
-    dependency_to: &Version,
-    out: &mut CascadeOutcome,
-    targets: &mut BTreeMap<PackageId, Version>,
-    groups: &GroupTable,
-    worklist: &mut BTreeSet<PackageId>,
-    input: &CascadeInput<'_, D>,
-) -> Result<bool, GraphError> {
-    let cur_sev = out.severities.get(pkg).copied().unwrap_or(Severity::None);
-    if sev <= cur_sev {
-        return Ok(false);
-    }
-
-    out.severities.insert(pkg.clone(), sev);
-
-    let new_reason = if decision.escalated {
-        BumpReason::PeerEscalation {
-            via: via.clone(),
-            spec: edge.spec.render(),
-        }
-    } else {
-        BumpReason::Cascade {
-            via: via.clone(),
-            dep_kind: edge.kind,
-            spec: edge.spec.render(),
-            dependency_to: dependency_to.clone(),
-        }
-    };
-    out.reasons.insert(pkg.clone(), new_reason);
-
-    if let Some(ref gov) = decision.governed_by {
-        out.governed_by.insert(pkg.clone(), gov.clone());
-    }
-
-    let new_t = bump_target(pkg, sev, input)?;
-    targets.insert(pkg.clone(), new_t);
-    worklist.insert(pkg.clone());
-
-    for sib in groups.fixed_siblings(pkg) {
-        let sib_sev = out.severities.get(sib).copied().unwrap_or(Severity::None);
-        if sev > sib_sev {
-            out.severities.insert(sib.clone(), sev);
-            out.reasons.insert(
-                sib.clone(),
-                BumpReason::FixedGroupUnion {
-                    group: groups
-                        .fixed_group_of(pkg)
-                        .expect("a fixed-group sibling implies the package has a fixed group")
-                        .name
-                        .clone(),
-                },
-            );
-            let sib_t = bump_target(sib, sev, input)?;
-            targets.insert(sib.clone(), sib_t);
-            worklist.insert(sib.clone());
-        }
-    }
-
-    Ok(true)
 }
 
 /// Each dependency range that excludes its package's snapshot version, rewritten; a snapshot has no cascade or groups.

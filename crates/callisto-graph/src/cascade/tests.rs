@@ -718,7 +718,7 @@ fn test_bump_target_exit_mode_finalizes_to_stable() {
 /// Diamond dependency: A -> B, A -> C, B -> D, C -> D.
 ///
 /// Bumping D (seeded Major) cascades both B and C; A depends on both,
-/// so the solver visits A from two paths. The worklist must process A
+/// so the solver reaches A from two paths. The solver must release A
 /// only ONCE -- not duplicated in the outcome's severity/target maps
 /// despite two edges arriving at A.
 ///
@@ -1629,7 +1629,7 @@ fn run_cascade_dev_dependent_never_bumped_but_spec_rewritten() {
     );
 }
 
-/// `solve_cascade` must surface `CascadeNotConverged` (E105) once worklist pops exceed `convergence_bound`.
+/// `solve_cascade` must surface `CascadeNotConverged` (E105) once its rounds exceed `convergence_bound`.
 #[test]
 fn run_cascade_exceeding_convergence_bound_returns_cascade_not_converged() {
     let upstream = PackageId::parse("pkg-core").unwrap();
@@ -1669,6 +1669,16 @@ fn run_cascade_exceeding_convergence_bound_returns_cascade_not_converged() {
         tags: &TagIndex::empty(),
         identity: &identity,
     };
+
+    // A cascade that settles in exactly the bound's one round is not reported.
+    let settled = run_cascade(CascadeInput {
+        graph: &TestGraph {
+            packages: Vec::new(),
+            edges: Vec::new(),
+        },
+        ..input
+    });
+    assert!(settled.is_ok(), "{settled:?}");
 
     let err = run_cascade(input).expect_err("an undersized convergence bound must be reported, not exceeded silently");
 
@@ -2350,4 +2360,163 @@ fn cascade_reason_names_the_final_version_after_a_fixed_group_realigns() {
         panic!("a must cascade from b: {:?}", outcome.reasons.get(&a));
     };
     assert_eq!(dependency_to, &final_b);
+}
+
+/// A fixed pair (released lib-a@1.0.0, untagged lib-b@2.0.0) whose consumer `app` sees lib-b at an intermediate 1.0.1
+/// before a transitive peer escalation through `mid` aligns the pair to 2.0.0.
+fn late_realigned_fixed_pair(app_spec: &str) -> CascadeOutcome {
+    use std::sync::atomic::AtomicUsize;
+
+    let [upstream, mid, lib_a, lib_b, app] =
+        ["a-upstream", "mid", "lib-a", "lib-b", "app"].map(|name| PackageId::parse(name).unwrap());
+    let peer = |from: &PackageId, to: &PackageId| {
+        let mut edge = make_dep_edge(from, to, "^1.0.0", Ecosystem::Cargo);
+        edge.kind = DepKind::Peer;
+        edge
+    };
+    let graph = TestGraph {
+        packages: [&upstream, &mid, &lib_a, &lib_b, &app]
+            .map(package_with_canonical_manifest)
+            .to_vec(),
+        edges: vec![
+            make_dep_edge(&lib_b, &upstream, "^1.0.0", Ecosystem::Cargo),
+            peer(&mid, &upstream),
+            peer(&lib_a, &mid),
+            make_dep_edge(&app, &lib_b, app_spec, Ecosystem::Cargo),
+        ],
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let runner = FakeGitTagRunner {
+        calls: AtomicUsize::new(0),
+        tags: vec!["lib-a@1.0.0".to_string()],
+    };
+    let git = callisto_model::vcs::GitAccess::new(tmp.path(), &runner);
+    let tags = crate::tags::TagIndex::build(
+        &git,
+        &graph,
+        &Default::default(),
+        &crate::config::load(tmp.path()).unwrap(),
+    )
+    .unwrap();
+    let group = GroupDef {
+        name: GroupName("pair".to_string()),
+        kind: GroupKind::Fixed,
+        members: vec![GroupMember::Package(lib_a.clone()), GroupMember::Package(lib_b.clone())],
+    };
+    let groups = GroupTable::try_from_groups(vec![group], vec![]).unwrap();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let seed = BTreeMap::from([(upstream.clone(), Severity::Major)]);
+    let mut base: BTreeMap<_, _> = [&upstream, &mid, &lib_a]
+        .into_iter()
+        .map(|id| (id.clone(), Version::semver(1, 0, 0)))
+        .collect();
+    base.insert(lib_b.clone(), Version::semver(2, 0, 0));
+    base.insert(app.clone(), Version::semver(0, 1, 0));
+    run_cascade(CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &BTreeMap::new(),
+        base: &base,
+        pre: None,
+        tags: &tags,
+        identity: &IdentityIndex::default(),
+    })
+    .unwrap()
+}
+
+#[test]
+fn a_consumer_whose_range_accepts_the_final_aligned_version_is_not_released() {
+    let outcome = late_realigned_fixed_pair(">=2.0.0");
+    let app = PackageId::parse("app").unwrap();
+    let lib_b = PackageId::parse("lib-b").unwrap();
+
+    assert_eq!(outcome.targets.get(&lib_b).unwrap().version().render(), "2.0.0");
+    assert!(
+        !outcome.severities.contains_key(&app),
+        "{:?} {:?}",
+        outcome.severities,
+        outcome.reasons
+    );
+    assert!(!outcome.reasons.contains_key(&app), "{:?}", outcome.reasons);
+    assert!(!outcome.dependency_updates.contains_key(&app));
+    assert!(
+        !outcome.rewrites.values().any(|r| r.dependency == lib_b),
+        "{:?}",
+        outcome.rewrites
+    );
+}
+
+#[test]
+fn a_consumer_whose_range_rejects_the_final_aligned_version_is_released() {
+    let outcome = late_realigned_fixed_pair("^1.0.0");
+    let app = PackageId::parse("app").unwrap();
+    let lib_b = PackageId::parse("lib-b").unwrap();
+
+    assert_eq!(outcome.severities.get(&app), Some(&Severity::Patch));
+    let Some(BumpReason::Cascade { via, dependency_to, .. }) = outcome.reasons.get(&app) else {
+        panic!("app must cascade from lib-b: {:?}", outcome.reasons.get(&app));
+    };
+    assert_eq!((via, dependency_to.render()), (&lib_b, "2.0.0"));
+    assert_eq!(outcome.governed_by.get(&app), Some(&ConfigKey::CASCADE_BUMP_SEVERITY));
+    assert_eq!(outcome.targets.get(&app).unwrap().version().render(), "0.1.1");
+    assert!(
+        outcome.rewrites.values().any(|r| r.dependency == lib_b),
+        "{:?}",
+        outcome.rewrites
+    );
+}
+
+#[test]
+fn a_transitive_cascade_releases_every_consumer_on_the_chain() {
+    let [a, b, c] = ["a", "b", "c"].map(|name| PackageId::parse(name).unwrap());
+    let graph = TestGraph {
+        packages: [&a, &b, &c].map(bare_package).to_vec(),
+        edges: vec![
+            make_dep_edge(&a, &b, "=1.0.0", Ecosystem::Cargo),
+            make_dep_edge(&b, &c, "=1.0.0", Ecosystem::Cargo),
+        ],
+    };
+    let base: BTreeMap<_, _> = [&a, &b, &c]
+        .into_iter()
+        .map(|id| (id.clone(), Version::semver(1, 0, 0)))
+        .collect();
+    // b's own changeset already asks for the patch the cascade would give it.
+    let seed = BTreeMap::from([(c.clone(), Severity::Major), (b.clone(), Severity::Patch)]);
+    let changeset = BumpReason::Changeset {
+        changesets: vec!["fix-b".to_string()],
+    };
+    let outcome = run_cascade(CascadeInput {
+        graph: &graph,
+        groups: &GroupTable::default(),
+        cfg: &CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        },
+        seed: &seed,
+        reasons: &BTreeMap::from([(b.clone(), changeset.clone())]),
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    })
+    .unwrap();
+
+    let released: Vec<_> = outcome
+        .targets
+        .iter()
+        .map(|(id, t)| format!("{}@{}", id.name(), t.version().render()))
+        .collect();
+    assert_eq!(released, ["a@1.0.1", "b@1.0.1", "c@2.0.0"]);
+    assert_eq!(outcome.rewrites.len(), 2, "{:?}", outcome.rewrites);
+    assert_eq!(outcome.reasons.get(&b), Some(&changeset));
+    assert!(!outcome.governed_by.contains_key(&b), "{:?}", outcome.governed_by);
 }

@@ -98,7 +98,7 @@
     },
     {
       "id": "VER-CAS-01",
-      "criterion": "When a package is bumped, each dependent's spec on it is tested against the new version. Under `[cascade] mode = \"out-of-range\"` (default) a runtime, optional, build or peer dependent is bumped only when its spec no longer covers the new version; under `mode = \"always\"` it is bumped regardless. Coverage governs only the dependent's own severity bump; whether its spec is rewritten follows VER-CAS-06."
+      "criterion": "When a package is bumped, each dependent's spec on it is tested against the version the package is finally released at, after group alignment; a version it only reached on the way there is never tested. Under `[cascade] mode = \"out-of-range\"` (default) a runtime, optional, build or peer dependent is bumped only when its spec no longer covers the new version; under `mode = \"always\"` it is bumped regardless. Coverage governs only the dependent's own severity bump; whether its spec is rewritten follows VER-CAS-06."
     },
     {
       "id": "VER-CAS-02",
