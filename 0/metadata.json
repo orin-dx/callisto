@@ -1,0 +1,102 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M851ECW37G5NAM629MQAGN5S",
+  "session_id": "34197297-41ea-456b-abc9-086fa19d8bcc",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T20:27:17.28836Z",
+  "branch": "worktree-wp-setup-callisto-require",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/eager-lions-run.md",
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/setup-callisto/action.yml",
+    ".github/actions/setup-callisto/scripts/install-callisto.sh",
+    ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh",
+    ".github/actions/setup-callisto/tests/test_crates_io_fallback.sh",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+    ".github/actions/setup-callisto/tests/test_verification_default.sh",
+    "README.md",
+    "docs/architecture/release.md",
+    "docs/install-in-ci.md",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e14752fb7bde",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 113001,
+    "cache_read_tokens": 4166536,
+    "output_tokens": 26684,
+    "api_call_count": 39
+  },
+  "session_token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 113001,
+    "cache_read_tokens": 4166536,
+    "output_tokens": 26684,
+    "api_call_count": 39
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Finish PR #640 (Trail #459, publish isolation/trusted publishing) for the setup-callisto GitHub Action: first make verification default to require, then (after an owner-approved rescope from the lead session) remove the verification input and crates.io fallback so the action always verifies the release attestation. Commit locally, run the checklist and checks, and do not push.",
+    "outcome": "First commit 8a0c39c72 (signed) made require the default with updated docs, changeset and tests. Then the rescope was implemented: the install script rewritten, verification input removed from setup-callisto and callisto-action, tests removed/adjusted, new docs/install-in-ci.md linked from README and release.md, changeset rewritten, justfile updated. workflow-contracts and doc-check were run and the rescope commit created, but the final sha and diff stats output were not shown in the transcript, and the checklist/report for the rescope was not yet delivered.",
+    "learnings": {
+      "repo": [
+        "setup-callisto lives in .github/actions/setup-callisto (action.yml, scripts/install-callisto.sh, tests/*.sh); callisto-action and verify-release-workflow-policy.sh also reference the install script/inputs and must be checked when changing it.",
+        "`just workflow-contracts` runs the action shell tests (listed in the justfile) and includes tests that make signed commits, so it needs gpg access and fails inside the sandbox.",
+        "test_download_extraction_format.sh and test_action_ref_version_resolution.sh encoded the old fallback default (cargo install assertions, INPUT_CALLISTO_VERIFICATION=skip); they had to be rewritten to assert curl release-download URLs and absence of cargo install.",
+        "Changesets use .changeset/*.md with a `callisto-cli: patch` frontmatter and a **Breaking:** paragraph for user-visible breaking changes.",
+        "Repo rules: signed commits with no session trailer, no push until the lead approves, merge origin/main before pushing, and don't run local `just ci`."
+      ],
+      "code": [
+        {
+          "path": ".github/actions/setup-callisto/action.yml",
+          "finding": "Originally the verification input defaulted to 'fallback'; the rescope removes the input altogether so the action always verifies the attestation."
+        },
+        {
+          "path": "docs/architecture/release.md",
+          "line": 149,
+          "finding": "Describes verification modes (require/fallback/skip); updated for the default change and then linked to docs/install-in-ci.md after the rescope."
+        },
+        {
+          "path": ".github/actions/setup-callisto/scripts/install-callisto.sh",
+          "finding": "Contains the verification-mode validation block (marked '# Validate verification mode'); the rewrite kept the head (version resolution, source: local) and replaced the rest with download, gh attestation verify before extraction, then install."
+        }
+      ],
+      "workflow": [
+        "A cross-session message from the lead rescoped the task mid-work; it replaced the earlier 'require by default' approach, so the earlier commit's design was superseded rather than extended.",
+        "Hook rewriting of Bash commands (rtk prefix, quoted grep) caused some calls to be re-issued.",
+        "When tests assert old defaults, update them to assert the measured behaviour on the real script instead of deleting them."
+      ]
+    },
+    "friction": [
+      "Sandbox blocked gpg, so workflow-contracts had to be rerun outside the sandbox.",
+      "Existing tests asserting the old fallback default failed after the first change and needed bulk sed edits by line number, which is brittle.",
+      "Some Bash calls were rewritten by hooks (rtk) and had to be re-issued."
+    ],
+    "open_items": [
+      "Report to the lead for the rescope commit: worktree, sha, lines added/removed (git diff --shortstat 094497a18 HEAD) and checklist lines, which were not delivered in the transcript.",
+      "Not pushed: awaiting the lead's go; before pushing, merge latest origin/main, push with HEAD:refs/heads/worktree-wp-setup-callisto-require, link trail #459 and open with entire trail ci-pr.",
+      "Verify that a test exists for each of the three failure messages (no prebuilt asset, attestation failed, gh missing) and for retry only on network/HTTP errors; the transcript shows the test rewrite but not the per-message coverage.",
+      "Confirm verify-release-workflow-policy.sh and callisto-action no longer reference the removed verification input or script behaviour."
+    ]
+  }
+}
