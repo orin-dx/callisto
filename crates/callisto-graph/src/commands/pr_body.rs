@@ -278,7 +278,7 @@ fn render_level(body: &mut String, level: Severity, changes: &[&Change]) {
     body.push_str("</details>\n\n");
 }
 
-/// The changelog's one nested "Dependency updates" block for the group, then everyone it affects.
+/// The changelog's one nested "Dependency updates" block for the group, each update naming its own packages.
 fn dependency_updates(changes: &[&Change]) -> String {
     let updates: Vec<&Change> = changes
         .iter()
@@ -292,18 +292,18 @@ fn dependency_updates(changes: &[&Change]) -> String {
             _ => None,
         })
         .collect();
-    let mut affected: Vec<&str> = Vec::new();
-    for member in updates.iter().flat_map(|change| &change.members) {
-        if !affected.contains(&member.package.as_str()) {
-            affected.push(&member.package);
-        }
-    }
     let block = dependency_block(&pairs);
     if block.is_empty() {
         return block;
     }
-    let names: Vec<String> = affected.iter().map(|name| format!("`{name}`")).collect();
-    format!("{block}\n  Affects {}\n\n", names.join(", "))
+    let mut lines = block.lines();
+    let mut out = format!("{}\n", lines.next().unwrap_or_default());
+    for (line, change) in lines.zip(&updates) {
+        let names: Vec<String> = change.members.iter().map(|m| format!("`{}`", m.package)).collect();
+        out.push_str(&format!("{line} · affects {}\n", names.join(", ")));
+    }
+    out.push('\n');
+    out
 }
 
 /// The changelog's bullet for the change, then who it affects and the pull request that added it.
@@ -1179,6 +1179,64 @@ mod tests {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
                 input,
             }],
+            consumed_changesets: vec![],
+            archived_changesets: Vec::new(),
+            inferred: Default::default(),
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
+
+        insta::assert_snapshot!(body);
+    }
+
+    #[test]
+    fn each_dependency_update_names_only_its_own_packages() {
+        let dep_bump = |name: &str, dep: &str, to: u64| {
+            let pkg = PackageId::parse(name).unwrap();
+            let input = crate::changelog::ChangelogInput {
+                style: Default::default(),
+                package: pkg.clone(),
+                from: Version::semver(1, 0, 0),
+                to: Some(Version::semver(1, 0, 1)),
+                entries: vec![crate::changelog::ChangelogEntry {
+                    severity: Severity::Patch,
+                    source: crate::changelog::ChangeSource::DependencyUpdate {
+                        dependency: PackageId::parse(dep).unwrap(),
+                        dep_kind: callisto_model::DepKind::Runtime,
+                        to: Version::semver(to, 0, 0),
+                    },
+                }],
+            };
+            let bump = PlannedBump {
+                package: pkg,
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 0, 1),
+                severity: Severity::Patch,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            };
+            (bump, input)
+        };
+        let (bump_a, input_a) = dep_bump("app-a", "dep-x", 2);
+        let (bump_b, input_b) = dep_bump("app-b", "dep-y", 3);
+        let plan = VersionPlan {
+            bumps: vec![bump_a, bump_b],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: [("A", input_a), ("B", input_b)]
+                .into_iter()
+                .map(|(n, input)| crate::plan::ChangelogWrite {
+                    changelog_path: std::path::PathBuf::from(format!("{n}/CHANGELOG.md")),
+                    input,
+                })
+                .collect(),
             consumed_changesets: vec![],
             archived_changesets: Vec::new(),
             inferred: Default::default(),
