@@ -99,6 +99,29 @@ else
   echo "PASS test_explicit_version_override_skips_resolution"
 fi
 
+# 5. A bare version stands for its callisto@ tag; anything else that is not a callisto@ tag fails before any download.
+out=$(run_case "0.21.0" "" "$TAGS")
+if [[ "$out" != *"TAG_NAME=callisto@0.21.0"* || "$out" != *"EXIT=0"* ]]; then
+  echo "FAIL test_bare_version_becomes_its_release_tag: $out"; fail=1
+else
+  echo "PASS test_bare_version_becomes_its_release_tag"
+fi
+out=$(run_case "0.22.0-rc.1" "abc1230000000000000000000000000000000002" "$TAGS")
+if [[ "$out" != *"TAG_NAME=callisto@0.22.0-rc.1"* || "$out" == *"git ls-remote"* ]]; then
+  echo "FAIL test_bare_prerelease_version_becomes_its_release_tag: $out"; fail=1
+else
+  echo "PASS test_bare_prerelease_version_becomes_its_release_tag"
+fi
+for bad in "callisto-cli@0.21.0" "v0.21.0" "main" "callisto@" "callisto@latest" "callisto@0.21.0/../x" "0.21.0 x" $'0.21.0\nx'"-0.21.0" "../0.21.0" ""; do
+  out=$(run_case "$bad" "" "$TAGS")
+  if [[ "$out" != *"::error::setup-callisto version must be latest, a release version such as 0.21.0, or a release tag such as callisto@0.21.0"* \
+    || "$out" != *"EXIT=1"* || "$out" == *"TAG_NAME="* ]]; then
+    echo "FAIL test_unsupported_version_is_rejected (${bad//$'\n'/\\n}): $out"; fail=1
+  else
+    echo "PASS test_unsupported_version_is_rejected (${bad//$'\n'/\\n})"
+  fi
+done
+
 run_installer() (
   local source="$1" version="$2" checkout="$3" action_ref="${4:-}"
   local fixture code
@@ -139,7 +162,6 @@ run_installer() (
                  else $root + "/crates/callisto-cli/src/main.rs" end)}]}]}'
         ;;
       build) ;;
-      install) [[ "$checkout" != install-failure ]] ;;
       *) return 99 ;;
     esac
   }
@@ -148,7 +170,6 @@ run_installer() (
   curl() { echo "curl $*" >> "$fixture/calls"; return 1; }
   gh() { echo "unexpected gh $*" >> "$fixture/calls"; return 99; }
   tar() { echo "unexpected tar $*" >> "$fixture/calls"; return 99; }
-  unzip() { echo "unexpected unzip $*" >> "$fixture/calls"; return 99; }
   cp() { echo "cp $*" >> "$fixture/calls"; }
   (cd "$fixture" && source "$INSTALL_SCRIPT")
   code=$?

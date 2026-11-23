@@ -13,7 +13,7 @@ extract_snippet() {
 # Runs the snippet with uname/curl stubbed per case and tar/cargo/cp recording into calls_file;
 # GITHUB_WORKSPACE is an empty temp dir so the local-checkout branch is skipped.
 run_case() {
-  local uname_s="$1" uname_m="$2" curl_exit="$3" gh_mode="${4:-ok}" tag="${5:-latest}"
+  local uname_s="$1" uname_m="$2" curl_exit="$3" gh_mode="${4:-ok}" tag="${5:-latest}" http_status="${6:-}"
   local calls_file workspace runner_temp bin_dir github_path tmp_script isolated_path
   calls_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   workspace="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
@@ -28,7 +28,8 @@ run_case() {
   for t in tr grep rm; do ln -s "$(command -v "$t")" "$isolated_path/$t"; done
   {
     printf 'uname() {\n  case "$1" in\n    -s) echo %q ;;\n    -m) echo %q ;;\n    *) return 99 ;;\n  esac\n}\n' "$uname_s" "$uname_m"
-    printf 'curl() { echo "curl $*" >> %q; [[ %q -eq 0 ]] && : > "${@: -1}"; return %q; }\n' "$calls_file" "$curl_exit" "$curl_exit"
+    [[ -n "$http_status" ]] || case "$curl_exit" in 0) http_status=200 ;; 22) http_status=404 ;; *) http_status=000 ;; esac
+    printf 'curl() { echo "curl $*" >> %q; [[ %q -eq 0 ]] && : > "${@: -1}"; printf %%s %q; return %q; }\n' "$calls_file" "$curl_exit" "$http_status" "$curl_exit"
     printf 'tar() { echo "tar $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cargo() { echo "cargo $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cp() { echo "cp $*" >> %q; return 0; }\n' "$calls_file"
@@ -88,11 +89,21 @@ for platform in "MINGW64_NT-10.0 x86_64" "Linux riscv64" "SunOS sun4u"; do
   check "test_no_asset_for_${os}_${arch}_fails_with_docs_link" $? "code=$code out=$out"
 done
 
-# Message 1 also covers a release that has no such asset (download fails); nothing is extracted or installed from crates.io.
+# Message 1 also covers a release that has no such asset (HTTP 404); nothing is extracted or installed from crates.io.
 out=$(run_case Linux x86_64 22); code=$?
-[[ $code -ne 0 && "$out" == *"::error::no prebuilt callisto asset "*"could be downloaded"*"$DOCS_URL"* \
+[[ $code -ne 0 && "$out" == *"::error::no prebuilt callisto asset callisto-x86_64-unknown-linux-gnu.tar.gz exists for latest"*"$DOCS_URL"* \
   && "$out" != *"gh attestation"* && "$out" != *"tar -xzf"* && "$out" != *"cargo install"* && "$out" != *"ASSET_PRESENT"* ]]
 check test_missing_release_asset_fails_with_docs_link $? "code=$code out=$out"
+
+# Any other download failure after curl's retries is a failed download, not a missing asset.
+for failure in "22 ok latest 503" "6 ok latest 000"; do
+  read -r curl_exit gh_mode tag status <<< "$failure"
+  out=$(run_case Linux x86_64 "$curl_exit" "$gh_mode" "$tag" "$status"); code=$?
+  [[ $code -ne 0 && "$out" == *"::error::downloading callisto-x86_64-unknown-linux-gnu.tar.gz for latest failed (HTTP status $status) after retries; retry the job"*"$DOCS_URL"* \
+    && "$out" != *"no prebuilt callisto asset"* && "$out" != *"gh attestation"* && "$out" != *"tar -xzf"* \
+    && "$out" != *"cargo install"* && "$out" != *"ASSET_PRESENT"* ]]
+  check "test_download_failure_status_${status}_asks_to_retry" $? "code=$code out=$out"
+done
 
 # Message 2: a failed attestation deletes the archive and never extracts it.
 out=$(run_case Linux x86_64 0 fail); code=$?
@@ -106,7 +117,7 @@ out=$(run_case Linux x86_64 0 missing); code=$?
   && "$out" != *"curl "* && "$out" != *"tar -xzf"* && "$out" != *"cargo install"* ]]
 check test_missing_gh_fails_with_docs_link $? "code=$code out=$out"
 
-# The removed verification input is ignored: setting it can no longer skip verification.
+# A verification input does not exist: setting it cannot skip verification.
 out=$(INPUT_CALLISTO_VERIFICATION=skip run_case Linux x86_64 0 fail); code=$?
 [[ $code -ne 0 && "$out" == *"gh attestation verify"* && "$out" != *"tar -xzf"* ]]
 check test_verification_input_cannot_skip_verification $? "code=$code out=$out"

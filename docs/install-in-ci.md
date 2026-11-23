@@ -16,17 +16,26 @@ Pick the asset for your platform:
 | macOS arm64 | `callisto-aarch64-apple-darwin.tar.gz` |
 | macOS x86_64 | `callisto-x86_64-apple-darwin.tar.gz` |
 
-Then download, verify, and extract. Replace `callisto@X.Y.Z` with the release tag, or use `latest/download` for the newest release:
+Then download, verify, and extract. Set `release` to the release tag, or to `latest` for the newest release. The block runs in a subshell with `set -euo pipefail`, so it stops at the first failing step, never extracts unless the download and the verification both succeed, and does not close your terminal:
 
 ```bash
+(
+set -euo pipefail
 asset=callisto-x86_64-unknown-linux-gnu.tar.gz
-curl -sSL -f --retry 3 -o "$asset" "https://github.com/orin-dx/callisto/releases/download/callisto@X.Y.Z/$asset"
+release=callisto@X.Y.Z
+if [ "$release" = latest ]; then
+  url="https://github.com/orin-dx/callisto/releases/latest/download/$asset"
+else
+  url="https://github.com/orin-dx/callisto/releases/download/$release/$asset"
+fi
+curl -sSL -f --retry 3 -o "$asset" "$url"
 gh attestation verify "$asset" \
   --repo orin-dx/callisto \
   --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
   --deny-self-hosted-runners \
   --source-ref refs/heads/main
 tar -xzf "$asset" callisto
+)
 ```
 
 - Verify before you extract. If `gh attestation verify` fails, delete the archive and do not run it.

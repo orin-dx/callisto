@@ -7,7 +7,7 @@ inputs:
     default: 'auto'
   version:
     description: >-
-      Version tag of Callisto to install. Default 'latest' installs the release this action's
+      Release to install: a version such as 0.21.0 or a callisto@ tag; other values fail the step. Default 'latest' installs the release this action's
       own invocation is pinned to (github.action_ref resolved against callisto@ tags), falling
       back to the newest published release when that ref is unset or unresolvable.
     required: false

@@ -35,6 +35,17 @@ if [[ "$SOURCE" == "auto" && "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:
   fi
 fi
 
+# A bare version (0.21.0) stands for its callisto@ tag; any other value must already be one, so the URL never carries free text.
+if [[ "$SOURCE" == "auto" && "$TAG_NAME" != "latest" ]]; then
+  if [[ "$TAG_NAME" =~ ^[0-9] ]]; then
+    TAG_NAME="callisto@$TAG_NAME"
+  fi
+  if [[ ! "$TAG_NAME" =~ ^callisto@[0-9][0-9A-Za-z.+-]*$ ]]; then
+    echo "::error::setup-callisto version must be latest, a release version such as 0.21.0, or a release tag such as callisto@0.21.0; crate names such as callisto-cli@X are no longer accepted"
+    exit 1
+  fi
+fi
+
 # Detect OS platform architecture for pre-built binaries
 OS_NAME=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH_NAME=$(uname -m)
@@ -69,9 +80,13 @@ install_release_asset() {
     exit 1
   fi
   # curl retries transient network and HTTP errors itself; a missing asset (404) is not retried.
-  if ! curl -sSL -f --retry 3 --retry-delay 2 "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST"; then
+  if ! http_status=$(curl -sSL -f --retry 3 --retry-delay 2 -w '%{http_code}' "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST"); then
     rm -f "$DOWNLOAD_DEST"
-    echo "::error::no prebuilt callisto asset $ASSET_NAME for $TAG_NAME could be downloaded; install it yourself: $DOCS_URL"
+    if [[ "$http_status" == "404" ]]; then
+      echo "::error::no prebuilt callisto asset $ASSET_NAME exists for $TAG_NAME; install it yourself: $DOCS_URL"
+    else
+      echo "::error::downloading $ASSET_NAME for $TAG_NAME failed (HTTP status ${http_status:-none}) after retries; retry the job: $DOCS_URL"
+    fi
     exit 1
   fi
   if ! gh attestation verify "$DOWNLOAD_DEST" \
