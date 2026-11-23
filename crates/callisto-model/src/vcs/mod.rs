@@ -8,7 +8,7 @@ mod boundary;
 pub mod checkpoint;
 
 pub use access::{FirstParentTouches, GitAccess};
-pub use boundary::{GitStdout, LogEntry, Pathspec};
+pub use boundary::{check_ignore_arg, GitStdout, LogEntry, Pathspec};
 pub use checkpoint::{Checkpoint, CheckpointFacts, VERSION_CHECKPOINT};
 
 #[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]

@@ -151,7 +151,10 @@ pub(super) fn ignored_paths<R: CommandRunner>(
 
 /// Whether `git check-ignore` names at least one of `paths` as ignored (it prints what it matched, `-q` taking one path only).
 fn any_ignored<R: CommandRunner>(runner: &R, root: &Path, paths: &[PathBuf]) -> Result<bool, GraphError> {
-    let rendered: Vec<String> = paths.iter().map(|path| path.to_string_lossy().into_owned()).collect();
+    let rendered: Vec<String> = paths
+        .iter()
+        .map(|path| callisto_model::vcs::check_ignore_arg(path))
+        .collect();
     let mut args = vec!["check-ignore", "--"];
     args.extend(rendered.iter().map(String::as_str));
     let output = runner.run("git", &args, root)?;
