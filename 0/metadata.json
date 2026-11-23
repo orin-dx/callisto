@@ -1,0 +1,85 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M85C03E41P57RQE7KCHNYZ4W",
+  "session_id": "4fcc474d-2672-48c7-8fe0-4137c2c43914",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T23:31:38.723755Z",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "Cargo.lock",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1b3324c3044c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 87298,
+    "cache_read_tokens": 2977609,
+    "output_tokens": 15529,
+    "api_call_count": 33
+  },
+  "session_token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 87298,
+    "cache_read_tokens": 2977609,
+    "output_tokens": 15529,
+    "api_call_count": 33
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Apply the owner's final change to PR #638: remove prompt signal handling from callisto-cli's tty.rs (keeping only the SIGINT-ignore rule while $EDITOR runs), update the pty test, spec and changeset, run the full gate, and commit locally without pushing.",
+    "outcome": "Signal thread, STATE mutex, Mode::RestoreTerminal and react() were removed, the editor flag rule kept, crossterm dropped as a direct dep, and the pty test, cli.json and changeset updated. The work went beyond the stated scope (E343 rendering on cancel, new pty tests); all four gates exited 0 and a signed commit was made locally, but the sha and diff stat were not reported in the transcript and nothing was pushed.",
+    "learnings": {
+      "repo": [
+        "Prompt cancel maps to CliError::Cancelled and exit 130 via tty::CANCELLED_BY_CTRL_C; inquire reads Ctrl-C and Esc as keys so no custom signal handling is needed at prompts.",
+        "docs/specs/cli.json holds criteria (e.g. CLI-ADD-03/04/05, CLI-INIT-10) that tests and docs checks read, so spec wording changes affect doc-check.",
+        "Without git the workspace is rejected earlier with E058, so the 'could not tell which packages changed' warning cannot be triggered through the real binary and is covered only by a unit test.",
+        "Cargo.lock changes when a direct dependency such as crossterm is dropped; this is expected and should be committed.",
+        "signal-hook's flag::register_conditional_default lets SIGINT be ignored while a flag is false and restored to default on Drop, with no thread."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "finding": "Reduced to a thin prompt wrapper plus an editor_owns_ctrl_c module (unix: signal_hook flag guard; non-unix: no-op guard)."
+        },
+        {
+          "path": "crates/callisto-cli/src/main.rs",
+          "finding": "Cancelled is now rendered through the normal error path with exit code forced to 130 rather than a special-case print arm."
+        }
+      ],
+      "workflow": [
+        "Run gates sequentially and judge each by exit code, redirecting output to log files; the first pre-push failure was formatting only, fixed with cargo fmt.",
+        "A change made mid-gate (the Cancelled rendering) invalidates a running gate, so the gate was stopped and restarted.",
+        "TMPDIR-based log paths failed in one step, so logs were moved to the job tmp dir."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}

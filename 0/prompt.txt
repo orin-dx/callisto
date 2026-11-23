@@ -1,0 +1,38 @@
+Final change for PR #638, owner decision: remove the prompt signal handling. Worktree /Users/gabe/Projects/callisto/.claude/worktrees/wp-add-inquire (HEAD 6ecabca29 = pushed). Trail #487. (1) Delete the signal thread, the static STATE Mutex, Mode::RestoreTerminal and react() in crates/callisto-cli/src/tty.rs and the tty::prompt wrapper's signal registration; inquire already reads Ctrl-C and Esc as keys, restores the terminal and returns a cancel, which maps to CliError::Cancelled and exit 130 as now. (2) Keep only the editor rule: SIGINT ignored while $EDITOR runs via the signal_hook::flag registration (no thread, no printing), as EditorOwnsCtrlC does. (3) Remove the pty test that asserts terminal restoration after an external kill -INT at a prompt; keep one asserting that an external SIGINT at a prompt ends the process (signal 2) and writes nothing. (4) docs/specs/cli.json and the changeset: state the limit in one line: an external SIGINT at a prompt ends Callisto with default signal behaviour; run reset if the terminal is left raw. If signal-hook is now only used by the editor flag keep it; drop any dependency that became unused. The result should be smaller than now. Full gate by exit code before reporting: just pre-push && just lint && just doc-check && just test (pty and network tests unsandboxed). Commit locally (signed), report the sha, the diff stat and each gate's exit code. Do not push and do not touch findings; the lead does both. Scope is fixed: change nothing outside this list. Rules (from the lead session close-gap-for-alpha). Be thorough before a push: a push costs a paid review, so find problems locally first.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Before reporting a change as ready to push, run the AGENTS.md gate in full and judge each by exit code: `just pre-push && just lint && just doc-check && just test` (workspace-wide, not just the touched crate; tests elsewhere read scripts, specs and error registries). Run network/pty tests unsandboxed. Iterate with scoped `cargo test -p` while working.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Every push triggers a paid review. Before reporting, run the checklist in /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md against your full diff. Push once, only after the lead has read your diff and says push; for an existing PR, commit locally and report the worktree and sha first.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: in addition to removing the prompt signal thread, verify #638 against the complete interactive CLI contract in /Users/gabe/Projects/callisto/.claude/plans/CONTRACT-interactive-cli.md (every row for add and init except the 'init and origin' section, which is #634's). For each row: confirm the code does exactly that, that docs/specs/cli.json has a criterion saying it, and that a test through the real binary (pty where needed) asserts it, including message text and exit code. Add missing criteria/tests; fix any behaviour that differs from the contract. Report a table: row | code ok | criterion id | test name. Then the full gate. Still don't push.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead, owner says fix everything: also make the cancel output include its code. main.rs about 37 prints only the message for CliError::Cancelled; render it through the normal diagnostic renderer (or append the code the same way other errors show it) so 'E343' appears, keeping the message text, stderr, and exit 130. Update the contract rows' tests to assert the code. Same batch, same gate, no push.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bz14ofcok</task-id>
+<tool-use-id>toolu_012mAaiNLSfWs6khgqmhxnAa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/4fcc474d-2672-48c7-8fe0-4137c2c43914/tasks/bz14ofcok.output</output-file>
+<status>completed</status>
+<summary>Background command "J=/Users/gabe/.claude/jobs/4fcc474d/tmp; for g in pre-push lint doc-check test; do just $g &gt;$J/$g.log 2&gt;&amp;1; echo $g=$?; done" completed (exit code 0)</summary>
+</task-notification>
