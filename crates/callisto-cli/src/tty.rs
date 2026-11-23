@@ -2,7 +2,7 @@
 
 use std::io::{IsTerminal as _, Read as _, Write as _};
 use std::process::Command;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use crate::cli::OutputFormat;
 use crate::error::CliError;
@@ -49,15 +49,20 @@ pub fn prompting<T>(format: OutputFormat, ask: impl FnOnce() -> Result<T, CliErr
     }
     // Without the handler SIGINT kills the process with the cursor hidden, so a failure to install it is not fatal.
     drop(ctrlc::set_handler(|| match AT.load(Ordering::SeqCst) {
-        PROMPT | EDITOR => {}
+        PROMPT => {
+            // An OS-delivered SIGINT: nothing is written during a prompt, so end here. The Ctrl-C byte reports once.
+            if report_cancel() {
+                std::process::exit(i32::from(CANCELLED_BY_SIGINT));
+            }
+        }
+        EDITOR => {}
         _ => std::process::exit(i32::from(CANCELLED_BY_SIGINT)),
     }));
     AT.store(PROMPT, Ordering::SeqCst);
     match ask() {
         Err(CliError::Interactive(dialoguer::Error::IO(error))) if error.kind() == std::io::ErrorKind::Interrupted => {
             // Stay in PROMPT: a handler thread running late must not exit before the caller reports the cancel.
-            drop(dialoguer::console::Term::stderr().show_cursor());
-            prompt_line(CANCELLED);
+            report_cancel();
             Ok(Prompted::Interrupted)
         }
         result => {
@@ -65,6 +70,19 @@ pub fn prompting<T>(format: OutputFormat, ask: impl FnOnce() -> Result<T, CliErr
             result.map(Prompted::Answered)
         }
     }
+}
+
+static REPORTED: AtomicBool = AtomicBool::new(false);
+
+/// Restores the cursor and says nothing was written, once however many paths see the interrupt; true for the caller
+/// that did.
+fn report_cancel() -> bool {
+    if REPORTED.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    drop(dialoguer::console::Term::stderr().show_cursor());
+    prompt_line(CANCELLED);
+    true
 }
 
 /// Printed whenever a prompt run ends without writing.
@@ -79,7 +97,7 @@ pub fn editor_command() -> Option<String> {
 }
 
 /// Opens `command` on an empty file and returns what was saved. `None` when the editor exits non-zero (an abort, as
-/// `:cq` in Vim) or saves nothing. The editor draws on stderr so stdout stays for the report.
+/// `:cq` in Vim). The editor draws on stderr so stdout stays for the report.
 pub fn edit(command: &str) -> Result<Option<String>, CliError> {
     let mut file = tempfile::Builder::new().prefix("callisto-").suffix(".txt").tempfile()?;
     file.flush()?;
@@ -100,5 +118,5 @@ pub fn edit(command: &str) -> Result<Option<String>, CliError> {
     }
     let mut written = String::new();
     std::fs::File::open(file.path())?.read_to_string(&mut written)?;
-    Ok(Some(written).filter(|text| !text.trim().is_empty()))
+    Ok(Some(written))
 }

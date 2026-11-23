@@ -19,7 +19,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let ws = load_workspace(global, &runner)?;
 
     let mut entries = Vec::new();
-    let mut summary = args.summary.clone();
+    // Built before any prompt, so a blank flag fails before the review.
+    let mut summary = args.summary.as_deref().map(Summary::new).transpose()?;
     let mut wizard = false;
 
     if !args.packages.is_empty() {
@@ -74,11 +75,10 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         wizard = true;
     }
 
-    let raw_summary = summary.ok_or(CliError::AddSummaryRequired)?;
-    let summary_text = validate_summary(&raw_summary)?;
+    let summary = summary.ok_or(CliError::AddSummaryRequired)?;
     let changeset = Changeset {
         entries,
-        summary: summary_text,
+        summary: summary.0,
     };
     let text = callisto_model::format::write_changeset(&changeset)?;
 
@@ -133,6 +133,20 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     Ok(ExitCode::SUCCESS)
 }
 
+/// A changeset summary: trimmed and never blank, whichever way it was supplied.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Summary(String);
+
+impl Summary {
+    fn new(text: &str) -> Result<Self, CliError> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Err(CliError::AddSummaryEmpty);
+        }
+        Ok(Self(trimmed.to_owned()))
+    }
+}
+
 /// The wizard's questions; a scripted implementation drives tests. `None` means the contributor cancelled.
 trait AddPrompter {
     /// The indices the contributor ticked; `checked` says which start ticked. `None` on Esc.
@@ -143,7 +157,7 @@ trait AddPrompter {
         checked: &[bool],
     ) -> Result<Option<Vec<usize>>, CliError>;
     /// The summary; an empty answer opens `$EDITOR` for a longer one. `None` when the editor saves nothing.
-    fn summary(&mut self, prompt: &str) -> Result<Option<String>, CliError>;
+    fn summary(&mut self, prompt: &str) -> Result<Option<Summary>, CliError>;
     /// `None` on Esc.
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError>;
 }
@@ -170,7 +184,7 @@ impl AddPrompter for TerminalAddPrompter {
             .interact_opt()?)
     }
 
-    fn summary(&mut self, prompt: &str) -> Result<Option<String>, CliError> {
+    fn summary(&mut self, prompt: &str) -> Result<Option<Summary>, CliError> {
         let editor = tty::editor_command();
         // dialoguer cannot return Esc from a text input, so the prompt names Ctrl-C.
         let hint = if editor.is_some() {
@@ -178,14 +192,20 @@ impl AddPrompter for TerminalAddPrompter {
         } else {
             format!("{prompt} (Ctrl-C to cancel)")
         };
+        let opens_editor = editor.is_some();
         let line: String = Input::with_theme(&self.theme)
             .with_prompt(hint)
-            .allow_empty(editor.is_some())
+            .allow_empty(opens_editor)
+            .validate_with(|line: &String| match Summary::new(line) {
+                Err(error) if !(opens_editor && line.is_empty()) => Err(error),
+                _ => Ok(()),
+            })
             .interact_text()?;
-        if !line.trim().is_empty() {
-            return Ok(Some(line));
+        if let Ok(summary) = Summary::new(&line) {
+            return Ok(Some(summary));
         }
-        editor.map_or(Ok(None), |command| tty::edit(&command))
+        let Some(command) = editor else { return Ok(None) };
+        Ok(tty::edit(&command)?.and_then(|text| Summary::new(&text).ok()))
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError> {
@@ -207,9 +227,9 @@ struct Choice {
 /// first and start ticked. `None` when the contributor cancels, having been told nothing was written.
 fn run_wizard(
     choices: &[Choice],
-    summary: Option<String>,
+    summary: Option<Summary>,
     prompter: &mut impl AddPrompter,
-) -> Result<Option<(Vec<Entry>, String)>, CliError> {
+) -> Result<Option<(Vec<Entry>, Summary)>, CliError> {
     let answers = ask(choices, summary, prompter)?;
     if answers.is_none() {
         prompt_line(tty::CANCELLED);
@@ -219,9 +239,9 @@ fn run_wizard(
 
 fn ask(
     choices: &[Choice],
-    summary: Option<String>,
+    summary: Option<Summary>,
     prompter: &mut impl AddPrompter,
-) -> Result<Option<(Vec<Entry>, String)>, CliError> {
+) -> Result<Option<(Vec<Entry>, Summary)>, CliError> {
     if choices.is_empty() {
         return Err(CliError::AddNoPackagesInWorkspace);
     }
@@ -306,7 +326,7 @@ fn ask(
         },
     };
 
-    prompt_line(&review(&entries, &summary));
+    prompt_line(&review(&entries, &summary.0));
     match prompter.confirm("Write this changeset?", true)? {
         Some(true) => Ok(Some((entries, summary))),
         Some(false) | None => Ok(None),
@@ -333,17 +353,6 @@ fn parse_severity(sev_str: &str) -> Result<Severity, CliError> {
     sev_str.parse().map_err(|_err| CliError::InvalidSeverity {
         value: sev_str.to_string(),
     })
-}
-
-/// Validates that a changeset summary string is non-empty and non-whitespace.
-///
-/// Returns `Ok(trimmed_summary)` on success, or a [`CliError`] with a user-facing message.
-fn validate_summary(summary: &str) -> Result<String, CliError> {
-    let trimmed = summary.trim().to_string();
-    if trimmed.is_empty() {
-        return Err(CliError::AddSummaryEmpty);
-    }
-    Ok(trimmed)
 }
 
 /// The wizard's packages, named by `.display_name()` so `cargo/foo` and `npm/foo` stay distinct in a polyglot workspace.
@@ -476,7 +485,7 @@ mod tests {
     struct Scripted {
         /// `None` answers as Esc.
         selections: std::collections::VecDeque<Option<Vec<usize>>>,
-        summary: Option<String>,
+        summary: Option<Summary>,
         confirm: bool,
         /// The items each multi-select was shown, in order.
         shown: Vec<Vec<String>>,
@@ -497,7 +506,7 @@ mod tests {
             Ok(self.selections.pop_front().expect("an unexpected multi-select"))
         }
 
-        fn summary(&mut self, _prompt: &str) -> Result<Option<String>, CliError> {
+        fn summary(&mut self, _prompt: &str) -> Result<Option<Summary>, CliError> {
             self.summary_asked = true;
             Ok(self.summary.clone())
         }
@@ -541,7 +550,7 @@ mod tests {
         });
         let mut prompter = Scripted {
             selections: ticks([vec![0, 1, 2], vec![], vec![]]),
-            summary: Some("Fix".to_owned()),
+            summary: Some(Summary::new("Fix").unwrap()),
             confirm: true,
             ..Default::default()
         };
@@ -571,7 +580,7 @@ mod tests {
             selections[at] = None;
             let mut prompter = Scripted {
                 selections,
-                summary: Some("Fix".to_owned()),
+                summary: Some(Summary::new("Fix").unwrap()),
                 confirm: true,
                 ..Default::default()
             };
@@ -614,7 +623,7 @@ mod tests {
     fn the_wizard_gives_majors_then_minors_and_defaults_the_rest_to_patch() {
         let mut prompter = Scripted {
             selections: ticks([vec![0, 1, 2], vec![0], vec![0]]),
-            summary: Some("Rework the API".to_owned()),
+            summary: Some(Summary::new("Rework the API").unwrap()),
             confirm: true,
             ..Default::default()
         };
@@ -629,7 +638,7 @@ mod tests {
                 ("cargo/c", Severity::Patch)
             ]
         );
-        assert_eq!(summary, "Rework the API");
+        assert_eq!(summary.0, "Rework the API");
         // The minor question is only about the packages that are not already major.
         assert_eq!(prompter.shown[2], names(&["cargo/b", "cargo/c"]));
     }
@@ -638,7 +647,7 @@ mod tests {
     fn the_wizard_only_offers_the_packages_that_were_selected_for_the_bump_questions() {
         let mut prompter = Scripted {
             selections: ticks([vec![2, 0], vec![], vec![]]),
-            summary: Some("Fix".to_owned()),
+            summary: Some(Summary::new("Fix").unwrap()),
             confirm: true,
             ..Default::default()
         };
@@ -656,7 +665,7 @@ mod tests {
     fn when_every_package_is_major_there_is_no_minor_question() {
         let mut prompter = Scripted {
             selections: ticks([vec![0, 1], vec![0, 1]]),
-            summary: Some("Breaking".to_owned()),
+            summary: Some(Summary::new("Breaking").unwrap()),
             confirm: true,
             ..Default::default()
         };
@@ -673,12 +682,12 @@ mod tests {
         };
         let (_, summary) = run_wizard(
             &unchanged(&["cargo/a"]),
-            Some("From the flag".to_owned()),
+            Some(Summary::new("From the flag").unwrap()),
             &mut prompter,
         )
         .unwrap()
         .expect("confirmed");
-        assert_eq!(summary, "From the flag");
+        assert_eq!(summary.0, "From the flag");
         assert!(!prompter.summary_asked);
     }
 
@@ -686,7 +695,7 @@ mod tests {
     fn declining_the_preview_cancels_without_a_changeset() {
         let mut prompter = Scripted {
             selections: ticks([vec![0], vec![], vec![]]),
-            summary: Some("Never mind".to_owned()),
+            summary: Some(Summary::new("Never mind").unwrap()),
             confirm: false,
             ..Default::default()
         };
@@ -731,35 +740,14 @@ mod tests {
         }
     }
 
-    /// Non-interactive mode with an empty --summary must fail with a clear error before
-    /// reaching write_changeset, not silently write a file with an empty summary.
     #[test]
-    fn non_interactive_empty_summary_is_rejected() {
-        let result = validate_summary("");
-        assert!(result.is_err(), "empty summary should be rejected");
+    fn a_blank_summary_is_rejected_and_any_other_is_trimmed() {
+        for blank in ["", "   \t\n  "] {
+            assert!(matches!(Summary::new(blank), Err(CliError::AddSummaryEmpty)));
+        }
+        assert_eq!(Summary::new("  important fix  ").unwrap().0, "important fix");
     }
 
-    #[test]
-    fn non_interactive_whitespace_summary_is_rejected() {
-        let result = validate_summary("   \t\n  ");
-        assert!(result.is_err(), "whitespace-only summary should be rejected");
-    }
-
-    #[test]
-    fn non_interactive_nonempty_summary_is_accepted() {
-        let result = validate_summary("Fix a bug in the parser");
-        assert!(result.is_ok(), "non-empty summary should be accepted");
-        assert_eq!(result.unwrap(), "Fix a bug in the parser");
-    }
-
-    #[test]
-    fn validate_summary_trims_leading_and_trailing_whitespace() {
-        let result = validate_summary("  important fix  ");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "important fix");
-    }
-
-    /// The invalid-severity error message lists every value `Severity::from_str` accepts, including `none`.
     #[test]
     fn parse_severity_rejects_invalid_value_with_accurate_message() {
         let err = parse_severity("bogus").unwrap_err();

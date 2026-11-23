@@ -117,6 +117,15 @@ impl Session {
         self.master.write_all(keys.as_bytes()).unwrap();
     }
 
+    /// Delivers SIGINT to the child itself, as `kill -INT` or a closing terminal would, with no Ctrl-C byte typed.
+    fn interrupt(&self) {
+        let status = Command::new("kill")
+            .args(["-INT", &self.child.id().to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
     fn exit_code(&mut self) -> Option<i32> {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
@@ -245,4 +254,44 @@ fn an_editor_that_exits_non_zero_cancels_even_after_saving() {
     assert!(screen.contains("Cancelled, nothing written."), "{screen}");
     assert!(!screen.contains("Write this changeset?"), "{screen}");
     assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn a_sigint_delivered_to_the_process_at_a_prompt_cancels_writes_nothing_and_exits_130() {
+    let dir = workspace();
+    let mut add = Session::start(dir.path());
+    to_summary(&mut add);
+    add.after("Ctrl-C to cancel", 1, "");
+    add.interrupt();
+    assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
+    let screen = add.screen();
+    assert!(screen.contains("Cancelled, nothing written."), "{screen}");
+    assert!(
+        screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
+        "the cursor is left hidden:\n{screen:?}"
+    );
+    assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn whitespace_at_the_inline_summary_prompt_asks_again() {
+    let dir = workspace();
+    let mut add = Session::start_with(dir.path(), &["add"], &[("VISUAL", ""), ("EDITOR", "")]);
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "   \r");
+    add.after("Changelog summary", 2, "Fix b\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
+}
+
+#[test]
+fn a_blank_summary_flag_fails_before_the_review_and_writes_nothing() {
+    for blank in ["", "  \t "] {
+        let dir = workspace();
+        let mut add = Session::start_with(dir.path(), &["add", "--summary", blank], &[]);
+        assert_eq!(add.exit_code(), Some(2), "{}", add.screen());
+        assert!(!add.screen().contains("Packages in this change"), "{}", add.screen());
+        assert!(changesets(dir.path()).is_empty());
+    }
 }
