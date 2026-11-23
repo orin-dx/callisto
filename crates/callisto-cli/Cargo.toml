@@ -11,6 +11,11 @@ categories.workspace = true
 exclude = ["tests/", "proptest-regressions/"]
 readme = "README.md"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/callisto@{ version }/callisto-{ target }.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "callisto{ binary-ext }"
+
 [lints]
 workspace = true
 

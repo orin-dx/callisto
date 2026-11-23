@@ -1,0 +1,54 @@
+name: spike-setup-callisto
+on:
+  push:
+    branches: [wp-setup-callisto-thin]
+permissions:
+  contents: read
+  attestations: read
+jobs:
+  spike:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: (b) install-action, explicit version
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: callisto-cli@0.22.0
+      - name: Show what was installed
+        run: which callisto && callisto --version && ls -la ~/.cargo/bin
+      - name: (c) require, gh attestation verify on the installed binary
+        id: verify_bin
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh attestation verify "$(which callisto)" --repo orin-dx/callisto
+          --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml
+          --deny-self-hosted-runners --source-ref refs/heads/main
+      - name: (c) control, gh attestation verify on the release tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          target=$(rustc -vV | sed -n 's/^host: //p')
+          gh release download callisto@0.22.0 --repo orin-dx/callisto -p "callisto-$target.tar.gz" -D "$RUNNER_TEMP"
+          gh attestation verify "$RUNNER_TEMP/callisto-$target.tar.gz" --repo orin-dx/callisto \
+            --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
+            --deny-self-hosted-runners --source-ref refs/heads/main
+          tar -xzf "$RUNNER_TEMP/callisto-$target.tar.gz" -C "$RUNNER_TEMP" callisto
+          shasum -a 256 "$RUNNER_TEMP/callisto" "$(which callisto)"
+      - name: (a) binstall with this branch's metadata, no quickinstall, no compile
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          cargo binstall -V
+          cargo binstall --no-confirm --force --log-level debug --disable-strategies quick-install,compile \
+            --manifest-path crates/callisto-cli --root "$RUNNER_TEMP/bs" callisto-cli@0.22.0
+          "$RUNNER_TEMP/bs/bin/callisto" --version
+      - name: Result of binary verification
+        run: echo "verify installed binary outcome=${{ steps.verify_bin.outcome }}"
