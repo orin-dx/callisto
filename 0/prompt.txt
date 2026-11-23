@@ -1,0 +1,21 @@
+Rename the real-tool suite in PR #639 (branch wp-verify-real-in-ci; check it out in a worktree, push to the same branch). Trail #460. The name verify-real says nothing; it runs Callisto against the real npm, pnpm, yarn, bun, uv and Changesets tools and local real registries. Rename the just recipes verify-real -> test-real-tools and verify-real-tools -> install-real-tools, the CI job to 'Real Tool Tests', and the install action if its name says verify-real. Update every reference: justfile, AGENTS.md, CONTRIBUTING, docs, .github workflows and actions, test file comments, target/verify-real -> target/real-tools. Don't rename the test file unless a reference requires it. git grep -n 'verify-real' must return nothing afterwards. Run just workflow-contracts and just doc-check. Merge origin/main, push. Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead, owner-approved addition to #639: cache the installed tools so registry outages don't fail PRs. In .github/actions/install-registry-test-tools/action.yml, add one actions/cache step (pinned by SHA like the other actions) for the tool directory (target/real-tools after your rename, plus the npm cache dir if the install fills it), keyed on hashFiles of the justfile and that action.yml, since those pin the tool versions. Keep the install step as is: on a cache hit it should be a no-op or fast (check whether the install recipe skips tools already present; if not, skip it on cache-hit). About 6-10 lines; nothing else.
+</cross-session-message>
