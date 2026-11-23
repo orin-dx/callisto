@@ -390,7 +390,7 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
 
         let mut publishes = Vec::new();
         for target in &package.publish_to {
-            if target.ecosystem() == Some(id.ecosystem()) {
+            if target_publishes_distribution(target, id) {
                 let binding = prepared_registry_binding(workspace, target, &package.id)?;
                 let binding_id = RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?;
                 let operation =
@@ -475,6 +475,19 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
     Ok(())
 }
 
+/// Whether `target` is the registry publish of the `distribution` (the one in its ecosystem).
+fn target_publishes_distribution(target: &PublishTarget, distribution: &ReleasePackageId) -> bool {
+    target.ecosystem() == Some(distribution.ecosystem())
+}
+
+/// Whether `package` runs a registry publish for `distribution`; publish construction and the selection check share it.
+fn publishes_distribution(package: &callisto_model::Package, distribution: &ReleasePackageId) -> bool {
+    package
+        .publish_to
+        .iter()
+        .any(|target| target_publishes_distribution(target, distribution))
+}
+
 /// Every `(dependent, dependency, kind)` wait between published distributions.
 fn distribution_dependencies<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
@@ -484,26 +497,39 @@ fn distribution_dependencies<R: CommandRunner, D: DependencyResolver>(
     let mut edges = Vec::new();
     for (id, package) in published {
         for edge in workspace.graph.dependencies_of(package) {
-            // Only the dependent's distribution in the declaring manifest's ecosystem waits.
-            let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
-            if id.ecosystem() != ecosystem {
-                continue;
-            }
-            // It waits for the dependency's distribution in that ecosystem, so a Cargo dependent follows the crate,
-            // not the npm package, and an unpublished crate orders nothing. No such distribution means the edge was
-            // resolved some other way: wait for every published one.
             let dependency_ids = package_ids.get(&edge.to).map(Vec::as_slice).unwrap_or_default();
-            let native = dependency_ids
-                .iter()
-                .any(|dependency| dependency.ecosystem() == ecosystem);
-            for dependency in dependency_ids {
-                if (!native || dependency.ecosystem() == ecosystem) && published.contains_key(dependency) {
-                    edges.push((id.clone(), dependency.clone(), edge.kind));
-                }
+            for dependency in waited_distributions(id, edge, dependency_ids, |dependency| {
+                published.contains_key(dependency)
+            }) {
+                edges.push((id.clone(), dependency.clone(), edge.kind));
             }
         }
     }
     edges
+}
+
+/// The distributions of a dependency that `dependent`'s publish must follow because of `edge`, among those `publishes`
+/// accepts. Only the dependent's distribution in the declaring manifest's ecosystem has the edge, and it follows the
+/// dependency's distribution in that ecosystem, so a Cargo dependent follows the crate, not the npm package, and an
+/// unpublished crate orders nothing. No such distribution means the edge was resolved some other way: every published
+/// one counts.
+fn waited_distributions<'a>(
+    dependent: &ReleasePackageId,
+    edge: &callisto_model::DepEdge,
+    dependency_ids: &'a [ReleasePackageId],
+    publishes: impl Fn(&ReleasePackageId) -> bool,
+) -> Vec<&'a ReleasePackageId> {
+    let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
+    if dependent.ecosystem() != ecosystem {
+        return Vec::new();
+    }
+    let native = dependency_ids
+        .iter()
+        .any(|dependency| dependency.ecosystem() == ecosystem);
+    dependency_ids
+        .iter()
+        .filter(|dependency| (!native || dependency.ecosystem() == ecosystem) && publishes(dependency))
+        .collect()
 }
 
 /// Replaces each publish leaf with prerequisites from the publishes of the distributions it waits for.
@@ -840,7 +866,10 @@ fn require_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
     package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
 ) -> Result<(), GraphError> {
     let mut base_versions = None;
-    for (package, _) in selected.values() {
+    for (id, (package, _)) in selected {
+        if !publishes_distribution(package, id) {
+            continue;
+        }
         for edge in workspace.graph.dependencies_of(&package.id) {
             if !matches!(edge.kind, DepKind::Runtime | DepKind::Optional | DepKind::Peer)
                 || package_ids.contains_key(&edge.to)
@@ -854,6 +883,12 @@ fn require_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
             else {
                 continue;
             };
+            let dependency_ids =
+                crate::commands::release_decision::release_package_ids(&workspace.identity, dependency)?;
+            let published = |distribution: &ReleasePackageId| publishes_distribution(dependency, distribution);
+            if waited_distributions(id, edge, &dependency_ids, published).is_empty() {
+                continue;
+            }
             if base_versions.is_none() {
                 base_versions = Some(workspace.base_versions()?);
             }
@@ -863,7 +898,7 @@ fn require_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
                 .and_then(|versions| versions.get(&dependency.id))
                 .is_some_and(|current| version_is_tagged(tags, &dependency.id, current));
             if !released {
-                let id = crate::commands::release_decision::release_package_ids(&workspace.identity, dependency)?
+                let id = dependency_ids
                     .into_iter()
                     .next()
                     .ok_or_else(|| GraphError::ReleaseInvariant {
@@ -2170,10 +2205,18 @@ mod tests {
 
     /// The registry publishes `callisto release --dry-run` plans for every unreleased package, with their waits.
     fn planned_publishes(dir: &tempfile::TempDir) -> Result<Vec<(String, usize)>, GraphError> {
+        planned_publishes_of(dir, &[])
+    }
+
+    /// [`planned_publishes`] for an explicit selection.
+    fn planned_publishes_of(
+        dir: &tempfile::TempDir,
+        selections: &[ReleasePackageId],
+    ) -> Result<Vec<(String, usize)>, GraphError> {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
-        let plan = super::super::local::plan_workspace_release_offline(&workspace, &[])?.unwrap();
+        let plan = super::super::local::plan_workspace_release_offline(&workspace, selections)?.unwrap();
         Ok(plan
             .intent
             .operations
@@ -2209,6 +2252,57 @@ mod tests {
         assert_eq!(
             planned_publishes(&dir).unwrap(),
             [("cargo/a".to_string(), 0), ("npm/b".to_string(), 0)]
+        );
+    }
+
+    /// Only a dependency the selected distribution's own manifest declares, on a distribution that publishes, must be
+    /// selected with it.
+    #[test]
+    fn selection_requires_only_dependencies_in_a_published_manifest() {
+        let on_b = "[dependencies]\nb = { path = \"../b\", version = \"1.0.0\" }\n";
+        let targets = [r#""crates-io""#, r#""npm""#];
+        let only_a = release(&[(Ecosystem::Cargo, "a", "1.0.0")]);
+
+        let npm_edge = dual_pair_repo_to(targets, "", "", r#""b":"^1.0.0""#, "");
+        derive(&npm_edge, &only_a).unwrap();
+
+        let unpublished_crate = dual_pair_repo_to(targets, on_b, "", "", "");
+        derive(&unpublished_crate, &only_a).unwrap();
+
+        let published = dual_pair_repo_to([r#""crates-io""#; 2], on_b, "", "", "");
+        let error = derive(&published, &only_a).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::ReleaseSelectionInvalid {
+                    reason: ReleaseSelectionInvalidReason::DependencyNotSelected,
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+    }
+
+    /// Selecting a dependent whose npm manifest depends on an unreleased package does not require it when the dependent
+    /// publishes only to Cargo, since no npm publish is created for it.
+    #[test]
+    fn a_dependent_that_does_not_publish_its_npm_distribution_needs_no_npm_dependency() {
+        let dir = dual_pair_repo_to([r#""crates-io""#, r#""npm""#], "", "", r#""b":"^1.0.0""#, "");
+        let a = ReleasePackageId::new(Ecosystem::Cargo, "a").unwrap();
+        assert_eq!(planned_publishes_of(&dir, &[a]).unwrap(), [("cargo/a".to_string(), 0)]);
+
+        let both = dual_pair_repo_to([r#""crates-io", "npm""#; 2], "", "", r#""b":"^1.0.0""#, "");
+        let npm_a = ReleasePackageId::new(Ecosystem::Npm, "a").unwrap();
+        let error = planned_publishes_of(&both, &[npm_a]).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::ReleaseSelectionInvalid {
+                    reason: ReleaseSelectionInvalidReason::DependencyNotSelected,
+                    ..
+                }
+            ),
+            "{error:?}"
         );
     }
 

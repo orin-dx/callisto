@@ -241,3 +241,17 @@ fn a_check_ignore_failure_is_an_error_not_an_empty_answer() {
     .unwrap_err();
     assert!(matches!(error, GraphError::Command(_)), "{error:?}");
 }
+
+/// A path that starts with `:` or holds glob characters is a plain name, not pathspec magic, to the ignore check.
+#[test]
+fn ignore_check_reads_paths_literally() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    repo_ignoring(root, "core/\n");
+    let runner = callisto_fixtures::git::GitRunner;
+    let ask = |path: &str| ignored_paths(&runner, root, &[PathBuf::from(path)]).unwrap().len();
+
+    assert_eq!(ask(":core/Cargo.toml"), 0);
+    assert_eq!(ask("core/Cargo.toml"), 1);
+    assert_eq!(ask("notes*/x"), 0);
+}
