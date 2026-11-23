@@ -151,8 +151,8 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
     ReleaseDecisionV1::new(entries).map_err(GraphError::from)
 }
 
-/// The release identities `callisto version` has pending work for that this selection would release: every one when
-/// `selections` is empty, else those `--package` narrows the version plan to.
+/// The release identities `callisto version` has pending work for that a release would cover: publishable packages
+/// only, narrowed and group-expanded by `selections` through the same code the release roster uses.
 ///
 /// # Errors
 ///
@@ -169,9 +169,10 @@ pub fn pending_version_work<R: CommandRunner, D: DependencyResolver>(
     if plan.bumps.is_empty() {
         return Ok(Vec::new());
     }
+    let owners = ReleaseOwners::of(workspace);
     let mut entries = derive_release_decision(workspace, &plan)?.entries;
+    entries.retain(|entry| owners.get(&entry.package).is_some_and(Package::is_release_point));
     if !selections.is_empty() {
-        let owners = ReleaseOwners::of(workspace);
         entries = expand_selection(workspace, &owners, entries, &selections.iter().collect());
     }
     Ok(entries.into_iter().map(|entry| entry.package).collect())

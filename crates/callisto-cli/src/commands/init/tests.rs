@@ -1632,3 +1632,23 @@ fn workflow_retry_reports_a_write_and_honours_dry_run() {
     assert!(!real.out.contains("[DRY-RUN]"), "{}", real.out);
     assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
 }
+
+// A non-hosted origin reads like no origin: init never pushes, so it still previews the first release.
+#[test]
+fn init_previews_with_a_file_url_or_local_path_origin() {
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    let path = remote.path().to_str().unwrap().to_owned();
+    for url in [format!("file://{path}"), path] {
+        let dir = workspace_without_origin(1);
+        git(dir.path(), &["remote", "add", "origin", &url]);
+        let run = run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false);
+        assert_eq!(
+            run.result.unwrap(),
+            std::process::ExitCode::SUCCESS,
+            "{url}: {}",
+            run.err
+        );
+        assert!(run.out.contains("First release preview"), "{url}: {}", run.out);
+    }
+}

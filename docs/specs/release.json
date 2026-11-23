@@ -245,7 +245,7 @@
     },
     {
       "id": "REL-PUB-05",
-      "criterion": "A `publishConfig.registry` in package.json that does not match the `url` of an npm-kind `[registries]` entry fails with E120. A registry URL that is not `https`, or has userinfo, a query or a fragment, fails with E126. An `origin` push URL that is not HTTPS or `git@` SSH, or that carries credentials, fails with E132, which masks any credential in the value it names. All three fail before any effect.",
+      "criterion": "A `publishConfig.registry` in package.json that does not match the `url` of an npm-kind `[registries]` entry fails with E120. A registry URL that is not `https`, or has userinfo, a query or a fragment, fails with E126. An `origin` push URL that is not HTTPS or `git@` SSH, or that carries credentials, fails with E132, which never names the value. All three fail before any effect.",
       "is_error_case": true
     },
     {

@@ -279,7 +279,7 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
     if git_dir.exit_code != Some(0) {
         return Err(GraphError::InitNotGitRepository { root });
     }
-    let origin = Origin::read(&root, runner)?.optional()?;
+    let origin = Origin::read(&root, runner)?.preview();
     let head = runner.run_with_timeout(
         programs::GIT,
         &["rev-parse", "--verify", "--quiet", "HEAD"],

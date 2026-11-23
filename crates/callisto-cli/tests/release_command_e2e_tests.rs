@@ -437,17 +437,12 @@ fn an_origin_that_is_not_hosted_previews_unbound_and_refuses_by_name() {
                     .collect::<String>()
             };
             let refusal = squash(&stderr(&run));
-            // Only a value that parses as a URL can be masked, so only that one is named.
-            let named = if origin.starts_with("file:") {
-                format!("`origin` is `{origin}`")
-            } else {
-                "`origin` is not a hosted remote".to_owned()
-            };
             assert!(
-                refusal.contains(&squash(&named)) && refusal.contains("git@host:owner/repo"),
+                refusal.contains(&squash("`origin` is not a hosted remote")) && refusal.contains("git@host:owner/repo"),
                 "{}",
                 stderr(&run)
             );
+            assert!(!refusal.contains(&squash(origin)), "{}", stderr(&run));
             assert_no_effects(&rig, root);
         }
     }
@@ -732,16 +727,17 @@ fn init_advises_protecting_the_release_branch_once_on_stderr() {
     }
 }
 
-/// A credential in an `origin` that cannot be parsed, so cannot be masked, is never echoed.
+/// A remote string, credentials included, is never echoed by init or release.
 #[test]
-fn an_unparseable_credential_origin_never_reaches_stderr() {
+fn a_credential_origin_never_reaches_any_output() {
     const ORIGIN: &str = "https://user:secret@host:99999/x.git";
     for format in ["text", "json"] {
         let dir = init_fixture(Some(ORIGIN));
         let out = init_with(dir.path(), format, &[]);
-        assert!(!out.status.success());
-        assert!(!stderr(&out).contains("secret"), "{}", stderr(&out));
-        assert!(stderr(&out).contains("not a hosted remote"), "{}", stderr(&out));
+        assert!(out.status.success(), "{}", stderr(&out));
+        for text in [stderr(&out), String::from_utf8_lossy(&out.stdout).into_owned()] {
+            assert!(!text.contains("secret"), "{text}");
+        }
     }
 
     let (dir, release_commit) = on_branch();
@@ -751,7 +747,9 @@ fn an_unparseable_credential_origin_never_reaches_stderr() {
     for args in [&["--dry-run", "release"][..], &["release"]] {
         for format in ["text", "json"] {
             let out = rig.run(root, &[&["--format", format][..], args].concat());
-            assert!(!stderr(&out).contains("secret"), "{args:?}: {}", stderr(&out));
+            for text in [stderr(&out), String::from_utf8_lossy(&out.stdout).into_owned()] {
+                assert!(!text.contains("secret"), "{args:?}: {text}");
+            }
         }
     }
     assert_no_effects(&rig, root);

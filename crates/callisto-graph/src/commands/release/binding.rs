@@ -10,7 +10,7 @@ use callisto_model::{
     PublishTarget, RegistryBindingDigest, RegistryKey, SemanticInputDigest,
 };
 
-use crate::error::{MaskedUrl, OriginRefusal};
+use crate::error::OriginRefusal;
 use crate::registry_endpoint::{
     canonical_registry_url, split_routes_digest, url_parse_error_reason, RegistryBindingV1,
 };
@@ -83,13 +83,12 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     let publish = publish_raw
         .map(|raw| canonical_registry_binding(key.as_str(), raw))
         .transpose()?;
-    if let (Some(raw), Some(binding)) = (explicit, &index)
+    if let (Some(_), Some(binding)) = (explicit, &index)
         && matches!(target, PublishTarget::Npm { .. })
         && !is_approved_npm_registry(workspace, binding)
     {
         return Err(GraphError::UntrustedNpmRegistry {
             package: package.clone(),
-            url: MaskedUrl::new(raw),
         });
     }
     let identity = match (&index, &publish) {
@@ -150,8 +149,8 @@ pub(crate) enum Origin {
     Missing,
     /// A remote tags and the forge repository can bind to.
     Hosted(PreparedGitRemote),
-    /// Anything else, such as a local path: kept only masked for the refusal.
-    NotHosted { url: MaskedUrl, reason: &'static str },
+    /// Anything else, such as a local path; its text is never kept, so no diagnostic can echo it.
+    NotHosted,
 }
 
 impl Origin {
@@ -173,10 +172,7 @@ impl Origin {
     fn parse(raw: &str) -> Self {
         match canonical_git_remote(raw) {
             Ok(remote) => Self::Hosted(remote),
-            Err(reason) => Self::NotHosted {
-                url: MaskedUrl::new(raw),
-                reason,
-            },
+            Err(_) => Self::NotHosted,
         }
     }
 
@@ -192,8 +188,8 @@ impl Origin {
         match self {
             Self::Missing => Ok(None),
             Self::Hosted(remote) => Ok(Some(remote)),
-            Self::NotHosted { url, reason } => Err(GraphError::UnsafeGitRemote {
-                refusal: OriginRefusal::NotHosted { url, reason },
+            Self::NotHosted => Err(GraphError::UnsafeGitRemote {
+                refusal: OriginRefusal::NotHosted,
             }),
         }
     }
@@ -202,7 +198,7 @@ impl Origin {
     pub(crate) fn preview(self) -> Option<PreparedGitRemote> {
         match self {
             Self::Hosted(remote) => Some(remote),
-            Self::Missing | Self::NotHosted { .. } => None,
+            Self::Missing | Self::NotHosted => None,
         }
     }
 }
@@ -415,33 +411,25 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_origin_is_shown_masked_or_not_at_all() {
-        for (raw, shown) in [
-            (
-                "https://user:pw@github.com/o/r.git?token=t#f",
-                "`origin` is `https://***:***@github.com/o/r.git?***#***`, not a hosted remote",
-            ),
-            (
-                "ssh://deploy@example.test/o/r.git",
-                "`origin` is `ssh://***@example.test/o/r.git`, not a hosted remote",
-            ),
-            (
-                "http://github.com/o/r.git",
-                "`origin` is `http://github.com/o/r.git`, not a hosted remote",
-            ),
-            ("remotes/origin.git", "`origin` is not a hosted remote"),
-            (
-                "https://user:secret@host:99999/x.git",
-                "`origin` is not a hosted remote",
-            ),
+    fn a_refused_origin_never_echoes_the_remote() {
+        for raw in [
+            "https://user:pw@github.com/o/r.git?token=t#f",
+            "ssh://deploy@example.test/o/r.git",
+            "http://github.com/o/r.git",
+            "remotes/origin.git",
+            "https://user:secret@host:99999/x.git",
         ] {
             let error = Origin::parse(raw).optional().unwrap_err();
-            assert!(error.to_string().contains(shown), "{error}");
+            assert!(
+                error
+                    .to_string()
+                    .contains("`origin` is not a hosted remote (use https://"),
+                "{error}"
+            );
             for text in [error.to_string(), format!("{error:?}")] {
-                assert!(
-                    !text.contains("secret") && !text.contains("pw@") && !text.contains("deploy"),
-                    "{text}"
-                );
+                for leak in ["secret", "pw", "deploy", "example.test", "github.com", "remotes/origin"] {
+                    assert!(!text.contains(leak), "{text}");
+                }
             }
         }
     }

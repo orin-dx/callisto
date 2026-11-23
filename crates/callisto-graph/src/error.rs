@@ -356,7 +356,7 @@ pub enum GraphError {
     },
 
     #[error(
-        "package `{package}` sets `publishConfig.registry` to {url}, which is not an operator-approved npm registry"
+        "package `{package}` sets `publishConfig.registry` to a registry that is not an operator-approved npm registry"
     )]
     #[diagnostic(
         code(E120),
@@ -369,7 +369,7 @@ pub enum GraphError {
              remove the override from package.json."
         )
     )]
-    UntrustedNpmRegistry { package: PackageId, url: MaskedUrl },
+    UntrustedNpmRegistry { package: PackageId },
 
     #[error("release intent references package `{package}` which is not an exact selected workspace package")]
     #[diagnostic(code(E123), help("Rebuild the release intent from the current workspace instead of reusing a selection from another workspace."))]
@@ -974,64 +974,20 @@ pub enum ReleaseSelectionInvalidReason {
     DependencyNotSelected,
 }
 
-/// A URL as the user wrote it, formatted only masked: userinfo, query and fragment become `***`, and a value that does
-/// not parse as a URL is never shown.
-#[derive(Clone, PartialEq, Eq)]
-pub struct MaskedUrl(String);
-
-impl MaskedUrl {
-    pub(crate) fn new(raw: &str) -> Self {
-        Self(raw.to_owned())
-    }
-
-    fn masked(&self) -> Option<String> {
-        let mut url = url::Url::parse(&self.0).ok()?;
-        if url.password().is_some() {
-            url.set_password(Some("***")).ok()?;
-        }
-        if !url.username().is_empty() && url.username() != "git" {
-            url.set_username("***").ok()?;
-        }
-        if url.query().is_some() {
-            url.set_query(Some("***"));
-        }
-        if url.fragment().is_some() {
-            url.set_fragment(Some("***"));
-        }
-        Some(url.to_string())
-    }
-}
-
-impl std::fmt::Display for MaskedUrl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.masked() {
-            Some(masked) => write!(f, "`{masked}`"),
-            None => f.write_str("a value that is not a URL"),
-        }
-    }
-}
-
-impl std::fmt::Debug for MaskedUrl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MaskedUrl({self})")
-    }
-}
-
 /// Why `origin` cannot be bound, carried by [`GraphError::UnsafeGitRemote`] (E132).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OriginRefusal {
     NoPushUrl,
-    NotHosted { url: MaskedUrl, reason: &'static str },
+    NotHosted,
 }
 
 impl std::fmt::Display for OriginRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoPushUrl => f.write_str("`origin` has no push URL"),
-            Self::NotHosted { url, reason } => match url.masked() {
-                Some(masked) => write!(f, "`origin` is `{masked}`, not a hosted remote ({reason})"),
-                None => write!(f, "`origin` is not a hosted remote ({reason})"),
-            },
+            Self::NotHosted => f.write_str(
+                "`origin` is not a hosted remote (use https://, ssh:// or git@host:owner/repo); see `git remote get-url origin`",
+            ),
         }
     }
 }

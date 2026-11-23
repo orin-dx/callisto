@@ -246,19 +246,15 @@ fn missing_origin_detects_with_origin_unset() {
     }
 }
 
-// A rejected origin URL shows the rejection; an accepted non-GitHub one binds.
+// A non-hosted origin reads like no origin (init never pushes); an accepted non-GitHub one binds.
 #[test]
 fn origin_url_is_canonicalized() {
     let files = [("Cargo.toml", cargo("app", "1.0.0"))];
     let files: Vec<(&str, &str)> = files.iter().map(|(path, body)| (*path, body.as_str())).collect();
     let rejected = repo(&files, Some("https://user:secret@github.com/example/tools.git"));
-    let error = detect_in(rejected.path()).unwrap_err();
-    assert!(
-        matches!(&error, GraphError::UnsafeGitRemote { .. })
-            && error.to_string().contains("credentials")
-            && !error.to_string().contains("secret"),
-        "{error}"
-    );
+    let facts = detect_in(rejected.path()).unwrap();
+    assert_eq!(facts.origin, None);
+    assert_eq!(facts.origin_repository, None);
 
     let gitlab = repo(&files, Some("git@gitlab.com:example/tools.git"));
     let facts = detect_in(gitlab.path()).unwrap();
