@@ -16,6 +16,7 @@ run_case() {
   local version="$1"
   local curl_behavior="$2"    # "fail" or "succeed"
   local cargo_behavior="$3"   # "crates-io-succeeds" or "crates-io-fails"
+  local verification="${4:-fallback}"
   local calls_file tmp_script workdir
   calls_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   workdir="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
@@ -47,6 +48,7 @@ run_case() {
     echo "touch \"\$GITHUB_PATH\""
     echo "TAG_NAME='${version}'"
     echo "SOURCE=auto"
+    echo "VERIFICATION='${verification}'"
     echo "CALLISTO_BIN_DIR='${workdir}/callisto-bin'"
     echo "mkdir -p '${workdir}/callisto-bin'"
     extract_snippet
@@ -88,6 +90,14 @@ if [[ $code -eq 0 || "$out" == *"--git"* ]]; then
   echo "FAIL: latest must fail without a git install when crates.io fails too: code=$code out=$out"; fail=1
 else
   echo "PASS: latest fails without a git install when crates.io fails too"
+fi
+
+# verification=require must fail naming the asset, never install from crates.io.
+out=$(run_case "latest" "fail" "crates-io-succeeds" require); code=$?
+if [[ $code -eq 0 || "$out" == *"cargo install"* ]]; then
+  echo "FAIL: require must fail without crates.io when the download fails: code=$code out=$out"; fail=1
+else
+  echo "PASS: require fails without crates.io when the download fails"
 fi
 
 for version in callisto@0.5.0 callisto-cli@0.5.0 0.5.0; do

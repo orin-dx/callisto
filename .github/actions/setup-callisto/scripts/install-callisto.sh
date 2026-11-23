@@ -117,7 +117,13 @@ verify_asset() {
 
 # Download, verify and extract the prebuilt asset; nonzero means use the fallback chain.
 fetch_prebuilt() {
-  curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null || return 1
+  if ! curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
+    if [[ "$VERIFICATION" == "require" ]]; then
+      echo "::error::cannot download $ASSET_NAME from $DOWNLOAD_URL (verification=require)"
+      exit 1
+    fi
+    return 1
+  fi
   verify_asset || return 1
   # Extract only the expected binary, never the whole archive.
   case "$ASSET_NAME" in
@@ -160,6 +166,9 @@ if [[ "$SOURCE" == "local" ]]; then
   cargo build --locked --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" -p callisto-cli \
     --bin callisto --target-dir "$GITHUB_WORKSPACE/target"
   cp "$GITHUB_WORKSPACE/target/debug/callisto" "$CALLISTO_BIN_DIR/callisto"
+elif [[ -z "$ASSET_NAME" && "$VERIFICATION" == "require" ]]; then
+  echo "::error::no prebuilt callisto asset exists for $OS_NAME/$ARCH_NAME (verification=require)"
+  exit 1
 elif [[ -n "$ASSET_NAME" ]] && fetch_prebuilt; then
   echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
 elif [[ "$TAG_NAME" == "latest" ]] && cargo install callisto-cli --locked --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet; then
