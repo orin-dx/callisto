@@ -4,7 +4,8 @@ use std::process::ExitCode;
 use callisto_graph::DependencyResolver;
 use callisto_model::format::{Changeset, Entry};
 use callisto_model::{AddReport, ApplyPermit, Severity, SCHEMA_VERSION};
-use dialoguer::{Confirm, Input, MultiSelect};
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::{Confirm, Editor, Input, MultiSelect};
 
 use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
@@ -19,6 +20,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
     let mut entries = Vec::new();
     let mut summary = args.summary.clone();
+    let mut wizard = false;
 
     if !args.packages.is_empty() {
         // Non-interactive mode (flags supplied via CLI or agent)
@@ -51,12 +53,23 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             });
         }
     } else if tty::is_interactive() {
-        let all_packages = collect_package_names(ws.graph.packages());
-        let Some((chosen, written)) = run_wizard(&all_packages, summary.clone(), &mut TerminalAddPrompter)? else {
+        // The same derivation `status` reports as `changed_since_last_tag`.
+        let packages: Vec<&callisto_model::Package> = ws.graph.packages().collect();
+        let changed = callisto_graph::changed::changed_since_last_tag(&packages, ws.tags()?, ws.git_access())?;
+        let choices = wizard_choices(packages.iter().copied(), &changed);
+        let Some((chosen, written)) = run_wizard(
+            &choices,
+            summary.clone(),
+            &mut TerminalAddPrompter {
+                theme: ColorfulTheme::default(),
+            },
+        )?
+        else {
             return Ok(ExitCode::SUCCESS);
         };
         entries = chosen;
         summary = Some(written);
+        wizard = true;
     } else {
         return Err(CliError::NotATty);
     }
@@ -111,66 +124,138 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         }
         OutputFormat::Text => {
             log_line(global.format, &format!("Added changeset: {rel_path}"))?;
+            if wizard {
+                prompt_line("Next: commit it with your change; `callisto release --dry-run` previews the release.");
+            }
         }
     }
 
     Ok(ExitCode::SUCCESS)
 }
 
-/// The wizard's questions; a scripted implementation drives tests.
+/// The wizard's questions; a scripted implementation drives tests. `None` means the contributor cancelled.
 trait AddPrompter {
-    /// The indices the contributor ticked.
-    fn multi_select(&mut self, items: &[String]) -> Result<Vec<usize>, CliError>;
-    fn summary(&mut self) -> Result<String, CliError>;
-    fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError>;
+    /// The indices the contributor ticked; `checked` says which start ticked. `None` on Esc.
+    fn multi_select(
+        &mut self,
+        prompt: &str,
+        items: &[String],
+        checked: &[bool],
+    ) -> Result<Option<Vec<usize>>, CliError>;
+    /// The summary; an empty answer opens `$EDITOR` for a longer one. `None` when the editor saves nothing.
+    fn summary(&mut self, prompt: &str) -> Result<Option<String>, CliError>;
+    /// `None` on Esc.
+    fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError>;
 }
 
-struct TerminalAddPrompter;
+/// Rows a package list shows before it pages.
+const PAGE: usize = 15;
+
+struct TerminalAddPrompter {
+    theme: ColorfulTheme,
+}
 
 impl AddPrompter for TerminalAddPrompter {
-    fn multi_select(&mut self, items: &[String]) -> Result<Vec<usize>, CliError> {
-        Ok(MultiSelect::new().items(items).interact()?)
+    fn multi_select(
+        &mut self,
+        prompt: &str,
+        items: &[String],
+        checked: &[bool],
+    ) -> Result<Option<Vec<usize>>, CliError> {
+        Ok(MultiSelect::with_theme(&self.theme)
+            .with_prompt(prompt)
+            .items(items)
+            .defaults(checked)
+            .max_length(PAGE)
+            .interact_opt()?)
     }
 
-    fn summary(&mut self) -> Result<String, CliError> {
-        Ok(Input::new()
-            .validate_with(|input: &String| -> Result<(), &str> {
-                if input.trim().is_empty() {
-                    Err("Summary cannot be empty. Please enter a description of the change.")
-                } else {
-                    Ok(())
-                }
-            })
-            .interact_text()?)
+    fn summary(&mut self, prompt: &str) -> Result<Option<String>, CliError> {
+        let line: String = Input::with_theme(&self.theme)
+            .with_prompt(prompt)
+            .allow_empty(true)
+            .interact_text()?;
+        if !line.trim().is_empty() {
+            return Ok(Some(line));
+        }
+        let written = Editor::new().edit("")?;
+        Ok(written.filter(|text| !text.trim().is_empty()))
     }
 
-    fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
-        Ok(Confirm::new().with_prompt(prompt).default(default).interact()?)
+    fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError> {
+        Ok(Confirm::with_theme(&self.theme)
+            .with_prompt(prompt)
+            .default(default)
+            .interact_opt()?)
     }
 }
 
-/// The interactive five-step wizard (as in `@changesets/cli`): packages, which are major, which of the rest are minor
-/// (the remainder default to patch), a summary unless one was given, then a preview to confirm. `None` when the
-/// contributor declines the preview.
+/// A package the wizard offers, and whether it changed since its last tag.
+struct Choice {
+    name: String,
+    changed: bool,
+}
+
+/// The interactive wizard (as in `@changesets/cli`): packages, which are major, which of the rest are minor (the
+/// remainder default to patch), a summary unless one was given, then a review to confirm. Changed packages are listed
+/// first and start ticked. `None` when the contributor cancels, having been told nothing was written.
 fn run_wizard(
-    all_packages: &[String],
+    choices: &[Choice],
     summary: Option<String>,
     prompter: &mut impl AddPrompter,
 ) -> Result<Option<(Vec<Entry>, String)>, CliError> {
-    if all_packages.is_empty() {
+    let answers = ask(choices, summary, prompter)?;
+    if answers.is_none() {
+        prompt_line("Cancelled, nothing written.");
+    }
+    Ok(answers)
+}
+
+fn ask(
+    choices: &[Choice],
+    summary: Option<String>,
+    prompter: &mut impl AddPrompter,
+) -> Result<Option<(Vec<Entry>, String)>, CliError> {
+    if choices.is_empty() {
         return Err(CliError::AddNoPackagesInWorkspace);
     }
 
-    prompt_line("Which packages would you like to include in this changeset?");
-    let selected_indices = prompter.multi_select(all_packages)?;
+    let mut ordered: Vec<&Choice> = choices.iter().collect();
+    ordered.sort_by_key(|choice| !choice.changed);
+    let labels: Vec<String> = ordered
+        .iter()
+        .map(|choice| {
+            if choice.changed {
+                format!("{} (changed)", choice.name)
+            } else {
+                choice.name.clone()
+            }
+        })
+        .collect();
+    let checked: Vec<bool> = ordered.iter().map(|choice| choice.changed).collect();
+    let Some(selected_indices) = prompter.multi_select(
+        "Packages in this change (Space toggles, Enter confirms, Esc cancels)",
+        &labels,
+        &checked,
+    )?
+    else {
+        return Ok(None);
+    };
     if selected_indices.is_empty() {
         return Err(CliError::AddNoPackagesSelected);
     }
-    let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
+    let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| ordered[i].name.clone()).collect();
+    let unticked = vec![false; selected_packages.len()];
 
-    prompt_line("\nWhich of these packages should be a MAJOR bump?");
-    prompt_line("(Select none if there are no breaking changes)");
-    let major_set: std::collections::HashSet<usize> = prompter.multi_select(&selected_packages)?.into_iter().collect();
+    let Some(majors) = prompter.multi_select(
+        "Which are a MAJOR bump? (breaking changes only)",
+        &selected_packages,
+        &unticked,
+    )?
+    else {
+        return Ok(None);
+    };
+    let major_set: std::collections::HashSet<usize> = majors.into_iter().collect();
 
     let minor_candidates: Vec<String> = selected_packages
         .iter()
@@ -181,13 +266,15 @@ fn run_wizard(
     let minor_set: std::collections::HashSet<String> = if minor_candidates.is_empty() {
         std::collections::HashSet::new()
     } else {
-        prompt_line("\nWhich of these packages should be a MINOR bump?");
-        prompt_line("(Any remaining packages will default to a PATCH bump)");
-        prompter
-            .multi_select(&minor_candidates)?
-            .into_iter()
-            .map(|idx| minor_candidates[idx].clone())
-            .collect()
+        let Some(minors) = prompter.multi_select(
+            "Which are a MINOR bump? (the rest get PATCH)",
+            &minor_candidates,
+            &unticked[..minor_candidates.len()],
+        )?
+        else {
+            return Ok(None);
+        };
+        minors.into_iter().map(|idx| minor_candidates[idx].clone()).collect()
     };
 
     let entries: Vec<Entry> = selected_packages
@@ -207,25 +294,30 @@ fn run_wizard(
 
     let summary = match summary {
         Some(summary) => summary,
-        None => {
-            prompt_line("\nPlease enter a summary for this change:");
-            prompter.summary()?
-        }
+        None => match prompter.summary("Changelog summary (leave empty to open $EDITOR)")? {
+            Some(summary) => summary,
+            None => return Ok(None),
+        },
     };
 
-    let preview = Changeset {
-        entries: entries.clone(),
-        summary: summary.clone(),
-    };
-    prompt_line(&format!(
-        "\n=== Changeset Preview ===\n{}",
-        callisto_model::format::write_changeset(&preview)?
-    ));
-    if !prompter.confirm("Is this your desired changeset?", true)? {
-        prompt_line("Changeset creation cancelled.");
-        return Ok(None);
+    prompt_line(&review(&entries, &summary));
+    match prompter.confirm("Write this changeset?", true)? {
+        Some(true) => Ok(Some((entries, summary))),
+        Some(false) | None => Ok(None),
     }
-    Ok(Some((entries, summary)))
+}
+
+/// What the changeset will record: each package's bump, then the summary as it reaches the changelog.
+fn review(entries: &[Entry], summary: &str) -> String {
+    let mut text = String::from("\nThis changeset records:\n");
+    for entry in entries {
+        text.push_str(&format!("  {:<5}  {}\n", entry.severity.to_string(), entry.name));
+    }
+    text.push('\n');
+    for line in summary.trim().lines() {
+        text.push_str(&format!("  {line}\n"));
+    }
+    text
 }
 
 /// Parses a CLI-supplied severity string, reporting every value `Severity`
@@ -248,13 +340,17 @@ fn validate_summary(summary: &str) -> Result<String, CliError> {
     Ok(trimmed)
 }
 
-/// Builds the list of package names shown in the interactive multiselect wizard.
-///
-/// Uses `.display_name()` so that packages sharing a bare name across different
-/// ecosystems (e.g. `cargo/foo` and `npm/foo`) appear as distinct, qualified
-/// entries in the list rather than two identical `"foo"` rows.
-fn collect_package_names<'a>(packages: impl Iterator<Item = &'a callisto_model::Package>) -> Vec<String> {
-    packages.map(|p| p.id.display_name()).collect()
+/// The wizard's packages, named by `.display_name()` so `cargo/foo` and `npm/foo` stay distinct in a polyglot workspace.
+fn wizard_choices<'a>(
+    packages: impl Iterator<Item = &'a callisto_model::Package>,
+    changed: &std::collections::BTreeMap<callisto_model::PackageId, bool>,
+) -> Vec<Choice> {
+    packages
+        .map(|pkg| Choice {
+            name: pkg.id.display_name(),
+            changed: changed.get(&pkg.id).copied().unwrap_or(false),
+        })
+        .collect()
 }
 
 /// Writes `text` to a new file in `dir` named by `next_slug`, trying another slug whenever the name is taken, including
@@ -372,32 +468,133 @@ mod tests {
     /// Answers the wizard from a script: each multi-select, then the summary, then the confirmation.
     #[derive(Default)]
     struct Scripted {
-        selections: std::collections::VecDeque<Vec<usize>>,
+        /// `None` answers as Esc.
+        selections: std::collections::VecDeque<Option<Vec<usize>>>,
         summary: Option<String>,
         confirm: bool,
         /// The items each multi-select was shown, in order.
         shown: Vec<Vec<String>>,
+        /// Which items each multi-select started ticked.
+        checked: Vec<Vec<bool>>,
         summary_asked: bool,
     }
 
     impl AddPrompter for Scripted {
-        fn multi_select(&mut self, items: &[String]) -> Result<Vec<usize>, CliError> {
+        fn multi_select(
+            &mut self,
+            _prompt: &str,
+            items: &[String],
+            checked: &[bool],
+        ) -> Result<Option<Vec<usize>>, CliError> {
             self.shown.push(items.to_vec());
+            self.checked.push(checked.to_vec());
             Ok(self.selections.pop_front().expect("an unexpected multi-select"))
         }
 
-        fn summary(&mut self) -> Result<String, CliError> {
+        fn summary(&mut self, _prompt: &str) -> Result<Option<String>, CliError> {
             self.summary_asked = true;
-            Ok(self.summary.clone().expect("an unexpected summary prompt"))
+            Ok(self.summary.clone())
         }
 
-        fn confirm(&mut self, _prompt: &str, _default: bool) -> Result<bool, CliError> {
-            Ok(self.confirm)
+        fn confirm(&mut self, _prompt: &str, _default: bool) -> Result<Option<bool>, CliError> {
+            Ok(Some(self.confirm))
         }
     }
 
     fn names(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    /// Answers each multi-select with these ticks.
+    fn ticks<const N: usize>(answers: [Vec<usize>; N]) -> std::collections::VecDeque<Option<Vec<usize>>> {
+        answers.into_iter().map(Some).collect()
+    }
+
+    /// Packages none of which changed since their last tag.
+    fn unchanged(names: &[&str]) -> Vec<Choice> {
+        names
+            .iter()
+            .map(|name| Choice {
+                name: (*name).to_owned(),
+                changed: false,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn changed_packages_are_listed_first_marked_and_ticked() {
+        let choices = [
+            ("cargo/a", false),
+            ("cargo/b", true),
+            ("cargo/c", false),
+            ("cargo/d", true),
+        ]
+        .map(|(name, changed)| Choice {
+            name: name.to_owned(),
+            changed,
+        });
+        let mut prompter = Scripted {
+            selections: ticks([vec![0, 1, 2], vec![], vec![]]),
+            summary: Some("Fix".to_owned()),
+            confirm: true,
+            ..Default::default()
+        };
+        let (entries, _) = run_wizard(&choices, None, &mut prompter).unwrap().expect("confirmed");
+        assert_eq!(
+            prompter.shown[0],
+            names(&["cargo/b (changed)", "cargo/d (changed)", "cargo/a", "cargo/c"])
+        );
+        assert_eq!(prompter.checked[0], [true, true, false, false]);
+        // The marker is only a label: entries and the bump questions use the package name.
+        assert_eq!(prompter.shown[1], names(&["cargo/b", "cargo/d", "cargo/a"]));
+        assert_eq!(prompter.checked[1], [false, false, false]);
+        assert_eq!(
+            severities(&entries),
+            [
+                ("cargo/b", Severity::Patch),
+                ("cargo/d", Severity::Patch),
+                ("cargo/a", Severity::Patch)
+            ]
+        );
+    }
+
+    #[test]
+    fn esc_at_any_question_or_an_empty_editor_cancels() {
+        for at in 0..3 {
+            let mut selections = ticks([vec![0, 1], vec![], vec![]]);
+            selections[at] = None;
+            let mut prompter = Scripted {
+                selections,
+                summary: Some("Fix".to_owned()),
+                confirm: true,
+                ..Default::default()
+            };
+            assert!(run_wizard(&unchanged(&["cargo/a", "cargo/b"]), None, &mut prompter)
+                .unwrap()
+                .is_none());
+            assert_eq!(prompter.shown.len(), at + 1, "nothing is asked after Esc");
+        }
+        let mut prompter = Scripted {
+            selections: ticks([vec![0], vec![], vec![]]),
+            summary: None,
+            confirm: true,
+            ..Default::default()
+        };
+        assert!(run_wizard(&unchanged(&["cargo/a"]), None, &mut prompter)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn the_review_lists_each_bump_then_the_summary() {
+        let entries = [("cargo/a", Severity::Minor), ("cargo/b", Severity::Patch)].map(|(name, severity)| Entry {
+            name: name.to_owned(),
+            severity,
+        });
+        assert_eq!(
+            review(&entries, "Add v2 exports\n\n- faster\n"),
+            "\nThis changeset records:\n  minor  cargo/a\n  patch  cargo/b\n\n  Add v2 exports\n  \n  - faster\n"
+        );
     }
 
     fn severities(entries: &[Entry]) -> Vec<(&str, Severity)> {
@@ -410,12 +607,12 @@ mod tests {
     #[test]
     fn the_wizard_gives_majors_then_minors_and_defaults_the_rest_to_patch() {
         let mut prompter = Scripted {
-            selections: [vec![0, 1, 2], vec![0], vec![0]].into(),
+            selections: ticks([vec![0, 1, 2], vec![0], vec![0]]),
             summary: Some("Rework the API".to_owned()),
             confirm: true,
             ..Default::default()
         };
-        let (entries, summary) = run_wizard(&names(&["cargo/a", "cargo/b", "cargo/c"]), None, &mut prompter)
+        let (entries, summary) = run_wizard(&unchanged(&["cargo/a", "cargo/b", "cargo/c"]), None, &mut prompter)
             .unwrap()
             .expect("confirmed");
         assert_eq!(
@@ -434,12 +631,12 @@ mod tests {
     #[test]
     fn the_wizard_only_offers_the_packages_that_were_selected_for_the_bump_questions() {
         let mut prompter = Scripted {
-            selections: [vec![2, 0], vec![], vec![]].into(),
+            selections: ticks([vec![2, 0], vec![], vec![]]),
             summary: Some("Fix".to_owned()),
             confirm: true,
             ..Default::default()
         };
-        let (entries, _) = run_wizard(&names(&["cargo/a", "cargo/b", "cargo/c"]), None, &mut prompter)
+        let (entries, _) = run_wizard(&unchanged(&["cargo/a", "cargo/b", "cargo/c"]), None, &mut prompter)
             .unwrap()
             .expect("confirmed");
         assert_eq!(
@@ -452,25 +649,29 @@ mod tests {
     #[test]
     fn when_every_package_is_major_there_is_no_minor_question() {
         let mut prompter = Scripted {
-            selections: [vec![0, 1], vec![0, 1]].into(),
+            selections: ticks([vec![0, 1], vec![0, 1]]),
             summary: Some("Breaking".to_owned()),
             confirm: true,
             ..Default::default()
         };
-        run_wizard(&names(&["cargo/a", "cargo/b"]), None, &mut prompter).unwrap();
+        run_wizard(&unchanged(&["cargo/a", "cargo/b"]), None, &mut prompter).unwrap();
         assert_eq!(prompter.shown.len(), 2, "no third multi-select");
     }
 
     #[test]
     fn a_summary_given_on_the_command_line_is_not_asked_for_again() {
         let mut prompter = Scripted {
-            selections: [vec![0], vec![], vec![]].into(),
+            selections: ticks([vec![0], vec![], vec![]]),
             confirm: true,
             ..Default::default()
         };
-        let (_, summary) = run_wizard(&names(&["cargo/a"]), Some("From the flag".to_owned()), &mut prompter)
-            .unwrap()
-            .expect("confirmed");
+        let (_, summary) = run_wizard(
+            &unchanged(&["cargo/a"]),
+            Some("From the flag".to_owned()),
+            &mut prompter,
+        )
+        .unwrap()
+        .expect("confirmed");
         assert_eq!(summary, "From the flag");
         assert!(!prompter.summary_asked);
     }
@@ -478,12 +679,14 @@ mod tests {
     #[test]
     fn declining_the_preview_cancels_without_a_changeset() {
         let mut prompter = Scripted {
-            selections: [vec![0], vec![], vec![]].into(),
+            selections: ticks([vec![0], vec![], vec![]]),
             summary: Some("Never mind".to_owned()),
             confirm: false,
             ..Default::default()
         };
-        assert!(run_wizard(&names(&["cargo/a"]), None, &mut prompter).unwrap().is_none());
+        assert!(run_wizard(&unchanged(&["cargo/a"]), None, &mut prompter)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -494,11 +697,11 @@ mod tests {
             Err(CliError::AddNoPackagesInWorkspace)
         ));
         let mut prompter = Scripted {
-            selections: [vec![]].into(),
+            selections: ticks([vec![]]),
             ..Default::default()
         };
         assert!(matches!(
-            run_wizard(&names(&["cargo/a"]), None, &mut prompter),
+            run_wizard(&unchanged(&["cargo/a"]), None, &mut prompter),
             Err(CliError::AddNoPackagesSelected)
         ));
     }
@@ -682,7 +885,11 @@ mod tests {
     #[test]
     fn polyglot_package_selection_names_are_distinct() {
         let packages = [make_package("cargo/foo"), make_package("npm/foo")];
-        let names = collect_package_names(packages.iter());
+        let changed = std::collections::BTreeMap::new();
+        let names: Vec<String> = wizard_choices(packages.iter(), &changed)
+            .into_iter()
+            .map(|choice| choice.name)
+            .collect();
 
         assert_eq!(names.len(), 2, "expected 2 entries; got {names:?}");
         assert!(
