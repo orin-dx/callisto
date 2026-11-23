@@ -303,11 +303,20 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
 
     let (title, detail) = match &change.kind {
         ChangeKind::Changeset { summary, .. } => {
-            let split = split_summary(summary);
-            let detail = rebase_headings(&split.detail, DETAIL_FIRST_HEADING_LEVEL);
-            match split.headline {
-                Some(headline) => (headline, detail),
-                None => (change_label(&change.kind), detail),
+            if let Some((lead, rest)) = bold_lead_in(summary) {
+                let detail = if rest.is_empty() {
+                    String::new()
+                } else {
+                    rebase_headings(summary.trim(), DETAIL_FIRST_HEADING_LEVEL)
+                };
+                (lead, detail)
+            } else {
+                let split = split_summary(summary);
+                let detail = rebase_headings(&split.detail, DETAIL_FIRST_HEADING_LEVEL);
+                match split.headline {
+                    Some(headline) => (headline, detail),
+                    None => (change_label(&change.kind), detail),
+                }
             }
         }
         kind => (change_label(kind), entry_text(kind).unwrap_or_default()),
@@ -347,6 +356,15 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
     ));
     push_detail(body, &detail);
     false
+}
+
+/// A summary opening with `**lead-in**` yields the lead-in text, on one line and without its asterisks, and what
+/// follows it (trimmed). The lead-in is the whole title, so it is never truncated.
+fn bold_lead_in(summary: &str) -> Option<(String, &str)> {
+    let text = summary.trim().strip_prefix("**")?;
+    let end = text.find("**")?;
+    let lead = text[..end].split_whitespace().collect::<Vec<_>>().join(" ");
+    (!lead.is_empty()).then(|| (lead, text[end + 2..].trim()))
 }
 
 /// Markdown is not interpreted inside a raw-HTML `<summary>`, so code spans become `<code>` and everything else is
@@ -1135,6 +1153,66 @@ mod tests {
     }
 
     #[test]
+    fn a_bold_lead_in_is_the_summary_title_without_asterisks() {
+        let pkg = PackageId::parse("pkg-a").unwrap();
+        let entry = |filename: &str, summary: &str| crate::changelog::ChangelogEntry {
+            severity: Severity::Patch,
+            source: crate::changelog::ChangeSource::Changeset {
+                filename: filename.to_string(),
+                summary: summary.to_string(),
+            },
+        };
+        let input = crate::changelog::ChangelogInput {
+            style: Default::default(),
+            package: pkg.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Some(Version::semver(1, 0, 1)),
+            entries: vec![
+                entry(
+                    "brave-eagles-race.md",
+                    "**Python ranges keep their precision when a bound has a suffix.** A dependent requirement whose bound carries a post, dev or pre-release suffix is now rewritten at the precision it was written with, in any epoch.\n\n- `>=1.2.3.post1,<1.3` becomes `>=1.2.4,<1.3` instead of widening to `<2`.\n- `~=1.2.post1` becomes `~=1.2` instead of narrowing to `~=1.2.1`.",
+                ),
+                entry(
+                    "radiant-pandas-roar.md",
+                    "**`pre enter` and `pre exit` stage only their own `pre.json`.** A changesets directory whose name contains glob characters, such as `notes*`, no longer stages a neighbouring tracked `notes-other/pre.json` as well.",
+                ),
+            ],
+        };
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: pkg,
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 0, 1),
+                severity: Severity::Patch,
+                governed_by: None,
+                reason: Some(BumpReason::Changeset {
+                    changesets: vec!["brave-eagles-race".to_string(), "radiant-pandas-roar".to_string()],
+                }),
+                writes: vec![],
+            }],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input,
+            }],
+            consumed_changesets: vec![],
+            archived_changesets: Vec::new(),
+            inferred: Default::default(),
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
+
+        insta::assert_snapshot!(body);
+    }
+
+    #[test]
     fn empty_entries_falls_back_and_other_package_renders_normally() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let pkg_b = PackageId::parse("pkg-b").unwrap();
@@ -1405,8 +1483,8 @@ mod tests {
                 .body
                 .matches("Delete unused abstractions with zero real callers")
                 .count(),
-            1,
-            "the shared changeset's text must render exactly once, not once per package; body: {}",
+            2,
+            "the shared changeset renders once (its lead-in in the title and in the detail), not once per package; body: {}",
             report.body
         );
         assert!(report.body.contains("<code>pkg-a</code>"), "body: {}", report.body);
