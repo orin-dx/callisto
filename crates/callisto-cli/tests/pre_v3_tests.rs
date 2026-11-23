@@ -311,6 +311,26 @@ fn a_v3_pre_cycle_archives_applied_changesets_and_releases_them_at_exit() {
     assert_eq!(manifest_version(root), "1.1.0");
     assert_eq!(markdown_in(&root.join(".changeset/pre")), Vec::<String>::new());
     assert!(!root.join(".changeset/pre.json").exists());
+
+    // Each prerelease lists only its own notes; the stable section lists every note of the cycle once.
+    let changelog = fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let sections: Vec<(&str, &str)> = changelog
+        .split("\n## ")
+        .skip(1)
+        .map(|section| section.split_once('\n').unwrap_or((section, "")))
+        .collect();
+    let notes = |body: &str| ["feature", "fix"].map(|note| body.lines().filter(|line| line.contains(note)).count());
+    let by_version: Vec<(&str, [usize; 2])> = sections.iter().map(|(heading, body)| (*heading, notes(body))).collect();
+    assert_eq!(by_version.len(), 3, "{changelog}");
+    assert!(
+        by_version[0].0.starts_with("1.1.0") && !by_version[0].0.contains("beta"),
+        "{changelog}"
+    );
+    assert_eq!(by_version[0].1, [1, 1], "{changelog}");
+    assert!(by_version[1].0.starts_with("1.1.0-beta.1"), "{changelog}");
+    assert_eq!(by_version[1].1, [0, 1], "{changelog}");
+    assert!(by_version[2].0.starts_with("1.1.0-beta.0"), "{changelog}");
+    assert_eq!(by_version[2].1, [1, 0], "{changelog}");
 }
 
 /// An unparseable archived note fails `status --check`, as an unparseable new one does.

@@ -2049,6 +2049,7 @@ fn aggregate_pre_cycle<I: SeverityInference>(
 }
 
 /// A changeset recorded earlier in the cycle keeps its severity when fresh commits arrive; it must not erase them.
+/// The fresh commits trigger the release; the recorded changeset sets, and so explains, its severity.
 #[test]
 fn test_pre_mode_recorded_changeset_keeps_fresh_inference() {
     let commits = FixedCommitsInference {
@@ -2063,10 +2064,16 @@ fn test_pre_mode_recorded_changeset_keeps_fresh_inference() {
     );
     let pkg_a = PackageId::parse("pkg-a").unwrap();
     assert_eq!(agg.severities().get(&pkg_a), Some(&Severity::Major));
-    assert!(matches!(
-        agg.reasons().get(&pkg_a),
-        Some(BumpReason::Inference { commits: 1, .. })
-    ));
+    assert!(
+        agg.seeds.get(&pkg_a).is_some_and(Seed::is_fresh),
+        "got: {:?}",
+        agg.seeds
+    );
+    assert!(
+        matches!(agg.reasons().get(&pkg_a), Some(BumpReason::Changeset { changesets }) if changesets == &["breaking"]),
+        "got: {:?}",
+        agg.reasons().get(&pkg_a)
+    );
 }
 
 /// A fresh changeset on one fixed-group member releases the group at the cycle's retained severity.
@@ -2082,14 +2089,18 @@ fn test_pre_mode_fresh_group_member_releases_retained_member_at_group_severity()
         Some(GroupKind::Fixed),
         &crate::infer::NoInference,
     );
+    let [pkg_a, pkg_b] = ["pkg-a", "pkg-b"].map(|name| PackageId::parse(name).unwrap());
     let severities = agg.severities();
-    assert_eq!(
-        severities.get(&PackageId::parse("pkg-a").unwrap()),
-        Some(&Severity::Major)
+    assert_eq!(severities.get(&pkg_a), Some(&Severity::Major));
+    assert_eq!(severities.get(&pkg_b), Some(&Severity::Major));
+    let reasons = agg.reasons();
+    assert!(
+        matches!(reasons.get(&pkg_a), Some(BumpReason::Changeset { changesets }) if changesets == &["breaking"]),
+        "got: {reasons:?}"
     );
-    assert_eq!(
-        severities.get(&PackageId::parse("pkg-b").unwrap()),
-        Some(&Severity::Major)
+    assert!(
+        matches!(reasons.get(&pkg_b), Some(BumpReason::FixedGroupUnion { .. })),
+        "got: {reasons:?}"
     );
 }
 
@@ -2127,9 +2138,17 @@ fn test_pre_mode_fresh_linked_member_releases_at_the_retained_severity() {
         Some(&Severity::Major)
     );
     assert!(
-        matches!(agg.reasons().get(&pkg_a), Some(BumpReason::LinkedGroupUnion { .. })),
-        "the fresh group union, not the recorded changeset, explains the release: {:?}",
+        matches!(agg.reasons().get(&pkg_a), Some(BumpReason::Changeset { changesets }) if changesets == &["breaking"]),
+        "the recorded changeset sets pkg-a's severity, so it explains it: {:?}",
         agg.reasons().get(&pkg_a)
+    );
+    assert!(
+        matches!(
+            agg.reasons().get(&PackageId::parse("pkg-b").unwrap()),
+            Some(BumpReason::LinkedGroupUnion { .. })
+        ),
+        "the group raised pkg-b past its own patch: {:?}",
+        agg.reasons()
     );
 }
 
@@ -2172,7 +2191,39 @@ fn test_seed_reason_keeps_the_first_source_on_a_tie() {
     seed.add(Severity::Minor, Source::FreshChangeset { id: "cs".to_string() });
     assert!(matches!(seed.reason(), BumpReason::Inference { commits: 2, .. }));
     seed.add(Severity::Major, Source::FreshChangeset { id: "big".to_string() });
-    assert!(matches!(seed.reason(), BumpReason::Changeset { changesets } if changesets == ["cs", "big"]));
+    assert!(matches!(seed.reason(), BumpReason::Changeset { changesets } if changesets == ["big"]));
+}
+
+/// A retained changeset that sets the planned severity is the one the reason names, not the fresh notes below it.
+#[test]
+fn test_seed_reason_names_the_changesets_at_the_planned_severity() {
+    let mut seed = Seed::new(
+        Severity::Major,
+        Source::RetainedChangeset {
+            id: "old-major".to_string(),
+        },
+    );
+    for id in ["p1", "p2", "p3"] {
+        seed.add(Severity::Patch, Source::FreshChangeset { id: id.to_string() });
+    }
+    assert_eq!(seed.severity(), Severity::Major);
+    assert!(seed.is_fresh());
+    assert!(
+        matches!(seed.reason(), BumpReason::Changeset { ref changesets } if changesets == &["old-major"]),
+        "got: {:?}",
+        seed.reason()
+    );
+    seed.add(
+        Severity::Major,
+        Source::FreshChangeset {
+            id: "new-major".to_string(),
+        },
+    );
+    assert!(
+        matches!(seed.reason(), BumpReason::Changeset { ref changesets } if changesets == &["old-major", "new-major"]),
+        "got: {:?}",
+        seed.reason()
+    );
 }
 
 struct NoneSeverityInference;
