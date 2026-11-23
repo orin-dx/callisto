@@ -9,8 +9,91 @@ permissions:
   contents: read
 
 jobs:
+  release:
+    name: latest release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.latest.outputs.tag }}
+      version: ${{ steps.latest.outputs.version }}
+    steps:
+      - name: Latest release tag
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo orin-dx/callisto --json tagName --jq .tagName)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#callisto@}" >> "$GITHUB_OUTPUT"
+
+  # The action as released (checked out at the release tag), installing that exact release from its GitHub asset.
   install-and-run:
-    name: ${{ matrix.os }}
+    name: action ${{ matrix.os }}
+    needs: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: callisto-x86_64-unknown-linux-gnu.tar.gz
+          - os: ubuntu-24.04-arm
+            asset: callisto-aarch64-unknown-linux-gnu.tar.gz
+          - os: macos-latest
+            asset: callisto-aarch64-apple-darwin.tar.gz
+          - os: macos-15-intel
+            asset: callisto-x86_64-apple-darwin.tar.gz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.release.outputs.tag }}
+          path: release
+          persist-credentials: false
+      - uses: ./release/.github/actions/setup-callisto
+        with:
+          version: ${{ needs.release.outputs.tag }}
+          verification: require
+      - name: Installed binary is the verified GitHub asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          bash .github/scripts/fetch-release-asset.sh "$TAG" "$ASSET" "$RUNNER_TEMP/asset"
+          cmp "$RUNNER_TEMP/asset/callisto" "$(command -v callisto)"
+      - name: Version and status on a fixture workspace
+        env:
+          EXPECTED: ${{ needs.release.outputs.version }}
+        run: sh .github/scripts/install-check-smoke.sh callisto "$EXPECTED"
+
+  musl:
+    name: musl asset on alpine
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download and verify the musl asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: bash .github/scripts/fetch-release-asset.sh "$TAG" callisto-x86_64-unknown-linux-musl.tar.gz "$RUNNER_TEMP/asset"
+      - name: Version and status on a fixture workspace
+        env:
+          EXPECTED: ${{ needs.release.outputs.version }}
+        run: |
+          docker run --rm \
+            -v "$RUNNER_TEMP/asset:/asset:ro" \
+            -v "$PWD/.github/scripts:/scripts:ro" \
+            -e EXPECTED \
+            alpine:3.22 sh -c 'apk add --no-cache -q git && sh /scripts/install-check-smoke.sh /asset/callisto "$EXPECTED"'
+
+  crates-io:
+    name: crates.io ${{ matrix.os }}
+    needs: release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -20,41 +103,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Latest release tag
-        id: latest
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag=$(gh release view --repo orin-dx/callisto --json tagName --jq .tagName)
-          echo "version=${tag#callisto@}" >> "$GITHUB_OUTPUT"
-      - uses: $/.github/actions/setup-callisto
-        with:
-          verification: require
-      - name: Version matches the latest release
-        env:
-          EXPECTED: ${{ steps.latest.outputs.version }}
-        run: |
-          actual=$(callisto --version)
-          echo "$actual"
-          [ "$actual" = "callisto $EXPECTED" ] || { echo "::error::expected callisto $EXPECTED, got $actual"; exit 1; }
-      - name: Status on a fixture workspace
-        run: |
-          fixture="$RUNNER_TEMP/fixture"
-          mkdir -p "$fixture/crates/a/src"
-          cd "$fixture"
-          printf '[workspace]\nmembers = ["crates/a"]\nresolver = "3"\n' > Cargo.toml
-          printf '[package]\nname = "a"\nversion = "0.1.0"\nedition = "2024"\n' > crates/a/Cargo.toml
-          echo 'fn main() {}' > crates/a/src/main.rs
-          git init -q
-          git add -A
-          git -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -qm init
-          callisto status
       - name: cargo install from crates.io
-        if: matrix.os == 'ubuntu-latest'
         env:
-          EXPECTED: ${{ steps.latest.outputs.version }}
-        run: |
-          cargo install callisto-cli --locked --root "$RUNNER_TEMP/cargo-install"
-          actual=$("$RUNNER_TEMP/cargo-install/bin/callisto" --version)
-          echo "$actual"
-          [ "$actual" = "callisto $EXPECTED" ] || { echo "::error::crates.io has $actual, latest release is $EXPECTED"; exit 1; }
+          EXPECTED: ${{ needs.release.outputs.version }}
+        run: cargo install callisto-cli --locked --version "$EXPECTED" --root "$RUNNER_TEMP/cargo-install"
+      - name: Version and status on a fixture workspace
+        env:
+          EXPECTED: ${{ needs.release.outputs.version }}
+        run: sh .github/scripts/install-check-smoke.sh "$RUNNER_TEMP/cargo-install/bin/callisto" "$EXPECTED"

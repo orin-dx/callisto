@@ -66,6 +66,12 @@ else
   ASSET_NAME=""
 fi
 
+# require means the verified release asset or nothing: a platform with no asset cannot fall back to crates.io.
+if [[ "$SOURCE" == "auto" && -z "$ASSET_NAME" && "$VERIFICATION" == "require" ]]; then
+  echo "::error::no prebuilt callisto asset exists for $OS_NAME/$ARCH_NAME (verification=require does not fall back to crates.io)"
+  exit 1
+fi
+
 if [[ -n "$ASSET_NAME" && "$TAG_NAME" == "latest" ]]; then
   DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/$ASSET_NAME"
 elif [[ -n "$ASSET_NAME" ]]; then
@@ -117,7 +123,13 @@ verify_asset() {
 
 # Download, verify and extract the prebuilt asset; nonzero means use the fallback chain.
 fetch_prebuilt() {
-  curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null || return 1
+  if ! curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
+    if [[ "$VERIFICATION" == "require" ]]; then
+      echo "::error::cannot download $ASSET_NAME from $DOWNLOAD_URL (verification=require does not fall back to crates.io)"
+      exit 1
+    fi
+    return 1
+  fi
   verify_asset || return 1
   # Extract only the expected binary, never the whole archive.
   case "$ASSET_NAME" in
