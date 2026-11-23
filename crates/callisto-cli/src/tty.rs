@@ -60,11 +60,12 @@ impl Editor {
     }
 
     /// Opens the editor on an empty file and returns what was saved. `None` when the editor exits non-zero (an abort,
-    /// as `:cq` in Vim). The editor draws on stderr so stdout stays for the report.
-    pub fn edit(&self) -> Result<Option<String>, EditorUnusable> {
+    /// as `:cq` in Vim). The editor draws on stderr so stdout stays for the report. Taking `self` means one launch, so
+    /// one SIGINT registration, per editor.
+    pub fn edit(self) -> Result<Option<String>, EditorUnusable> {
         self.try_edit().map_err(|reason| EditorUnusable {
             variable: self.variable,
-            command: self.command.clone(),
+            command: self.command,
             reason,
         })
     }

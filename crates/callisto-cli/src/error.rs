@@ -149,7 +149,7 @@ pub enum CliError {
     )]
     Interactive(inquire::InquireError),
 
-    /// Esc or Ctrl-C at a prompt that cannot be skipped; `main` says nothing was written and exits 130.
+    /// Esc or Ctrl-C at a prompt; `main` says nothing was written and exits 130.
     #[error("{}", crate::tty::CANCELLED)]
     Cancelled,
 

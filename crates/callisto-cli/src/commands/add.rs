@@ -147,19 +147,14 @@ impl Summary {
     }
 }
 
-/// The wizard's questions; a scripted implementation drives tests. `None` means the contributor cancelled.
+/// The wizard's questions; a scripted implementation drives tests. Esc or Ctrl-C at any of them is
+/// [`CliError::Cancelled`].
 trait AddPrompter {
-    /// The indices the contributor ticked; `checked` says which start ticked. `None` on Esc.
-    fn multi_select(
-        &mut self,
-        prompt: &str,
-        items: &[String],
-        checked: &[bool],
-    ) -> Result<Option<Vec<usize>>, CliError>;
+    /// The indices the contributor ticked; `checked` says which start ticked.
+    fn multi_select(&mut self, prompt: &str, items: &[String], checked: &[bool]) -> Result<Vec<usize>, CliError>;
     /// The summary; an empty answer opens `$EDITOR` for a longer one. `None` when the editor saves nothing.
     fn summary(&mut self, prompt: &str) -> Result<Option<Summary>, CliError>;
-    /// `None` on Esc.
-    fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError>;
+    fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError>;
 }
 
 /// Rows a package list shows before it pages.
@@ -170,12 +165,7 @@ struct TerminalAddPrompter {
 }
 
 impl AddPrompter for TerminalAddPrompter {
-    fn multi_select(
-        &mut self,
-        prompt: &str,
-        items: &[String],
-        checked: &[bool],
-    ) -> Result<Option<Vec<usize>>, CliError> {
+    fn multi_select(&mut self, prompt: &str, items: &[String], checked: &[bool]) -> Result<Vec<usize>, CliError> {
         let ticked: Vec<usize> = checked
             .iter()
             .enumerate()
@@ -185,8 +175,8 @@ impl AddPrompter for TerminalAddPrompter {
         let picked = MultiSelect::new(prompt, items.to_vec())
             .with_default(&ticked)
             .with_page_size(PAGE)
-            .raw_prompt_skippable()?;
-        Ok(picked.map(|options| options.into_iter().map(|option| option.index).collect()))
+            .raw_prompt()?;
+        Ok(picked.into_iter().map(|option| option.index).collect())
     }
 
     fn summary(&mut self, prompt: &str) -> Result<Option<Summary>, CliError> {
@@ -197,7 +187,7 @@ impl AddPrompter for TerminalAddPrompter {
                 None => format!("{prompt} (Esc cancels)"),
             };
             let opens_editor = editor.is_some();
-            let Some(line) = Text::new(&hint)
+            let line = Text::new(&hint)
                 .with_validator(move |line: &str| {
                     Ok(match Summary::new(line) {
                         Err(error) if !(opens_editor && line.is_empty()) => {
@@ -206,10 +196,7 @@ impl AddPrompter for TerminalAddPrompter {
                         _ => Validation::Valid,
                     })
                 })
-                .prompt_skippable()?
-            else {
-                return Ok(None);
-            };
+                .prompt()?;
             if let Ok(summary) = Summary::new(&line) {
                 return Ok(Some(summary));
             }
@@ -223,8 +210,8 @@ impl AddPrompter for TerminalAddPrompter {
         }
     }
 
-    fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError> {
-        Ok(Confirm::new(prompt).with_default(default).prompt_skippable()?)
+    fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
+        Ok(Confirm::new(prompt).with_default(default).prompt()?)
     }
 }
 
@@ -236,7 +223,8 @@ struct Choice {
 
 /// The interactive wizard (as in `@changesets/cli`): packages, which are major, which of the rest are minor (the
 /// remainder default to patch), a summary unless one was given, then a review to confirm. Changed packages are listed
-/// first and start ticked. `None` when the contributor cancels, having been told nothing was written.
+/// first and start ticked. `None` when the contributor declines the review or the editor saves nothing, having been
+/// told nothing was written.
 fn run_wizard(
     choices: &[Choice],
     summary: Option<Summary>,
@@ -271,28 +259,22 @@ fn ask(
         })
         .collect();
     let checked: Vec<bool> = ordered.iter().map(|choice| choice.changed).collect();
-    let Some(selected_indices) = prompter.multi_select(
+    let selected_indices = prompter.multi_select(
         "Packages in this change (Space toggles, Enter confirms, Esc cancels)",
         &labels,
         &checked,
-    )?
-    else {
-        return Ok(None);
-    };
+    )?;
     if selected_indices.is_empty() {
         return Err(CliError::AddNoPackagesSelected);
     }
     let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| ordered[i].name.clone()).collect();
     let unticked = vec![false; selected_packages.len()];
 
-    let Some(majors) = prompter.multi_select(
+    let majors = prompter.multi_select(
         "Which are a MAJOR bump? (breaking changes only)",
         &selected_packages,
         &unticked,
-    )?
-    else {
-        return Ok(None);
-    };
+    )?;
     let major_set: std::collections::HashSet<usize> = majors.into_iter().collect();
 
     let minor_candidates: Vec<String> = selected_packages
@@ -304,14 +286,11 @@ fn ask(
     let minor_set: std::collections::HashSet<String> = if minor_candidates.is_empty() {
         std::collections::HashSet::new()
     } else {
-        let Some(minors) = prompter.multi_select(
+        let minors = prompter.multi_select(
             "Which are a MINOR bump? (the rest get PATCH)",
             &minor_candidates,
             &unticked[..minor_candidates.len()],
-        )?
-        else {
-            return Ok(None);
-        };
+        )?;
         minors.into_iter().map(|idx| minor_candidates[idx].clone()).collect()
     };
 
@@ -339,10 +318,9 @@ fn ask(
     };
 
     prompt_line(&review(&entries, &summary.0));
-    match prompter.confirm("Write this changeset?", true)? {
-        Some(true) => Ok(Some((entries, summary))),
-        Some(false) | None => Ok(None),
-    }
+    Ok(prompter
+        .confirm("Write this changeset?", true)?
+        .then_some((entries, summary)))
 }
 
 /// What the changeset will record: each package's bump, then the summary as it reaches the changelog.
@@ -514,15 +492,13 @@ mod tests {
     }
 
     impl AddPrompter for Scripted {
-        fn multi_select(
-            &mut self,
-            _prompt: &str,
-            items: &[String],
-            checked: &[bool],
-        ) -> Result<Option<Vec<usize>>, CliError> {
+        fn multi_select(&mut self, _prompt: &str, items: &[String], checked: &[bool]) -> Result<Vec<usize>, CliError> {
             self.shown.push(items.to_vec());
             self.checked.push(checked.to_vec());
-            Ok(self.selections.pop_front().expect("an unexpected multi-select"))
+            self.selections
+                .pop_front()
+                .expect("an unexpected multi-select")
+                .ok_or(CliError::Cancelled)
         }
 
         fn summary(&mut self, _prompt: &str) -> Result<Option<Summary>, CliError> {
@@ -530,8 +506,8 @@ mod tests {
             Ok(self.summary.clone())
         }
 
-        fn confirm(&mut self, _prompt: &str, _default: bool) -> Result<Option<bool>, CliError> {
-            Ok(Some(self.confirm))
+        fn confirm(&mut self, _prompt: &str, _default: bool) -> Result<bool, CliError> {
+            Ok(self.confirm)
         }
     }
 
@@ -593,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn esc_at_any_question_or_an_empty_editor_cancels() {
+    fn esc_at_any_question_cancels_and_an_empty_editor_writes_nothing() {
         for at in 0..3 {
             let mut selections = ticks([vec![0, 1], vec![], vec![]]);
             selections[at] = None;
@@ -603,9 +579,10 @@ mod tests {
                 confirm: true,
                 ..Default::default()
             };
-            assert!(run_wizard(&unchanged(&["cargo/a", "cargo/b"]), None, &mut prompter)
-                .unwrap()
-                .is_none());
+            assert!(matches!(
+                run_wizard(&unchanged(&["cargo/a", "cargo/b"]), None, &mut prompter),
+                Err(CliError::Cancelled)
+            ));
             assert_eq!(prompter.shown.len(), at + 1, "nothing is asked after Esc");
         }
         let mut prompter = Scripted {

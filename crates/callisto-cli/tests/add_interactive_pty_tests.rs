@@ -241,12 +241,12 @@ fn ctrl_c_at_a_prompt_restores_the_cursor_writes_nothing_and_exits_130() {
 }
 
 #[test]
-fn esc_at_a_prompt_writes_nothing_and_exits_0() {
+fn esc_at_a_prompt_writes_nothing_and_exits_130() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
     add.after("Packages in this change", 1, "\r");
     add.after("MAJOR", 1, "\x1b");
-    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
     assert!(add.screen().contains("Cancelled, nothing written."), "{}", add.screen());
     assert!(changesets(dir.path()).is_empty());
 }
@@ -426,4 +426,17 @@ fn a_sigint_while_the_editor_runs_is_left_to_the_editor() {
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
+}
+
+#[test]
+fn after_the_editor_a_sigint_takes_its_default_action_again() {
+    let dir = workspace();
+    let editor = r#"sh -c 'printf "Fix b" > "$0"'"#;
+    let mut add = Session::start_with(dir.path(), &["add"], &[("EDITOR", editor)]);
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "\r");
+    add.after("Write this changeset?", 1, "");
+    add.interrupt();
+    assert_eq!(add.status().signal(), Some(2), "{}", add.screen());
+    assert!(changesets(dir.path()).is_empty());
 }
