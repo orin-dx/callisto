@@ -196,7 +196,7 @@ pub(crate) fn recheck_git_remote(
 }
 
 pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
-    if raw.starts_with(['/', '.']) || raw.starts_with("file:") {
+    if raw.starts_with(['/', '.']) || raw.starts_with("file://") {
         return Err(GraphError::UnsafeGitRemote {
             reason: "origin is a local path, and releases need a hosted HTTPS or SSH remote",
         });
@@ -470,6 +470,15 @@ mod tests {
                 "{raw}"
             );
         }
+    }
+
+    #[test]
+    fn scp_style_host_named_file_is_not_a_local_remote() {
+        let local = matches!(
+            canonical_git_remote("file:team/project.git"),
+            Err(GraphError::UnsafeGitRemote { reason }) if reason.contains("local")
+        );
+        assert!(!local);
     }
 
     #[test]
