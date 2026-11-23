@@ -259,6 +259,6 @@ workflow-contracts: release-workflow-checks
     bash .github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh
 
 # Every check CI runs except actionlint (Docker) and the binary-dependent
-# release-PR decide contract, problem matcher contract and artifact preflight build. CI runs them as
-# parallel jobs (callisto-ci.yml); locally they run in sequence.
+# release-PR decide contract and problem matcher contract. CI runs them as parallel jobs (callisto-ci.yml);
+# locally they run in sequence. The artifact preflight build runs only on main (callisto-release-preflight.yml).
 ci: fmt-check lint fuzz-check test audit doc-check zizmor workflow-contracts release-workflow-behavior (coverage "90")
