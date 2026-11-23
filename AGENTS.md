@@ -19,7 +19,7 @@ Rules for AI agents working in this repo.
 
 - Full pipeline: `just ci` (includes the 90% coverage gate). `just test`, `just lint`, `just fmt`.
 - Before every push or PR: `just pre-push && just lint && just doc-check && just test`, and `just ci` before marking a PR ready. Judge each by its exit code. Never tail or grep the output for success (a compile error prints no "failed" line), and never report a check as passed that was not run.
-- Recovery evidence: `just verify-real` rehearses partial publish, delayed visibility, a conflicting tag and a missing Python artifact against local npm, PyPI and Cargo registries through the production registry binding, then runs the native install matrix. It installs its tools under `target/verify-real` (npm, pnpm and uv must already be on PATH) and is not part of `just ci`.
+- Recovery evidence: `just test-real-tools` rehearses partial publish, delayed visibility, a conflicting tag and a missing Python artifact against local npm, PyPI and Cargo registries through the production registry binding, then runs the native install matrix. It installs its tools under `target/real-tools` (npm, pnpm and uv must already be on PATH) and is not part of `just ci`.
 - Commits must be signed: the ruleset requires it. Never pass `-c commit.gpgsign=false`. After pushing, `gh api repos/orin-dx/callisto/commits/<sha> --jq .commit.verification.reason` must say `valid`.
 - Performance: `just bench` times `status`, `version --dry-run` and `release --dry-run` over generated workspaces and counts the git processes each starts (`CALLISTO_BENCH_SHAPES=1` lists which). A change that adds a git process per package fails review.
 - Scoped iteration: one `cargo test -p <crate>` or `cargo clippy -p <crate> --all-targets -- -D warnings` at a time.

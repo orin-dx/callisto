@@ -2,7 +2,7 @@
 
 Stakeholder: Callisto owner (sole maintainer); users releasing Rust, npm (incl. napi-rs) and Python monorepos.
 
-Status: open. The command surface and release machinery exist; [the roadmap](../projects/ROAD-TO-V1.md) lists the verification and onboarding work that remains. Real local npm, Cargo and PyPI tests exist. Registry binding is proven for Cargo; npm and PyPI binding evidence comes from the `just verify-real` fixture, which is not part of `just ci`. Hosted OIDC publishing is not yet verified.
+Status: open. The command surface and release machinery exist; [the roadmap](../projects/ROAD-TO-V1.md) lists the verification and onboarding work that remains. Real local npm, Cargo and PyPI tests exist. Registry binding is proven for Cargo; npm and PyPI binding evidence comes from the `just test-real-tools` fixture, which is not part of `just ci`. Hosted OIDC publishing is not yet verified.
 
 Why: Callisto's release engine is rigorous but its surface is confusing and its setup is heavy. Goal: a new repo goes from `callisto init` to its first published release in under 10 minutes, with one obvious release command and no known correctness bugs.
 

@@ -1,5 +1,5 @@
 name: 'Install registry test tools'
-description: 'Installs the local npm, PyPI and Cargo registries the real-registry e2e tests run against, through `just verify-real-tools`. Linux only; the tests fail without them under CI.'
+description: 'Installs the local npm, PyPI and Cargo registries the real-registry e2e tests run against, through `just install-real-tools`. Linux only; the tests fail without them under CI.'
 
 runs:
   using: 'composite'
@@ -9,11 +9,23 @@ runs:
       uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
       with:
         tool: uv@0.12.19
+    - name: Cache package downloads
+      if: runner.os == 'Linux'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.npm
+          ~/.cache/uv
+          ~/.cache/pip
+        key: real-tools-${{ runner.os }}-${{ hashFiles('justfile', '.github/actions/install-registry-test-tools/action.yml') }}
     - name: Install the local registries
       if: runner.os == 'Linux'
       shell: bash
+      run: just install-real-tools
+    - name: Put the tools on PATH
+      if: runner.os == 'Linux'
+      shell: bash
       run: | # zizmor: ignore[github-env] the PATH entries are fixed children of the checkout, not attacker-controlled input.
-        just verify-real-tools
         for dir in venv/bin npm/node_modules/.bin cargo/bin; do
-          echo "$PWD/target/verify-real/$dir" >> "$GITHUB_PATH"
+          echo "$PWD/target/real-tools/$dir" >> "$GITHUB_PATH"
         done
