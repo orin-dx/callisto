@@ -1,0 +1,134 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M853DE3X4BQCRRXFNXSM6Y10",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T21:01:50.597474Z",
+  "branch": "worktree-wp-setup-callisto-require",
+  "checkpoints_count": 121,
+  "save_step_count": 5,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "d08c82246c6a",
+  "checkpoint_transcript_start": 9887,
+  "transcript_lines_at_start": 9887,
+  "compact_transcript_start": 957,
+  "token_usage": {
+    "input_tokens": 1098,
+    "cache_creation_tokens": 930893,
+    "cache_read_tokens": 190190492,
+    "output_tokens": 273198,
+    "api_call_count": 476,
+    "subagent_tokens": {
+      "input_tokens": 122,
+      "cache_creation_tokens": 263211,
+      "cache_read_tokens": 3806219,
+      "output_tokens": 41115,
+      "api_call_count": 61
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 2884,
+    "cache_creation_tokens": 3684528,
+    "cache_read_tokens": 557390931,
+    "output_tokens": 693366,
+    "api_call_count": 1240,
+    "subagent_tokens": {
+      "input_tokens": 984,
+      "cache_creation_tokens": 1423088,
+      "cache_read_tokens": 54191537,
+      "output_tokens": 253851,
+      "api_call_count": 492
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 29,
+    "layers": {
+      "betterleaks": 7,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 8,
+      "entropy": 15,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 299
+  },
+  "summary": {
+    "intent": "Coordinate Callisto's v1 alpha work through background sessions: ship the 0.22.0 release, keep PRs and Entire findings addressed, validate Codex's claims, and avoid over-engineering while keeping users' point of view. Later, consolidate findings on #630, #634, #638 and #640 into one reviewed push per PR, and settle a secure, simple design for binary attestation in `setup-callisto`.",
+    "outcome": "0.22.0 was merged and its release run watched. Many cleanup and fix PRs merged (#608-#614, #636, #641, #642, among others), including the per-ecosystem cycle check built on one distribution graph. #630 and #638 were each pushed once with their findings resolved. #634 and #640 were still being prepared locally and weren't pushed. Leftover worktrees and 42 finished sessions were cleaned up. The attestation design was settled: the action always verifies, there is no `verification` input and no crates.io fallback, and a docs page covers custom workflows.",
+    "learnings": {
+      "repo": [
+        "Entire trail PR text comes from the trail description (`entire trail ci-pr`), so sessions that ran `entire trail update` overwrote trail titles and descriptions. Sessions must put PR text in the PR body with `gh pr edit` and never edit trail metadata.",
+        "A change can only belong to one trail, and the CLI can't reparent it. Merged changes can't be moved, and moving an open one is a web-UI step.",
+        "Reviewers run on every push and each costs money, so the rule is one consolidated push per PR. Sessions commit locally, the lead reads the full diff, then pushes once.",
+        "The E104 cycle check lived at package level (`PublishEdgeFilter::new`, `callisto-graph/src/toposort.rs:100-114`) while publish waits were per distribution (#257, #581). The fix derives the E104 check, the dev-cycle grouping and the publish order from one distribution graph that includes fallback waits.",
+        "Checks, previews, dry runs and tests must run on exactly the structure the real code path executes. A flaky-test fix must still measure the behaviour it was meant to measure, as in #610, where the probe had to still run.",
+        "Recurring reviewer seams in the CLI: echoing raw user-supplied remote strings, advice computed on a different set than the action, optional conveniences becoming fatal, terminal and signal ownership, and validation order between modes. A 10-point pre-push checklist now covers these.",
+        "The 0.22.0 release workflow attests every archive with `actions/attest-build-provenance` (`callisto-release.yml:415`), so no publishing change is needed for attestation-based verification.",
+        "signal-hook-registry's `unregister` doesn't restore the default SIGINT handler, so SIGINT stays ignored for the rest of the run. The fix is one registration per run, enforced by `Editor::edit(self)`, with a flag that gives SIGINT its default action back.",
+        "Cancel semantics in interactive CLIs: Esc and Ctrl-C map to `CliError::Cancelled` and exit 130, while declining the review or saving an empty editor buffer stays exit 0 because those are answers rather than interrupts. Git's `launch_editor` ignores SIGINT while the editor runs.",
+        "Sandbox constraints: the claude daemon socket, gpg and network need unsandboxed runs. Resuming a session needs the full session id. Messages sent by name can reach offline remote copies."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/toposort.rs",
+          "line": 100,
+          "end_line": 114,
+          "finding": "`PublishEdgeFilter::new` is the only place that raises E104. It toposorts the owner-package graph, discards the order, and builds `dev_cycles` over package-level SCCs, which is stricter than publishing needs."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 205,
+          "end_line": 210,
+          "finding": "The prerelease Reason list filtered out retained changesets while `Seed::severity` included them. A Major row could name only the three patch notes. The fix lists changesets at the planned severity, fresh or retained."
+        },
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "line": 116,
+          "end_line": 128,
+          "finding": "A failed editor spawn or a malformed `$EDITOR` ended in a generic E213 after all questions were answered. The fix warns naming `$VISUAL`/`$EDITOR` and the command, then falls back to the inline summary prompt."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 282,
+          "finding": "`Origin::read(..)?.optional()?` makes `init` fail with E132 on a non-hosted origin. It is being changed to treat it like a missing origin, with no raw value echoed."
+        }
+      ],
+      "workflow": [
+        "Questions from the user are not orders. Answer and recommend, then wait before closing PRs, pushing or launching sessions. Flip-flopping cost trust and money.",
+        "Before reporting, ask whether a much simpler version exists. Judge options by what happens to users if a feature is off, not by whether anyone sets it.",
+        "Adversarial read-only pre-review subagents run before any push caught real issues, such as `init` printing notes twice and E120 showing a normalised URL.",
+        "Prove foreign formats with the real tool (yarn, bun, npm, uv) rather than mocks.",
+        "Clean up worktrees and sessions as soon as their PR merges or is superseded. Check for uncommitted or unpushed work first and ask before deleting anything irreversible."
+      ]
+    },
+    "friction": [
+      "Findings in Entire were repeatedly fixed one at a time and pushed per fix, which cost paid reviews. The user had to push back several times on thoroughness.",
+      "Catch-all trails and sessions overwriting trail titles and descriptions made the trail structure non-semantic.",
+      "I shallowly accepted #610 without checking the probe still ran, and the user caught it.",
+      "I flip-flopped on the `setup-callisto` verification input (close, reopen, remove, reverse) in response to questions, which the user called out.",
+      "Two finished reviews (#630 and #640) sat unread while the user was checking Entire.",
+      "Sandbox restrictions blocked the daemon socket, gpg, the network and writes to the jobs dir, forcing unsandboxed runs and a user-run push-protection bypass.",
+      "Conflicts and stale branches kept recurring, since PRs went stale as others merged, which hurt merge-queue readiness.",
+      "Leftover worktrees and sessions piled up (226 GB of worktrees at one point) because they weren't cleaned as sessions ended."
+    ],
+    "open_items": [
+      "The owner still has to enable GitHub immutable releases in the repo settings, and decide on a GitHub merge queue and the `AGENTS.md` line ('a check runs on exactly what executes').",
+      "#634 (onboarding, with the no-raw-remote rule, roster-scoped hint and one origin read) and #640 (always-verify `setup-callisto` plus `docs/install-in-ci.md` and a Breaking changeset) are still local and need diff review and a single push each. The Breaking change would make the next release 0.23.0.",
+      "R, the real-registry proof of tokenless npm and PyPI publishing and new-user onboarding time, needs the owner's registry accounts.",
+      "Move #616 (upgrade checklist) to trail #374 in the web UI, and convert our own `callisto.toml` to `targets` now that 0.22.0 is published.",
+      "Codex's four handoff findings are still to be checked against current main: Python range precision, prerelease staging with wildcard directories, publish-cycle projection for Cargo-only releases, and registry test fixtures missing preparation/sealing.",
+      "Cascade over-release (a consumer released when the final versions already satisfy it) stays in the backlog, because fixing it needs a redesign.",
+      "Spawned pending-hint and E120 details from the #634 pre-review need applying: a single origin read, the spec wording for REL-CMD-05, and showing the original registry URL when there's nothing to mask.",
+      "Yarn and bun packing verification (`just verify-real`) is in progress in session `d4395ef8`."
+    ]
+  }
+}

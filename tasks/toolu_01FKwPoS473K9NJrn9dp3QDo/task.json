@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01FKwPoS473K9NJrn9dp3QDo",
+  "agent_id": "add8b197e90b98e1a",
+  "subagent_type": "bug-hunter",
+  "task_description": "Pre-review #634 diff adversarially",
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 92995,
+    "cache_read_tokens": 1011978,
+    "output_tokens": 15068,
+    "api_call_count": 17
+  },
+  "started_at": "2026-11-23T12:26:24.621628-08:00",
+  "completed_at": "2026-11-23T12:29:19.196859-08:00"
+}

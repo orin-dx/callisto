@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_017UUrAGhLFGAZqbXzWfdjMt",
+  "agent_id": "abac172ed262258e1",
+  "subagent_type": "general-purpose",
+  "task_description": "Investigate per-distribution cycles",
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 74772,
+    "cache_read_tokens": 692370,
+    "output_tokens": 6752,
+    "api_call_count": 12
+  },
+  "started_at": "2026-11-20T16:44:05.816552-08:00",
+  "completed_at": "2026-11-20T16:45:41.078741-08:00"
+}
