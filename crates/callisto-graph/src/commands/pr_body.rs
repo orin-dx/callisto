@@ -38,7 +38,7 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
     match reason {
         Some(reason) => match reason {
             BumpReason::Changeset { changesets } => {
-                format!("- Associated changesets: `{}`\n", changesets.join("`, `"))
+                format!("Associated changesets: `{}`", changesets.join("`, `"))
             }
             BumpReason::Cascade {
                 via,
@@ -47,7 +47,7 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
                 ..
             } => {
                 format!(
-                    "- Automatic dependency cascade triggered by `{}` (spec `{}` target `{}`).\n",
+                    "Automatic dependency cascade triggered by `{}` (spec `{}` target `{}`).",
                     via.display_name(),
                     spec,
                     dependency_to.render()
@@ -55,29 +55,29 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
             }
             BumpReason::PeerEscalation { via, spec } => {
                 format!(
-                    "- Peer dependency escalation triggered by `{}` (spec `{}`).\n",
+                    "Peer dependency escalation triggered by `{}` (spec `{}`).",
                     via.display_name(),
                     spec
                 )
             }
             BumpReason::FixedGroupUnion { group } => {
-                format!("- Fixed group synchronization for group `{}`.\n", group.as_str())
+                format!("Fixed group synchronization for group `{}`.", group.as_str())
             }
             BumpReason::LinkedGroupUnion { group } => {
-                format!("- Linked group version alignment for group `{}`.\n", group.as_str())
+                format!("Linked group version alignment for group `{}`.", group.as_str())
             }
             BumpReason::Inference { commits, .. } => {
-                format!("- Inferred from {commits} commit(s) since the last release.\n")
+                format!("Inferred from {commits} commit(s) since the last release.")
             }
             BumpReason::PreRelease { tag } => {
-                format!("- Pre-release finalization (tag `{tag}`).\n")
+                format!("Pre-release finalization (tag `{tag}`).")
             }
             BumpReason::NewGroupMember { group } => {
-                format!("- New member of group `{}`.\n", group.as_str())
+                format!("New member of group `{}`.", group.as_str())
             }
-            _ => "_No changelog entries available._\n".to_string(),
+            _ => "_No changelog entries available._".to_string(),
         },
-        None => "_No changelog entries available._\n".to_string(),
+        None => "_No changelog entries available._".to_string(),
     }
 }
 
@@ -270,11 +270,8 @@ fn render_level(body: &mut String, level: Severity, changes: &[&Change]) {
         level_title(level),
         changes.len()
     ));
-    for change in changes
-        .iter()
-        .filter(|change| !matches!(change.kind, ChangeKind::DependencyUpdate { .. }))
-    {
-        body.push_str(&change_bullet(change));
+    for bullet in changes.iter().filter_map(|change| change_bullet(change)) {
+        body.push_str(&bullet);
     }
     body.push_str(&dependency_updates(changes));
     body.push_str("</details>\n\n");
@@ -303,20 +300,19 @@ fn dependency_updates(changes: &[&Change]) -> String {
 }
 
 /// The changelog's bullet for the change, then who it affects and the pull request that added it.
-fn change_bullet(change: &Change) -> String {
+/// Dependency updates have no bullet: they render as one block per group.
+fn change_bullet(change: &Change) -> Option<String> {
     let mut bullet = match &change.kind {
         ChangeKind::Changeset { summary, filename, .. } => match indent_changeset_summary(summary) {
             Some(indented) => format!("- {indented}\n"),
             None => format!("- {}\n", changeset_label(filename)),
         },
         ChangeKind::Fallback { reason } => {
-            let text = fallback_reason_text(reason);
-            let text = text.trim().trim_start_matches("- ");
-            format!("- `{}`: {text}\n", change.members[0].package)
+            format!("- `{}`: {}\n", change.members[0].package, fallback_reason_text(reason))
         }
         ChangeKind::Commit { subject, short_sha, .. } => commit_bullet(subject, short_sha),
         ChangeKind::PeerEscalation { dependency, to } => peer_bullet(dependency, to),
-        ChangeKind::DependencyUpdate { .. } => unreachable!("dependency updates render as one block, not per change"),
+        ChangeKind::DependencyUpdate { .. } => return None,
     };
     if !matches!(change.kind, ChangeKind::Fallback { .. }) {
         let affected: Vec<String> = change
@@ -331,7 +327,7 @@ fn change_bullet(change: &Change) -> String {
         bullet.push_str(&format!("\n  Affects {}{pr}\n", affected.join(", ")));
     }
     bullet.push('\n');
-    bullet
+    Some(bullet)
 }
 
 /// Where merging will publish each package, from planning the versioned tree's release.

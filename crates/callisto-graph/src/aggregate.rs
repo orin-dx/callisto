@@ -114,6 +114,13 @@ impl Source {
         }
     }
 
+    fn changeset_id(&self) -> Option<&str> {
+        match self {
+            Source::FreshChangeset { id } | Source::RetainedChangeset { id } => Some(id),
+            Source::Inference { .. } | Source::Group { .. } => None,
+        }
+    }
+
     fn reason(&self) -> BumpReason {
         match self {
             Source::FreshChangeset { id } | Source::RetainedChangeset { id } => BumpReason::Changeset {
@@ -194,20 +201,16 @@ impl Seed {
                 best = entry;
             }
         }
-        match &best.1 {
-            Source::FreshChangeset { .. } | Source::RetainedChangeset { .. } => {
-                let fresh = best.1.is_fresh();
-                let changesets = self
-                    .sources()
-                    .filter(|source| source.is_fresh() == fresh)
-                    .filter_map(|source| match source {
-                        Source::FreshChangeset { id } | Source::RetainedChangeset { id } => Some(id.clone()),
-                        _ => None,
-                    })
-                    .collect();
-                BumpReason::Changeset { changesets }
-            }
-            other => other.reason(),
+        if best.1.changeset_id().is_some() {
+            let fresh = best.1.is_fresh();
+            let changesets = self
+                .sources()
+                .filter(|source| source.is_fresh() == fresh)
+                .filter_map(|source| source.changeset_id().map(str::to_owned))
+                .collect();
+            BumpReason::Changeset { changesets }
+        } else {
+            best.1.reason()
         }
     }
 }
