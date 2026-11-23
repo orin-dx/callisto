@@ -109,7 +109,8 @@ fn reason_cell(reason: &Option<BumpReason>) -> String {
             format!("{} changesets", changesets.len())
         }
         Some(BumpReason::Changeset { changesets }) => {
-            format!("Changeset (`{}`)", changesets.join("`, `"))
+            let names: Vec<String> = changesets.iter().map(|name| name.replace('|', "\\|")).collect();
+            format!("Changeset (`{}`)", names.join("`, `"))
         }
         Some(BumpReason::Cascade { via, .. }) => {
             format!("Cascade from `{}`", via.display_name())
@@ -364,53 +365,20 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
     false
 }
 
-/// A summary opening with `**lead-in**` yields the lead-in text, on one line and without its asterisks, and what
-/// follows it (trimmed). The lead-in is the whole title, so it is never truncated.
+/// A summary whose first line opens `**lead-in**`, with no backtick or `*` inside, yields the lead-in and what
+/// follows it (trimmed); anything else falls back to the generic split.
 fn bold_lead_in(summary: &str) -> Option<(String, &str)> {
-    let text = summary.trim().strip_prefix("**")?;
+    let text = summary.trim_start().strip_prefix("**")?;
     if text.starts_with('*') {
         return None;
     }
-    let end = closing_bold(text)?;
-    let lead = one_line(&text[..end]);
-    (!lead.is_empty()).then(|| (lead, text[end + 2..].trim()))
-}
-
-/// Collapses whitespace runs to one space outside code spans; inside them only newlines become spaces.
-fn one_line(text: &str) -> String {
-    let squeeze = |plain: &str| {
-        let mut out = String::new();
-        for c in plain.chars() {
-            if !c.is_whitespace() {
-                out.push(c);
-            } else if !out.ends_with(' ') {
-                out.push(' ');
-            }
-        }
-        out
-    };
-    let joined = map_code_spans(text, squeeze, |code| format!("`{}`", code.replace('\n', " ")));
-    joined.trim().to_string()
-}
-
-/// The byte offset of the closing `**`, skipping code spans; without a clean close outside them, the first `**`.
-fn closing_bold(text: &str) -> Option<usize> {
-    let mut i = 0;
-    while i < text.len() {
-        let rest = &text[i..];
-        if rest.starts_with("**") {
-            return Some(i);
-        }
-        if let Some(after) = rest.strip_prefix('`') {
-            match after.find('`') {
-                Some(len) => i += len + 2,
-                None => break,
-            }
-        } else {
-            i += rest.chars().next().map_or(1, char::len_utf8);
-        }
+    let first_line = text.lines().next().unwrap_or_default();
+    let end = first_line.find("**")?;
+    let lead = text[..end].trim();
+    if lead.is_empty() || lead.contains(['`', '*']) {
+        return None;
     }
-    text.find("**")
+    Some((lead.to_string(), text[end + 2..].trim()))
 }
 
 /// Markdown is not interpreted inside a raw-HTML `<summary>`, so code spans become `<code>` and everything else is
@@ -1199,19 +1167,21 @@ mod tests {
     }
 
     #[test]
-    fn a_bold_lead_in_skips_a_double_star_inside_a_code_span() {
-        let (lead, rest) = bold_lead_in("**Fix the `**` operator.** more").unwrap();
-        assert_eq!(lead, "Fix the `**` operator.");
-        assert_eq!(rest, "more");
-        let (lead, _) = bold_lead_in("**Unclosed ` tick** more").unwrap();
-        assert_eq!(lead, "Unclosed ` tick");
+    fn a_bold_lead_in_needs_a_clean_closed_first_line() {
+        let (lead, rest) = bold_lead_in("**Plain lead-in.** more").unwrap();
+        assert_eq!((lead.as_str(), rest), ("Plain lead-in.", "more"));
+        assert!(bold_lead_in("**Fix the `x` op.** more").is_none());
+        assert!(bold_lead_in("**Fix the `**` operator.** more").is_none());
+        assert!(bold_lead_in("**Split across\n\nparagraphs.** more").is_none());
+        assert!(bold_lead_in("***\nintro\n\n**x** y").is_none());
     }
 
     #[test]
-    fn a_bold_lead_in_keeps_spacing_inside_code_and_ignores_a_thematic_break() {
-        let (lead, _) = bold_lead_in("**Fix  the\n `a  b`  op.** more").unwrap();
-        assert_eq!(lead, "Fix the `a  b` op.");
-        assert!(bold_lead_in("***\nintro\n\n**x** y").is_none());
+    fn a_changeset_name_with_a_pipe_is_escaped_in_the_reason_cell() {
+        let cell = reason_cell(&Some(BumpReason::Changeset {
+            changesets: vec!["a|b".to_string()],
+        }));
+        assert_eq!(cell, "Changeset (`a\\|b`)");
     }
 
     #[test]
