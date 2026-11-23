@@ -1,0 +1,60 @@
+name: Callisto Install Check
+
+on:
+  schedule:
+    - cron: "43 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-and-run:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Latest release tag
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo orin-dx/callisto --json tagName --jq .tagName)
+          echo "version=${tag#callisto@}" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup-callisto
+        with:
+          verification: require
+      - name: Version matches the latest release
+        env:
+          EXPECTED: ${{ steps.latest.outputs.version }}
+        run: |
+          actual=$(callisto --version)
+          echo "$actual"
+          [ "$actual" = "callisto $EXPECTED" ] || { echo "::error::expected callisto $EXPECTED, got $actual"; exit 1; }
+      - name: Status on a fixture workspace
+        run: |
+          fixture="$RUNNER_TEMP/fixture"
+          mkdir -p "$fixture/crates/a/src"
+          cd "$fixture"
+          printf '[workspace]\nmembers = ["crates/a"]\nresolver = "3"\n' > Cargo.toml
+          printf '[package]\nname = "a"\nversion = "0.1.0"\nedition = "2024"\n' > crates/a/Cargo.toml
+          echo 'fn main() {}' > crates/a/src/main.rs
+          git init -q
+          git add -A
+          git -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -qm init
+          callisto status
+      - name: cargo install from crates.io
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          EXPECTED: ${{ steps.latest.outputs.version }}
+        run: |
+          cargo install callisto-cli --locked --root "$RUNNER_TEMP/cargo-install"
+          actual=$("$RUNNER_TEMP/cargo-install/bin/callisto" --version)
+          echo "$actual"
+          [ "$actual" = "callisto $EXPECTED" ] || { echo "::error::crates.io has $actual, latest release is $EXPECTED"; exit 1; }
