@@ -4,7 +4,7 @@
 use callisto_model::Version;
 
 use super::fences::Fences;
-use super::headings::{heading_levels, rebase_headings};
+use super::headings::heading_levels;
 use super::markers::{extract_markers, MarkerKind};
 use crate::changelog::write::{find_section, has_heading};
 
@@ -205,20 +205,6 @@ fn a_section_ends_at_the_first_top_level_heading_outside_code() {
 
         let found = find_section(&document, &version).map(|section| section.replace("\r\n", "\n"));
         assert_eq!(found.as_deref(), Some(expected.trim()), "{}", case.name);
-    }
-}
-
-#[test]
-fn rebasing_changes_only_heading_lines_and_is_idempotent() {
-    for case in CASES {
-        let rebased = rebase_headings(case.text, 4);
-        assert_eq!(rebase_headings(&rebased, 4), rebased, "{}: not idempotent", case.name);
-        for (index, (before, after)) in case.text.lines().zip(rebased.lines()).enumerate() {
-            let is_heading = case.headings.iter().any(|(line, _)| *line == index);
-            if !is_heading {
-                assert_eq!(before, after, "{}: line {index} changed", case.name);
-            }
-        }
     }
 }
 

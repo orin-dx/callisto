@@ -1,6 +1,6 @@
 use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
-use crate::changelog::markdown::{rebase_headings, split_summary, HEADLINE_MAX_CHARS};
+use crate::changelog::render::indent_changeset_summary;
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
@@ -253,21 +253,12 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
             continue;
         }
         body.push_str(&format!("#### {} {}\n\n", severity_emoji(level), level_title(level)));
-        let mut after_bullet = false;
-        for change in in_level {
-            after_bullet = render_change(&mut body, change, after_bullet);
-        }
-        if after_bullet {
-            body.push('\n');
-        }
+        render_level(&mut body, level, &in_level);
     }
 
     body.push_str(&workflow_instructions(branch));
     body
 }
-
-/// A change sits under a level-4 bump heading, so an author's own headings start one level below it.
-const DETAIL_FIRST_HEADING_LEVEL: usize = 5;
 
 /// Changes are grouped by their highest bump; a bump of `none` reads as a patch.
 fn change_level(change: &Change) -> Severity {
@@ -285,143 +276,49 @@ fn level_title(level: Severity) -> &'static str {
     }
 }
 
-/// Appends one change and returns whether it was a bullet, so the caller can keep consecutive bullets in one list.
-fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool {
-    let open = if change.max_severity() == Severity::Major {
-        " open"
-    } else {
-        ""
-    };
-
-    if let ChangeKind::Fallback { .. } = change.kind {
-        if after_bullet {
-            body.push('\n');
-        }
-        let member = &change.members[0];
-        body.push_str(&format!(
-            "<details{open}>\n<summary><b>{}</b> ({} {})</summary>\n\n",
-            member.package,
-            severity_emoji(member.severity),
-            member.severity
-        ));
-        push_detail(body, &entry_text(&change.kind).unwrap_or_default());
-        return false;
-    }
-
-    let (title, detail) = match &change.kind {
-        ChangeKind::Changeset { summary, .. } => {
-            if let Some((lead, rest)) = bold_lead_in(summary) {
-                let detail = if rest.is_empty() {
-                    String::new()
-                } else {
-                    rebase_headings(summary.trim(), DETAIL_FIRST_HEADING_LEVEL)
-                };
-                (lead, detail)
-            } else {
-                let split = split_summary(summary);
-                let detail = rebase_headings(&split.detail, DETAIL_FIRST_HEADING_LEVEL);
-                match split.headline {
-                    Some(headline) => (headline, detail),
-                    None => (change_label(&change.kind), detail),
-                }
-            }
-        }
-        kind => (change_label(kind), entry_text(kind).unwrap_or_default()),
-    };
-    let affected: Vec<String> = change
-        .members
-        .iter()
-        .map(|member| format!("<code>{}</code>", member.package))
-        .collect();
-
-    let pr = match &change.kind {
-        ChangeKind::Changeset { pr: Some(pr), .. } => Some(*pr),
-        _ => None,
-    };
-
-    if detail.is_empty() {
-        let link = pr.map(|pr| format!(" · #{pr}")).unwrap_or_default();
-        body.push_str(&format!(
-            "- **{}** — affects {}{link}\n",
-            bullet_markdown(&title),
-            affected.join(", ")
-        ));
-        return true;
-    }
-    // A raw-HTML `<summary>` does not link `#N`, so the reference closes the detail, where Markdown applies.
-    let detail = match pr {
-        Some(pr) => format!("{}\n\nPull request #{pr}", detail.trim_end()),
-        None => detail,
-    };
-    if after_bullet {
-        body.push('\n');
-    }
+/// One group's collapsible block: a summary written here, then each change as the changelog will render it.
+fn render_level(body: &mut String, level: Severity, changes: &[&Change]) {
+    let open = if level == Severity::Major { " open" } else { "" };
+    let noun = if changes.len() == 1 { "change" } else { "changes" };
     body.push_str(&format!(
-        "<details{open}>\n<summary><b>{}</b> — affects {}</summary>\n\n",
-        summary_html(&title),
-        affected.join(", ")
+        "<details{open}>\n<summary>{}: {} {noun}</summary>\n\n",
+        level_title(level),
+        changes.len()
     ));
-    push_detail(body, &detail);
-    false
-}
-
-/// A summary whose first line opens `**lead-in**`, with no backtick, `*` or `[` inside and no space against the markers, yields the lead-in and what
-/// follows it (trimmed); anything else falls back to the generic split.
-fn bold_lead_in(summary: &str) -> Option<(String, &str)> {
-    let text = summary.trim_start().strip_prefix("**")?;
-    if text.starts_with('*') {
-        return None;
+    for change in changes {
+        body.push_str(&change_bullet(change));
     }
-    let first_line = text.lines().next().unwrap_or_default();
-    let end = first_line.find("**")?;
-    let lead = &text[..end];
-    let edge_is_space = |c: Option<char>| c.is_none_or(char::is_whitespace);
-    if edge_is_space(lead.chars().next())
-        || edge_is_space(lead.chars().next_back())
-        || lead.contains(['`', '*', '['])
-        || lead.chars().count() > HEADLINE_MAX_CHARS
-    {
-        return None;
-    }
-    Some((lead.to_string(), text[end + 2..].trim()))
+    body.push_str("</details>\n\n");
 }
 
-/// Markdown is not interpreted inside a raw-HTML `<summary>`, so code spans become `<code>` and everything else is
-/// escaped; otherwise a title such as ``Fix `<T>` `` would lose its `<T>` as an unknown tag.
-fn summary_html(text: &str) -> String {
-    fn escape(text: &str) -> String {
-        text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-    }
-    map_code_spans(text, escape, |code| format!("<code>{}</code>", escape(code)))
-}
-
-/// A bullet is Markdown, so code spans stay as written and a `<` outside one is escaped rather than read as a tag.
-fn bullet_markdown(text: &str) -> String {
-    map_code_spans(text, |plain| plain.replace('<', "\\<"), |code| format!("`{code}`"))
-}
-
-/// Rewrites the text outside single-backtick code spans with `plain` and each span's contents with `code`.
-fn map_code_spans(text: &str, plain: impl Fn(&str) -> String, code: impl Fn(&str) -> String) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(open) = rest.find('`') {
-        let Some(len) = rest[open + 1..].find('`') else {
-            break;
+/// The changelog's bullet for the change, then who it affects and the pull request that added it.
+fn change_bullet(change: &Change) -> String {
+    let mut bullet = match &change.kind {
+        ChangeKind::Changeset { summary, .. } => match indent_changeset_summary(summary) {
+            Some(indented) => format!("- {indented}\n"),
+            None => format!("- {}\n", change_label(&change.kind)),
+        },
+        ChangeKind::Fallback { reason } => {
+            let text = fallback_reason_text(reason);
+            let text = text.trim().trim_start_matches("- ");
+            format!("- `{}`: {text}\n", change.members[0].package)
+        }
+        kind => format!("- {}\n", entry_text(kind).unwrap_or_default()),
+    };
+    if !matches!(change.kind, ChangeKind::Fallback { .. }) {
+        let affected: Vec<String> = change
+            .members
+            .iter()
+            .map(|member| format!("`{}`", member.package))
+            .collect();
+        let pr = match &change.kind {
+            ChangeKind::Changeset { pr: Some(pr), .. } => format!(" · #{pr}"),
+            _ => String::new(),
         };
-        out.push_str(&plain(&rest[..open]));
-        out.push_str(&code(&rest[open + 1..open + 1 + len]));
-        rest = &rest[open + len + 2..];
+        bullet.push_str(&format!("\n  Affects {}{pr}\n", affected.join(", ")));
     }
-    out.push_str(&plain(rest));
-    out
-}
-
-fn push_detail(body: &mut String, text: &str) {
-    body.push_str(text);
-    if !text.ends_with('\n') {
-        body.push('\n');
-    }
-    body.push_str("\n</details>\n\n");
+    bullet.push('\n');
+    bullet
 }
 
 /// Where merging will publish each package, from planning the versioned tree's release.
@@ -738,22 +635,6 @@ mod tests {
     }
 
     #[test]
-    fn a_summary_title_keeps_code_spans_and_escapes_the_rest() {
-        assert_eq!(
-            summary_html("Fix `<T>` & more"),
-            "Fix <code>&lt;T&gt;</code> &amp; more"
-        );
-        assert_eq!(summary_html("a < b `unclosed"), "a &lt; b `unclosed");
-        assert_eq!(summary_html("`a` and `b`"), "<code>a</code> and <code>b</code>");
-    }
-
-    #[test]
-    fn a_bullet_title_keeps_code_spans_and_escapes_a_stray_tag() {
-        assert_eq!(bullet_markdown("Fix `<T>` and <b>"), "Fix `<T>` and \\<b>");
-        assert_eq!(bullet_markdown("plain"), "plain");
-    }
-
-    #[test]
     fn a_change_names_the_pull_request_that_added_it() {
         let write = |package: &str, filename: &str, summary: &str| {
             let package = PackageId::parse(package).unwrap();
@@ -807,18 +688,9 @@ mod tests {
 
         let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
 
-        assert!(
-            body.contains("- **Adds a flag.** — affects <code>pkg-a</code> · #12\n"),
-            "{body}"
-        );
-        assert!(
-            body.contains("Details here.\n\nPull request #34\n\n</details>"),
-            "{body}"
-        );
-        assert!(
-            body.contains("- **No pull request.** — affects <code>pkg-c</code>\n"),
-            "{body}"
-        );
+        assert!(body.contains("- Adds a flag.\n\n  Affects `pkg-a` · #12\n"), "{body}");
+        assert!(body.contains("  Details here.\n\n  Affects `pkg-b` · #34\n"), "{body}");
+        assert!(body.contains("- No pull request.\n\n  Affects `pkg-c`\n"), "{body}");
     }
 
     #[test]
@@ -882,15 +754,10 @@ mod tests {
         assert!(major < minor, "{body}");
         assert!(!body.contains("#### 🟢 Patch"), "{body}");
         assert!(
-            body.contains(
-                "<details open>\n<summary><b>Drops the old API.</b> — affects <code>pkg-a</code></summary>\n\n##### Migration\n\nCallers must now pass a config.\n\n</details>"
-            ),
+            body.contains("<details open>\n<summary>Major: 1 change</summary>\n\n- Drops the old API."),
             "{body}"
         );
-        assert!(
-            body.contains("- **Adds a flag.** — affects <code>pkg-b</code>\n\n"),
-            "{body}"
-        );
+        assert!(body.contains("Affects `pkg-b`\n"), "{body}");
         assert!(
             !body.contains("`a`") && !body.contains("`b`"),
             "titles are headlines, not filenames: {body}"
@@ -1160,7 +1027,7 @@ mod tests {
             report.body
         );
         assert!(
-            report.body.contains("<code>pkg-a</code>"),
+            report.body.contains("`pkg-a`"),
             "body must list pkg-a as affected by the change group; body: {}",
             report.body
         );
@@ -1172,29 +1039,6 @@ mod tests {
     }
 
     #[test]
-    fn a_bold_lead_in_needs_a_clean_closed_first_line() {
-        let (lead, rest) = bold_lead_in("**Plain lead-in.** more").unwrap();
-        assert_eq!((lead.as_str(), rest), ("Plain lead-in.", "more"));
-        assert!(bold_lead_in("**Fix the `x` op.** more").is_none());
-        assert!(bold_lead_in("**Fix the `**` operator.** more").is_none());
-        assert!(bold_lead_in("**Split across\n\nparagraphs.** more").is_none());
-        assert!(bold_lead_in("***\nintro\n\n**x** y").is_none());
-    }
-
-    #[test]
-    fn a_bold_lead_in_over_the_title_limit_falls_back() {
-        let at_limit = "a".repeat(HEADLINE_MAX_CHARS);
-        assert!(bold_lead_in(&format!("**{at_limit}** more")).is_some());
-        assert!(bold_lead_in(&format!("**{at_limit}a** more")).is_none());
-    }
-
-    #[test]
-    fn a_bold_lead_in_with_a_link_or_a_space_before_the_closing_marker_falls_back() {
-        assert!(bold_lead_in("**See [the docs](https://x.y).** more").is_none());
-        assert!(bold_lead_in("**Not bold ** more").is_none());
-    }
-
-    #[test]
     fn a_changeset_name_with_a_pipe_is_escaped_in_the_reason_cell() {
         let cell = reason_cell(&Some(BumpReason::Changeset {
             changesets: vec!["a|b".to_string()],
@@ -1203,7 +1047,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bold_lead_in_is_the_summary_title_without_asterisks() {
+    fn changes_render_as_the_changelog_will_write_them() {
         let pkg = PackageId::parse("pkg-a").unwrap();
         let entry = |filename: &str, summary: &str| crate::changelog::ChangelogEntry {
             severity: Severity::Patch,
@@ -1364,7 +1208,7 @@ mod tests {
             report.body
         );
         assert!(
-            report.body.contains("<code>pkg-b</code>"),
+            report.body.contains("`pkg-b`"),
             "pkg-b must be listed as affected by its change group; body: {}",
             report.body
         );
@@ -1546,12 +1390,15 @@ mod tests {
                 .body
                 .matches("Delete unused abstractions with zero real callers")
                 .count(),
-            2,
-            "the shared changeset renders once (its lead-in in the title and in the detail), not once per package; body: {}",
+            1,
+            "the shared changeset renders once, not once per package; body: {}",
             report.body
         );
-        assert!(report.body.contains("<code>pkg-a</code>"), "body: {}", report.body);
-        assert!(report.body.contains("<code>pkg-b</code>"), "body: {}", report.body);
+        assert!(
+            report.body.contains("Affects `pkg-a`, `pkg-b`"),
+            "body: {}",
+            report.body
+        );
         assert!(
             report.body.contains("`delete-dead-abstractions`"),
             "the group's summary must name its changeset; body: {}",
@@ -1600,7 +1447,9 @@ mod tests {
         });
         let minor_report = render_pr_body_from_preview(&build_release_preview(&minor_only), &PrBodyOptions::default());
         assert!(
-            minor_report.body.contains("<details>\n<summary><b>pkg-a</b>"),
+            minor_report
+                .body
+                .contains("<details>\n<summary>Minor: 1 change</summary>"),
             "a minor-only change's block must default closed; body: {}",
             minor_report.body
         );
@@ -1611,7 +1460,9 @@ mod tests {
         major_plan.bumps[0].severity = Severity::Major;
         let major_report = render_pr_body_from_preview(&build_release_preview(&major_plan), &PrBodyOptions::default());
         assert!(
-            major_report.body.contains("<details open>\n<summary><b>pkg-a</b>"),
+            major_report
+                .body
+                .contains("<details open>\n<summary>Major: 1 change</summary>"),
             "a change containing a major bump must default its own block open; body: {}",
             major_report.body
         );
@@ -1674,7 +1525,7 @@ mod tests {
         );
         assert!(report.body.contains("`pkg-a`"), "body: {}", report.body);
         assert_eq!(
-            report.body.matches("<details>\n<summary><b>pkg-a</b>").count(),
+            report.body.matches("Affects `pkg-a`").count(),
             0,
             "a bystander package must not also get its own collapsible block; body: {}",
             report.body
