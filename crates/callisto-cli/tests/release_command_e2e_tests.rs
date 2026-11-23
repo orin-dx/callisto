@@ -657,6 +657,29 @@ fn init_says_the_missing_origin_note_once_on_stderr() {
         let dir = init_fixture(None);
         let out = init_with(dir.path(), format, &[]);
         assert_said_once(&out, format, "No `origin` remote is configured");
+        // The origin note covers it: no second, tags-unbound wording.
+        assert!(!stderr(&out).contains("unbound"), "{format}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn init_says_a_non_hosted_origin_is_not_hosted_once_without_its_value() {
+    for origin in [
+        "/srv/vcs/team-repo.git",
+        "file:///srv/vcs/team-repo.git",
+        "https://u:secret@host:99999/x.git",
+    ] {
+        for format in ["text", "json"] {
+            let dir = init_fixture(Some(origin));
+            let out = init_with(dir.path(), format, &[]);
+            assert_said_once(&out, format, "`origin` is not a hosted remote");
+            let text = format!("{}{}", stderr(&out), String::from_utf8_lossy(&out.stdout));
+            assert!(
+                !text.contains("team-repo") && !text.contains("secret"),
+                "{origin}: {text}"
+            );
+            assert!(!stderr(&out).contains("unbound"), "{origin}: {}", stderr(&out));
+        }
     }
 }
 

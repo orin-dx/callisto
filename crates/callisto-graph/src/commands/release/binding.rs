@@ -10,7 +10,7 @@ use callisto_model::{
     PublishTarget, RegistryBindingDigest, RegistryKey, SemanticInputDigest,
 };
 
-use crate::error::OriginRefusal;
+use crate::error::{OriginRefusal, ShownRegistry};
 use crate::registry_endpoint::{
     canonical_registry_url, split_routes_digest, url_parse_error_reason, RegistryBindingV1,
 };
@@ -83,12 +83,13 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     let publish = publish_raw
         .map(|raw| canonical_registry_binding(key.as_str(), raw))
         .transpose()?;
-    if let (Some(_), Some(binding)) = (explicit, &index)
+    if let (Some(raw), Some(binding)) = (explicit, &index)
         && matches!(target, PublishTarget::Npm { .. })
         && !is_approved_npm_registry(workspace, binding)
     {
         return Err(GraphError::UntrustedNpmRegistry {
             package: package.clone(),
+            registry: ShownRegistry::new(raw),
         });
     }
     let identity = match (&index, &publish) {
@@ -155,6 +156,11 @@ pub(crate) enum Origin {
 
 impl Origin {
     pub(crate) fn read(root: &Path, runner: &dyn CommandRunner) -> Result<Self, GraphError> {
+        Ok(Self::parse_push_url(Self::read_push_url(root, runner)?.as_deref()))
+    }
+
+    /// `origin`'s push URL, or `None` when there is no such remote.
+    pub(crate) fn read_push_url(root: &Path, runner: &dyn CommandRunner) -> Result<Option<String>, GraphError> {
         // A missing `origin` is an answer, not a failure: probe quietly so git's "No such remote" never prints.
         let output = runner.run_quiet(
             programs::GIT,
@@ -162,11 +168,11 @@ impl Origin {
             root,
             timeouts::LOCAL_GIT,
         )?;
-        let raw = output.stdout.trim();
-        if output.exit_code != Some(0) {
-            return Ok(Self::Missing);
-        }
-        Ok(Self::parse(raw))
+        Ok((output.exit_code == Some(0)).then(|| output.stdout.trim().to_owned()))
+    }
+
+    pub(crate) fn parse_push_url(raw: Option<&str>) -> Self {
+        raw.map_or(Self::Missing, Self::parse)
     }
 
     fn parse(raw: &str) -> Self {
@@ -247,7 +253,12 @@ pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, &'sta
         return Err("SSH remotes must use the git account");
     }
     let host = parsed.host_str().expect("validated authority").to_ascii_lowercase();
-    let mut components = parsed.path_segments().ok_or("remote path is invalid")?;
+    // One trailing slash is the same repository, as `git` itself treats it.
+    let mut segments: Vec<&str> = parsed.path_segments().ok_or("remote path is invalid")?.collect();
+    if segments.len() > 1 && segments.last() == Some(&"") {
+        segments.pop();
+    }
+    let mut components = segments.into_iter();
     let owner = components
         .next()
         .filter(|value| !value.is_empty())
@@ -432,6 +443,31 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn an_untrusted_registry_shows_the_users_text_unless_it_carries_credentials() {
+        let shown = |raw: &str| ShownRegistry::new(raw).to_string();
+        assert_eq!(shown("https://Registry.Example.com"), "`https://Registry.Example.com`");
+        for secret in [
+            "https://u:pw@r.example.test/",
+            "https://r.example.test/?token=pw",
+            "not a url pw",
+        ] {
+            assert!(!shown(secret).contains("pw"), "{secret}");
+        }
+    }
+
+    #[test]
+    fn a_trailing_slash_and_an_ssh_port_are_accepted() {
+        let plain = canonical_git_remote("https://github.com/o/r.git").unwrap();
+        let slash = canonical_git_remote("https://github.com/o/r/").unwrap();
+        assert_eq!(slash.endpoint, plain.endpoint);
+        assert_eq!(slash.identity, plain.identity);
+        let ported = canonical_git_remote("ssh://git@git.example.test:2222/o/r.git").unwrap();
+        assert_eq!(ported.endpoint, "ssh://git@git.example.test:2222/o/r.git");
+        assert!(canonical_git_remote("https://github.com/o/").is_err());
+        assert!(canonical_git_remote("git@git.example.test:2222/o/r").is_err());
     }
 
     #[test]

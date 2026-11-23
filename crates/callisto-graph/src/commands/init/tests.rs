@@ -253,6 +253,7 @@ fn origin_url_is_canonicalized() {
     let files: Vec<(&str, &str)> = files.iter().map(|(path, body)| (*path, body.as_str())).collect();
     let rejected = repo(&files, Some("https://user:secret@github.com/example/tools.git"));
     let facts = detect_in(rejected.path()).unwrap();
+    assert!(facts.origin_not_hosted);
     assert_eq!(facts.origin, None);
     assert_eq!(facts.origin_repository, None);
 
@@ -358,6 +359,7 @@ fn facts_for_render() -> InitFacts {
             package("npm/web-linux-x64-gnu", &[], true),
         ],
         origin: Some(ORIGIN.to_owned()),
+        origin_not_hosted: false,
         origin_repository: GitHubRepository::parse("example/tools").ok(),
         tag_templates: BTreeMap::new(),
         has_commit: true,

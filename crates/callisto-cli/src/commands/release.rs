@@ -53,16 +53,29 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
 pub const TAGS_UNBOUND_NOTE: &str =
     "note: `origin` is missing or not a hosted remote, so tag operations are unbound; a real `callisto release` needs a hosted remote";
 
-/// Stderr note when `callisto version` has work for the selection: a release plans only versions already written.
-fn pending_version_note(packages: &[callisto_model::ReleasePackageId]) -> String {
+/// The advisory when `callisto version` has work for the selection: a release plans only versions already written.
+pub(crate) fn pending_version_diagnostic(
+    packages: &[callisto_model::ReleasePackageId],
+) -> Option<callisto_model::Diagnostic> {
+    if packages.is_empty() {
+        return None;
+    }
     let names = packages
         .iter()
         .map(|package| format!("`{package}`"))
         .collect::<Vec<_>>();
-    format!(
-        "note: pending version work for {} is not in this plan: run `callisto version` (or merge the release PR) first",
-        names.join(", ")
-    )
+    Some(callisto_model::Diagnostic {
+        code: callisto_model::DiagnosticCode::PendingVersionWork,
+        severity: callisto_model::DiagnosticSeverity::Info,
+        message: format!(
+            "pending version work for {} is not in this plan: run `callisto version` (or merge the release PR) first",
+            names.join(", ")
+        ),
+        package: None,
+        path: None,
+        escalated_by: None,
+        governed_by: None,
+    })
 }
 
 /// Stderr warning for a tag that exists here but not on `origin`.
@@ -107,7 +120,8 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
     if global.dry_run {
         // Advisory: a plan `version` cannot derive is that command's error to report.
         let pending = pending_version_work(&workspace, &selections).unwrap_or_default();
-        write_release_preview(plan.as_ref(), &pending, global.format, &mut std::io::stdout())?;
+        write_release_preview(plan.as_ref(), global.format, &mut std::io::stdout())?;
+        write_release_preview_notes(plan.as_ref(), &pending, &mut std::io::stderr())?;
         return Ok(ExitCode::SUCCESS);
     }
     let Some(plan) = plan else {
@@ -171,7 +185,6 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
 /// Writes a `release --dry-run` preview of `plan`; `init` shows the same one.
 pub(crate) fn write_release_preview(
     plan: Option<&LocalReleasePlan>,
-    pending: &[callisto_model::ReleasePackageId],
     format: OutputFormat,
     out: &mut dyn std::io::Write,
 ) -> Result<(), CliError> {
@@ -196,16 +209,25 @@ pub(crate) fn write_release_preview(
             write!(out, "{}", render_release_plan(&plan.intent, crate::color::enabled()))?
         }
     }
+    Ok(())
+}
+
+/// The notes `release --dry-run` adds to a preview, on stderr.
+fn write_release_preview_notes(
+    plan: Option<&LocalReleasePlan>,
+    pending: &[callisto_model::ReleasePackageId],
+    err: &mut dyn std::io::Write,
+) -> Result<(), CliError> {
     if let Some(plan) = plan {
         if plan.tags_unbound {
-            eprintln!("{TAGS_UNBOUND_NOTE}");
+            writeln!(err, "{TAGS_UNBOUND_NOTE}")?;
         }
         for diagnostic in &plan.diagnostics {
-            eprintln!("warning: {}", diagnostic.message);
+            writeln!(err, "warning: {}", diagnostic.message)?;
         }
     }
-    if !pending.is_empty() {
-        eprintln!("{}", pending_version_note(pending));
+    if let Some(note) = pending_version_diagnostic(pending) {
+        writeln!(err, "note: {}", note.message)?;
     }
     Ok(())
 }

@@ -8,7 +8,6 @@ use callisto_model::{
 
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::binding::Origin;
 use super::capability::{
     derive_release_intent_unmoved, names_taken_by_other_projects, observe_source, published_packages,
     unsatisfied_packages, ReleaseCheckout,
@@ -88,7 +87,7 @@ pub struct OriginTagProbe {
 pub fn origin_tag_probe<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
 ) -> Result<Option<OriginTagProbe>, GraphError> {
-    let Some(remote) = Origin::read(&workspace.root, workspace.runner)?.preview() else {
+    let Some(remote) = workspace.origin()?.preview() else {
         return Ok(None);
     };
     let tags = workspace.tags()?;
@@ -172,7 +171,7 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
     }
     // Without an `origin` push URL a preview cannot observe anything, so it cannot call a tagged release finished.
     if observation == Observation::Never
-        || (mode == LocalReleaseSource::Preview && Origin::read(&workspace.root, workspace.runner)?.preview().is_none())
+        || (mode == LocalReleaseSource::Preview && workspace.origin()?.preview().is_none())
     {
         return Ok(tagged);
     }
@@ -274,9 +273,7 @@ fn refuse_a_name_another_project_owns<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<(), GraphError> {
     let first_releases = first_release_packages(workspace, decision)?;
     // Without an `origin` push URL a preview cannot tell whose repository the registry names.
-    if first_releases.is_empty()
-        || (mode == LocalReleaseSource::Preview && Origin::read(&workspace.root, workspace.runner)?.preview().is_none())
-    {
+    if first_releases.is_empty() || (mode == LocalReleaseSource::Preview && workspace.origin()?.preview().is_none()) {
         return Ok(());
     }
     let (_, prepared) =
@@ -313,9 +310,7 @@ fn refuse_a_published_version_left_behind<R: CommandRunner, D: DependencyResolve
     }
     let moved = super::version_commit::packages_moved_past_their_version(workspace, decision, resumable)?;
     // Without an `origin` push URL a preview cannot observe the registry either.
-    if moved.is_empty()
-        || (mode == LocalReleaseSource::Preview && Origin::read(&workspace.root, workspace.runner)?.preview().is_none())
-    {
+    if moved.is_empty() || (mode == LocalReleaseSource::Preview && workspace.origin()?.preview().is_none()) {
         return Ok(());
     }
     let (_, prepared) =
@@ -461,7 +456,7 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
             .operations
             .iter()
             .any(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
-        && Origin::read(&workspace.root, workspace.runner)?.preview().is_none();
+        && workspace.origin()?.preview().is_none();
     Ok(Some(LocalReleasePlan {
         intent,
         tags_unbound,

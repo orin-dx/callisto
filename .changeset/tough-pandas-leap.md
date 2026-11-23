@@ -15,4 +15,5 @@ callisto-cli: patch
 - An `origin` that is not a hosted remote, such as a local path or a `file://` URL, previews like no `origin`: the dry run shows the plan with one note that tags are unbound.
   - A real `callisto release` refuses it with an error that names the accepted forms: an `https://` or `ssh://git@` URL, or `git@host:owner/repo`.
   - The error never shows the `origin` value; run `git remote get-url origin` to see it.
-- `init` accepts a non-hosted `origin` the same way, since it never pushes.
+- `init` accepts a non-hosted `origin` the same way, since it never pushes, and says once that it is not hosted.
+- An `origin` URL with a trailing slash, such as `https://github.com/owner/repo/`, is accepted.

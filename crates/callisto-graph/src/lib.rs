@@ -82,6 +82,9 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// is called. `pub` so tests can hand-construct a `Workspace` with a
     /// pre-seeded value.
     pub git: OnceCell<GitAccess<'a>>,
+    /// `origin`'s push URL, read by one git process the first time `Workspace::origin` is called. Never formatted
+    /// into output.
+    pub origin_url: OnceCell<Option<String>>,
     pub runner: &'a R,
     /// Path-keyed cache of manifest handles opened read-only during this
     /// workspace's lifetime. Populated during graph discovery
@@ -138,6 +141,7 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
             graph,
             tags: OnceCell::new(),
             git: OnceCell::new(),
+            origin_url: OnceCell::new(),
             runner,
             manifest_cache,
             identity,
@@ -198,6 +202,18 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         self.git.get_or_init(|| GitAccess::new(&self.root, self.runner))
     }
 
+    /// `origin`, read from git once per workspace; a plan, its preview and its checks all see the same remote.
+    pub(crate) fn origin(&self) -> Result<crate::commands::release::Origin, GraphError> {
+        let raw = match self.origin_url.get() {
+            Some(raw) => raw,
+            None => {
+                let raw = crate::commands::release::Origin::read_push_url(&self.root, self.runner)?;
+                self.origin_url.get_or_init(|| raw)
+            }
+        };
+        Ok(crate::commands::release::Origin::parse_push_url(raw.as_deref()))
+    }
+
     /// The GitHub repository a product release publishes to: `[release] forge-repository` when set, else `origin`'s.
     /// No remote, or one not on GitHub, means none; an `origin` that is not hosted refuses a real run and reads as
     /// none in a preview.
@@ -213,7 +229,7 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         {
             return Ok(Some(configured));
         }
-        let origin = crate::commands::release::Origin::read(&self.root, self.runner)?;
+        let origin = self.origin()?;
         let remote = match remote {
             crate::commands::release::GitRemoteRequirement::Required => origin.optional()?,
             crate::commands::release::GitRemoteRequirement::OptionalForPreview => origin.preview(),

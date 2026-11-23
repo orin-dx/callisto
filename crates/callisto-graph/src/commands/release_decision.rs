@@ -1388,6 +1388,7 @@ mod tests {
             graph,
             tags: std::cell::OnceCell::new(),
             git: std::cell::OnceCell::new(),
+            origin_url: std::cell::OnceCell::new(),
             runner,
             manifest_cache: Default::default(),
             identity: crate::IdentityIndex::default(),

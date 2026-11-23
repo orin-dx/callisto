@@ -176,7 +176,12 @@ pub fn run<R: CommandRunner>(
         diagnostics.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::InitOriginMissing,
             severity: callisto_model::DiagnosticSeverity::Warning,
-            message: ORIGIN_MISSING_NOTE.to_owned(),
+            message: if facts.origin_not_hosted {
+                ORIGIN_NOT_HOSTED_NOTE
+            } else {
+                ORIGIN_MISSING_NOTE
+            }
+            .to_owned(),
             package: None,
             path: None,
             escalated_by: None,
@@ -257,7 +262,12 @@ pub fn run<R: CommandRunner>(
     match plan {
         Some((plan, pending)) => {
             writeln!(human, "First release preview (`callisto release --dry-run`):")?;
-            super::release::write_release_preview(plan.as_ref(), &pending, OutputFormat::Text, human)?;
+            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human)?;
+            // `origin` already has its own note above, so an unbound tag adds nothing.
+            if let Some(plan) = &plan {
+                diagnostics.extend(plan.diagnostics.clone());
+            }
+            diagnostics.extend(super::release::pending_version_diagnostic(&pending));
         }
         None => writeln!(human, "{NO_COMMITS}")?,
     }
@@ -412,6 +422,10 @@ fn build_workflow<R: CommandRunner>(
 /// Printed, and recorded as a warning diagnostic, when no `origin` remote is configured.
 const ORIGIN_MISSING_NOTE: &str = "No `origin` remote is configured: skipping the release workflow and \
 shipping-binaries questions; `callisto release` will refuse until one is added.";
+
+/// Printed, and recorded as a warning diagnostic, when `origin` is not a hosted remote; the value is never shown.
+const ORIGIN_NOT_HOSTED_NOTE: &str = "`origin` is not a hosted remote (use https://, ssh:// or git@host:owner/repo): \
+skipping the release workflow and shipping-binaries questions; `callisto release` will refuse until one is set.";
 
 /// Rejects flag combinations invalid regardless of workspace facts.
 fn validate_flags(args: &InitArgs) -> Result<(), CliError> {

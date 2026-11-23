@@ -283,6 +283,7 @@ mod historical_version_authority {
                 graph: ManifestRoster(packages),
                 tags: loaded.tags,
                 git: loaded.git,
+                origin_url: loaded.origin_url,
                 runner: loaded.runner,
                 manifest_cache: loaded.manifest_cache,
                 identity: loaded.identity,

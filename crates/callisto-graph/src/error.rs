@@ -356,7 +356,7 @@ pub enum GraphError {
     },
 
     #[error(
-        "package `{package}` sets `publishConfig.registry` to a registry that is not an operator-approved npm registry"
+        "package `{package}` sets `publishConfig.registry` to {registry}, which is not an operator-approved npm registry"
     )]
     #[diagnostic(
         code(E120),
@@ -369,7 +369,10 @@ pub enum GraphError {
              remove the override from package.json."
         )
     )]
-    UntrustedNpmRegistry { package: PackageId },
+    UntrustedNpmRegistry {
+        package: PackageId,
+        registry: ShownRegistry,
+    },
 
     #[error("release intent references package `{package}` which is not an exact selected workspace package")]
     #[diagnostic(code(E123), help("Rebuild the release intent from the current workspace instead of reusing a selection from another workspace."))]
@@ -972,6 +975,35 @@ pub enum ReleaseSelectionInvalidReason {
     SnapshotVersion,
     #[error("it is an unreleased workspace package a selected package depends on; select it too")]
     DependencyNotSelected,
+}
+
+/// A registry URL as the user wrote it, kept only when it carries no credentials: userinfo, a query or a fragment, or
+/// a value that is not a URL, leave it out of every message.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ShownRegistry(Option<String>);
+
+impl ShownRegistry {
+    pub(crate) fn new(raw: &str) -> Self {
+        let plain = url::Url::parse(raw).is_ok_and(|url| {
+            url.username().is_empty() && url.password().is_none() && url.query().is_none() && url.fragment().is_none()
+        });
+        Self((plain && !raw.chars().any(char::is_control)).then(|| raw.to_owned()))
+    }
+}
+
+impl std::fmt::Display for ShownRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Some(raw) => write!(f, "`{raw}`"),
+            None => f.write_str("a registry whose URL is not shown"),
+        }
+    }
+}
+
+impl std::fmt::Debug for ShownRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ShownRegistry({self})")
+    }
 }
 
 /// Why `origin` cannot be bound, carried by [`GraphError::UnsafeGitRemote`] (E132).
