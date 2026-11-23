@@ -181,9 +181,6 @@ def coordinator_path_agreement(path, src):
         errs.append(f"{src}: coordinator path {m.group(1)} disagrees with the checked workflow {path}")
     if not os.path.isfile(m.group(1)):
         errs.append(f"{src}: coordinator workflow {m.group(1)} does not exist")
-    for signer in re.findall(r"--signer-workflow\s+(\S+)", open(INSTALLER).read()):
-        if not signer.endswith("/" + m.group(1)):
-            errs.append(f"{INSTALLER}: --signer-workflow {signer} disagrees with {src} coordinator path {m.group(1)}")
     return errs
 
 

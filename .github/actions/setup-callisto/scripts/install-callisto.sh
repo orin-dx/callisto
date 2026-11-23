@@ -34,16 +34,6 @@ if [[ "$SOURCE" == "auto" && "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:
   fi
 fi
 
-# Validate verification mode
-VERIFICATION="${INPUT_CALLISTO_VERIFICATION:-fallback}"
-case "$VERIFICATION" in
-  require|fallback|skip) ;;
-  *)
-    echo "::error::unsupported setup-callisto verification '$VERIFICATION' (valid values: require, fallback, skip)"
-    exit 1
-    ;;
-esac
-
 # Detect OS platform architecture for pre-built binaries
 OS_NAME=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH_NAME=$(uname -m)
@@ -88,37 +78,9 @@ case "$ASSET_NAME" in
     ;;
 esac
 
-# A prebuilt asset runs with job privileges, so it needs a release-workflow attestation before extraction.
-# require aborts on failure; fallback discards the asset and returns 1; skip trusts it.
-verify_asset() {
-  local reason=""
-  if [[ "$VERIFICATION" == "skip" ]]; then
-    echo "::warning::verification=skip: $ASSET_NAME was not verified"
-    return 0
-  fi
-  if ! command -v gh >/dev/null 2>&1; then
-    reason="gh is not installed"
-  elif ! gh attestation verify "$DOWNLOAD_DEST" \
-      --repo orin-dx/callisto \
-      --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
-      --deny-self-hosted-runners \
-      --source-ref refs/heads/main; then
-    reason="attestation verification failed"
-  fi
-  [[ -z "$reason" ]] && return 0
-  rm -f "$DOWNLOAD_DEST"
-  if [[ "$VERIFICATION" == "require" ]]; then
-    echo "::error::cannot verify $ASSET_NAME: $reason (verification=require)"
-    exit 1
-  fi
-  echo "::warning::cannot verify $ASSET_NAME: $reason; discarding it and installing from crates.io (verification=fallback)"
-  return 1
-}
-
-# Download, verify and extract the prebuilt asset; nonzero means use the fallback chain.
+# Download and extract the prebuilt asset; nonzero means use the fallback chain.
 fetch_prebuilt() {
   curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null || return 1
-  verify_asset || return 1
   # Extract only the expected binary, never the whole archive.
   case "$ASSET_NAME" in
     *.zip)

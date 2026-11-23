@@ -245,7 +245,7 @@ release-workflow-checks:
 
 # Workflow Contracts CI job minus actionlint and zizmor: pins, release
 # contract/policy, artifact build script, the Release-PR action contract
-# under a minimal PATH, and the installer verification-mode tests.
+# under a minimal PATH, and the installer tests.
 workflow-contracts: release-workflow-checks
     bash .github/tests/test_release_candidate_recovery.sh
     bash .github/tests/verify-action-pins.sh

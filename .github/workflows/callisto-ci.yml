@@ -302,7 +302,7 @@ jobs:
           set -euo pipefail
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir "$RUNNER_TEMP"
           test -s "$RUNNER_TEMP/$ASSET"
-      - name: Verify the attestation with the installer's flags
+      - name: Verify the attestation
         if: steps.latest.outputs.tag != ''
         run: |
           set -euo pipefail
