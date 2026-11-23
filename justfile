@@ -128,15 +128,15 @@ install-real-tools:
     tools=target/real-tools
     mkdir -p "$tools"
     export COREPACK_HOME="$PWD/$tools/corepack/home" COREPACK_ENABLE_AUTO_PIN=0
-    npm install --silent --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4 pnpm@11.9.0 @changesets/cli@3.0.3 bun@1.4.5
+    npm install --silent --prefer-offline --no-audit --no-fund --prefix "$tools/npm" verdaccio@6.10.4 pnpm@11.9.0 @changesets/cli@3.0.3 bun@1.4.5
     # Its own prefix: the corepack package ships pnpm and npm shims that would replace the pinned pnpm.
-    npm install --silent --no-audit --no-fund --prefix "$tools/corepack-cli" corepack@0.36.0
+    npm install --silent --prefer-offline --no-audit --no-fund --prefix "$tools/corepack-cli" corepack@0.36.0
     mkdir -p "$tools/corepack/bin"
     "$tools/corepack-cli/node_modules/.bin/corepack" enable --install-directory "$tools/corepack/bin" yarn
     "$tools/corepack-cli/node_modules/.bin/corepack" prepare yarn@4.18.1 --activate
     "$tools/corepack/bin/yarn" --version
     "$tools/npm/node_modules/.bin/bun" --version
-    npm install --silent --no-audit --no-fund --prefix "$tools/changesets-2" @changesets/cli@2.31.1
+    npm install --silent --prefer-offline --no-audit --no-fund --prefix "$tools/changesets-2" @changesets/cli@2.31.1
     PATH="$PWD/$tools/npm/node_modules/.bin:$PATH" pnpm --version
     PATH="$PWD/$tools/npm/node_modules/.bin:$PATH" changeset --version
     "$tools/changesets-2/node_modules/.bin/changeset" --version
@@ -147,7 +147,8 @@ install-real-tools:
     cargo install --locked --root "$tools/cargo" cargo-http-registry@0.1.8
 
 # Rehearses recovery against local npm, PyPI and Cargo registries, then runs the native install matrix.
-test-real-tools: install-real-tools
+# `native=no` skips the native resolution suite, which `just test` already runs.
+test-real-tools native="yes": install-real-tools
     #!/usr/bin/env bash
     set -euo pipefail
     tools="$PWD/target/real-tools"
@@ -155,7 +156,7 @@ test-real-tools: install-real-tools
     export COREPACK_HOME="$tools/corepack/home" COREPACK_ENABLE_AUTO_PIN=0 COREPACK_ENABLE_DOWNLOAD_PROMPT=0
     cargo --version && npm --version && pnpm --version && uv --version && yarn --version && bun --version
     REAL_TOOLS_CHANGESETS_2="$tools/changesets-2/node_modules/.bin/changeset" REAL_TOOLS_WHEELS="$tools/wheels" cargo test -p callisto-cli --test release_verify_real -- --ignored --test-threads=1
-    cargo test -p callisto-cli --test native_resolution_e2e_tests -- --test-threads=1
+    [ "{{native}}" = no ] || cargo test -p callisto-cli --test native_resolution_e2e_tests -- --test-threads=1
 
 # Run unused dependency check via cargo-machete
 machete:
