@@ -1,5 +1,5 @@
 ---
-callisto-cli: patch
+callisto-cli: minor
 ---
 
 **setup-callisto always verifies the Callisto release**

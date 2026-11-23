@@ -11,6 +11,7 @@ Pick the asset for your platform:
 | Platform | Asset |
 | --- | --- |
 | Linux x86_64 | `callisto-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux x86_64, static (musl) | `callisto-x86_64-unknown-linux-musl.tar.gz` |
 | Linux arm64 | `callisto-aarch64-unknown-linux-gnu.tar.gz` |
 | macOS arm64 | `callisto-aarch64-apple-darwin.tar.gz` |
 | macOS x86_64 | `callisto-x86_64-apple-darwin.tar.gz` |
