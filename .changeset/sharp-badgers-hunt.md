@@ -7,5 +7,4 @@ callisto-cli: minor
 - Each answer stays on screen, the prompts show their keys, and long package lists page.
 - Before writing, a review lists each package's bump and the summary; afterwards `add` prints the next step.
 - Leave the summary empty to write a longer one, with bullets, in `$EDITOR`.
-- Esc cancels at any question and prints `Cancelled, nothing written.`
-- Ctrl-C still exits immediately and can leave the cursor hidden; run `tput cnorm` or `reset` if it does.
+- Esc or Ctrl-C cancels at any question, prints `Cancelled, nothing written.` and leaves the cursor visible. Ctrl-C exits 130.

@@ -57,14 +57,10 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let packages: Vec<&callisto_model::Package> = ws.graph.packages().collect();
         let changed = callisto_graph::changed::changed_since_last_tag(&packages, ws.tags()?, ws.git_access())?;
         let choices = wizard_choices(packages.iter().copied(), &changed);
-        let Some((chosen, written)) = run_wizard(
-            &choices,
-            summary.clone(),
-            &mut TerminalAddPrompter {
-                theme: ColorfulTheme::default(),
-            },
-        )?
-        else {
+        let mut prompter = TerminalAddPrompter {
+            theme: ColorfulTheme::default(),
+        };
+        let Some((chosen, written)) = tty::prompting(|| run_wizard(&choices, summary.clone(), &mut prompter))? else {
             return Ok(ExitCode::SUCCESS);
         };
         entries = chosen;
@@ -178,7 +174,7 @@ impl AddPrompter for TerminalAddPrompter {
         if !line.trim().is_empty() {
             return Ok(Some(line));
         }
-        let written = Editor::new().edit("")?;
+        let written = tty::with_editor(|| Editor::new().edit(""))?;
         Ok(written.filter(|text| !text.trim().is_empty()))
     }
 
