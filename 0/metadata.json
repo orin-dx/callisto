@@ -1,0 +1,116 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M84W39HYK3WPW608CK5D32GY",
+  "session_id": "b91c3f42-00e4-4e87-8677-2d21383860a1",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T18:53:46.082484Z",
+  "branch": "worktree-wp-onboarding-friction-design",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/tough-pandas-leap.md",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/mod.rs",
+    "crates/callisto-graph/src/commands/release/pending.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "docs/errors.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "65274a406e0c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 190,
+    "cache_creation_tokens": 190630,
+    "cache_read_tokens": 14821322,
+    "output_tokens": 59608,
+    "api_call_count": 94
+  },
+  "session_token_usage": {
+    "input_tokens": 190,
+    "cache_creation_tokens": 190630,
+    "cache_read_tokens": 14821322,
+    "output_tokens": 59608,
+    "api_call_count": 94
+  },
+  "redaction": {
+    "replacements": 8,
+    "layers": {
+      "betterleaks": 8,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 8,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Apply a design-level fix to PR #634 (trail #487): replace scattered origin-remote heuristics with a single parsed Origin value consumed everywhere, and make the 'run callisto version first' hint come from the version planner's own pending-work function, with real-binary tests, changeset, and push.",
+    "outcome": "Implemented Origin::{Missing,Hosted,NotHosted} and a shared pending_changesets function, migrated all consumers, added e2e/unit tests, updated docs/spec/changeset, passed graph and CLI tests, lint, doc-check and scoped mutants, and created a signed commit. The merge of latest main, push, finding resolution, and lead report were not yet completed in the transcript.",
+    "learnings": {
+      "repo": [
+        "Origin handling previously lived as heuristics in binding.rs, with the dry-run preview fallback in derive.rs applied inconsistently (not in Workspace::forge_repository); now centralized in an Origin enum.",
+        "E132 error registry row lives in docs/errors.md and must be updated alongside error.rs changes.",
+        "The release spec docs/specs/release.json documents origin behavior and needs updating with behavior changes.",
+        "Pending-changeset counting was embedded in aggregate in callisto-graph; splitting the changeset pass out lets the planner and the CLI hint share it (excluding retained prerelease notes).",
+        "E2E tests use a Rig/fixture harness in crates/callisto-cli/tests/release_command_e2e_tests.rs."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/binding.rs",
+          "finding": "Origin parsing now lives here as Origin::{Missing, Hosted, NotHosted}; the local-path heuristics and file:// match were removed, and E132 refusals mask credentials in the named value."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 327,
+          "end_line": 336,
+          "finding": "Pending-work semantics (excluding retained prerelease notes) are the source of truth; exposed as pending_changesets for the hint."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "line": 420,
+          "end_line": 423,
+          "finding": "The version hint previously did not show when there was no release plan; it now derives from the planner's pending-work result."
+        }
+      ],
+      "workflow": [
+        "TLS verification and gpg signing fail inside the sandbox; these commands must run outside it.",
+        "Tests touching npm cache fail in the sandbox (~/.npm blocked); run crate tests outside the sandbox.",
+        "Miette wraps error messages at terminal width, making string assertions flaky; assert on JSON output instead.",
+        "Run scoped cargo mutants only on new decision logic and delete mutants.out* before committing; mutation results revealed gaps (empty-url branch, redaction) that needed extra tests."
+      ]
+    },
+    "friction": [
+      "Sandbox blocked TLS, gpg signing, and npm cache, forcing reruns outside the sandbox.",
+      "Miette line wrapping broke the refusal-message assertion outside the sandbox, requiring a switch to JSON output.",
+      "Mutation testing run was long and needed a second pass after adding tests for survivors.",
+      "PR #629 is not yet on main, so the file:// match couldn't be removed as a follow-up to it; this branch removes it directly."
+    ],
+    "open_items": [
+      "PR #629 is still open and will conflict with this branch in binding.rs when it lands.",
+      "Still to do: merge latest origin/main again right before pushing, push with git push origin HEAD:refs/heads/wp-onboarding-friction and confirm via git ls-remote.",
+      "Resolve each trail finding with entire trail finding resolve, link trail 487, and run entire trail ci-pr.",
+      "Update the PR body via gh pr edit --body-file and report to the lead (PR, sha, what was run) in under 5 lines."
+    ]
+  }
+}

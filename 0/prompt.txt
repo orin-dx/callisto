@@ -1,0 +1,25 @@
+Design-level fix for PR #634 (branch wp-onboarding-friction; check it out in a worktree, push to the same branch). Trail #487. Read the open findings: entire trail finding list 487 --branch wp-onboarding-friction --json. They share two patterns; fix the patterns, not each finding. (A) One origin model: today binding.rs guesses whether a remote is a local path (file:, leading dot, bare relative paths all mis-handled), and the dry-run preview fallback in derive.rs is applied in some lookups but not Workspace::forge_repository (lib.rs 203-213, local.rs 432-438). Parse origin once into a value that is either a hosted remote we can bind (what the strict parser accepts today, including scp-style git@host:owner/repo) or not hosted (keep the raw string), and make every consumer (init, release binding, forge_repository, dry run) read that one value: real runs refuse 'not hosted' with one message naming the value and what is accepted (https:// or ssh URL, or git@host:owner/repo); the dry run treats 'not hosted' exactly like no origin. Delete the local-path heuristics (and the file:// match added in #629 once #629 is on main; merge origin/main first). (B) Pending work from its owner: the 'run callisto version first' hint must come from the version planner's own pending-work result (the semantics in version.rs 327-336, excluding retained prerelease notes), and must also show when there is no release plan (local.rs 420-423). One function, used by the hint; reuse it anywhere else that counts pending changesets for messages. Also the init summary text: describe the trigger from the configured base branch, not 'default branch' (init.rs 305, 392-402). Tests through the real binary for: local path, file://, .mirror:team/x, remotes/origin.git, hosted https and scp-style; pending retained prerelease notes; tagged current version plus a new changeset. Resolve each finding with entire trail finding resolve <id> --trail 487 --branch wp-onboarding-friction -m '<one line naming the design change>'. Patch changeset text updated for users. cargo test -p callisto-graph and -p callisto-cli, just lint, merge origin/main, push. Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<task-notification>
+<task-id>bt4czfru4</task-id>
+<tool-use-id>toolu_01DNNzJ4MhMM7NfLxMH5VvxJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b91c3f42-00e4-4e87-8677-2d21383860a1/tasks/bt4czfru4.output</output-file>
+<status>completed</status>
+<summary>Background command "Run scoped mutation testing on new logic" completed (exit code 0)</summary>
+</task-notification>
