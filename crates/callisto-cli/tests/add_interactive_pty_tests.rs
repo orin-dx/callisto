@@ -2,8 +2,9 @@
 #![cfg(unix)]
 
 use std::io::{Read, Write};
+use std::os::unix::process::ExitStatusExt as _;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -149,15 +150,28 @@ impl Session {
     }
 
     fn exit_code(&mut self) -> Option<i32> {
+        self.status().code()
+    }
+
+    fn status(&mut self) -> ExitStatus {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
                 std::thread::sleep(Duration::from_millis(200));
-                return status.code();
+                return status;
             }
             assert!(Instant::now() < deadline, "add did not exit:\n{}", self.screen());
             std::thread::sleep(Duration::from_millis(20));
         }
+    }
+}
+
+impl Drop for Session {
+    /// A failed assertion must not leave the child running on its terminal.
+    fn drop(&mut self) {
+        // Fails only when the child has already exited, which is the goal.
+        drop(self.child.kill());
+        drop(self.child.wait());
     }
 }
 
@@ -237,11 +251,21 @@ fn json_format_never_prompts_even_on_a_terminal() {
 }
 
 #[test]
+fn json_format_refuses_to_prompt_before_checking_the_summary() {
+    let dir = workspace();
+    let mut add = Session::start_with(dir.path(), &["--format", "json", "add", "--summary", ""], &[]);
+    assert_eq!(add.exit_code(), Some(2), "{}", add.screen());
+    let screen = add.screen();
+    assert!(screen.contains("E214") && screen.contains("--package"), "{screen}");
+    assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
 fn ctrl_c_at_the_text_input_restores_the_cursor_writes_nothing_and_exits_130() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
     to_summary(&mut add);
-    add.after("Ctrl-C to cancel", 1, "\x03");
+    add.after("Changelog summary", 1, "\x03");
     assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
     let screen = add.screen();
     assert!(screen.contains("Cancelled, nothing written."), "{screen}");
@@ -280,21 +304,16 @@ fn an_editor_that_exits_non_zero_cancels_even_after_saving() {
     assert!(changesets(dir.path()).is_empty());
 }
 
+/// Prompts read Ctrl-C as a key, so a SIGINT from outside (`kill -INT`) is not handled: it ends the process as the
+/// default action does, which shells report as 130, before anything is written.
 #[test]
-fn a_sigint_delivered_to_the_process_at_a_prompt_cancels_writes_nothing_and_exits_130() {
+fn a_sigint_delivered_to_the_process_at_a_prompt_ends_it_and_writes_nothing() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
     to_summary(&mut add);
-    add.after("Ctrl-C to cancel", 1, "");
+    add.after("Changelog summary", 1, "");
     add.interrupt();
-    assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
-    let screen = add.screen();
-    assert!(screen.contains("Cancelled, nothing written."), "{screen}");
-    assert!(
-        screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
-        "the cursor is left hidden:\n{screen:?}"
-    );
-    add.assert_terminal_restored();
+    assert_eq!(add.status().signal(), Some(2), "{}", add.screen());
     assert!(changesets(dir.path()).is_empty());
 }
 
@@ -335,4 +354,17 @@ fn the_editor_does_not_see_registry_tokens() {
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nno token\n"]);
+}
+
+/// Ctrl-C in a line-mode editor reaches Callisto too; as git does, the editor's exit status decides.
+#[test]
+fn a_sigint_while_the_editor_runs_is_left_to_the_editor() {
+    let dir = workspace();
+    let editor = r#"sh -c 'kill -INT $PPID; sleep 0.3; printf "Fix b" > "$0"'"#;
+    let mut add = Session::start_with(dir.path(), &["add"], &[("EDITOR", editor)]);
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
 }

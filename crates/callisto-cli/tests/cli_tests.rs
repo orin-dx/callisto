@@ -4,7 +4,7 @@
 /// This test pipes `/dev/null` as stdin (no TTY) and invokes the real binary.
 /// `tty::is_interactive()` returns `false` in that condition, so the command
 /// must reject the invocation with a `NotATty` error rather than attempting to
-/// open a `dialoguer` wizard on a non-TTY handle.
+/// open a wizard on a non-TTY handle.
 ///
 /// The binary is located via the `CARGO_BIN_EXE_callisto` env var that Cargo
 /// injects at test compile time, so no hard-coded path is needed.

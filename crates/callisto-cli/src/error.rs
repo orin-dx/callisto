@@ -46,6 +46,15 @@ pub fn format_error_json(command: &str, dry_run: bool, err: &CliError) -> serde_
     })
 }
 
+impl From<inquire::InquireError> for CliError {
+    fn from(error: inquire::InquireError) -> Self {
+        match error {
+            inquire::InquireError::OperationCanceled | inquire::InquireError::OperationInterrupted => Self::Cancelled,
+            other => Self::Interactive(other),
+        }
+    }
+}
+
 impl CliError {
     pub fn exit_kind(&self) -> ExitKind {
         match self {
@@ -138,7 +147,11 @@ pub enum CliError {
         code(E269),
         help("pass flags explicitly to skip interactive prompts, or run in a terminal")
     )]
-    Interactive(#[from] dialoguer::Error),
+    Interactive(inquire::InquireError),
+
+    /// Esc or Ctrl-C at a prompt that cannot be skipped; `main` says nothing was written and exits 130.
+    #[error("{}", crate::tty::CANCELLED)]
+    Cancelled,
 
     #[error(transparent)]
     #[diagnostic(
@@ -726,7 +739,7 @@ mod tests {
     #[test]
     fn retired_other_call_sites_now_carry_code_and_help() {
         let errors = [
-            CliError::Interactive(dialoguer::Error::IO(std::io::Error::other("x"))),
+            CliError::Interactive(inquire::InquireError::IO(std::io::Error::other("x"))),
             CliError::AddInvalidPackageSpec { spec: "x".to_owned() },
             CliError::InvalidSeverity { value: "x".to_owned() },
             CliError::AddNoPackagesInWorkspace,

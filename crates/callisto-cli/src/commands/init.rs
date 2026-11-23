@@ -9,7 +9,7 @@ use callisto_graph::commands::init::{
 use callisto_graph::locate::{IgnoreWalkLocator, LocateError};
 use callisto_graph::GraphError;
 use callisto_model::{ApplyPermit, BranchName, CommandRunner, InitReport, SCHEMA_VERSION};
-use dialoguer::{Confirm, Input, Select};
+use inquire::{Confirm, Select, Text};
 
 use crate::cli::{GlobalArgs, InitArgs, InitVersioning, OutputFormat};
 use crate::error::CliError;
@@ -70,19 +70,19 @@ struct TerminalPrompter;
 
 impl Prompter for TerminalPrompter {
     fn select(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
-        Ok(Select::new().with_prompt(prompt).items(items).default(0).interact()?)
+        Ok(Select::new(prompt, items.to_vec()).raw_prompt()?.index)
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
-        Ok(Confirm::new().with_prompt(prompt).default(default).interact()?)
+        Ok(Confirm::new(prompt).with_default(default).prompt()?)
     }
 
     fn input(&mut self, prompt: &str, default: Option<&str>) -> Result<String, CliError> {
-        let mut input = Input::<String>::new().with_prompt(prompt);
+        let mut input = Text::new(prompt);
         if let Some(default) = default {
-            input = input.default(default.to_owned());
+            input = input.with_default(default);
         }
-        Ok(input.interact_text()?)
+        Ok(input.prompt()?)
     }
 }
 
@@ -90,7 +90,7 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
     run(
         args,
         global,
-        tty::is_interactive(),
+        tty::Prompts::allowed(global.format).is_ok(),
         &mut TerminalPrompter,
         &mut std::io::stdout(),
         &mut std::io::stderr(),

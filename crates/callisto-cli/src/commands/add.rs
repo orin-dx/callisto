@@ -4,8 +4,8 @@ use std::process::ExitCode;
 use callisto_graph::DependencyResolver;
 use callisto_model::format::{Changeset, Entry};
 use callisto_model::{AddReport, ApplyPermit, Severity, SCHEMA_VERSION};
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Confirm, Input, MultiSelect};
+use inquire::validator::Validation;
+use inquire::{Confirm, MultiSelect, Text};
 
 use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
@@ -19,11 +19,31 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let ws = load_workspace(global, &runner)?;
 
     let mut entries = Vec::new();
+    // A run that cannot prompt says so before any flag is checked.
+    let prompts = args
+        .packages
+        .is_empty()
+        .then(|| tty::Prompts::allowed(global.format))
+        .transpose()?;
     // Built before any prompt, so a blank flag fails before the review.
     let mut summary = args.summary.as_deref().map(Summary::new).transpose()?;
     let mut wizard = false;
 
-    if !args.packages.is_empty() {
+    if let Some(prompts) = prompts {
+        // The same derivation `status` reports as `changed_since_last_tag`.
+        let packages: Vec<&callisto_model::Package> = ws.graph.packages().collect();
+        let changed = ws
+            .tags()
+            .and_then(|tags| callisto_graph::changed::changed_since_last_tag(&packages, tags, ws.git_access()));
+        let choices = wizard_choices(packages.iter().copied(), changed);
+        let mut prompter = TerminalAddPrompter { _allowed: prompts };
+        let Some((chosen, written)) = run_wizard(&choices, summary.clone(), &mut prompter)? else {
+            return Ok(ExitCode::SUCCESS);
+        };
+        entries = chosen;
+        summary = Some(written);
+        wizard = true;
+    } else {
         // Non-interactive mode (flags supplied via CLI or agent)
         for pkg_str in args.packages {
             let (name, sev_str) = pkg_str
@@ -53,23 +73,6 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 severity,
             });
         }
-    } else {
-        let answers = tty::prompting(global.format, || {
-            // The same derivation `status` reports as `changed_since_last_tag`.
-            let packages: Vec<&callisto_model::Package> = ws.graph.packages().collect();
-            let changed = callisto_graph::changed::changed_since_last_tag(&packages, ws.tags()?, ws.git_access())?;
-            let choices = wizard_choices(packages.iter().copied(), &changed);
-            let mut prompter = TerminalAddPrompter {
-                theme: ColorfulTheme::default(),
-            };
-            run_wizard(&choices, summary.clone(), &mut prompter)
-        })?;
-        let Some((chosen, written)) = answers else {
-            return Ok(ExitCode::SUCCESS);
-        };
-        entries = chosen;
-        summary = Some(written);
-        wizard = true;
     }
 
     let summary = summary.ok_or(CliError::AddSummaryRequired)?;
@@ -163,7 +166,7 @@ trait AddPrompter {
 const PAGE: usize = 15;
 
 struct TerminalAddPrompter {
-    theme: ColorfulTheme,
+    _allowed: tty::Prompts,
 }
 
 impl AddPrompter for TerminalAddPrompter {
@@ -173,31 +176,38 @@ impl AddPrompter for TerminalAddPrompter {
         items: &[String],
         checked: &[bool],
     ) -> Result<Option<Vec<usize>>, CliError> {
-        Ok(MultiSelect::with_theme(&self.theme)
-            .with_prompt(prompt)
-            .items(items)
-            .defaults(checked)
-            .max_length(PAGE)
-            .interact_opt()?)
+        let ticked: Vec<usize> = checked
+            .iter()
+            .enumerate()
+            .filter(|(_, on)| **on)
+            .map(|(index, _)| index)
+            .collect();
+        let picked = MultiSelect::new(prompt, items.to_vec())
+            .with_default(&ticked)
+            .with_page_size(PAGE)
+            .raw_prompt_skippable()?;
+        Ok(picked.map(|options| options.into_iter().map(|option| option.index).collect()))
     }
 
     fn summary(&mut self, prompt: &str) -> Result<Option<Summary>, CliError> {
         let editor = tty::editor_command();
-        // dialoguer cannot return Esc from a text input, so the prompt names Ctrl-C.
         let hint = if editor.is_some() {
-            format!("{prompt} (leave empty to open $EDITOR; Ctrl-C to cancel)")
+            format!("{prompt} (leave empty to open $EDITOR; Esc cancels)")
         } else {
-            format!("{prompt} (Ctrl-C to cancel)")
+            format!("{prompt} (Esc cancels)")
         };
         let opens_editor = editor.is_some();
-        let line: String = Input::with_theme(&self.theme)
-            .with_prompt(hint)
-            .allow_empty(opens_editor)
-            .validate_with(|line: &String| match Summary::new(line) {
-                Err(error) if !(opens_editor && line.is_empty()) => Err(error),
-                _ => Ok(()),
+        let Some(line) = Text::new(&hint)
+            .with_validator(move |line: &str| {
+                Ok(match Summary::new(line) {
+                    Err(error) if !(opens_editor && line.is_empty()) => Validation::Invalid(error.to_string().into()),
+                    _ => Validation::Valid,
+                })
             })
-            .interact_text()?;
+            .prompt_skippable()?
+        else {
+            return Ok(None);
+        };
         if let Ok(summary) = Summary::new(&line) {
             return Ok(Some(summary));
         }
@@ -206,10 +216,7 @@ impl AddPrompter for TerminalAddPrompter {
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<Option<bool>, CliError> {
-        Ok(Confirm::with_theme(&self.theme)
-            .with_prompt(prompt)
-            .default(default)
-            .interact_opt()?)
+        Ok(Confirm::new(prompt).with_default(default).prompt_skippable()?)
     }
 }
 
@@ -353,10 +360,17 @@ fn parse_severity(sev_str: &str) -> Result<Severity, CliError> {
 }
 
 /// The wizard's packages, named by `.display_name()` so `cargo/foo` and `npm/foo` stay distinct in a polyglot workspace.
+/// When the changed packages cannot be worked out, says so once and offers every package unticked.
 fn wizard_choices<'a>(
     packages: impl Iterator<Item = &'a callisto_model::Package>,
-    changed: &std::collections::BTreeMap<callisto_model::PackageId, bool>,
+    changed: Result<std::collections::BTreeMap<callisto_model::PackageId, bool>, callisto_graph::GraphError>,
 ) -> Vec<Choice> {
+    let changed = changed.unwrap_or_else(|error| {
+        prompt_line(&format!(
+            "warning: could not tell which packages changed since their last release, so none is ticked: {error}"
+        ));
+        std::collections::BTreeMap::new()
+    });
     packages
         .map(|pkg| Choice {
             name: pkg.id.display_name(),
@@ -868,6 +882,15 @@ mod tests {
             .ends_with(".md"));
     }
 
+    #[test]
+    fn when_changed_packages_cannot_be_worked_out_every_package_is_offered_unticked() {
+        let packages = [make_package("npm/a"), make_package("npm/b")];
+        let failed = Err(callisto_model::vcs::VcsError::Git("cat-file failed".to_owned()).into());
+        let choices = wizard_choices(packages.iter(), failed);
+        assert_eq!(choices.len(), 2);
+        assert!(choices.iter().all(|choice| !choice.changed));
+    }
+
     /// When a polyglot workspace contains `cargo/foo` and `npm/foo`, the
     /// interactive wizard's package-selection list must show two distinct,
     /// ecosystem-qualified names so the user can tell them apart.
@@ -876,8 +899,7 @@ mod tests {
     #[test]
     fn polyglot_package_selection_names_are_distinct() {
         let packages = [make_package("cargo/foo"), make_package("npm/foo")];
-        let changed = std::collections::BTreeMap::new();
-        let names: Vec<String> = wizard_choices(packages.iter(), &changed)
+        let names: Vec<String> = wizard_choices(packages.iter(), Ok(std::collections::BTreeMap::new()))
             .into_iter()
             .map(|choice| choice.name)
             .collect();

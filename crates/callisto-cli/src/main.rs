@@ -32,6 +32,11 @@ fn main() -> ExitCode {
 
     match res {
         Ok(code) => code,
+        Err(err @ callisto_cli::error::CliError::Cancelled) => {
+            // The prompt was left mid-line, so the message starts on a fresh one.
+            eprintln!("\n{err}");
+            ExitCode::from(callisto_cli::tty::CANCELLED_BY_CTRL_C)
+        }
         Err(err) => {
             let exit = match err.exit_kind() {
                 ExitKind::Usage => ExitCode::from(2),

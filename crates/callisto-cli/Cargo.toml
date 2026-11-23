@@ -38,14 +38,13 @@ anstream = "1.0"
 comfy-table = "8"
 similar = { version = "3", features = ["inline"] }
 schemars = { workspace = true }
-dialoguer = "0.12"
 dunce = { workspace = true }
 tempfile = { workspace = true }
-ctrlc = "3.5.3"
 shell-words = "1"
+inquire = { version = "0.9.4", default-features = false, features = ["crossterm"] }
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1.1", features = ["termios"] }
+signal-hook = { version = "0.3.18", default-features = false }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
