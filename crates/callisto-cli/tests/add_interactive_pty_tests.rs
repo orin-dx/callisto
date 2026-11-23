@@ -343,7 +343,7 @@ fn an_empty_editor_setting_is_unset_and_the_summary_is_asked_inline() {
     to_summary(&mut add);
     // An empty answer re-asks instead of opening an editor.
     add.after("Changelog summary", 1, "\r");
-    add.after("Changelog summary", 1, "Fix b\r");
+    add.after("Changelog summary", 2, "Fix b\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
@@ -363,16 +363,23 @@ fn an_editor_that_exits_non_zero_cancels_even_after_saving() {
     assert!(changesets(dir.path()).is_empty());
 }
 
-/// Prompts read Ctrl-C as a key, so a SIGINT from outside (`kill -INT`) is not handled: it ends the process as the
-/// default action does, which shells report as 130, before anything is written.
+/// Prompts read Ctrl-C as a key, so a SIGINT from outside (`kill -INT`) arrives as a signal while the terminal is raw:
+/// the terminal is put back and the process ends as the default action does, before anything is written.
 #[test]
-fn a_sigint_delivered_to_the_process_at_a_prompt_ends_it_and_writes_nothing() {
+fn a_sigint_delivered_to_the_process_at_a_prompt_restores_the_terminal_and_ends_it() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
     to_summary(&mut add);
     add.after("Changelog summary", 1, "");
     add.interrupt();
     assert_eq!(add.status().signal(), Some(2), "{}", add.screen());
+    let screen = add.screen();
+    assert!(screen.contains("Cancelled, nothing written."), "{screen}");
+    assert!(
+        screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
+        "the cursor is left hidden:\n{screen:?}"
+    );
+    add.assert_terminal_restored();
     assert!(changesets(dir.path()).is_empty());
 }
 
@@ -439,4 +446,20 @@ fn after_the_editor_a_sigint_takes_its_default_action_again() {
     add.interrupt();
     assert_eq!(add.status().signal(), Some(2), "{}", add.screen());
     assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn esc_at_an_init_prompt_writes_nothing_and_exits_130() {
+    let dir = workspace();
+    std::fs::remove_file(dir.path().join("callisto.toml")).unwrap();
+    let mut init = Session::start_with(dir.path(), &["init"], &[]);
+    init.after("How should packages be versioned?", 1, "\x1b");
+    assert_eq!(init.exit_code(), Some(130), "{}", init.screen());
+    assert!(
+        init.screen().contains("Cancelled, nothing written."),
+        "{}",
+        init.screen()
+    );
+    init.assert_terminal_restored();
+    assert!(!dir.path().join("callisto.toml").exists());
 }

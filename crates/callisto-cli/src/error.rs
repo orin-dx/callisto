@@ -87,6 +87,7 @@ impl CliError {
             | Self::VersionEmitDryRun { .. }
             | Self::PreTagEmpty
             | Self::HelpUnknownCommand { .. } => ExitKind::Usage,
+            Self::Cancelled => ExitKind::Runtime,
             _ => ExitKind::Runtime,
         }
     }
@@ -149,8 +150,12 @@ pub enum CliError {
     )]
     Interactive(inquire::InquireError),
 
-    /// Esc or Ctrl-C at a prompt; `main` says nothing was written and exits 130.
+    /// Esc or Ctrl-C at a prompt; `main` prints the message and exits 130.
     #[error("{}", crate::tty::CANCELLED)]
+    #[diagnostic(
+        code(E343),
+        help("nothing was written; run the command again, or pass flags explicitly to skip the prompts")
+    )]
     Cancelled,
 
     #[error(transparent)]
@@ -333,7 +338,7 @@ pub enum CliError {
     )]
     ReleaseRequiresCiRoute { reason: String },
 
-    #[error("stdin is not a terminal, so init needs flags instead of prompts; missing: {}", .missing.join(", "))]
+    #[error("refusing to prompt interactively: prompts need a terminal on stdin and stderr and `--format text`, so init needs flags; missing: {}", .missing.join(", "))]
     #[diagnostic(
         code(E240),
         help("re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked")

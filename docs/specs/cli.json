@@ -61,7 +61,7 @@
         "callisto.toml already exists.",
         "Not inside a Git repository; without `origin`, only an explicit workflow or artifact request fails.",
         "A package matches more than one tag convention, or more than one package matches `v{version}`.",
-        "stdin is not a terminal and --yes is absent; --yes without a required flag.",
+        "Without a terminal on stdin and stderr, or with --format json, and --yes is absent; --yes without a required flag.",
         "--workflow together with --no-workflow.",
         "Invalid --artifact-target or --product-package values.",
         "--workflow when a workflow file already exists or the workspace shape has no generated workflow."
@@ -201,7 +201,7 @@
     },
     {
       "id": "CLI-ADD-03",
-      "criterion": "`callisto add` with no --package, stdin and stderr terminals and --format text runs a wizard asking, in order, which packages to include (packages changed since their last tag, as `status` reports them, listed first, marked `(changed)` and ticked; when that cannot be worked out, one warning on stderr and every package listed unticked), which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given (an empty answer opens the editor named by $VISUAL, else $EDITOR, for a multi-line one; when neither is set the summary is required inline; an editor that exits non-zero cancels; an editor that cannot be used (its command does not split into words, it does not start, or it saves text that is not UTF-8) prints one warning naming the variable and command and asks for the summary inline; a SIGINT while the editor runs is left to the editor, whose exit status decides), and a confirmation after a review of each package's bump and the summary. Declining the confirmation, or an editor that saves nothing, writes nothing, prints `Cancelled, nothing written.` and exits 0; Esc or Ctrl-C at any question does the same with the cursor shown and the terminal restored, and exits 130. After writing, it prints the path and the next step. Every wizard prompt, review and next-step line prints to stderr, not stdout."
+      "criterion": "`callisto add` with no --package, stdin and stderr terminals and --format text runs a wizard asking, in order, which packages to include (packages changed since their last tag, as `status` reports them, listed first, marked `(changed)` and ticked; when that cannot be worked out, one warning on stderr and every package listed unticked), which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given (an empty answer opens the editor named by $VISUAL, else $EDITOR, for a multi-line one; when neither is set the summary is required inline; an editor that cannot be used (its command does not split into words, it does not start, or it saves text that is not UTF-8) prints one warning naming the variable and command and asks for the summary inline, which on Windows includes an $EDITOR path with backslashes; on unix a SIGINT while the editor runs is left to the editor, whose exit status decides, and on Windows it is not handled specially), and a confirmation after a review of each package's bump and the summary. Declining the confirmation, an editor that saves nothing, or an editor that exits non-zero writes nothing, prints `Cancelled, nothing written.` and exits 0; Esc or Ctrl-C at any question does the same with the cursor shown and the terminal restored, and exits 130 (E343). On unix, a SIGINT sent to the process while a question is shown restores the terminal, prints the same line and ends the process as SIGINT does. After writing, it prints the path and the next step. Every wizard prompt, review and next-step line prints to stderr, not stdout."
     },
     {
       "id": "CLI-ADD-04",
@@ -228,7 +228,7 @@
     },
     {
       "id": "CLI-INIT-03",
-      "criterion": "A supplied flag (--versioning, --artifact-target, --product-package, --workflow, --no-workflow) skips its question, and declining the final write question writes no file."
+      "criterion": "A supplied flag (--versioning, --artifact-target, --product-package, --workflow, --no-workflow) skips its question, and declining the final write question writes no file, prints `Cancelled, nothing written.` and exits 0; Esc or Ctrl-C at any question writes no file and exits 130 (E343)."
     },
     {
       "id": "CLI-INIT-04",

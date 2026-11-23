@@ -283,7 +283,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E237 | Artifact manifest file is invalid | re-run `callisto release artifact-manifest` to regenerate it |
 | E238 | A release JSON file (intent, decision, snapshot, manifest, preview) is not well-formed | check the file is complete, well-formed JSON |
 | E239 | This workspace cannot release locally | release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally |
-| E240 | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
+| E240 | Refusing to prompt interactively: prompts need a terminal on stdin and stderr and `--format text`, so `init` needs flags, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
 | E241 | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |
 | E242 | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
 | E243 | `pre enter` was run while `.changeset/pre.json`'s mode is already `pre` | run `callisto pre exit` first |
@@ -304,6 +304,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E298 | `init --product-package` given without `--artifact-target` | drop --<flag>, or pass --artifact-target to ship the product's binaries |
 | E299 | `init --workflow`/`--artifact-target` given with no `origin` remote configured | add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init |
 | E342 | `init` found a Changesets config that leaves `access` restricted or absent, and scoped npm packages with no `publishConfig.access` that callisto would publish as public | set `publishConfig.access` in each listed package.json (`restricted` keeps it private to the scope, `public` confirms it), or pass --yes to publish them as public |
+| E343 | An interactive prompt was cancelled with Esc or Ctrl-C; nothing was written. The process exits 130 | nothing was written; run the command again, or pass flags explicitly to skip the prompts |
 | E308 | `release build-python` or `artifact-manifest --seal-python` on an intent that publishes no Python package, `release pack-npm` or `--seal-npm` on one that publishes no npm package, or `release package-cargo` on one that publishes no crate | drop --seal-python and `release build-python` for an intent without a Python publish, --seal-npm and `release pack-npm` for one without an npm publish, or `release package-cargo` for one without a crate publish |
 | E309 | `release artifact-manifest`, `release plan`, `release execute`, `release-pr commit-plan`, `release build-python`, `release pack-npm` or `release package-cargo` was run with `--dry-run`, which it refuses | re-run `callisto <command>` without --dry-run |
 | E310 | Failed to read manifest `<path>`: <message> | Make the manifest readable UTF-8 text; a workspace member's manifest is never skipped. |

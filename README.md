@@ -111,7 +111,7 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 ### Scripting and stability
 
 - `--format json` works on every command that reports a result. Each report carries `schemaVersion`, `command` and `dryRun`, with camelCase fields, and `callisto schema --type <report>` prints its JSON Schema ([stability](docs/stability.md)).
-- Exit codes are 0 for success, 1 for failure and 2 for a bad flag or argument. With `--format json` a failure ends stderr with one JSON error document and leaves stdout empty; a bad flag prints clap's usage text instead ([stability](docs/stability.md)). Every error has a code listed in [errors](docs/errors.md).
+- Exit codes are 0 for success, 1 for failure, 2 for a bad flag or argument and 130 for a cancelled prompt (nothing was written). With `--format json` a failure ends stderr with one JSON error document and leaves stdout empty; a bad flag prints clap's usage text instead ([stability](docs/stability.md)). Every error has a code listed in [errors](docs/errors.md).
 - `--dry-run` is accepted on every command and changes nothing.
 - Release binaries cover macOS (arm64, x86_64) and Linux (x86_64 glibc and musl, arm64) ([install](#install)).
 

@@ -172,10 +172,12 @@ impl AddPrompter for TerminalAddPrompter {
             .filter(|(_, on)| **on)
             .map(|(index, _)| index)
             .collect();
-        let picked = MultiSelect::new(prompt, items.to_vec())
-            .with_default(&ticked)
-            .with_page_size(PAGE)
-            .raw_prompt()?;
+        let picked = tty::prompt(|| {
+            MultiSelect::new(prompt, items.to_vec())
+                .with_default(&ticked)
+                .with_page_size(PAGE)
+                .raw_prompt()
+        })?;
         Ok(picked.into_iter().map(|option| option.index).collect())
     }
 
@@ -187,16 +189,18 @@ impl AddPrompter for TerminalAddPrompter {
                 None => format!("{prompt} (Esc cancels)"),
             };
             let opens_editor = editor.is_some();
-            let line = Text::new(&hint)
-                .with_validator(move |line: &str| {
-                    Ok(match Summary::new(line) {
-                        Err(error) if !(opens_editor && line.is_empty()) => {
-                            Validation::Invalid(error.to_string().into())
-                        }
-                        _ => Validation::Valid,
+            let line = tty::prompt(|| {
+                Text::new(&hint)
+                    .with_validator(move |line: &str| {
+                        Ok(match Summary::new(line) {
+                            Err(error) if !(opens_editor && line.is_empty()) => {
+                                Validation::Invalid(error.to_string().into())
+                            }
+                            _ => Validation::Valid,
+                        })
                     })
-                })
-                .prompt()?;
+                    .prompt()
+            })?;
             if let Ok(summary) = Summary::new(&line) {
                 return Ok(Some(summary));
             }
@@ -211,7 +215,7 @@ impl AddPrompter for TerminalAddPrompter {
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
-        Ok(Confirm::new(prompt).with_default(default).prompt()?)
+        tty::prompt(|| Confirm::new(prompt).with_default(default).prompt())
     }
 }
 
@@ -758,8 +762,6 @@ mod tests {
         assert_eq!(parse_severity("none").unwrap(), Severity::None);
     }
 
-    /// Non-interactive `add --package cargo/foo:patch` produces `Entry { name: "cargo/foo", .. }`, not `"foo"`:
-    /// in a polyglot workspace the bare name is ambiguous and fails `callisto version` with `AmbiguousName`.
     /// Consecutive calls to generate_human_slug() must all produce distinct values,
     /// even when the OS clock resolution coalesces rapid calls to the same tick.
     #[test]

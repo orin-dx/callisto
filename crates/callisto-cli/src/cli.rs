@@ -264,7 +264,7 @@ fn trimmed_triple(raw: &str) -> Result<String, String> {
 /// Arguments for the `init` command.
 #[derive(Args, Clone, Debug, Default)]
 pub struct InitArgs {
-    /// Run without prompts; required when stdin is not a terminal.
+    /// Run without prompts; required unless stdin and stderr are terminals and the format is text.
     #[arg(long)]
     pub yes: bool,
     /// Whether packages share one version (fixed) or version independently.

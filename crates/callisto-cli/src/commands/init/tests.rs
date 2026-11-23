@@ -525,7 +525,7 @@ fn declining_the_preview_writes_nothing() {
         false,
     );
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
-    assert!(run.out.contains("nothing was written"));
+    assert!(run.out.contains(crate::tty::CANCELLED), "{}", run.out);
     assert!(nothing_written(dir.path()));
 }
 

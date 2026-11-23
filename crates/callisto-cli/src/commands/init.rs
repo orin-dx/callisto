@@ -70,11 +70,11 @@ struct TerminalPrompter;
 
 impl Prompter for TerminalPrompter {
     fn select(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
-        Ok(Select::new(prompt, items.to_vec()).raw_prompt()?.index)
+        Ok(tty::prompt(|| Select::new(prompt, items.to_vec()).raw_prompt())?.index)
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
-        Ok(Confirm::new(prompt).with_default(default).prompt()?)
+        tty::prompt(|| Confirm::new(prompt).with_default(default).prompt())
     }
 
     fn input(&mut self, prompt: &str, default: Option<&str>) -> Result<String, CliError> {
@@ -82,7 +82,7 @@ impl Prompter for TerminalPrompter {
         if let Some(default) = default {
             input = input.with_default(default);
         }
-        Ok(input.prompt()?)
+        tty::prompt(|| input.prompt())
     }
 }
 
@@ -285,7 +285,7 @@ pub fn run<R: CommandRunner>(
         }
     } else {
         if prompting && !prompter.confirm(WRITE_PROMPT, true)? {
-            writeln!(human, "Initialization cancelled; nothing was written.")?;
+            writeln!(human, "{}", tty::CANCELLED)?;
             return Ok(ExitCode::SUCCESS);
         }
         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
