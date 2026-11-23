@@ -1,0 +1,90 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M84NXZ698QD1Q7PCRX6KMAKE",
+  "session_id": "d25b3493-9f23-424e-af21-51d3706f3729",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-23T17:06:01.229553Z",
+  "branch": "worktree-wp-interactive-cli-compare",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "Cargo.lock",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "2a528833ccd5",
+  "checkpoint_transcript_start": 1190,
+  "transcript_lines_at_start": 1190,
+  "compact_transcript_start": 97,
+  "token_usage": {
+    "input_tokens": 76,
+    "cache_creation_tokens": 40542,
+    "cache_read_tokens": 7701509,
+    "output_tokens": 22314,
+    "api_call_count": 37
+  },
+  "session_token_usage": {
+    "input_tokens": 240,
+    "cache_creation_tokens": 199259,
+    "cache_read_tokens": 17681625,
+    "output_tokens": 68570,
+    "api_call_count": 119
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Implement a Ctrl-C (SIGINT) handler for the interactive `callisto add` prompts using the `ctrlc` crate, as approved by a peer session. It should restore the cursor, print 'Cancelled, nothing written.', exit 130, include a pty test, and pass the license audit.",
+    "outcome": "Added the `ctrlc` dependency and a shared handler in `tty.rs`, installed only around the `add` prompts. Added 3 passing pty tests (Ctrl-C, Esc, and one more), and lint and `just audit` came back clean. Updated the CLI spec and changeset and staged everything with `git add -A`; no commit was made. The `init` follow-up is not done.",
+    "learnings": {
+      "repo": [
+        "`dialoguer` re-exports `console`, so `dialoguer::console::Term::stderr().show_cursor()` works without adding `console` as a dependency.",
+        "`ctrlc` is MIT/Apache-2.0, which `deny.toml` allows; `just audit` passes with it.",
+        "The pty test uses `rustix`'s pty API (openpt/grantpt/unlockpt/ptsname, tcsetwinsize) to drive input and SIGINT through a real pty.",
+        "Lint (clippy) in this repo rejects `let _ =` on results, so the code uses `drop(...)` instead.",
+        "Changes to CLI behavior require updates to `docs/specs/cli.json` and a changeset in `.changeset/`.",
+        "Test fixtures come from the `callisto-fixtures` crate (`src/git.rs`), and tests live in `crates/callisto-cli/tests/`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "finding": "Shared Ctrl-C handler. It is installed only while the prompts run, so a Ctrl-C after the write can't print 'nothing written' when a file was written. It ignores Ctrl-C while `$EDITOR` is open, because the editor shares the terminal's process group."
+        },
+        {
+          "path": "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+          "finding": "pty tests cover Ctrl-C, Esc and a third case. One initially failed because bare names are not quoted in the written file; the assertion was fixed."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "The first pty test run inside the sandbox failed because it needed a real pty, so it was re-run outside the sandbox.",
+      "The first pty test run had an assertion failure from wrongly assuming names are quoted in the file.",
+      "`let _ =` patterns tripped the lint and had to be rewritten as `drop(...)` with a Python patch."
+    ],
+    "open_items": [
+      "Apply the same Ctrl-C handling, theme and prompts to `init`, but only its theme and prompts, since PR #634 (wp-onboarding-friction) already removes the workflow-YAML dump.",
+      "Merge origin/main after PR #634 lands to avoid a conflict.",
+      "The changes are staged but not committed; a commit message was written to /tmp/claude-501/cmp/commit-msg2.txt and the update to PR #638 is pending."
+    ]
+  }
+}
