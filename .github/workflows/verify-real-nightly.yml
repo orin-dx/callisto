@@ -4,8 +4,6 @@ on:
   schedule:
     - cron: "43 3 * * *"
   workflow_dispatch:
-  push:
-    branches: [wp-nightly-verify-real]
 
 permissions:
   contents: read
