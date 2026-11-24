@@ -59,12 +59,12 @@ impl Session {
 
     /// `callisto <args>` with `env` set; `VISUAL` and `EDITOR` are unset unless `env` names them.
     fn start_with(root: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
-        Self::launch(root, args, env, true, 30)
+        Self::launch(root, args, env, true, 120)
     }
 
     /// `callisto <args>` with stdin and stdout on the terminal and stderr piped; read it with [`Session::stderr`].
     fn start_with_piped_stderr(root: &Path, args: &[&str]) -> Self {
-        Self::launch(root, args, &[], false, 30)
+        Self::launch(root, args, &[], false, 120)
     }
 
     fn stderr(&mut self) -> String {
@@ -73,12 +73,12 @@ impl Session {
         text
     }
 
-    /// `callisto add` on a terminal `rows` tall.
-    fn start_sized(root: &Path, rows: u16) -> Self {
-        Self::launch(root, &["add"], &[], true, rows)
+    /// `callisto add` on a terminal `columns` wide.
+    fn start_narrow(root: &Path, columns: u16) -> Self {
+        Self::launch(root, &["add"], &[], true, columns)
     }
 
-    fn launch(root: &Path, args: &[&str], env: &[(&str, &str)], stderr_on_terminal: bool, rows: u16) -> Self {
+    fn launch(root: &Path, args: &[&str], env: &[(&str, &str)], stderr_on_terminal: bool, columns: u16) -> Self {
         let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         grantpt(&master).unwrap();
         unlockpt(&master).unwrap();
@@ -91,8 +91,8 @@ impl Session {
         rustix::termios::tcsetwinsize(
             &tty,
             rustix::termios::Winsize {
-                ws_row: rows,
-                ws_col: 120,
+                ws_row: 30,
+                ws_col: columns,
                 ws_xpixel: 0,
                 ws_ypixel: 0,
             },
@@ -535,8 +535,8 @@ fn esc_at_an_init_prompt_writes_nothing_and_exits_130() {
     assert!(!dir.path().join("callisto.toml").exists());
 }
 
-/// Twenty npm packages `p00`..`p19`, all changed since their release.
-fn many_packages() -> tempfile::TempDir {
+/// Two npm packages, never released, whose names differ only in their last word.
+fn long_names(names: [&str; 2]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init_repo(root);
@@ -545,39 +545,60 @@ fn many_packages() -> tempfile::TempDir {
         r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
     )
     .unwrap();
-    for n in 0..20 {
-        std::fs::create_dir_all(root.join(format!("packages/p{n:02}"))).unwrap();
+    for (n, name) in names.iter().enumerate() {
+        std::fs::create_dir_all(root.join(format!("packages/p{n}"))).unwrap();
         std::fs::write(
-            root.join(format!("packages/p{n:02}/package.json")),
-            format!(r#"{{"name":"p{n:02}","version":"1.0.0"}}"#),
+            root.join(format!("packages/p{n}/package.json")),
+            format!(r#"{{"name":"{name}","version":"1.0.0"}}"#),
         )
         .unwrap();
     }
     std::fs::write(root.join("callisto.toml"), "").unwrap();
     run_git(root, &["add", "-A"]);
-    run_git(root, &["commit", "-qm", "release"]);
+    run_git(root, &["commit", "-qm", "init"]);
     dir
 }
 
+/// The text a terminal shows, without escape sequences or line breaks, so a wrapped line reads as one.
+fn plain(screen: &str) -> String {
+    let mut text = String::new();
+    let mut chars = screen.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\x1b' => {
+                if chars.next() == Some('[') {
+                    // A control sequence ends at its first byte in `@`..=`~`.
+                    chars.find(|c| ('@'..='~').contains(c));
+                }
+            }
+            '\r' | '\n' => {}
+            c => text.push(c),
+        }
+    }
+    text
+}
+
 #[test]
-fn on_a_short_terminal_the_highlighted_package_is_the_one_toggled() {
-    let dir = many_packages();
-    let mut add = Session::start_sized(dir.path(), 10);
-    // Ten Downs then Space unticks the eleventh package, p10.
-    add.after("Packages in this change", 1, &format!("{}{}", "\x1b[B".repeat(10), " "));
-    add.after("[ ]", 1, "\r");
+fn names_wider_than_the_terminal_are_shown_in_full_and_found_by_their_last_word() {
+    let names = [
+        "callisto-fixture-package-for-wrapping-left",
+        "callisto-fixture-package-for-wrapping-right",
+    ];
+    let dir = long_names(names);
+    let mut add = Session::start_narrow(dir.path(), 40);
+    // Left unticks both, typing filters to the one ending `right`, Space ticks it and Enter confirms.
+    add.after("Packages in this change", 1, "\x1b[Dright \r");
     add.after("MAJOR", 1, "\r");
     add.after("MINOR", 1, "\r");
     add.after("Changelog summary", 1, "Fix\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
-    let [changeset] = changesets(dir.path()).try_into().expect("one changeset");
-    assert!(
-        changeset.contains("p09: patch") && changeset.contains("p11: patch"),
-        "{changeset}"
-    );
-    assert!(
-        !changeset.contains("p10"),
-        "the highlighted package stays ticked:\n{changeset}"
+    let shown = plain(&add.screen());
+    for name in names {
+        assert!(shown.contains(name), "{name} is not shown in full:\n{shown}");
+    }
+    assert_eq!(
+        changesets(dir.path()),
+        [format!("---\n{}: patch\n---\n\nFix\n", names[1])]
     );
 }

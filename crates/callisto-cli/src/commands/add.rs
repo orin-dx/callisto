@@ -164,9 +164,6 @@ trait AddPrompter {
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError>;
 }
 
-/// Rows a package list shows before it pages, on a terminal tall enough.
-const PAGE: usize = 15;
-
 struct TerminalAddPrompter {
     _allowed: tty::Prompts,
 }
@@ -179,15 +176,10 @@ impl AddPrompter for TerminalAddPrompter {
             .filter(|(_, on)| **on)
             .map(|(index, _)| index)
             .collect();
-        let kind = tty::ListKind::MultiSelect;
-        let layout = tty::fit_list(kind, prompt, PAGE, items);
-        let picked = tty::prompt(|| {
-            MultiSelect::new(prompt, layout.labels)
-                .with_default(&ticked)
-                .with_page_size(layout.page_size)
-                .with_help_message(kind.help())
-                .raw_prompt()
-        })?;
+        let picked = MultiSelect::new(prompt, items.to_vec())
+            .with_default(&ticked)
+            .with_help_message("Up/Down move, Space toggles, Right all, Left none, type to filter")
+            .raw_prompt()?;
         Ok(picked.into_iter().map(|option| option.index).collect())
     }
 
@@ -199,18 +191,16 @@ impl AddPrompter for TerminalAddPrompter {
                 None => format!("{prompt} (Esc cancels)"),
             };
             let opens_editor = editor.is_some();
-            let line = tty::prompt(|| {
-                Text::new(&hint)
-                    .with_validator(move |line: &str| {
-                        Ok(match Summary::new(line) {
-                            Err(_) if !(opens_editor && line.is_empty()) => {
-                                Validation::Invalid("the summary cannot be blank".into())
-                            }
-                            _ => Validation::Valid,
-                        })
+            let line = Text::new(&hint)
+                .with_validator(move |line: &str| {
+                    Ok(match Summary::new(line) {
+                        Err(_) if !(opens_editor && line.is_empty()) => {
+                            Validation::Invalid("the summary cannot be blank".into())
+                        }
+                        _ => Validation::Valid,
                     })
-                    .prompt()
-            })?;
+                })
+                .prompt()?;
             if let Ok(summary) = Summary::new(&line) {
                 return Ok(Some(summary));
             }
@@ -225,7 +215,7 @@ impl AddPrompter for TerminalAddPrompter {
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
-        tty::prompt(|| Confirm::new(prompt).with_default(default).prompt())
+        Ok(Confirm::new(prompt).with_default(default).prompt()?)
     }
 }
 

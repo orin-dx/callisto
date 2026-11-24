@@ -267,7 +267,6 @@ dependencies = [
  "clap",
  "clap_complete",
  "comfy-table",
- "crossterm",
  "dunce",
  "indexmap",
  "inquire",
@@ -285,7 +284,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "trycmd",
- "unicode-width 0.2.3",
 ]
 
 [[package]]

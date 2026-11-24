@@ -34,7 +34,7 @@ fn main() -> ExitCode {
         Ok(code) => code,
         Err(err) => {
             let exit = if matches!(err, callisto_cli::error::CliError::Cancelled) {
-                ExitCode::from(callisto_cli::tty::CANCELLED_BY_CTRL_C)
+                ExitCode::from(callisto_cli::tty::CANCELLED_EXIT)
             } else {
                 match err.exit_kind() {
                     ExitKind::Usage => ExitCode::from(2),

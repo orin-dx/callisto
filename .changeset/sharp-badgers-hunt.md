@@ -5,6 +5,8 @@ callisto-cli: minor
 **`callisto add` starts from what you changed**: packages changed since their last release are listed first, marked and already ticked, so a typical changeset is Enter, pick bumps, type a summary.
 
 - Each answer stays on screen, the prompts show their keys, and long package lists page.
+  - Package names are shown in full; type any part of one to filter.
+  - Resizing the terminal during a question, or a terminal under about 10 rows, can misdraw it: use a bigger terminal or pass `--package` and `--summary`.
 - Before writing, a review lists each package's bump and the summary; afterwards `add` prints the next step.
 - Leave the summary empty to write a longer one, with bullets, in `$VISUAL` or `$EDITOR`. If that editor cannot start, `add` warns and asks for the summary inline, keeping your other answers.
 - Esc or Ctrl-C at any `add` or `init` question cancels: it prints `Cancelled, nothing written.`, restores the terminal and exits 130.
