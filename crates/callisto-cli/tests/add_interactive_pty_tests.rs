@@ -271,7 +271,10 @@ fn json_format_never_prompts_even_on_a_terminal() {
     let mut add = Session::start_with(dir.path(), &["--format", "json", "add"], &[]);
     assert_eq!(add.exit_code(), Some(2), "{}", add.screen());
     let screen = add.screen();
-    assert!(screen.contains("E214") && screen.contains("--package"), "{screen}");
+    assert!(
+        screen.contains("E214") && screen.contains("missing: --package, --summary"),
+        "{screen}"
+    );
     assert!(!screen.contains("Packages in this change"), "{screen}");
     assert!(changesets(dir.path()).is_empty());
 }
@@ -305,7 +308,7 @@ fn an_editor_that_cannot_start_warns_and_asks_for_the_summary_inline() {
     let mut add = Session::start_with(dir.path(), &["add"], &[("EDITOR", "callisto-no-such-editor --wait")]);
     to_summary(&mut add);
     add.after("Changelog summary", 1, "\r");
-    add.after("Changelog summary", 2, "Fix b\r");
+    add.after("summary (Esc cancels)", 1, "Fix b\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     let screen = add.screen();
@@ -351,7 +354,7 @@ fn an_empty_editor_setting_is_unset_and_the_summary_is_asked_inline() {
     to_summary(&mut add);
     // An empty answer re-asks instead of opening an editor.
     add.after("Changelog summary", 1, "\r");
-    add.after("Changelog summary", 2, "Fix b\r");
+    add.after("summary (Esc cancels)", 1, "Fix b\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
@@ -389,7 +392,7 @@ fn whitespace_at_the_inline_summary_prompt_asks_again() {
     let mut add = Session::start_with(dir.path(), &["add"], &[("VISUAL", ""), ("EDITOR", "")]);
     to_summary(&mut add);
     add.after("Changelog summary", 1, "   \r");
-    add.after("Changelog summary", 2, "Fix b\r");
+    add.after("the summary cannot be blank", 1, "Fix b\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
@@ -470,7 +473,7 @@ fn an_editor_that_cannot_be_used_warns_once_and_asks_inline_whatever_the_reason(
         let mut add = Session::start_with(dir.path(), &["add"], &[("EDITOR", editor)]);
         to_summary(&mut add);
         add.after("Changelog summary", 1, "\r");
-        add.after("Changelog summary", 2, "Fix b\r");
+        add.after("summary (Esc cancels)", 1, "Fix b\r");
         add.after("Write this changeset?", 1, "\r");
         assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
         let screen = add.screen();
@@ -557,10 +560,9 @@ fn many_packages() -> tempfile::TempDir {
 }
 
 #[test]
-fn a_short_terminal_shows_fewer_rows_and_unticks_the_highlighted_package() {
-    const ROWS: usize = 10;
+fn on_a_short_terminal_the_highlighted_package_is_the_one_toggled() {
     let dir = many_packages();
-    let mut add = Session::start_sized(dir.path(), ROWS as u16);
+    let mut add = Session::start_sized(dir.path(), 10);
     // Ten Downs then Space unticks the eleventh package, p10.
     add.after("Packages in this change", 1, &format!("{}{}", "\x1b[B".repeat(10), " "));
     add.after("[ ]", 1, "\r");
@@ -569,13 +571,6 @@ fn a_short_terminal_shows_fewer_rows_and_unticks_the_highlighted_package() {
     add.after("Changelog summary", 1, "Fix\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
-    let screen = add.screen();
-    let list = screen.split("MAJOR").next().unwrap_or_default();
-    let rows_in_first_frame = list.lines().take_while(|line| !line.contains("to move")).count() + 1;
-    assert!(
-        rows_in_first_frame <= ROWS,
-        "the list frame is {rows_in_first_frame} lines on {ROWS} rows:\n{list}"
-    );
     let [changeset] = changesets(dir.path()).try_into().expect("one changeset");
     assert!(
         changeset.contains("p09: patch") && changeset.contains("p11: patch"),

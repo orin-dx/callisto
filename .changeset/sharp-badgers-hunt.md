@@ -11,3 +11,4 @@ callisto-cli: minor
   - A SIGINT sent to Callisto from outside at a question ends it with default signal behaviour; run `reset` if the terminal is left raw.
 - If Callisto cannot tell which packages changed, it warns once and lists every package unticked instead of failing.
 - With `--format json`, `add` and `init` never prompt: they ask for `--package` or `--yes` instead.
+  - `init` prompts on the same terms: with stderr redirected (`callisto init 2>log`) it no longer asks, and fails with E240 unless you pass `--yes`.

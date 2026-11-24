@@ -161,7 +161,7 @@ fn run_init_with_runner<R: CommandRunner>(
     let result = run(
         args,
         &global(root, OutputFormat::Text, dry_run),
-        interactive,
+        interactive.then(crate::tty::Prompts::for_tests),
         &mut prompter,
         &mut out.clone(),
         &mut err.clone(),
@@ -908,7 +908,7 @@ fn dry_run_with_workflow_lists_every_file() {
         run(
             args,
             &global(dir.path(), OutputFormat::Json, true),
-            false,
+            None,
             &mut Scripted::new(vec![], &out),
             &mut out.clone(),
             &mut err.clone(),
@@ -946,7 +946,7 @@ fn json_reports_on_stdout() {
         run(
             yes(InitVersioning::Independent),
             &global(dir.path(), OutputFormat::Json, false),
-            false,
+            None,
             &mut Scripted::new(vec![], &out),
             &mut out.clone(),
             &mut err.clone(),
@@ -1256,7 +1256,7 @@ fn base_branch_sets_the_generated_workflow_branch_filter() {
         run(
             args,
             &global(dir.path(), OutputFormat::Json, false),
-            false,
+            None,
             &mut Scripted::new(vec![], &out),
             &mut out.clone(),
             &mut err.clone(),
@@ -1367,7 +1367,7 @@ fn run_with_json(root: &Path, args: InitArgs, dry_run: bool, out: &Shared, err: 
         run(
             args,
             &global(root, OutputFormat::Json, dry_run),
-            false,
+            None,
             &mut Scripted::new(vec![], out),
             &mut out.clone(),
             &mut err.clone(),
@@ -1544,7 +1544,7 @@ fn unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic() {
         run(
             InitArgs::default(),
             &global(dir.path(), OutputFormat::Json, false),
-            true,
+            Some(crate::tty::Prompts::for_tests()),
             &mut Scripted::new(vec![Answer::Confirm(true)], &out),
             &mut out.clone(),
             &mut err.clone(),
@@ -1632,4 +1632,53 @@ fn workflow_retry_reports_a_write_and_honours_dry_run() {
     assert_eq!(real.result.unwrap(), ExitCode::SUCCESS);
     assert!(!real.out.contains("[DRY-RUN]"), "{}", real.out);
     assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
+}
+
+#[test]
+fn flag_only_mistakes_fail_before_any_question() {
+    let triple = "x86_64-unknown-linux-gnu";
+    let cases: [(InitArgs, &str); 2] = [
+        (
+            InitArgs {
+                artifact_targets: vec![triple.to_owned(), triple.to_owned()],
+                ..Default::default()
+            },
+            "`x86_64-unknown-linux-gnu`",
+        ),
+        (
+            InitArgs {
+                artifact_targets: vec![triple.to_owned()],
+                product_package: Some("nope".to_owned()),
+                ..Default::default()
+            },
+            "nope",
+        ),
+    ];
+    for (args, named) in cases {
+        let dir = workspace(1);
+        let run = run_init(dir.path(), args, true, vec![], false);
+        let error = run.result.unwrap_err();
+        assert!(error.to_string().contains(named), "{error}");
+        assert!(run.prompter.asked.is_empty(), "asked {:?}", run.prompter.prompts());
+        assert!(nothing_written(dir.path()));
+    }
+}
+
+#[test]
+fn an_existing_workflow_is_not_offered_and_is_skipped_with_the_note_yes_prints() {
+    let dir = workspace(0);
+    let workflow = scaffold::workflow_path(dir.path());
+    std::fs::create_dir_all(workflow.parent().unwrap()).unwrap();
+    std::fs::write(&workflow, "name: mine\n").unwrap();
+    let run = run_init(
+        dir.path(),
+        InitArgs::default(),
+        true,
+        vec![Answer::Confirm(true)],
+        false,
+    );
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert_eq!(run.prompter.prompts(), [WRITE_PROMPT]);
+    assert!(run.out.contains("Skipping the GitHub Actions workflow"), "{}", run.out);
+    assert_eq!(std::fs::read_to_string(&workflow).unwrap(), "name: mine\n");
 }

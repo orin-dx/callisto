@@ -60,7 +60,7 @@ impl CliError {
         match self {
             Self::Graph(error) => error.exit_kind(),
             Self::Config(error) => error.exit_kind(),
-            Self::NotATty
+            Self::NotATty { .. }
             | Self::ReleasePendingFromInvalid { .. }
             | Self::DryRunRefused { .. }
             | Self::ReleaseCommitInvalid { .. }
@@ -87,7 +87,6 @@ impl CliError {
             | Self::VersionEmitDryRun { .. }
             | Self::PreTagEmpty
             | Self::HelpUnknownCommand { .. } => ExitKind::Usage,
-            Self::Cancelled => ExitKind::Runtime,
             _ => ExitKind::Runtime,
         }
     }
@@ -180,13 +179,14 @@ pub enum CliError {
     },
 
     #[error(
-        "refusing to prompt interactively: prompts need a terminal on stdin and stderr and `--format text`; missing: --package"
+        "refusing to prompt interactively: prompts need a terminal on stdin and stderr and `--format text`; missing: {}",
+        missing.join(", ")
     )]
     #[diagnostic(
         code(E214),
-        help("specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments")
+        help("pass --package <ecosystem>/<name>:<severity> (repeatable) and --summary <text>")
     )]
-    NotATty,
+    NotATty { missing: Vec<&'static str> },
 
     #[error("release intent `{}` declares schema version {found}, but this build reads version {expected}", path.display())]
     #[diagnostic(
@@ -551,7 +551,9 @@ mod tests {
 
     #[test]
     fn format_error_json_not_a_tty_includes_code_and_help() {
-        let err = CliError::NotATty;
+        let err = CliError::NotATty {
+            missing: vec!["--package", "--summary"],
+        };
         let json = format_error_json("add", false, &err);
         assert_envelope_shape("add", &json);
         assert_eq!(json["error"]["code"], "E214");
@@ -561,21 +563,22 @@ mod tests {
         );
         let help = json["error"]["help"].as_str().expect("NotATty must have help text");
         assert!(
-            help.contains("callisto add --package"),
-            "help should reference the --package flag; got: {help}"
+            help.contains("--package <ecosystem>/<name>:<severity>") && help.contains("--summary <text>"),
+            "help should show both flags; got: {help}"
         );
     }
 
-    /// `add --summary x` with no `--package` and a non-terminal stdin must
-    /// name the actually-missing flag (`--package`), not claim generically
-    /// that no flags at all were given -- `--summary` was one.
+    /// The message names exactly the flags that were not given.
     #[test]
-    fn not_a_tty_message_names_the_missing_package_flag() {
-        let message = CliError::NotATty.to_string();
-        assert!(
-            message.contains("missing: --package"),
-            "message must name --package as the missing flag; got: {message}"
-        );
+    fn not_a_tty_message_names_every_missing_flag() {
+        let both = CliError::NotATty {
+            missing: vec!["--package", "--summary"],
+        };
+        assert!(both.to_string().ends_with("missing: --package, --summary"), "{both}");
+        let one = CliError::NotATty {
+            missing: vec!["--package"],
+        };
+        assert!(one.to_string().ends_with("missing: --package"), "{one}");
     }
 
     #[test]
@@ -645,7 +648,12 @@ mod tests {
     /// top-level key set (code + message + help always present).
     #[test]
     fn format_error_json_structure_is_consistent_across_variants() {
-        let errors: &[CliError] = &[CliError::AddSummaryEmpty, CliError::NotATty];
+        let errors: &[CliError] = &[
+            CliError::AddSummaryEmpty,
+            CliError::NotATty {
+                missing: vec!["--package"],
+            },
+        ];
         let jsons: Vec<serde_json::Value> = errors.iter().map(|e| format_error_json("add", false, e)).collect();
         for json in &jsons {
             assert_envelope_shape("add", json);

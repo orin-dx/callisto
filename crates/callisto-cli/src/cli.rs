@@ -173,7 +173,7 @@ pub struct HelpArgs {
 /// Arguments for the `add` command.
 #[derive(Args, Clone, Debug)]
 pub struct AddArgs {
-    /// Package and severity to include, as `ecosystem/name:severity` (none, patch, minor, or major); repeatable. Omit to enter the interactive wizard.
+    /// Package and severity to include, as `ecosystem/name:severity` (none, patch, minor, or major); repeatable. Omit it to run the interactive wizard, which needs a terminal on stdin and stderr and `--format text`.
     #[arg(long = "package", value_name = "ECOSYSTEM/NAME:SEVERITY")]
     pub packages: Vec<String>,
     /// Human-readable summary of the change to record in the changeset.

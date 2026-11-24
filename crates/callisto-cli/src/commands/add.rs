@@ -23,7 +23,13 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let prompts = args
         .packages
         .is_empty()
-        .then(|| tty::Prompts::allowed(global.format))
+        .then(|| {
+            tty::Prompts::detect(global.format).ok_or_else(|| {
+                let mut missing = vec!["--package"];
+                missing.extend(args.summary.is_none().then_some("--summary"));
+                CliError::NotATty { missing }
+            })
+        })
         .transpose()?;
     // Built before any prompt, so a blank flag fails before the review.
     let mut summary = args.summary.as_deref().map(Summary::new).transpose()?;
@@ -37,7 +43,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             .and_then(|tags| callisto_graph::changed::changed_since_last_tag(&packages, tags, ws.git_access()));
         let choices = wizard_choices(packages.iter().copied(), changed);
         let mut prompter = TerminalAddPrompter { _allowed: prompts };
-        let Some((chosen, written)) = run_wizard(&choices, summary.clone(), &mut prompter)? else {
+        let Some((chosen, written)) = run_wizard(&choices, summary.clone(), global.dry_run, &mut prompter)? else {
             return Ok(ExitCode::SUCCESS);
         };
         entries = chosen;
@@ -133,17 +139,18 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     Ok(ExitCode::SUCCESS)
 }
 
-/// A changeset summary: trimmed and never blank, whichever way it was supplied.
+/// A changeset summary: trimmed, with LF line ends, and never blank, whichever way it was supplied.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Summary(String);
 
 impl Summary {
+    /// A leading byte-order mark (some editors save one) is dropped and CRLF line ends become LF.
     fn new(text: &str) -> Result<Self, CliError> {
-        let trimmed = text.trim();
+        let trimmed = text.trim_start_matches('\u{feff}').trim();
         if trimmed.is_empty() {
             return Err(CliError::AddSummaryEmpty);
         }
-        Ok(Self(trimmed.to_owned()))
+        Ok(Self(trimmed.replace("\r\n", "\n")))
     }
 }
 
@@ -157,7 +164,7 @@ trait AddPrompter {
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError>;
 }
 
-/// Rows a package list shows before it pages.
+/// Rows a package list shows before it pages, on a terminal tall enough.
 const PAGE: usize = 15;
 
 struct TerminalAddPrompter {
@@ -172,10 +179,13 @@ impl AddPrompter for TerminalAddPrompter {
             .filter(|(_, on)| **on)
             .map(|(index, _)| index)
             .collect();
+        let kind = tty::ListKind::MultiSelect;
+        let layout = tty::fit_list(kind, prompt, PAGE, items);
         let picked = tty::prompt(|| {
-            MultiSelect::new(prompt, items.to_vec())
+            MultiSelect::new(prompt, layout.labels)
                 .with_default(&ticked)
-                .with_page_size(tty::page_size(PAGE))
+                .with_page_size(layout.page_size)
+                .with_help_message(kind.help())
                 .raw_prompt()
         })?;
         Ok(picked.into_iter().map(|option| option.index).collect())
@@ -193,8 +203,8 @@ impl AddPrompter for TerminalAddPrompter {
                 Text::new(&hint)
                     .with_validator(move |line: &str| {
                         Ok(match Summary::new(line) {
-                            Err(error) if !(opens_editor && line.is_empty()) => {
-                                Validation::Invalid(error.to_string().into())
+                            Err(_) if !(opens_editor && line.is_empty()) => {
+                                Validation::Invalid("the summary cannot be blank".into())
                             }
                             _ => Validation::Valid,
                         })
@@ -226,15 +236,17 @@ struct Choice {
 }
 
 /// The interactive wizard (as in `@changesets/cli`): packages, which are major, which of the rest are minor (the
-/// remainder default to patch), a summary unless one was given, then a review to confirm. Changed packages are listed
+/// remainder default to patch), a summary unless one was given, then a review to confirm (a dry run writes nothing, so
+/// it does not ask). Changed packages are listed
 /// first and start ticked. `None` when the contributor declines the review or the editor saves nothing, having been
 /// told nothing was written.
 fn run_wizard(
     choices: &[Choice],
     summary: Option<Summary>,
+    dry_run: bool,
     prompter: &mut impl AddPrompter,
 ) -> Result<Option<(Vec<Entry>, Summary)>, CliError> {
-    let answers = ask(choices, summary, prompter)?;
+    let answers = ask(choices, summary, dry_run, prompter)?;
     if answers.is_none() {
         prompt_line(tty::CANCELLED);
     }
@@ -244,6 +256,7 @@ fn run_wizard(
 fn ask(
     choices: &[Choice],
     summary: Option<Summary>,
+    dry_run: bool,
     prompter: &mut impl AddPrompter,
 ) -> Result<Option<(Vec<Entry>, Summary)>, CliError> {
     if choices.is_empty() {
@@ -322,9 +335,11 @@ fn ask(
     };
 
     prompt_line(&review(&entries, &summary.0));
-    Ok(prompter
-        .confirm("Write this changeset?", true)?
-        .then_some((entries, summary)))
+    if dry_run || prompter.confirm("Write this changeset?", true)? {
+        Ok(Some((entries, summary)))
+    } else {
+        Ok(None)
+    }
 }
 
 /// What the changeset will record: each package's bump, then the summary as it reaches the changelog.
@@ -488,6 +503,10 @@ mod tests {
         selections: std::collections::VecDeque<Option<Vec<usize>>>,
         summary: Option<Summary>,
         confirm: bool,
+        /// Esc at the summary or at the confirmation.
+        esc_at_summary: bool,
+        esc_at_confirm: bool,
+        confirm_asked: bool,
         /// The items each multi-select was shown, in order.
         shown: Vec<Vec<String>>,
         /// Which items each multi-select started ticked.
@@ -507,10 +526,17 @@ mod tests {
 
         fn summary(&mut self, _prompt: &str) -> Result<Option<Summary>, CliError> {
             self.summary_asked = true;
+            if self.esc_at_summary {
+                return Err(CliError::Cancelled);
+            }
             Ok(self.summary.clone())
         }
 
         fn confirm(&mut self, _prompt: &str, _default: bool) -> Result<bool, CliError> {
+            self.confirm_asked = true;
+            if self.esc_at_confirm {
+                return Err(CliError::Cancelled);
+            }
             Ok(self.confirm)
         }
     }
@@ -553,7 +579,9 @@ mod tests {
             confirm: true,
             ..Default::default()
         };
-        let (entries, _) = run_wizard(&choices, None, &mut prompter).unwrap().expect("confirmed");
+        let (entries, _) = run_wizard(&choices, None, false, &mut prompter)
+            .unwrap()
+            .expect("confirmed");
         assert_eq!(
             prompter.shown[0],
             names(&["cargo/b (changed)", "cargo/d (changed)", "cargo/a", "cargo/c"])
@@ -573,31 +601,59 @@ mod tests {
     }
 
     #[test]
-    fn esc_at_any_question_cancels_and_an_empty_editor_writes_nothing() {
-        for at in 0..3 {
+    fn esc_at_any_of_the_five_questions_cancels() {
+        for at in 0..5 {
             let mut selections = ticks([vec![0, 1], vec![], vec![]]);
-            selections[at] = None;
+            if at < 3 {
+                selections[at] = None;
+            }
             let mut prompter = Scripted {
                 selections,
                 summary: Some(Summary::new("Fix").unwrap()),
                 confirm: true,
+                esc_at_summary: at == 3,
+                esc_at_confirm: at == 4,
                 ..Default::default()
             };
-            assert!(matches!(
-                run_wizard(&unchanged(&["cargo/a", "cargo/b"]), None, &mut prompter),
-                Err(CliError::Cancelled)
-            ));
-            assert_eq!(prompter.shown.len(), at + 1, "nothing is asked after Esc");
+            assert!(
+                matches!(
+                    run_wizard(&unchanged(&["cargo/a", "cargo/b"]), None, false, &mut prompter),
+                    Err(CliError::Cancelled)
+                ),
+                "question {at}"
+            );
+            if at < 3 {
+                assert_eq!(prompter.shown.len(), at + 1, "nothing is asked after Esc");
+            }
+            assert_eq!(prompter.summary_asked, at >= 3, "question {at}");
+            assert_eq!(prompter.confirm_asked, at == 4, "question {at}");
         }
+    }
+
+    #[test]
+    fn an_editor_that_saves_nothing_writes_nothing() {
         let mut prompter = Scripted {
             selections: ticks([vec![0], vec![], vec![]]),
             summary: None,
             confirm: true,
             ..Default::default()
         };
-        assert!(run_wizard(&unchanged(&["cargo/a"]), None, &mut prompter)
+        assert!(run_wizard(&unchanged(&["cargo/a"]), None, false, &mut prompter)
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn a_dry_run_does_not_ask_to_write() {
+        let mut prompter = Scripted {
+            selections: ticks([vec![0], vec![], vec![]]),
+            summary: Some(Summary::new("Fix").unwrap()),
+            confirm: false,
+            ..Default::default()
+        };
+        let answers = run_wizard(&unchanged(&["cargo/a"]), None, true, &mut prompter).unwrap();
+        assert!(answers.is_some());
+        assert!(!prompter.confirm_asked);
     }
 
     #[test]
@@ -627,9 +683,14 @@ mod tests {
             confirm: true,
             ..Default::default()
         };
-        let (entries, summary) = run_wizard(&unchanged(&["cargo/a", "cargo/b", "cargo/c"]), None, &mut prompter)
-            .unwrap()
-            .expect("confirmed");
+        let (entries, summary) = run_wizard(
+            &unchanged(&["cargo/a", "cargo/b", "cargo/c"]),
+            None,
+            false,
+            &mut prompter,
+        )
+        .unwrap()
+        .expect("confirmed");
         assert_eq!(
             severities(&entries),
             [
@@ -651,9 +712,14 @@ mod tests {
             confirm: true,
             ..Default::default()
         };
-        let (entries, _) = run_wizard(&unchanged(&["cargo/a", "cargo/b", "cargo/c"]), None, &mut prompter)
-            .unwrap()
-            .expect("confirmed");
+        let (entries, _) = run_wizard(
+            &unchanged(&["cargo/a", "cargo/b", "cargo/c"]),
+            None,
+            false,
+            &mut prompter,
+        )
+        .unwrap()
+        .expect("confirmed");
         assert_eq!(
             severities(&entries),
             [("cargo/c", Severity::Patch), ("cargo/a", Severity::Patch)]
@@ -669,7 +735,7 @@ mod tests {
             confirm: true,
             ..Default::default()
         };
-        run_wizard(&unchanged(&["cargo/a", "cargo/b"]), None, &mut prompter).unwrap();
+        run_wizard(&unchanged(&["cargo/a", "cargo/b"]), None, false, &mut prompter).unwrap();
         assert_eq!(prompter.shown.len(), 2, "no third multi-select");
     }
 
@@ -683,6 +749,7 @@ mod tests {
         let (_, summary) = run_wizard(
             &unchanged(&["cargo/a"]),
             Some(Summary::new("From the flag").unwrap()),
+            false,
             &mut prompter,
         )
         .unwrap()
@@ -699,7 +766,7 @@ mod tests {
             confirm: false,
             ..Default::default()
         };
-        assert!(run_wizard(&unchanged(&["cargo/a"]), None, &mut prompter)
+        assert!(run_wizard(&unchanged(&["cargo/a"]), None, false, &mut prompter)
             .unwrap()
             .is_none());
     }
@@ -708,7 +775,7 @@ mod tests {
     fn a_workspace_with_no_packages_and_a_selection_of_none_are_errors_with_their_own_message() {
         let mut prompter = Scripted::default();
         assert!(matches!(
-            run_wizard(&[], None, &mut prompter),
+            run_wizard(&[], None, false, &mut prompter),
             Err(CliError::AddNoPackagesInWorkspace)
         ));
         let mut prompter = Scripted {
@@ -716,7 +783,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            run_wizard(&unchanged(&["cargo/a"]), None, &mut prompter),
+            run_wizard(&unchanged(&["cargo/a"]), None, false, &mut prompter),
             Err(CliError::AddNoPackagesSelected)
         ));
     }
@@ -746,6 +813,15 @@ mod tests {
             assert!(matches!(Summary::new(blank), Err(CliError::AddSummaryEmpty)));
         }
         assert_eq!(Summary::new("  important fix  ").unwrap().0, "important fix");
+        assert!(matches!(Summary::new("\u{feff}  "), Err(CliError::AddSummaryEmpty)));
+    }
+
+    #[test]
+    fn a_summary_loses_a_leading_byte_order_mark_and_crlf_line_ends() {
+        assert_eq!(
+            Summary::new("\u{feff}Fix b\r\n\r\n- one\r\n").unwrap().0,
+            "Fix b\n\n- one"
+        );
     }
 
     #[test]

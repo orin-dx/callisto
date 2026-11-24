@@ -73,9 +73,12 @@ struct TerminalPrompter;
 
 impl Prompter for TerminalPrompter {
     fn select(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
+        let kind = tty::ListKind::Select;
+        let layout = tty::fit_list(kind, prompt, PAGE, items);
         Ok(tty::prompt(|| {
-            Select::new(prompt, items.to_vec())
-                .with_page_size(tty::page_size(PAGE))
+            Select::new(prompt, layout.labels)
+                .with_page_size(layout.page_size)
+                .with_help_message(kind.help())
                 .raw_prompt()
         })?
         .index)
@@ -98,7 +101,7 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
     run(
         args,
         global,
-        tty::Prompts::allowed(global.format).is_ok(),
+        tty::Prompts::detect(global.format),
         &mut TerminalPrompter,
         &mut std::io::stdout(),
         &mut std::io::stderr(),
@@ -106,17 +109,19 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
     )
 }
 
-/// `init` against explicit terminal state, prompter, output streams, and command runner.
+/// `init` against explicit terminal state (`prompts` is `Some` when it may ask questions), prompter, output streams, and
+/// command runner.
 pub fn run<R: CommandRunner>(
     args: InitArgs,
     global: &GlobalArgs,
-    interactive: bool,
+    prompts: Option<tty::Prompts>,
     prompter: &mut dyn Prompter,
     out: &mut dyn Write,
     err: &mut dyn Write,
     runner: &R,
 ) -> Result<ExitCode, CliError> {
     validate_flags(&args)?;
+    let interactive = prompts.is_some();
     // A repository whose manifests all sit in subdirectories has no root yet: init makes the Git toplevel one.
     let (root, no_root) = match workspace_root(global, runner) {
         Ok(root) => (root, None),
@@ -168,6 +173,7 @@ pub fn run<R: CommandRunner>(
             return Err(CliError::InitMissingFlags { missing });
         }
     }
+    let requested = requested_release(&args, &facts)?;
     let prompting = interactive && !args.yes;
     let migration = changesets::migrate(&facts.root, &facts);
     // A dry run writes nothing, so it previews with the warning instead.
@@ -176,7 +182,7 @@ pub fn run<R: CommandRunner>(
             packages: migration.public_scoped,
         });
     }
-    let mut answers = collect_answers(&args, &facts, prompting, prompter)?;
+    let mut answers = collect_answers(&args, &facts, &requested, prompting, prompter)?;
 
     let mut diagnostics = migration.diagnostics.clone();
     diagnostics.extend(migration.apply_fixed_groups(&mut answers));
@@ -215,16 +221,20 @@ pub fn run<R: CommandRunner>(
         }
         Ok(shape) => Some(shape),
     };
+    // An existing workflow is never overwritten, so it is not offered: `build_workflow` reports the same error.
+    let workflow_blocked = scaffold::ensure_workflow_absent(&facts.root).is_err();
     let want_workflow = match shape {
         None => false,
         Some(_) if args.workflow => true,
         Some(_) if args.no_workflow => false,
-        Some(_) if prompting && facts.origin.is_some() => prompter.confirm(WORKFLOW_PROMPT, true)?,
+        Some(_) if prompting && facts.origin.is_some() && !workflow_blocked => {
+            prompter.confirm(WORKFLOW_PROMPT, true)?
+        }
         // The workflow is GitHub Actions, so only a GitHub origin gets it unasked.
         Some(_) => facts.origin_repository.is_some(),
     };
     // A workflow nobody asked for (the default) never fails `init`: if it cannot be built, say why and go on.
-    let asked_for_workflow = args.workflow || prompting;
+    let asked_for_workflow = args.workflow || (prompting && !workflow_blocked);
     let workflow = match shape.filter(|_| want_workflow) {
         Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner, human) {
             Ok(built) => Some(built),
@@ -466,9 +476,54 @@ fn missing(flag: &'static str) -> CliError {
     CliError::InitMissingFlags { missing: vec![flag] }
 }
 
+/// What `--product-package` and `--artifact-target` ask for, checked against the workspace before any question.
+struct RequestedRelease<'a> {
+    product: Option<&'a InitPackage>,
+    /// The validated targets; `None` when the flag was not given.
+    targets: Option<Vec<String>>,
+}
+
+fn requested_release<'a>(args: &InitArgs, facts: &'a InitFacts) -> Result<RequestedRelease<'a>, CliError> {
+    if args.artifact_targets.is_empty() {
+        return Ok(RequestedRelease {
+            product: None,
+            targets: None,
+        });
+    }
+    if facts.binary_packages().next().is_none() {
+        if let Some(package) = facts.unsupported_artifact_packages().next() {
+            return Err(GraphError::InitUnsupportedArtifactBuilder {
+                package: package.id.clone(),
+                ecosystem: package
+                    .id
+                    .split_once('/')
+                    .map_or("unknown", |(ecosystem, _)| ecosystem)
+                    .to_owned(),
+            }
+            .into());
+        }
+        return Err(GraphError::InitNoBinaryPackage.into());
+    }
+    let product = args
+        .product_package
+        .as_deref()
+        .map(|name| facts.product_package(name))
+        .transpose()?;
+    // A release goes to origin's GitHub repository, so shipping needs one.
+    if facts.origin_repository.is_none() {
+        return Err(GraphError::ReleaseForgeRepositoryMissing.into());
+    }
+    let targets = scaffold::validate_targets(&args.artifact_targets)?;
+    Ok(RequestedRelease {
+        product,
+        targets: Some(targets),
+    })
+}
+
 fn collect_answers(
     args: &InitArgs,
     facts: &InitFacts,
+    requested: &RequestedRelease<'_>,
     prompting: bool,
     prompter: &mut dyn Prompter,
 ) -> Result<InitAnswers, CliError> {
@@ -492,33 +547,13 @@ fn collect_answers(
     };
 
     let binaries: Vec<&InitPackage> = facts.binary_packages().collect();
-    if binaries.is_empty() && !args.artifact_targets.is_empty() {
-        if let Some(package) = facts.unsupported_artifact_packages().next() {
-            return Err(GraphError::InitUnsupportedArtifactBuilder {
-                package: package.id.clone(),
-                ecosystem: package
-                    .id
-                    .split_once('/')
-                    .map_or("unknown", |(ecosystem, _)| ecosystem)
-                    .to_owned(),
-            }
-            .into());
-        }
-        return Err(GraphError::InitNoBinaryPackage.into());
-    }
-    let requested_product = args
-        .product_package
-        .as_deref()
-        .map(|name| facts.product_package(name))
-        .transpose()?;
     if binaries.is_empty() {
         return Ok(no_binaries);
     }
-    // No `origin`: the forge question below has nothing to validate a repository against, so
-    // shipping is never offered (skips straight to `no_binaries`); `--artifact-target` without
-    // `origin` is already rejected up front in `run`.
-    let ship = !args.artifact_targets.is_empty()
-        || (facts.origin.is_some() && prompting && prompter.confirm(SHIP_PROMPT, false)?);
+    // No `origin`: the forge question below has nothing to validate a repository against, so shipping is never
+    // offered; `--artifact-target` without `origin` is already rejected up front in `run`.
+    let ship =
+        requested.targets.is_some() || (facts.origin.is_some() && prompting && prompter.confirm(SHIP_PROMPT, false)?);
     if !ship {
         return Ok(no_binaries);
     }
@@ -527,7 +562,7 @@ fn collect_answers(
         return Err(GraphError::ReleaseForgeRepositoryMissing.into());
     }
 
-    let product = match (requested_product, binaries.as_slice()) {
+    let product = match (requested.product, binaries.as_slice()) {
         (Some(product), _) => product,
         (None, [only]) => only,
         (None, _) if prompting => {
@@ -537,20 +572,20 @@ fn collect_answers(
         (None, _) => return Err(missing("--product-package")),
     };
 
-    let targets = if args.artifact_targets.is_empty() {
-        loop {
-            let answer = prompter.input(TARGETS_PROMPT, None)?;
-            let targets: Vec<String> = answer.split(',').map(str::trim).map(str::to_owned).collect();
-            if targets.iter().all(|target| target.is_empty()) {
+    let targets = match &requested.targets {
+        Some(targets) => targets.clone(),
+        None => {
+            let answer = loop {
+                let answer = prompter.input(TARGETS_PROMPT, None)?;
+                let targets: Vec<String> = answer.split(',').map(str::trim).map(str::to_owned).collect();
                 // Nothing meaningful submitted: re-ask rather than error.
-                continue;
-            }
-            break targets;
+                if !targets.iter().all(|target| target.is_empty()) {
+                    break targets;
+                }
+            };
+            scaffold::validate_targets(&answer)?
         }
-    } else {
-        args.artifact_targets.clone()
     };
-    let targets = scaffold::validate_targets(&targets)?;
 
     Ok(InitAnswers {
         versioning,

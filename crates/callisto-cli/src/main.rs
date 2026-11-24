@@ -33,12 +33,13 @@ fn main() -> ExitCode {
     match res {
         Ok(code) => code,
         Err(err) => {
-            let exit = match err.exit_kind() {
-                _ if matches!(err, callisto_cli::error::CliError::Cancelled) => {
-                    ExitCode::from(callisto_cli::tty::CANCELLED_BY_CTRL_C)
+            let exit = if matches!(err, callisto_cli::error::CliError::Cancelled) {
+                ExitCode::from(callisto_cli::tty::CANCELLED_BY_CTRL_C)
+            } else {
+                match err.exit_kind() {
+                    ExitKind::Usage => ExitCode::from(2),
+                    ExitKind::Runtime => ExitCode::FAILURE,
                 }
-                ExitKind::Usage => ExitCode::from(2),
-                ExitKind::Runtime => ExitCode::FAILURE,
             };
             if cli.global.format == callisto_cli::cli::OutputFormat::Json {
                 let report = callisto_cli::error::format_error_json(command_name, cli.global.dry_run, &err);
