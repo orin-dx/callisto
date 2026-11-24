@@ -10,7 +10,7 @@ packages:
             name: "@s/cli",
         },
         fingerprint: SemanticInputDigest(
-            "36c66dcc00495b510817e4c0cecbba2bbd5a0fed6de8032124c6684d750f1ccd",
+            "6a66a09e45e68ce828e6f07a6524e26729208dafe341252c619155cda6150e4b",
         ),
     },
 ]

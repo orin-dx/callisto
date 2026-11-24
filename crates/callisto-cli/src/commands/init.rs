@@ -308,7 +308,7 @@ pub fn run<'a, R: CommandRunner>(
                     initialized: false,
                     config_path: facts.root.join("callisto.toml"),
                     config,
-                    files,
+                    files: Vec::new(),
                     diagnostics,
                 };
                 return finish(&declined, shown, global, out, err);

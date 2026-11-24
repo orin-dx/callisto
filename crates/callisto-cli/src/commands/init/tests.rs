@@ -1722,6 +1722,7 @@ fn a_declined_write_in_json_mode_still_emits_the_report_with_each_note_once() {
     assert_eq!(code, std::process::ExitCode::SUCCESS);
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     assert_eq!(report["initialized"], false, "{report}");
+    assert_eq!(report["files"], serde_json::json!([]), "{report}");
     assert_eq!(report["diagnostics"].as_array().unwrap().len(), 1, "{report}");
     assert_eq!(err.text().matches("No `origin` remote").count(), 1, "{}", err.text());
     assert!(!dir.path().join("callisto.toml").exists());

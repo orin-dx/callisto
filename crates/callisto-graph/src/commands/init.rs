@@ -99,7 +99,7 @@ pub struct InitFacts {
     pub root: PathBuf,
     pub ecosystems: BTreeSet<Ecosystem>,
     pub packages: Vec<InitPackage>,
-    /// Canonical `origin` push URL, or `None` when no `origin` remote is configured.
+    /// `origin`'s push URL as configured, less one trailing slash; `None` when there is no hosted `origin`.
     pub origin: Option<String>,
     /// Why `origin` is not a hosted remote (a local path, say), when it is configured but not hosted: `init` treats it
     /// as no `origin`.

@@ -459,13 +459,14 @@ impl Report for PreReport {
 #[serde(rename_all = "camelCase")]
 pub struct InitReport {
     pub schema_version: u32,
-    /// `true` when `callisto.toml` was written; `false` under `--dry-run`.
+    /// `true` when init wrote its files; `false` under `--dry-run` or when the write was declined.
     pub initialized: bool,
     pub config_path: PathBuf,
-    /// The `callisto.toml` content written, or that would be written.
+    /// The `callisto.toml` content: written, proposed, or already present when only the workflow is added.
     pub config: String,
     /// Every file init wrote, or would write under `--dry-run`: `config_path`, `.changeset/README.md`
-    /// unless it already existed, and the release workflow when one was generated.
+    /// unless it already existed, and the release workflow when one was generated. Only the workflow when an
+    /// initialized workspace adds one; empty when the write was declined.
     pub files: Vec<PathBuf>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

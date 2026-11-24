@@ -771,6 +771,43 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&refs.stdout).trim(), "refs/tags/v1");
     }
 
+    /// Answers `origin` with a generic-host URL and records each `ls-remote` destination.
+    struct GenericOrigin(std::sync::Mutex<Vec<String>>);
+
+    impl CommandRunner for GenericOrigin {
+        fn run(
+            &self,
+            _program: &str,
+            args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            let stdout = match args.first() {
+                Some(&"remote") => "ssh://git@git.example.test/team/repo/".to_owned(),
+                Some(&"ls-remote") => {
+                    self.0.lock().unwrap().push(args[1].to_owned());
+                    fixtures::LS_REMOTE_ABSENT.to_owned()
+                }
+                other => panic!("unscripted git call {other:?}"),
+            };
+            Ok(callisto_model::CommandOutput {
+                exit_code: Some(0),
+                stdout,
+                stderr: String::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn the_remote_tag_is_observed_at_the_configured_repository_path() {
+        let runner = GenericOrigin(std::sync::Mutex::default());
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("ssh://git@git.example.test/team/repo/").unwrap();
+        let root = std::env::temp_dir();
+        let context = ProviderContext::new(&root, &runner, Some(&remote));
+        observed_remote_tag(&context, &TagName::new_unchecked("v1".to_owned())).unwrap();
+        assert_eq!(*runner.0.lock().unwrap(), ["ssh://git@git.example.test/team/repo"]);
+    }
+
     fn push(stderr: &'static str) -> GraphError {
         let operation = TagOperation {
             name: TagName::new_unchecked("callisto@0.8.0".to_owned()),
