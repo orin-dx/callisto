@@ -1,0 +1,106 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M85Y7SDKMXZV53Y933DYWSEK",
+  "session_id": "74971c6c-73e3-473f-94a9-d02bdc417376",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-24T04:50:33.030493Z",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "Cargo.lock",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "docs/errors.md",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "853b0196ec7c",
+  "checkpoint_transcript_start": 280,
+  "transcript_lines_at_start": 280,
+  "compact_transcript_start": 23,
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 92525,
+    "cache_read_tokens": 6700131,
+    "output_tokens": 34780,
+    "api_call_count": 43
+  },
+  "session_token_usage": {
+    "input_tokens": 126,
+    "cache_creation_tokens": 186913,
+    "cache_read_tokens": 8136620,
+    "output_tokens": 44537,
+    "api_call_count": 61
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Implement a batch of CLI hardening items (from a peer session auditing #638) for the callisto CLI: a shared terminal-aware page-size helper for paged prompts, E214 improvements, --dry-run in the add wizard, init validation/workflow-prompt changes, Summary normalisation, exit-code simplification, test updates, and docs; then run the full gate and commit locally without pushing.",
+    "outcome": "Code, tests, and docs changes for the batch were written across the callisto-cli crate and specs, the gate commands were run sequentially (pre-push, lint, doc-check, test, audit) and a local commit was made. The transcript does not show the gate exit codes or commit sha output, so pass/fail results are unconfirmed here.",
+    "learnings": {
+      "repo": [
+        "Inquire redraws relative to the previous frame, so a list frame taller than the terminal puts the highlight and ticks on the wrong rows; page size must account for prompt and help wrap rows plus one spare row.",
+        "Prompts proof type tty::Prompts is now built via Prompts::detect (Option) with a cfg(test) for_tests constructor; init::run takes Option<tty::Prompts> instead of a bool.",
+        "CliError::NotATty now carries a Vec<&'static str> of missing flags; E214 help text lives in error.rs and is mirrored in docs/errors.md and docs/specs/cli.json (CLI-ADD-04).",
+        "Exit code decision in main.rs is now 'Cancelled -> 130 else match exit_kind', so ExitKind has no Cancelled mapping in error.rs.",
+        "Flag-only checks for init (product package, artifact targets, binary package presence, origin repo) were hoisted into requested_release() ahead of collect_answers.",
+        "PTY tests should wait on text drawn by the specific prompt (e.g. 'summary (Esc cancels)', 'the summary cannot be blank') rather than counting a prompt title plus sleeping, and avoid size-dependent assertions.",
+        "Project uses an rtk wrapper and just recipes (pre-push, lint, doc-check, test, audit); work happens in a git worktree under .claude/worktrees/wp-add-inquire.",
+        "unicode-width 0.2 was added as a dependency of callisto-cli for label truncation."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "finding": "New ListKind, ListLayout, fit_list/fit_list_to and truncate helpers compute page size from (columns, rows) and truncate labels to width minus prefix (2 for Select, 6 for MultiSelect); fit_list_to is unit-testable with explicit sizes, avoiding a pty crate."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/add.rs",
+          "finding": "run_wizard/ask gained a dry_run parameter that skips the 'Write this changeset?' confirmation; Summary::new strips leading U+FEFF and converts CRLF to LF."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "finding": "Workflow question is skipped when scaffold::ensure_workflow_absent fails (workflow already exists), using the same skip note as --yes."
+        }
+      ],
+      "workflow": [
+        "Running independent gate commands in the background with a Monitor hung for 20 minutes; running `just pre-push` alone in the foreground finished quickly (likely a stale cargo lock earlier).",
+        "Batch edits via Python string replacement scripts were efficient but required follow-up fixes when replacements matched multiple or zero sites (e.g. repeated pty test edits)."
+      ]
+    },
+    "friction": [
+      "The first background `just pre-push && lint && doc-check` run hung and the Monitor expired after 20m with no events; the task had to be stopped and rerun.",
+      "Some Python string-replace edits needed to be reapplied or adjusted because patterns differed in indentation or occurred twice.",
+      "Gate exit codes and the final commit sha/signature status are not visible in the transcript output, so the required report to the peer cannot be fully assembled from it."
+    ],
+    "open_items": [
+      "Three contract items (TERM=dumb, init context to stderr while prompting, re-ask on empty selection) are held until the peer confirms; the peer will message before commit if approved.",
+      "Report to the peer: commit sha, gate exit codes, and one line per item; do not push.",
+      "Items not visibly addressed in the transcript (e.g. item 8 cli.json:15 description for stdin and stderr, and the cli.rs:176 --package help wording) should be verified against the final diff."
+    ]
+  }
+}
