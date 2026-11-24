@@ -1,0 +1,47 @@
+Foundation: the Git boundary. Trail #494. New worktree wp-git-boundary off fresh origin/main. Read ARCHITECTURE.md, docs/architecture/ for git and release, docs/adr/README.md (Git access decisions), crates/callisto-model/src/vcs/ (GitAccess, boundary.rs Pathspec) and the ledger rows in /Users/gabe/Projects/callisto/.claude/plans/FINDINGS-LEDGER.md. Today remote access has no model: callisto-graph reads git remote get-url --push origin and parses/rewrites it with url::Url (release/binding.rs ~151-290), then runs ls-remote and push against that rewritten URL (release/local.rs ~116, commands/init.rs ~940, release/provider/tag.rs), while the default branch is read by remote name (init.rs ~788, ~805). Build, in the vcs boundary of callisto-model (MIT; no FSL deps; concrete types, no new traits; CommandRunner stays the only seam): (1) GitRemote: every remote operation (ls-remote of tags, push of tags, default branch) invokes git with the remote NAME so git resolves it exactly once; the binding between plan and execution is a fingerprint (digest) of git's own outputs of git remote get-url <name> and get-url --push <name>, rechecked before each effect; a separate pure classification yields the GitHub owner/repo only for forge features and is never passed to git; the raw URL is never Display/Debug-printable. Remove the url::Url parsing and rewriting of remotes and the not-hosted refusals that existed only because Callisto built URLs itself; keep refusing what is a real policy (for example credentials embedded in the URL being recorded anywhere) and say which you kept and why. (2) Rev: revisions passed to git are built only from a CommitSha or a fully qualified ref (refs/tags/<name>, refs/heads/<name>), passed after --end-of-options where git supports it; migrate read_at, commit_time, resolve_commit, path_exists_at, files_containing_at, commits_since and their callers. (3) One GitPath for literal paths (merge Pathspec::literal and the check-ignore './' helper). (4) Move the direct git add calls (callisto-graph apply.rs ~654, callisto-cli commands/pre.rs ~21) into GitAccess. (5) One git environment policy applied by the boundary to every call: no prompts (GIT_TERMINAL_PROMPT=0), output we parse is not affected by user config (no color, no pager, core.quotepath=false, a fixed locale where output is parsed); verify what exists today first and say what changed. Migrate every caller; delete the old paths (AGENTS: a PR that replaces an API deletes the old one). Tests against real git for: insteadOf and pushInsteadOf on scp and https forms, a separate pushurl, local-path and file:// remotes, a remote named other than origin if supported, a tag named like an option (-x) or with revision syntax, paths with leading ':' '-' and newlines. Release recovery: an intent recorded before this change carries the old fingerprint; refuse resuming it with a clear message and note it in the changeset (patch, written for users). Keep the change as small as the design allows; if it exceeds ~1500 lines, stop and report the split you'd make. Before reporting: run a class-by-class self-audit of the whole diff against the finding history in /Users/gabe/.claude/jobs/d58474bb/tmp/findings-history-634-638.txt and the rows in /Users/gabe/Projects/callisto/.claude/plans/FINDINGS-LEDGER.md; fix and repeat until a full pass is clean; then the full gate by exit code (just pre-push && just lint && just doc-check && just test, network and pty unsandboxed; just fuzz-check if callisto-model public signatures changed). Write the convergence record /Users/gabe/Projects/callisto/.claude/plans/converged/<full HEAD sha>.md listing each pass (class swept, what was found, what changed) and the gate exit codes. Commit locally (signed); report the sha and the record path. Never push. Rules (from the lead session close-gap-for-alpha). Be thorough before a push: a push costs a paid review, so find problems locally first.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Before reporting a change as ready to push, run the AGENTS.md gate in full and judge each by exit code: `just pre-push && just lint && just doc-check && just test` (workspace-wide, not just the touched crate; tests elsewhere read scripts, specs and error registries). Run network/pty tests unsandboxed. Iterate with scoped `cargo test -p` while working.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Every push triggers a paid review. Before reporting, run the checklist in /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md against your full diff. Push once, only after the lead has read your diff and says push; for an existing PR, commit locally and report the worktree and sha first.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+- Findings: the lead writes a row in /Users/gabe/Projects/callisto/.claude/plans/FINDINGS-LEDGER.md (class, owning boundary, codebase-wide sweep, fix level) before any fix is briefed. If you find a finding without a row, stop and ask the lead.
+
+---
+
+<task-notification>
+<task-id>bjy987dwt</task-id>
+<tool-use-id>toolu_019pie36AHRrTMBfmF6nhxR8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/db8a4a7f-fb84-4553-8cec-d6dbe31ca74a/tasks/bjy987dwt.output</output-file>
+<status>completed</status>
+<summary>Background command "sh /tmp/claude-501/gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bibeherdn</task-id>
+<tool-use-id>toolu_01V69MfTCqNV2Nf5Ejpz8WxJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/db8a4a7f-fb84-4553-8cec-d6dbe31ca74a/tasks/bibeherdn.output</output-file>
+<status>completed</status>
+<summary>Background command "sh /tmp/claude-501/gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b44p72nic</task-id>
+<tool-use-id>toolu_017k84EEUyt1mcMpWEthJfH2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/db8a4a7f-fb84-4553-8cec-d6dbe31ca74a/tasks/b44p72nic.output</output-file>
+<status>completed</status>
+<summary>Background command "sh /tmp/claude-501/gate.sh" completed (exit code 0)</summary>
+</task-notification>
