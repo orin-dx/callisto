@@ -152,7 +152,8 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
 }
 
 /// The release identities `callisto version` has pending work for that a release would cover: publishable packages
-/// only, narrowed and group-expanded by `selections` through the same code the release roster uses.
+/// only, narrowed and group-expanded by `selections` through the same code the release roster uses. Changesets only:
+/// commit inference would add a git process per package to a read-only hint.
 ///
 /// # Errors
 ///
@@ -165,7 +166,7 @@ pub fn pending_version_work<R: CommandRunner, D: DependencyResolver>(
         strict: false,
         allow_empty_changesets: true,
     };
-    let plan = super::plan_version(workspace, &crate::infer::CommitInference, &options)?;
+    let plan = super::plan_version(workspace, &crate::infer::NoInference, &options)?;
     if plan.bumps.is_empty() {
         return Ok(Vec::new());
     }

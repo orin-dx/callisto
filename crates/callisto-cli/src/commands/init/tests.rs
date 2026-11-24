@@ -1665,11 +1665,64 @@ fn a_flag_that_needs_a_hosted_origin_says_when_origin_is_not_hosted() {
     let run = run_init(dir.path(), args, false, vec![], false);
     let error = run.result.unwrap_err();
     assert!(
-        matches!(&error, CliError::InitFlagRequiresOrigin { not_hosted: true, .. }),
+        matches!(
+            &error,
+            CliError::InitFlagRequiresOrigin {
+                not_hosted: Some(_),
+                ..
+            }
+        ),
         "{error}"
     );
     assert!(error.to_string().contains("is not hosted"), "{error}");
     assert!(run.out.contains("origin: not hosted"), "{}", run.out);
     assert!(!format!("{error:?}{}", run.out).contains("team-repo"));
     assert!(nothing_written(dir.path()));
+}
+
+// Notes queued before the write question are said once whether the write is confirmed or declined.
+#[test]
+fn interactive_notes_are_said_once_on_confirm_and_kept_on_decline() {
+    for (confirm, written) in [(true, true), (false, false)] {
+        let dir = workspace_without_origin(1);
+        let run = run_init(
+            dir.path(),
+            InitArgs::default(),
+            true,
+            vec![Answer::Select(0), Answer::Confirm(confirm)],
+            false,
+        );
+        assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
+        assert_eq!(
+            run.err.matches("No `origin` remote").count(),
+            1,
+            "{confirm}: {}",
+            run.err
+        );
+        assert_eq!(dir.path().join("callisto.toml").exists(), written, "{confirm}");
+    }
+}
+
+// A declined write in JSON mode still reports the notes once on stderr and in an uninitialized report.
+#[test]
+fn a_declined_write_in_json_mode_still_emits_the_report_with_each_note_once() {
+    let dir = workspace_without_origin(1);
+    let out = Shared::default();
+    let err = Shared::default();
+    let code = run(
+        InitArgs::default(),
+        &global(dir.path(), OutputFormat::Json, false),
+        true,
+        &mut Scripted::new(vec![Answer::Select(0), Answer::Confirm(false)], &out),
+        &mut out.clone(),
+        &mut err.clone(),
+        &CliCommandRunner,
+    )
+    .unwrap();
+    assert_eq!(code, std::process::ExitCode::SUCCESS);
+    let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+    assert_eq!(report["initialized"], false, "{report}");
+    assert_eq!(report["diagnostics"].as_array().unwrap().len(), 1, "{report}");
+    assert_eq!(err.text().matches("No `origin` remote").count(), 1, "{}", err.text());
+    assert!(!dir.path().join("callisto.toml").exists());
 }

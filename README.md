@@ -158,7 +158,7 @@ Available targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknow
 
 ## Quick start
 
-Start in a Git repository whose `origin` is a hosted HTTPS or SSH URL (a local path or `file://` remote is refused for real releases; `init` and `release --dry-run` treat it like no origin) and with registry credentials. This example publishes from your machine; to publish from CI instead, keep the workflow `init` writes and see [releasing](docs/releasing.md).
+Start in a Git repository whose `origin` is a hosted HTTPS or SSH URL (a local path or `file://` remote is refused for real releases, which accept an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials; `init` and `release --dry-run` treat it like no origin) and with registry credentials. This example publishes from your machine; to publish from CI instead, keep the workflow `init` writes and see [releasing](docs/releasing.md).
 
 ```bash
 # 1. Detect packages, write callisto.toml and .changeset/, preview the first release.

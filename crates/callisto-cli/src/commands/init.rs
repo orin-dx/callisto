@@ -7,7 +7,7 @@ use callisto_graph::commands::init::{
     self as scaffold, changesets, BinaryRelease, InitAnswers, InitFacts, InitPackage, Versioning,
 };
 use callisto_graph::locate::{IgnoreWalkLocator, LocateError};
-use callisto_graph::GraphError;
+use callisto_graph::{GraphError, HOSTED_ORIGIN_FORMS};
 use callisto_model::{ApplyPermit, BranchName, CommandRunner, InitReport, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, Select};
 
@@ -99,13 +99,13 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
 }
 
 /// `init` against explicit terminal state, prompter, output streams, and command runner.
-pub fn run<R: CommandRunner>(
+pub fn run<'a, R: CommandRunner>(
     args: InitArgs,
     global: &GlobalArgs,
     interactive: bool,
     prompter: &mut dyn Prompter,
-    out: &mut dyn Write,
-    err: &mut dyn Write,
+    out: &'a mut dyn Write,
+    err: &'a mut dyn Write,
     runner: &R,
 ) -> Result<ExitCode, CliError> {
     validate_flags(&args)?;
@@ -136,8 +136,16 @@ pub fn run<R: CommandRunner>(
     }
     let json = global.format == OutputFormat::Json;
     // JSON keeps stdout for the report.
-    let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
-    write_facts(&facts, human)?;
+    macro_rules! human {
+        () => {
+            if json {
+                &mut *err
+            } else {
+                &mut *out
+            }
+        };
+    }
+    write_facts(&facts, human!())?;
 
     if facts.origin.is_none() {
         if args.workflow {
@@ -180,12 +188,10 @@ pub fn run<R: CommandRunner>(
         diagnostics.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::InitOriginMissing,
             severity: callisto_model::DiagnosticSeverity::Warning,
-            message: if facts.origin_not_hosted {
-                ORIGIN_NOT_HOSTED_NOTE
-            } else {
-                ORIGIN_MISSING_NOTE
-            }
-            .to_owned(),
+            message: match facts.origin_not_hosted {
+                Some(reason) => origin_not_hosted_note(reason),
+                None => ORIGIN_MISSING_NOTE.to_owned(),
+            },
             package: None,
             path: None,
             escalated_by: None,
@@ -225,7 +231,7 @@ pub fn run<R: CommandRunner>(
     // A workflow nobody asked for (the default) never fails `init`: if it cannot be built, say why and go on.
     let asked_for_workflow = args.workflow || prompting;
     let workflow = match shape.filter(|_| want_workflow) {
-        Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner, human) {
+        Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner, human!()) {
             Ok(built) => Some(built),
             Err(error) if !asked_for_workflow => {
                 let note =
@@ -259,28 +265,29 @@ pub fn run<R: CommandRunner>(
         .lines()
         .all(|line| line.trim().is_empty() || line.trim_start().starts_with('#'))
     {
-        writeln!(human, "\ncallisto.toml: no settings needed, the defaults apply.")?;
+        writeln!(human!(), "\ncallisto.toml: no settings needed, the defaults apply.")?;
     } else {
-        writeln!(human, "\ncallisto.toml:\n{config}")?;
+        writeln!(human!(), "\ncallisto.toml:\n{config}")?;
     }
     match plan {
         Some((plan, pending)) => {
-            writeln!(human, "First release preview (`callisto release --dry-run`):")?;
-            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human)?;
+            writeln!(human!(), "First release preview (`callisto release --dry-run`):")?;
+            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human!())?;
             // `origin` already has its own note above, so an unbound tag adds nothing.
             if let Some(plan) = &plan {
                 diagnostics.extend(plan.diagnostics.clone());
             }
             diagnostics.extend(super::release::pending_version_diagnostic(&pending));
         }
-        None => writeln!(human, "{NO_COMMITS}")?,
+        None => writeln!(human!(), "{NO_COMMITS}")?,
     }
     if let Some((_, branch)) = &workflow {
-        writeln!(human, "\n{}", workflow_summary(&facts.root, branch))?;
+        writeln!(human!(), "\n{}", workflow_summary(&facts.root, branch))?;
     }
 
     // Computed before any write, so the `.changeset/README.md` existence check sees disk state as-is.
     let files = scaffold::init_files(&facts.root, workflow.is_some())?;
+    let mut shown = 0;
     let mut report = if global.dry_run {
         InitReport {
             schema_version: SCHEMA_VERSION,
@@ -291,31 +298,46 @@ pub fn run<R: CommandRunner>(
             diagnostics: Vec::new(),
         }
     } else {
+        // Said before the write question so a decline keeps them; `finish` skips them.
+        render::render_diagnostics(&diagnostics, None, &mut &mut *err)?;
+        shown = diagnostics.len();
         if prompting && !prompter.confirm(WRITE_PROMPT, true)? {
-            writeln!(human, "Initialization cancelled; nothing was written.")?;
+            if json {
+                let declined = InitReport {
+                    schema_version: SCHEMA_VERSION,
+                    initialized: false,
+                    config_path: facts.root.join("callisto.toml"),
+                    config,
+                    files,
+                    diagnostics,
+                };
+                return finish(&declined, shown, global, out, err);
+            }
+            writeln!(human!(), "Initialization cancelled; nothing was written.")?;
             return Ok(ExitCode::SUCCESS);
         }
         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
         let mut report = scaffold::write(&facts.root, &config, &permit)?;
         if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
-            diagnostics.push(announce_workflow(human, &facts, branch)?);
+            diagnostics.push(announce_workflow(human!(), &facts, branch)?);
         }
         report.files = files;
         report
     };
     report.diagnostics.extend(diagnostics);
-    finish(&report, global, out, err)
+    finish(&report, shown, global, out, err)
 }
 
 /// The one emitter for `init`'s notes and advice: stderr once in every format, and the JSON report carries them too.
 fn finish(
     report: &InitReport,
+    shown: usize,
     global: &GlobalArgs,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<ExitCode, CliError> {
-    render::render_diagnostics(&report.diagnostics, None, &mut &mut *err)?;
+    render::render_diagnostics(&report.diagnostics[shown..], None, &mut &mut *err)?;
     if global.format == OutputFormat::Json {
         emit_report(&mut &mut *out, report, global.dry_run)?;
     } else {
@@ -400,7 +422,7 @@ fn run_workflow_only<R: CommandRunner>(
         files: vec![scaffold::workflow_path(&facts.root)],
         diagnostics,
     };
-    finish(&report, global, out, err)
+    finish(&report, 0, global, out, err)
 }
 
 /// The workflow text and the default branch it triggers on.
@@ -431,8 +453,12 @@ const ORIGIN_MISSING_NOTE: &str = "No `origin` remote is configured: skipping th
 shipping-binaries questions; `callisto release` will refuse until one is added.";
 
 /// Printed, and recorded as a warning diagnostic, when `origin` is not a hosted remote; the value is never shown.
-const ORIGIN_NOT_HOSTED_NOTE: &str = "`origin` is not a hosted remote (use https://, ssh:// or git@host:owner/repo): \
-skipping the release workflow and shipping-binaries questions; `callisto release` will refuse until one is set.";
+fn origin_not_hosted_note(reason: &str) -> String {
+    format!(
+        "`origin` is not a hosted remote: {reason} (use {HOSTED_ORIGIN_FORMS}); skipping the release workflow and \
+shipping-binaries questions; `callisto release` will refuse until one is set."
+    )
+}
 
 /// Rejects flag combinations invalid regardless of workspace facts.
 fn validate_flags(args: &InitArgs) -> Result<(), CliError> {
@@ -451,7 +477,7 @@ fn write_facts(facts: &InitFacts, out: &mut dyn Write) -> Result<(), CliError> {
     let ecosystems: Vec<&str> = facts.ecosystems.iter().map(|ecosystem| ecosystem.prefix()).collect();
     writeln!(out, "Detected:")?;
     writeln!(out, "  ecosystems: {}", ecosystems.join(", "))?;
-    let origin = match (&facts.origin, facts.origin_not_hosted) {
+    let origin = match (&facts.origin, facts.origin_not_hosted.is_some()) {
         (Some(origin), _) => origin.as_str(),
         (None, true) => "not hosted",
         (None, false) => "none",

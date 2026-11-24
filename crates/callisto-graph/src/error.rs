@@ -471,10 +471,7 @@ pub enum GraphError {
     UnsafeRegistryBinding { registry: String, reason: &'static str },
 
     #[error("no hosted Git push remote: {refusal}")]
-    #[diagnostic(
-        code(E132),
-        help("Set origin to an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials. Inspect with `git remote get-url --push origin`, fix with `git remote set-url --push origin <url>`.")
-    )]
+    #[diagnostic(code(E132), help("{}", refusal.help()))]
     UnsafeGitRemote { refusal: OriginRefusal },
 
     #[error("release execution state is invalid: {source}")]
@@ -977,17 +974,18 @@ pub enum ReleaseSelectionInvalidReason {
     DependencyNotSelected,
 }
 
-/// A registry URL as the user wrote it, kept only when it carries no credentials: userinfo, a query or a fragment, or
-/// a value that is not a URL, leave it out of every message.
+/// A registry's scheme and host only, never its path: a URL with userinfo, a query or a fragment, or a value that is
+/// not a URL, is left out of every message.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ShownRegistry(Option<String>);
 
 impl ShownRegistry {
     pub(crate) fn new(raw: &str) -> Self {
-        let plain = url::Url::parse(raw).is_ok_and(|url| {
+        let shown = url::Url::parse(raw).ok().filter(|url| {
             url.username().is_empty() && url.password().is_none() && url.query().is_none() && url.fragment().is_none()
         });
-        Self((plain && !raw.chars().any(char::is_control)).then(|| raw.to_owned()))
+        let origin = shown.and_then(|url| url.host_str().map(|host| format!("{}://{host}", url.scheme())));
+        Self(origin.filter(|origin| !origin.chars().any(char::is_control)))
     }
 }
 
@@ -1013,13 +1011,27 @@ pub enum OriginRefusal {
     NotHosted { reason: &'static str },
 }
 
+/// The `origin` forms Callisto accepts, worded once for every message and document that names them.
+pub const HOSTED_ORIGIN_FORMS: &str = "an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials";
+
+impl OriginRefusal {
+    fn help(&self) -> String {
+        match self {
+            Self::NoPushUrl => "add the repository's remote with `git remote add origin <url>`".to_owned(),
+            Self::NotHosted { .. } => format!(
+                "use {HOSTED_ORIGIN_FORMS}: inspect with `git remote get-url --push origin`, fix with `git remote set-url --push origin <url>`"
+            ),
+        }
+    }
+}
+
 impl std::fmt::Display for OriginRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoPushUrl => f.write_str("`origin` has no push URL"),
+            Self::NoPushUrl => f.write_str("no `origin` remote is configured"),
             Self::NotHosted { reason } => write!(
                 f,
-                "`origin` is not a hosted remote: {reason} (use https://, ssh:// or git@host:owner/repo); see `git remote get-url --push origin`"
+                "`origin` is not a hosted remote: {reason} (use {HOSTED_ORIGIN_FORMS})"
             ),
         }
     }

@@ -101,8 +101,9 @@ pub struct InitFacts {
     pub packages: Vec<InitPackage>,
     /// Canonical `origin` push URL, or `None` when no `origin` remote is configured.
     pub origin: Option<String>,
-    /// `origin` is configured but is not a hosted remote (a local path, say): `init` treats it as no `origin`.
-    pub origin_not_hosted: bool,
+    /// Why `origin` is not a hosted remote (a local path, say), when it is configured but not hosted: `init` treats it
+    /// as no `origin`.
+    pub origin_not_hosted: Option<&'static str>,
     /// `origin` as a GitHub `owner/repo`, when it is one.
     pub origin_repository: Option<GitHubRepository>,
     /// Non-default tag templates to write, keyed by qualified package id.
@@ -282,9 +283,9 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
         return Err(GraphError::InitNotGitRepository { root });
     }
     let (origin, origin_not_hosted) = match Origin::read(&root, runner)? {
-        Origin::Hosted(remote) => (Some(remote), false),
-        Origin::Missing => (None, false),
-        Origin::NotHosted(_) => (None, true),
+        Origin::Hosted(remote) => (Some(remote), None),
+        Origin::Missing => (None, None),
+        Origin::NotHosted(reason) => (None, Some(reason)),
     };
     let head = runner.run_with_timeout(
         programs::GIT,

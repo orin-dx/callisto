@@ -433,7 +433,7 @@ mod tests {
                 error.to_string().contains("`origin` is not a hosted remote: "),
                 "{error}"
             );
-            assert!(error.to_string().contains("(use https://"), "{error}");
+            assert!(error.to_string().contains("(use an https://"), "{error}");
             for text in [error.to_string(), format!("{error:?}")] {
                 for leak in ["secret", "pw", "deploy", "example.test", "github.com", "remotes/origin"] {
                     assert!(!text.contains(leak), "{text}");
@@ -443,9 +443,13 @@ mod tests {
     }
 
     #[test]
-    fn an_untrusted_registry_shows_the_users_text_unless_it_carries_credentials() {
+    fn an_untrusted_registry_shows_only_its_scheme_and_host_unless_it_carries_credentials() {
         let shown = |raw: &str| ShownRegistry::new(raw).to_string();
-        assert_eq!(shown("https://Registry.Example.com"), "`https://Registry.Example.com`");
+        assert_eq!(shown("https://Registry.Example.com"), "`https://registry.example.com`");
+        assert_eq!(
+            shown("https://registry.example.com/private/team-path"),
+            "`https://registry.example.com`"
+        );
         for secret in [
             "https://u:pw@r.example.test/",
             "https://r.example.test/?token=pw",

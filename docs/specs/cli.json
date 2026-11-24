@@ -220,7 +220,7 @@
     },
     {
       "id": "CLI-INIT-01",
-      "criterion": "Before any question, `callisto init` prints `Detected:` with the ecosystems, the origin remote URL, and each package's qualified id, version, last tag, and executable names for executable-producing packages. Artifact selection includes only supported Cargo binary targets."
+      "criterion": "Before any question, `callisto init` prints `Detected:` with the ecosystems, the hosted origin endpoint (or `not hosted` or `none`, never the remote value), and each package's qualified id, version, last tag, and executable names for executable-producing packages. Artifact selection includes only supported Cargo binary targets."
     },
     {
       "id": "CLI-INIT-02",

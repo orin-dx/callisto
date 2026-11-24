@@ -53,6 +53,10 @@ fn a_missing_or_non_hosted_origin_notes_once_and_init_continues() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert_eq!(stderr.matches(marker).count(), 1, "{origin:?} {format}: {text}");
             assert!(!text.contains("secret-vcs-host"), "{origin:?} {format}: {text}");
+            assert!(
+                origin.is_none() || (text.contains("URL has no scheme") && text.contains("git@host:owner/repo")),
+                "{origin:?} {format}: {text}"
+            );
             assert!(dir.path().join("callisto.toml").exists(), "{origin:?} {format}");
             assert!(!dir.path().join(".github").exists(), "{origin:?} {format}");
         }
@@ -86,6 +90,10 @@ fn a_workflow_or_artifact_target_without_a_hosted_origin_is_e299_with_the_push_h
                     "{context}"
                 );
                 assert!(!text.contains("secret-vcs-host"), "{context}");
+                assert!(
+                    origin.is_none() || squashed.contains("nothosted:URLhasnoscheme"),
+                    "{context}"
+                );
                 assert!(!dir.path().join("callisto.toml").exists(), "{context}");
             }
         }

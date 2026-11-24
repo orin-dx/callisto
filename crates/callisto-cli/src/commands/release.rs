@@ -116,7 +116,24 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
     for tag in missing.unwrap_or_default() {
         eprintln!("{}", tag_missing_from_origin_note(&tag));
     }
-    let plan = planned?;
+    let plan = match planned {
+        Err(error)
+            if global.dry_run
+                && matches!(
+                    &error,
+                    GraphError::ReleaseSelectionInvalid {
+                        reason: callisto_graph::error::ReleaseSelectionInvalidReason::NotARelease,
+                        ..
+                    }
+                ) =>
+        {
+            // The version work that would make the selection a release is the answer to the refusal.
+            let pending = pending_version_work(&workspace, &selections).unwrap_or_default();
+            write_release_preview_notes(None, &pending, &mut std::io::stderr())?;
+            return Err(error.into());
+        }
+        other => other?,
+    };
     if global.dry_run {
         // Advisory: a plan `version` cannot derive is that command's error to report.
         let pending = pending_version_work(&workspace, &selections).unwrap_or_default();

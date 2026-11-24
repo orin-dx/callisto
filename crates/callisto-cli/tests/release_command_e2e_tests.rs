@@ -442,9 +442,66 @@ fn an_origin_that_is_not_hosted_previews_unbound_and_refuses_by_name() {
                 stderr(&run)
             );
             assert!(!refusal.contains(&squash(origin)), "{}", stderr(&run));
+            assert!(
+                refusal.contains(&squash("git remote get-url --push origin"))
+                    && refusal.contains(&squash("git remote set-url --push origin <url>")),
+                "{}",
+                stderr(&run)
+            );
             assert_no_effects(&rig, root);
         }
     }
+}
+
+/// A release with no `origin` says so and points at `git remote add`, not at a push URL that does not exist.
+#[test]
+fn a_release_without_an_origin_says_to_add_one() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    git(root, &["remote", "remove", "origin"]);
+    let rig = Rig::new(&release_commit);
+    let run = rig.run(root, &["release"]);
+    assert!(!run.status.success());
+    let refusal: String = stderr(&run)
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '│')
+        .collect();
+    assert!(refusal.contains("no`origin`remoteisconfigured"), "{}", stderr(&run));
+    assert!(refusal.contains("gitremoteaddorigin<url>"), "{}", stderr(&run));
+}
+
+/// A selection that is not a release still gets the pending-work pointer before the error.
+#[test]
+fn a_selection_that_is_not_a_release_points_at_version_before_failing() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let released = rig.run(root, &["release"]);
+    assert!(released.status.success(), "{}", stderr(&released));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    let run = rig.run(
+        root,
+        &[
+            "--format",
+            "text",
+            "--dry-run",
+            "release",
+            "--package",
+            "cargo/core-crate",
+        ],
+    );
+    assert!(!run.status.success(), "{}", stderr(&run));
+    assert!(stderr(&run).contains("E169"), "{}", stderr(&run));
+    assert_eq!(
+        stderr(&run).matches("run `callisto version`").count(),
+        1,
+        "{}",
+        stderr(&run)
+    );
 }
 
 /// A hosted `origin`, as an HTTPS URL or scp-style, binds the preview's tags.

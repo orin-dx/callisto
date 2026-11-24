@@ -51,7 +51,7 @@ pub use cascade::{
     ConvergedTargets, DepWriteTarget, RewriteKey, RewriteOutcome, SpecRewrite,
 };
 pub use config::{load as load_config, resolve as resolve_config, GroupDef, GroupTable, ResolvedConfig};
-pub use error::{ConfigError, ExitKind, GraphError};
+pub use error::{ConfigError, ExitKind, GraphError, HOSTED_ORIGIN_FORMS};
 pub use groups::{fixed_group_target, pre_mutation_checks, versioned_bump, GroupCheckOutcome};
 pub use identity::IdentityIndex;
 pub use infer::{InferenceOutcome, InferenceWindowSpec, NoInference, SeverityInference};
