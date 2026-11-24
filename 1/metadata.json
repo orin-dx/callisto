@@ -1,0 +1,107 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M86ZPXSBP59BXZ9DB361PB16",
+  "session_id": "74971c6c-73e3-473f-94a9-d02bdc417376",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-24T14:35:40.299707Z",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "Cargo.lock",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "853b0196ec7c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 609,
+    "cache_read_tokens": 187551,
+    "output_tokens": 1289,
+    "api_call_count": 1
+  },
+  "session_token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 187522,
+    "cache_read_tokens": 8324171,
+    "output_tokens": 45826,
+    "api_call_count": 62
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "summary": {
+    "intent": "Fix PR #638 so paged inquire prompts in `callisto add` and `init` fit short terminals (highlight and checkboxes landing on the wrong rows), then fold in a lead session's audit batch of about 17 contract and UX items, committing locally without pushing.",
+    "outcome": "Two signed local commits in the wp-add-inquire worktree (1b83a59e7, then 8944d2aa7) add a `tty::fit_list` helper, E214 flag naming, add --dry-run behaviour, init reordering and related changes. The full gate (fmt, pre-push, lint, doc-check, test, audit) exited 0, and nothing was pushed. Three contract items held by the lead (TERM=dumb, init context to stderr, re-ask on empty selection) were not done.",
+    "learnings": {
+      "repo": [
+        "inquire 0.9.4 redraws relative to the previous frame, so a list frame taller than the terminal puts the highlight and ticks on the wrong rows. Fix by sizing page and labels from crossterm::terminal::size().",
+        "The workspace has no terminal emulator crate (vt100 etc.), so pty tests can check which package ends up ticked but not which row is drawn highlighted. The lead ruled out adding a pty crate, so size logic is unit-tested with explicit (width, height) inputs.",
+        "AGENTS.md gate is `just pre-push && just lint && just doc-check && just test`, workspace-wide, with pty tests run unsandboxed. `just audit` was added by the lead for this batch. Never commit mutants.out*, and no session trailer on commits.",
+        "Adding crossterm and unicode-width as direct callisto-cli dependencies only adds lines to Cargo.lock because both packages were already transitive.",
+        "`tty::Prompts` is a proof type: `Prompts::detect(format)` returns Option, replacing the `allowed` Result and the bool passed to `init::run`. Tests build one with the cfg(test) `Prompts::for_tests()`.",
+        "`CliError::NotATty` became a struct variant carrying `missing: Vec<&'static str>`, so E214 names each missing flag. Changing it required updating error.rs tests, docs/errors.md and the CLI-ADD-04 spec criterion in docs/specs/cli.json.",
+        "Spec text lives in docs/specs/cli.json criteria. They are edited by string replacement and checked by `just doc-check` and the tests that read specs.",
+        "`CliError::Cancelled` maps to exit 130 explicitly in main.rs. The `Cancelled => ExitKind::Runtime` line in error.rs was removed so `exit_kind` is matched exhaustively."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "finding": "New `ListKind`, `fit_list` and `fit_list_to(size, ...)`. Page size is rows minus wrapped prompt and help rows minus 1 spare row, with a minimum of 1. Labels are truncated by display width to columns minus the prefix (6 for MultiSelect, 2 for Select). The unknown-size fallback keeps the wanted page and the labels."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/add.rs",
+          "line": 178,
+          "finding": "The MultiSelect page size was a fixed PAGE=15. It is now taken from `tty::fit_list`, which also supplies the ASCII help. `run_wizard` and `ask` gained a `dry_run` parameter that skips the 'Write this changeset?' confirm."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "finding": "Flag-only validation moved into `requested_release` and runs before `collect_answers`. The workflow question is skipped when `scaffold::ensure_workflow_absent` fails. `init::run` now takes `Option<tty::Prompts>`."
+        }
+      ],
+      "workflow": [
+        "The lead session's rules shaped the work: failing test first, confirm the new test fails without the fix, run the full gate and judge by exit code, commit locally and report the sha, and push only after the lead approves.",
+        "Verify a regression test by temporarily reverting the fix. BSD sed on macOS needs `sed -i ''`; the first attempts with plain `-i` failed.",
+        "Chaining several `just` gate commands in one background run hung. Running `just pre-push` alone completed quickly, so gate commands are better run one at a time with exit codes echoed.",
+        "A peer-session message was treated as a teammate request, and items the lead explicitly held for confirmation were left undone rather than guessed."
+      ]
+    },
+    "friction": [
+      "The chained gate run (pre-push, lint, doc-check) hung. The monitor expired after 20 minutes, and the task had to be stopped and rerun piece by piece.",
+      "The first `sed -i` revert attempt failed on macOS BSD sed, so the red-without-fix check was repeated with `-i ''`.",
+      "Pty tests could not assert visible row highlighting without a terminal emulator, so the original assertion on the visible checkbox count was replaced by a weaker toggled-package assertion.",
+      "Several scripted Python edits needed repeats or workarounds, for example the pty test replacement ran twice and edits to the test line numbers in init/tests.rs were hard-coded.",
+      "The lead's message was a large audit batch that expanded scope considerably after the initial small fix."
+    ],
+    "open_items": [
+      "Three contract items remain on hold until the lead confirms: TERM=dumb handling, init context printed to stderr while prompting, and re-asking on an empty selection.",
+      "The commits (1b83a59e7, 8944d2aa7) are not pushed. The lead must read the diff and approve. Then merge the latest origin/main, push with `git push origin HEAD:refs/heads/wp-interactive-cli-compare`, confirm with ls-remote, link trail #487 and open with `entire trail ci-pr`.",
+      "The review checklist at /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md was not visibly run against the full diff before reporting.",
+      "`just ci`, `just fuzz-check` and mutants were not run; no public signature in callisto-manifests or callisto-model changed.",
+      "The pty test cannot verify the highlighted row on screen, only the resulting ticked package."
+    ]
+  }
+}
