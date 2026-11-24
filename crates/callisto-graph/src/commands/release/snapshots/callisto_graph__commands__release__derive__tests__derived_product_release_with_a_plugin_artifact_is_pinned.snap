@@ -10,7 +10,7 @@ packages:
             name: "core",
         },
         fingerprint: SemanticInputDigest(
-            "8c8219cc19f0d56933eb71d6352bb59b4ac4b38225842d97b56db46382520548",
+            "68a8b2356a0c27374b982720d6ad12bf2e1a060bff1103848bb259b6a85aebf9",
         ),
     },
     ReleasePackageInputV1 {
@@ -19,7 +19,7 @@ packages:
             name: "plugin",
         },
         fingerprint: SemanticInputDigest(
-            "beb2dd76e361ecd0800cb6887d591dace2bb44ebab528937fdf3327614a08fa2",
+            "9c327f98450ab6675c3855ef7208573c63e7667ca6ad9252b9055f51918d6ed6",
         ),
     },
 ]

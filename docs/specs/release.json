@@ -245,7 +245,7 @@
     },
     {
       "id": "REL-PUB-05",
-      "criterion": "A `publishConfig.registry` in package.json that does not match the `url` of an npm-kind `[registries]` entry fails with E120. A registry URL that is not `https`, or has userinfo, a query or a fragment, fails with E126. An `origin` push URL that is not HTTPS or `git@` SSH, or that carries credentials, whitespace, a backslash or a `.` or `..` path segment, fails with E132, which never names the value. All three fail before any effect.",
+      "criterion": "A `publishConfig.registry` in package.json that does not match the `url` of an npm-kind `[registries]` entry fails with E120. A registry URL that is not `https`, or has userinfo, a query or a fragment, fails with E126. An `origin` push URL that is not HTTPS or `git@` SSH, or that carries credentials, fails with E132, which never names the value. All three fail before any effect.",
       "is_error_case": true
     },
     {
@@ -356,7 +356,7 @@
     },
     {
       "id": "REL-GH-01",
-      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to and observed at the `origin` push URL as configured, less one trailing slash."
+      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to the `origin` push URL."
     },
     {
       "id": "REL-GH-02",

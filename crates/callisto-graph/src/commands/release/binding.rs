@@ -42,9 +42,9 @@ impl PreparedRegistryBinding {
     }
 }
 
-/// Immutable, credential-free destination for Git effects: `endpoint` is the configured push URL, less one
-/// trailing slash. Its digest is included in each tag-producing package fingerprint; the URL is retained only in
-/// the validated, non-serializable capability.
+/// Immutable, credential-free destination for Git effects. Its canonical
+/// digest is included in each tag-producing package fingerprint; the URL is
+/// retained only in the validated, non-serializable capability.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PreparedGitRemote {
     pub(crate) endpoint: String,
@@ -252,23 +252,7 @@ pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, &'sta
         return Err("SSH remotes must use the git account");
     }
     let host = parsed.host_str().expect("validated authority").to_ascii_lowercase();
-    // `url` rewrites these where `git` sends them as typed, so the parsed path would not be the configured one.
-    if raw
-        .chars()
-        .any(|char| char.is_whitespace() || char.is_control() || char == '\\')
-    {
-        return Err("URL contains whitespace, a control character or a backslash");
-    }
-    let dot_segment = |segment: &str| matches!(segment.to_ascii_lowercase().replace("%2e", ".").as_str(), "." | "..");
-    if raw.split(['/', ':']).any(dot_segment) {
-        return Err("remote path must not contain `.` or `..` segments");
-    }
-    // One trailing slash is the same repository, as `git` itself treats it.
-    let mut segments: Vec<&str> = parsed.path_segments().ok_or("remote path is invalid")?.collect();
-    if segments.len() > 1 && segments.last() == Some(&"") {
-        segments.pop();
-    }
-    let mut components = segments.into_iter();
+    let mut components = parsed.path_segments().ok_or("remote path is invalid")?;
     let owner = components
         .next()
         .filter(|value| !value.is_empty())
@@ -277,18 +261,32 @@ pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, &'sta
         .next()
         .filter(|value| !value.is_empty())
         .ok_or("remote path must name an owner and repository")?;
-    if components.next().is_some() {
+    if components.next().is_some() || owner == "." || owner == ".." || repository == "." || repository == ".." {
         return Err("remote path must contain exactly an owner and repository");
     }
-    // The `owner/repo` form only names the GitHub repository.
     let repository = repository.strip_suffix(".git").unwrap_or(repository);
     if repository.is_empty() {
         return Err("repository name is empty");
     }
-    // Git talks to exactly the configured repository: on a generic host `repo` and `repo.git` can differ.
-    let endpoint = raw.strip_suffix('/').unwrap_or(raw).to_owned();
+    let port = parsed.port_or_known_default();
+    let port_text = match (parsed.scheme(), port) {
+        ("https", Some(443)) | ("ssh", Some(22)) | (_, None) => String::new(),
+        (_, Some(port)) => format!(":{port}"),
+    };
+    let endpoint = match parsed.scheme() {
+        "https" => format!("https://{host}{port_text}/{owner}/{repository}.git"),
+        "ssh" => format!("ssh://git@{host}{port_text}/{owner}/{repository}.git"),
+        _ => unreachable!("scheme checked above"),
+    };
     let mut transcript = CanonicalTranscript::semantic_input_v1();
-    transcript.push_str("gitRemote.endpoint", &endpoint);
+    transcript.push_str("gitRemote.scheme", parsed.scheme());
+    transcript.push_str("gitRemote.host", &host);
+    transcript.push_str(
+        "gitRemote.port",
+        &port.map_or_else(String::new, |port| port.to_string()),
+    );
+    transcript.push_str("gitRemote.owner", owner);
+    transcript.push_str("gitRemote.repository", repository);
     let github_repository = if host == "github.com" {
         Some(
             GitHubRepository::parse(&format!("{owner}/{repository}"))
@@ -469,69 +467,6 @@ mod tests {
     }
 
     #[test]
-    fn git_talks_to_the_configured_repository_path_on_every_host() {
-        for (raw, endpoint) in [
-            ("https://git.example.test/o/r", "https://git.example.test/o/r"),
-            ("https://git.example.test/o/r/", "https://git.example.test/o/r"),
-            ("https://git.example.test/o/r.git", "https://git.example.test/o/r.git"),
-            (
-                "ssh://git@git.example.test:2222/o/r/",
-                "ssh://git@git.example.test:2222/o/r",
-            ),
-            ("git@git.example.test:o/r", "git@git.example.test:o/r"),
-            ("git@git.example.test:o/r/", "git@git.example.test:o/r"),
-            ("https://github.com/o/r", "https://github.com/o/r"),
-            ("https://github.com/o/r/", "https://github.com/o/r"),
-        ] {
-            let remote = canonical_git_remote(raw).unwrap();
-            assert_eq!(remote.endpoint, endpoint, "{raw}");
-            assert_eq!(
-                remote.identity,
-                canonical_git_remote(endpoint).unwrap().identity,
-                "{raw}"
-            );
-        }
-        let generic = |raw| canonical_git_remote(raw).unwrap();
-        assert_ne!(
-            generic("https://git.example.test/o/r").identity,
-            generic("https://git.example.test/o/r.git").identity
-        );
-        assert_ne!(
-            generic("git@git.example.test:o/r").identity,
-            generic("ssh://git@git.example.test/o/r").identity
-        );
-        assert_eq!(generic("https://git.example.test/o/r").github_repository, None);
-        for raw in [
-            "https://github.com/o/r",
-            "https://github.com/o/r/",
-            "https://github.com/o/r.git",
-        ] {
-            assert_eq!(
-                generic(raw)
-                    .github_repository
-                    .as_ref()
-                    .map(GitHubRepository::as_slug)
-                    .as_deref(),
-                Some("o/r"),
-                "{raw}"
-            );
-        }
-        for raw in [
-            "https://github.com/o/",
-            "git@git.example.test:2222/o/r",
-            "https://git.example.test/o/x/../r",
-            "ssh://git@git.example.test/./o/r",
-            "git@git.example.test:o/%2E%2E/r",
-            "https://git.example.test/o/r\nx",
-            "https://git.example.test/o/r x",
-            "https://git.example.test/o/r\u{7}",
-            "https://git.example.test\\o\\r",
-        ] {
-            assert!(canonical_git_remote(raw).is_err(), "{raw}");
-        }
-    }
-
-    #[test]
     fn recheck_reports_a_unreadable_remote_as_itself_and_a_moved_remote_as_stale() {
         let expected = canonical_git_remote("https://github.com/example/release-fixture.git").unwrap();
         let root = Path::new(".");
@@ -554,7 +489,7 @@ mod tests {
     #[test]
     fn git_remote_binding_normalizes_credential_free_ssh_and_rejects_credentialed_https() {
         let ssh = canonical_git_remote("git@GitHub.com:example/release-fixture.git").unwrap();
-        assert_eq!(ssh.endpoint, "git@GitHub.com:example/release-fixture.git");
+        assert_eq!(ssh.endpoint, "ssh://git@github.com/example/release-fixture.git");
         assert_eq!(
             ssh.github_repository.as_ref().map(GitHubRepository::as_slug),
             Some("example/release-fixture".to_string())

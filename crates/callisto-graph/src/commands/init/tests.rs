@@ -248,7 +248,7 @@ fn missing_origin_detects_with_origin_unset() {
 
 // A non-hosted origin reads like no origin (init never pushes); an accepted non-GitHub one binds.
 #[test]
-fn origin_url_is_kept_as_configured() {
+fn origin_url_is_canonicalized() {
     let files = [("Cargo.toml", cargo("app", "1.0.0"))];
     let files: Vec<(&str, &str)> = files.iter().map(|(path, body)| (*path, body.as_str())).collect();
     let rejected = repo(&files, Some("https://user:secret@github.com/example/tools.git"));
@@ -259,7 +259,7 @@ fn origin_url_is_kept_as_configured() {
 
     let gitlab = repo(&files, Some("git@gitlab.com:example/tools.git"));
     let facts = detect_in(gitlab.path()).unwrap();
-    assert_eq!(facts.origin.as_deref(), Some("git@gitlab.com:example/tools.git"));
+    assert_eq!(facts.origin.as_deref(), Some("ssh://git@gitlab.com/example/tools.git"));
     assert_eq!(facts.origin_repository, None);
 }
 
