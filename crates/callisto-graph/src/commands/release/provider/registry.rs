@@ -113,7 +113,7 @@ fn warn_if_foreign_repository(
     id: &ReleaseOperationId,
     operation: &RegistryPublishOperation,
 ) {
-    let Some(origin) = context.origin_endpoint() else {
+    let Some(origin) = context.origin_identity() else {
         return;
     };
     let registry_repository = adapter.repository(context, operation);
@@ -121,7 +121,7 @@ fn warn_if_foreign_repository(
         &id.package.to_string(),
         operation.version.render(),
         registry_repository.as_deref(),
-        origin,
+        &origin,
     ) {
         eprintln!("{warning}");
     }

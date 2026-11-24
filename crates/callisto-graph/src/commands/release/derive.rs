@@ -16,7 +16,7 @@ use callisto_model::{
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::binding::{optional_git_remote, prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
+use super::binding::{optional_git_remote, prepared_git_remote, prepared_registry_binding};
 use super::notes::group_release_notes;
 use super::provider::{
     ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
@@ -25,6 +25,7 @@ use super::provider::{
 use crate::commands::registry_argv::npm_default_access;
 use crate::commands::release_decision::version_is_tagged;
 use crate::toposort::PublishWaits;
+use callisto_model::vcs::GitRemote;
 
 /// A package that is itself an npm platform package (its own package.json has
 /// `os`+`cpu`). An owner's attached platform manifests do not count.
@@ -49,13 +50,13 @@ pub(crate) type DerivedReleaseInputs = (
     ReleaseInputSnapshotV1,
     Vec<ReleaseOperation>,
     BTreeMap<ReleaseOperationId, PreparedOperation>,
-    Option<PreparedGitRemote>,
+    Option<GitRemote>,
     Vec<ArtifactSlotId>,
 );
 
 pub(crate) struct PreparedDerivation {
     pub(crate) operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
-    pub(crate) git_remote: Option<PreparedGitRemote>,
+    pub(crate) git_remote: Option<GitRemote>,
 }
 
 /// Whether a missing `origin` push URL fails derivation or leaves tags unbound.
@@ -301,7 +302,7 @@ fn prepare_remote<R: CommandRunner, D: DependencyResolver>(
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
     artifact_policy: Option<&ArtifactBuildPolicy>,
     remote: GitRemoteRequirement,
-) -> Result<Option<PreparedGitRemote>, GraphError> {
+) -> Result<Option<GitRemote>, GraphError> {
     let requires_git_remote = selected.values().any(|(package, _)| package.is_release_point());
     let git_remote = match (requires_git_remote, remote) {
         (false, _) => None,
@@ -309,11 +310,11 @@ fn prepare_remote<R: CommandRunner, D: DependencyResolver>(
         (true, GitRemoteRequirement::OptionalForPreview) => optional_git_remote(&workspace.root, workspace.runner)?,
     };
     if let Some(policy) = artifact_policy {
-        match git_remote.as_ref().and_then(|remote| remote.github_repository.as_ref()) {
-            Some(remote) if remote != &policy.repository => {
+        match git_remote.as_ref().and_then(GitRemote::github_repository) {
+            Some(remote) if remote != policy.repository => {
                 return Err(GraphError::ReleaseArtifactRepositoryMismatch {
                     configured: policy.repository.clone(),
-                    remote: remote.clone(),
+                    remote,
                 });
             }
             Some(_) => {}
@@ -352,7 +353,7 @@ fn npm_dist_tag(version: &Version) -> Option<String> {
 fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
-    git_remote: Option<&PreparedGitRemote>,
+    git_remote: Option<&GitRemote>,
     package_inputs: &mut Vec<ReleasePackageInputV1>,
     ops: &mut Ops,
 ) -> Result<(), GraphError> {
@@ -985,7 +986,7 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
     id: &ReleasePackageId,
     package: &callisto_model::Package,
     version: &Version,
-    git_remote: Option<&PreparedGitRemote>,
+    git_remote: Option<&GitRemote>,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
     transcript.push_str("package.id", &id.to_string());
@@ -1020,7 +1021,7 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
         );
     }
     if let Some(remote) = git_remote {
-        transcript.push_str("package.gitRemote", remote.identity.as_str());
+        transcript.push_str("package.gitRemote", remote.fingerprint().as_str());
     }
     Ok(SemanticInputDigest::from_transcript(&transcript))
 }

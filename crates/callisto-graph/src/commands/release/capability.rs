@@ -12,7 +12,7 @@ use callisto_model::{
 use crate::error::ReleasePreconditionRequirement;
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 
-use super::binding::{recheck_git_remote, PreparedGitRemote};
+use super::binding::recheck_git_remote;
 use super::derive::{
     artifact_policy_from_intent, derive_release_intent, derive_release_intent_with_prepared, ArtifactBuildPolicy,
     GitRemoteRequirement,
@@ -23,6 +23,7 @@ use super::provider::{
 };
 use super::release_artifacts::VerifiedArtifactManifest;
 use super::StaleReason;
+use callisto_model::vcs::GitRemote;
 
 /// Graph-private inputs prepared from the same fresh observation as an intent.
 /// Retaining them in the capability prevents a validated public intent being
@@ -32,7 +33,7 @@ pub(crate) struct PreparedReleaseInputs {
     pub(crate) root: std::path::PathBuf,
     pub(crate) source: SourceIdentity,
     trust: GitCommitTrustEvidence,
-    git_remote: Option<PreparedGitRemote>,
+    git_remote: Option<GitRemote>,
     pub(crate) operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
 }
 
@@ -404,8 +405,17 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
     )?;
     let final_trust = observe_git_trust(&workspace, received.trust_profile, checkout)?;
     if expected != received || final_trust != trust {
+        // At the same source the inputs differ only by what lives outside the commit or how Callisto derives them.
+        let inputs_only = final_trust == trust
+            && expected.decision == received.decision
+            && expected.snapshot.source == received.snapshot.source
+            && expected.snapshot.packages != received.snapshot.packages;
         return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::intent_differs_from_fresh_derivation(),
+            reason: if inputs_only {
+                StaleReason::package_inputs_changed()
+            } else {
+                StaleReason::intent_differs_from_fresh_derivation()
+            },
         });
     }
 
@@ -563,7 +573,7 @@ pub(crate) fn names_taken_by_other_projects(
     // full retry schedule that the checks a release depends on use.
     let context =
         ProviderContext::new(root, runner, prepared.git_remote.as_ref()).with_patience(ADVISORY_OBSERVATION_PATIENCE);
-    let Some(origin) = context.origin_endpoint() else {
+    let Some(origin) = context.origin_identity() else {
         return Ok(Vec::new());
     };
     let publishes: Vec<_> = prepared
@@ -592,7 +602,7 @@ pub(crate) fn names_taken_by_other_projects(
         }
         let recorded = super::provider::registry::recorded_repository(&context, id.package.ecosystem(), publish);
         Ok(
-            super::provider::repository::differing_repositories(recorded.as_deref(), origin).map(
+            super::provider::repository::differing_repositories(recorded.as_deref(), &origin).map(
                 |(registry_repository, origin)| TakenName {
                     package: id.package.clone(),
                     version: publish.version.render().to_string(),

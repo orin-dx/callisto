@@ -398,7 +398,7 @@ fn build_workflow<R: CommandRunner>(
             name: name.clone(),
             source: scaffold::DefaultBranchSource::ChangesetsBaseBranch,
         },
-        None => scaffold::default_branch(runner, &facts.root),
+        None => scaffold::default_branch(runner, &facts.root, facts.origin.as_ref()),
     };
     writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
     let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package versions are semver");
@@ -428,7 +428,11 @@ fn write_facts(facts: &InitFacts, out: &mut dyn Write) -> Result<(), CliError> {
     let ecosystems: Vec<&str> = facts.ecosystems.iter().map(|ecosystem| ecosystem.prefix()).collect();
     writeln!(out, "Detected:")?;
     writeln!(out, "  ecosystems: {}", ecosystems.join(", "))?;
-    writeln!(out, "  origin: {}", facts.origin.as_deref().unwrap_or("none"))?;
+    match (&facts.origin, &facts.origin_repository) {
+        (None, _) => writeln!(out, "  origin: none")?,
+        (Some(_), Some(repository)) => writeln!(out, "  origin: {repository} on GitHub")?,
+        (Some(_), None) => writeln!(out, "  origin: not a GitHub repository")?,
+    }
     writeln!(out, "  packages:")?;
     for package in &facts.packages {
         let tag = package.last_tag.as_ref().map_or("none", |tag| tag.as_str());

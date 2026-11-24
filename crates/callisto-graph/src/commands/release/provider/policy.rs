@@ -30,11 +30,11 @@ pub(crate) mod timeouts {
     pub(crate) const FORGE_RELEASE_CREATE: Duration = Duration::from_secs(120);
     /// `gh release upload`.
     pub(crate) const FORGE_ASSET_UPLOAD: Duration = Duration::from_secs(600);
-    /// Purely local git reads (`rev-parse`, `for-each-ref`, `remote get-url`).
+    /// Purely local git reads (`rev-parse`, `for-each-ref`, `remote -v`).
     pub(crate) const LOCAL_GIT: Duration = callisto_model::LOCAL_GIT_TIMEOUT;
 }
 
-/// External programs and the remote name the release path invokes.
+/// External programs the release path invokes.
 pub(crate) mod programs {
     pub(crate) const GIT: &str = "git";
     pub(crate) const GH: &str = "gh";
@@ -42,8 +42,6 @@ pub(crate) mod programs {
     pub(crate) const NPM: &str = "npm";
     /// The PyPI simple-index observation query (`curl -sS -i`).
     pub(crate) const CURL: &str = "curl";
-    /// The remote whose push URL is the trusted release destination.
-    pub(crate) const GIT_REMOTE: &str = "origin";
 }
 
 /// Total tries for one read-only observation, including the first.

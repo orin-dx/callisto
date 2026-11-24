@@ -554,7 +554,7 @@ pub fn fake_publishers(
     fs::write(
         bin.join("git"),
         format!(
-            "#!/bin/sh\nprintf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_GIT_TRACE\"\n{FAKE_GIT_REMOTE_TAGS}\nif [ \"$1\" = push ]; then\n  no_flags_allowed \"$@\"\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  record_pushed_tag \"$3\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n"
+            "#!/bin/sh\nprintf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_GIT_TRACE\"\n{FAKE_GIT_REMOTE_TAGS}\nif [ \"$1\" = push ]; then\n  no_flags_allowed \"$@\"\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  eval refspec=\\${{$#}}\n  record_pushed_tag \"$refspec\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n"
         ),
     )
     .unwrap();
@@ -799,12 +799,12 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     ToolShape {
         tool: "git",
         subcommand: &["ls-remote"],
-        flags: &[],
+        flags: &["--"],
     },
     ToolShape {
         tool: "git",
         subcommand: &["push"],
-        flags: &[],
+        flags: &["--"],
     },
     ToolShape {
         tool: "git",
@@ -844,8 +844,8 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     },
     ToolShape {
         tool: "git",
-        subcommand: &["remote", "get-url"],
-        flags: &["--push"],
+        subcommand: &["remote"],
+        flags: &["-v"],
     },
     ToolShape {
         tool: "git",
@@ -1227,7 +1227,7 @@ gh_release() {
 /// records the pushed tag exactly as `ls-remote` would report it (the tag
 /// object plus its peeled commit, the captured `ls-remote` line shape), and
 /// `ls-remote` answers from that record. Real git is used instead wherever the
-/// rig points at a real bare remote. `push` and `ls-remote` take no flags.
+/// rig points at a real bare remote. `push` and `ls-remote` take only `--` before the remote's name.
 const FAKE_GIT_REMOTE_TAGS: &str = r#"
 store="$CALLISTO_TEST_GIT_TRACE.remote-tags"
 tab=$(printf '\t')
@@ -1236,6 +1236,7 @@ no_flags_allowed() {
   shift
   for a in "$@"; do
     case "$a" in
+      --) ;;
       -*) printf "error: unknown option \`%s'\n" "${a#-}" >&2; printf 'usage: git %s <remote> <ref>...\n' "$first" >&2; exit 129 ;;
     esac
   done
@@ -1251,6 +1252,7 @@ record_pushed_tag() {
 if [ "$1" = ls-remote ]; then
   no_flags_allowed "$@"
   shift
+  [ "$1" = -- ] && shift
   shift
   [ -f "$store" ] || exit 0
   for ref in "$@"; do
@@ -1266,15 +1268,9 @@ const RIG_GIT: &str = r#"#!/bin/sh
 printf 'git %s\n' "$*" >> "$CALLISTO_TEST_GIT_TRACE"
 if [ "$CALLISTO_TEST_PUSH" = real ]; then
   if [ "$1" = push ]; then printf 'git %s\n' "$*" >> "$CALLISTO_TEST_LOG"; fi
-  n=$#
-  i=0
-  while [ "$i" -lt "$n" ]; do
-    a=$1
-    shift
-    if [ "$a" = "$CALLISTO_TEST_REMOTE_URL" ]; then a=$CALLISTO_TEST_BARE_REMOTE; fi
-    set -- "$@" "$a"
-    i=$((i + 1))
-  done
+  case "$1" in
+    push|ls-remote) exec "$CALLISTO_TEST_REAL_GIT" -c "url.$CALLISTO_TEST_BARE_REMOTE.insteadOf=$CALLISTO_TEST_REMOTE_URL" "$@" ;;
+  esac
   exec "$CALLISTO_TEST_REAL_GIT" "$@"
 fi
 "#;
@@ -1287,7 +1283,8 @@ if [ "$1" = push ]; then
     printf 'fatal: unable to access remote\n' >&2
     exit 1
   fi
-  record_pushed_tag "$3"
+  eval refspec=\${$#}
+  record_pushed_tag "$refspec"
   exit 0
 fi
 exec "$CALLISTO_TEST_REAL_GIT" "$@"
@@ -1400,7 +1397,8 @@ impl Rig {
     pub fn forge_default_branch(&mut self, branch: &str) -> &mut Self {
         self.set("CALLISTO_TEST_FORGE_COMMITISH", branch)
     }
-    /// `git push`/`ls-remote` are real git against a bare `file://` remote that replaces `remote_url` in their arguments.
+    /// Every git command is real git; `push` and `ls-remote` reach a bare `file://` remote that `insteadOf` puts in
+    /// place of `remote_url`.
     pub fn real_git_push(&mut self, bare: &Path, remote_url: &str) -> &mut Self {
         self.set("CALLISTO_TEST_PUSH", "real")
             .set("CALLISTO_TEST_BARE_REMOTE", &format!("file://{}", bare.display()))

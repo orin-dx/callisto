@@ -79,9 +79,9 @@ pub fn ci_release_route<R: CommandRunner, D: DependencyResolver>(
 /// run beside the rest of the plan.
 #[derive(Clone, Debug)]
 pub struct OriginTagProbe {
-    endpoint: String,
+    remote: callisto_model::vcs::GitRemote,
     cwd: std::path::PathBuf,
-    tags: std::collections::BTreeSet<String>,
+    tags: std::collections::BTreeSet<callisto_model::TagName>,
 }
 
 /// The probe for `workspace`'s last-release tags, or `None` when there is no `origin` push URL or nothing is tagged.
@@ -92,14 +92,14 @@ pub fn origin_tag_probe<R: CommandRunner, D: DependencyResolver>(
         return Ok(None);
     };
     let tags = workspace.tags()?;
-    let names: std::collections::BTreeSet<String> = workspace
+    let names: std::collections::BTreeSet<callisto_model::TagName> = workspace
         .graph
         .packages()
         .filter_map(|package| tags.last_tag(&package.id))
-        .map(|tag| tag.name.as_str().to_owned())
+        .map(|tag| tag.name.clone())
         .collect();
     Ok((!names.is_empty()).then(|| OriginTagProbe {
-        endpoint: remote.endpoint.clone(),
+        remote,
         cwd: workspace.root.clone(),
         tags: names,
     }))
@@ -111,33 +111,18 @@ impl OriginTagProbe {
     /// A release that tagged locally and then failed to push leaves exactly this, and a later rerun on another commit
     /// treats the tagged version as finished, so the remote tag and the forge release never happen. Best effort: a
     /// remote that cannot be read reports nothing.
-    pub fn missing<R: CommandRunner + ?Sized>(&self, runner: &R) -> Vec<String> {
-        let references: Vec<String> = self.tags.iter().map(|name| format!("refs/tags/{name}")).collect();
-        let mut args = vec!["ls-remote", self.endpoint.as_str()];
-        args.extend(references.iter().map(String::as_str));
-        // Quiet: an unreachable remote reports nothing, so git's own "unable to access" must not reach the terminal.
-        let Ok(output) = runner.run_quiet(
-            super::provider::policy::programs::GIT,
-            &args,
-            &self.cwd,
-            super::provider::policy::timeouts::GIT_LS_REMOTE,
-        ) else {
+    pub fn missing(&self, runner: &dyn CommandRunner) -> Vec<String> {
+        let tags: Vec<&callisto_model::TagName> = self.tags.iter().collect();
+        let git = callisto_model::vcs::GitAccess::new(&self.cwd, runner);
+        let Ok(Some(on_remote)) =
+            git.remote_tags(&self.remote, &tags, super::provider::policy::timeouts::GIT_LS_REMOTE)
+        else {
             return Vec::new();
         };
-        if !output.success() {
-            return Vec::new();
-        }
-        let on_remote: std::collections::BTreeSet<&str> = output
-            .stdout
-            .lines()
-            .filter_map(|line| line.split_once('\t'))
-            .filter_map(|(_, reference)| reference.strip_prefix("refs/tags/"))
-            .map(|name| name.strip_suffix("^{}").unwrap_or(name))
-            .collect();
         self.tags
             .iter()
-            .filter(|name| !on_remote.contains(name.as_str()))
-            .cloned()
+            .filter(|name| !on_remote.contains_key(*name))
+            .map(ToString::to_string)
             .collect()
     }
 }
@@ -536,10 +521,15 @@ mod tests {
     // An unreadable remote reports nothing, and git's own error never reaches the terminal.
     #[test]
     fn the_origin_tag_probe_is_quiet_when_the_remote_cannot_be_read() {
+        let (dir, _) = fixture();
+        let remote = callisto_model::vcs::GitAccess::new(dir.path(), &RealGitRunner)
+            .remote(callisto_model::vcs::GitRemote::ORIGIN)
+            .unwrap()
+            .unwrap();
         let probe = OriginTagProbe {
-            endpoint: "https://example.invalid/r.git".to_owned(),
+            remote,
             cwd: std::path::PathBuf::from("."),
-            tags: std::collections::BTreeSet::from(["a@1.0.0".to_owned()]),
+            tags: std::collections::BTreeSet::from([callisto_model::TagName::parse("a@1.0.0").unwrap()]),
         };
         let runner = UnreachableRemote {
             used_live_echo: std::sync::atomic::AtomicBool::new(false),

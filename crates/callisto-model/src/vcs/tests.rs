@@ -1,11 +1,12 @@
 //! `GitAccess` against real repositories through the system `git` binary.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use crate::vcs::{GitAccess, TagSignPolicy, VcsError};
+use crate::vcs::{GitAccess, GitRemote, RemoteTag, TagSignPolicy, VcsError};
 use crate::{
-    ApplyPermit, CommandError, CommandOutput, CommandRunner, CommitSha, ReleasePrCommitPlanV1, ReleasePrDecisionError,
-    StagedChangeV1,
+    ApplyPermit, BranchName, CommandError, CommandOutput, CommandRunner, CommitSha, ReleasePrCommitPlanV1,
+    ReleasePrDecisionError, StagedChangeV1, TagName,
 };
 
 /// Runs real `git`, isolated from the developer's global and system config.
@@ -651,4 +652,184 @@ fn a_workspace_prefix_keeps_its_leading_and_trailing_spaces() {
         .unwrap();
 
     assert_eq!(prefix, PathBuf::from("  release-work /"));
+}
+
+/// Remote tests: a repository with one annotated tag `v1`, and bare repositories under `base` to push to.
+struct Remotes {
+    _dir: tempfile::TempDir,
+    root: PathBuf,
+    base: PathBuf,
+    v1: TagName,
+}
+
+impl Remotes {
+    fn new(bare: &[&str]) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dunce::canonicalize(dir.path()).unwrap();
+        let root = base.join("work");
+        std::fs::create_dir(&root).unwrap();
+        init_repo(&root);
+        commit_file(&root, "a.txt", b"1\n", "one");
+        git(&root, &["tag", "-a", "-m", "v1", "v1"]);
+        for name in bare {
+            git(&base, &["init", "-q", "--bare", name]);
+        }
+        Self {
+            _dir: dir,
+            root,
+            base,
+            v1: TagName::parse("v1").unwrap(),
+        }
+    }
+
+    fn url(&self, bare: &str) -> String {
+        format!("file://{}/{bare}", self.base.display())
+    }
+
+    fn git(&self) -> GitAccess<'static> {
+        GitAccess::new(self.root.clone(), &SystemGit)
+    }
+
+    fn remote(&self, name: &str) -> GitRemote {
+        self.git().remote(name).unwrap().expect("the remote is configured")
+    }
+
+    /// Pushes `v1` to `name`, then reports which bare repositories hold it.
+    fn push_v1(&self, name: &str, bare: &[&str]) -> Vec<String> {
+        let pushed = self
+            .git()
+            .push_tag(&self.remote(name), &self.v1, Duration::from_secs(60))
+            .unwrap();
+        assert!(pushed.success(), "{}", pushed.stderr);
+        bare.iter()
+            .filter(|bare| !git(&self.base.join(bare), &["tag", "--list", "v1"]).is_empty())
+            .map(|bare| (*bare).to_owned())
+            .collect()
+    }
+
+    fn v1_on(&self, name: &str) -> Option<RemoteTag> {
+        let remote = self.remote(name);
+        let tags = self.git().remote_tags(&remote, &[&self.v1], Duration::from_secs(60));
+        tags.unwrap().expect("the remote is readable").remove(&self.v1)
+    }
+}
+
+/// Git applies `insteadOf` once, to the URL it reads from config. Handing it a URL it already rewrote would apply the
+/// next rule as well and reach the wrong repository.
+#[test]
+fn a_remote_is_resolved_by_git_once_through_its_name() {
+    let remotes = Remotes::new(&["good.git", "wrong.git"]);
+    let root = &remotes.root;
+    let good = remotes.url("good.git");
+    git(
+        root,
+        &["remote", "add", "origin", "https://unreachable.invalid/good.git"],
+    );
+    git(
+        root,
+        &[
+            "config",
+            &format!("url.{}/.insteadOf", remotes.url("")),
+            "https://unreachable.invalid/",
+        ],
+    );
+    git(
+        root,
+        &["config", &format!("url.{}.insteadOf", remotes.url("wrong.git")), &good],
+    );
+
+    assert_eq!(remotes.push_v1("origin", &["good.git", "wrong.git"]), ["good.git"]);
+    let commit = head(root);
+    assert_eq!(remotes.v1_on("origin"), Some(RemoteTag::Annotated { commit }));
+}
+
+/// `pushInsteadOf` on an scp-like URL, and a separate `pushurl`: tags go to the push URL and are read from the fetch
+/// URL, as git itself does.
+#[test]
+fn pushes_use_the_push_url_and_reads_the_fetch_url() {
+    let remotes = Remotes::new(&["fetch.git", "push.git"]);
+    let root = &remotes.root;
+    git(root, &["remote", "add", "scp", "git@unreachable.invalid:x.git"]);
+    git(
+        root,
+        &[
+            "config",
+            &format!("url.{}.insteadOf", remotes.url("fetch.git")),
+            "git@unreachable.invalid:x.git",
+        ],
+    );
+    git(
+        root,
+        &[
+            "config",
+            &format!("url.{}.pushInsteadOf", remotes.url("push.git")),
+            "git@unreachable.invalid:x.git",
+        ],
+    );
+    assert_eq!(remotes.push_v1("scp", &["fetch.git", "push.git"]), ["push.git"]);
+    assert_eq!(remotes.v1_on("scp"), None);
+
+    let remotes = Remotes::new(&["fetch.git", "push.git"]);
+    let root = &remotes.root;
+    git(root, &["remote", "add", "split", &remotes.url("fetch.git")]);
+    git(root, &["config", "remote.split.pushurl", &remotes.url("push.git")]);
+    let before = remotes.remote("split").fingerprint();
+    assert_eq!(remotes.push_v1("split", &["fetch.git", "push.git"]), ["push.git"]);
+    assert_eq!(remotes.v1_on("split"), None);
+    git(
+        root,
+        &["config", "--add", "remote.split.pushurl", &remotes.url("fetch.git")],
+    );
+    assert_ne!(
+        remotes.remote("split").fingerprint(),
+        before,
+        "a second push URL is part of the binding"
+    );
+}
+
+/// A local path, a `file://` URL and a remote named like an option all work; none is a GitHub repository.
+#[test]
+fn local_remotes_and_any_remote_name_work() {
+    let remotes = Remotes::new(&["a.git", "b.git", "c.git"]);
+    let root = &remotes.root;
+    git(
+        root,
+        &["remote", "add", "path", remotes.base.join("a.git").to_str().unwrap()],
+    );
+    git(root, &["remote", "add", "url", &remotes.url("b.git")]);
+    git(root, &["remote", "add", "--", "-x", &remotes.url("c.git")]);
+    for (name, bare) in [("path", "a.git"), ("url", "b.git"), ("-x", "c.git")] {
+        assert_eq!(remotes.v1_on(name), None, "{name}");
+        assert_eq!(remotes.push_v1(name, &[bare]), [bare], "{name}");
+        assert!(
+            matches!(remotes.v1_on(name), Some(RemoteTag::Annotated { .. })),
+            "{name}"
+        );
+        assert_eq!(remotes.remote(name).github_repository(), None, "{name}");
+        assert_eq!(remotes.remote(name).name(), name);
+    }
+    assert_eq!(remotes.git().remote("origin").unwrap(), None);
+}
+
+/// The default branch comes from the local `refs/remotes/<name>/HEAD`, else from the remote itself.
+#[test]
+fn a_remote_head_is_read_locally_then_from_the_remote() {
+    let remotes = Remotes::new(&["up.git"]);
+    let root = &remotes.root;
+    git(
+        &remotes.base.join("up.git"),
+        &["symbolic-ref", "HEAD", "refs/heads/release/next"],
+    );
+    git(root, &["remote", "add", "origin", &remotes.url("up.git")]);
+    let origin = remotes.remote("origin");
+    let live = remotes.git().remote_head_live(&origin, Duration::from_secs(60));
+    assert_eq!(live, None, "an empty remote has no HEAD branch to name");
+    git(root, &["push", "-q", "origin", "HEAD:refs/heads/release/next"]);
+    let live = remotes.git().remote_head_live(&origin, Duration::from_secs(60));
+    assert_eq!(live.as_ref().map(BranchName::as_str), Some("release/next"));
+    assert_eq!(remotes.git().remote_head_local(&origin), None);
+    git(root, &["fetch", "-q", "origin"]);
+    git(root, &["remote", "set-head", "origin", "--auto"]);
+    let local = remotes.git().remote_head_local(&origin);
+    assert_eq!(local.as_ref().map(BranchName::as_str), Some("release/next"));
 }

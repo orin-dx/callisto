@@ -102,7 +102,7 @@ fn detect_reports_workspace_facts() {
     assert_eq!(facts.ecosystems, BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm]));
     let ids: Vec<&str> = facts.packages.iter().map(|package| package.id.as_str()).collect();
     assert_eq!(ids, ["cargo/app", "cargo/core", "npm/web"]);
-    assert_eq!(facts.origin.as_deref(), Some(ORIGIN));
+    assert!(facts.origin.is_some());
     assert!(facts.has_commit);
     assert_eq!(facts.origin_repository.as_ref().unwrap().as_slug(), "example/tools");
     assert_eq!(
@@ -241,14 +241,14 @@ fn missing_origin_detects_with_origin_unset() {
     git(other.path(), &["remote", "add", "fork", ORIGIN]);
     for dir in [none, other] {
         let facts = detect_in(dir.path()).unwrap();
-        assert_eq!(facts.origin, None);
+        assert!(facts.origin.is_none());
         assert_eq!(facts.origin_repository, None);
     }
 }
 
-// A rejected origin URL shows the rejection; an accepted non-GitHub one binds.
+// A URL with credentials is refused; any other origin binds, on GitHub or not.
 #[test]
-fn origin_url_is_canonicalized() {
+fn origin_with_credentials_is_refused_and_others_bind() {
     let files = [("Cargo.toml", cargo("app", "1.0.0"))];
     let files: Vec<(&str, &str)> = files.iter().map(|(path, body)| (*path, body.as_str())).collect();
     let rejected = repo(&files, Some("https://user:secret@github.com/example/tools.git"));
@@ -260,7 +260,7 @@ fn origin_url_is_canonicalized() {
 
     let gitlab = repo(&files, Some("git@gitlab.com:example/tools.git"));
     let facts = detect_in(gitlab.path()).unwrap();
-    assert_eq!(facts.origin.as_deref(), Some("ssh://git@gitlab.com/example/tools.git"));
+    assert!(facts.origin.is_some());
     assert_eq!(facts.origin_repository, None);
 }
 
@@ -359,7 +359,7 @@ fn facts_for_render() -> InitFacts {
             package("cargo/core", &[], false),
             package("npm/web-linux-x64-gnu", &[], true),
         ],
-        origin: Some(ORIGIN.to_owned()),
+        origin: Some(github_origin()),
         origin_repository: GitHubRepository::parse("example/tools").ok(),
         tag_templates: BTreeMap::new(),
         has_commit: true,
@@ -1291,6 +1291,20 @@ impl CommandRunner for StubRemoteHead {
     }
 }
 
+fn origin(root: &Path) -> Option<callisto_model::vcs::GitRemote> {
+    callisto_model::vcs::GitAccess::new(root, &RealGitRunner)
+        .remote(callisto_model::vcs::GitRemote::ORIGIN)
+        .unwrap()
+}
+
+/// `origin` read from a repository whose `origin` is [`ORIGIN`].
+fn github_origin() -> callisto_model::vcs::GitRemote {
+    let dir = tempfile::tempdir().unwrap();
+    callisto_fixtures::git::init_repo(dir.path());
+    git(dir.path(), &["remote", "add", "origin", ORIGIN]);
+    origin(dir.path()).unwrap()
+}
+
 // Local `origin/HEAD` wins over everything else, including a live remote answer.
 #[test]
 fn default_branch_prefers_local_origin_head() {
@@ -1309,6 +1323,7 @@ fn default_branch_prefers_local_origin_head() {
             remote_head: Some("trunk"),
         },
         dir.path(),
+        origin(dir.path()).as_ref(),
     );
     assert_eq!(resolved.name.as_str(), "develop");
     assert_eq!(resolved.source, DefaultBranchSource::OriginHead);
@@ -1323,6 +1338,7 @@ fn default_branch_queries_the_remote_when_local_origin_head_is_unset() {
             remote_head: Some("trunk"),
         },
         dir.path(),
+        origin(dir.path()).as_ref(),
     );
     assert_eq!(resolved.name.as_str(), "trunk");
     assert_eq!(resolved.source, DefaultBranchSource::RemoteHead);
@@ -1341,7 +1357,11 @@ fn default_branch_keeps_slashes_from_every_source() {
             "refs/remotes/origin/release/next",
         ],
     );
-    let local = default_branch(&StubRemoteHead { remote_head: None }, dir.path());
+    let local = default_branch(
+        &StubRemoteHead { remote_head: None },
+        dir.path(),
+        origin(dir.path()).as_ref(),
+    );
     assert_eq!(local.name.as_str(), "release/next");
 
     let dir = workspace();
@@ -1350,12 +1370,17 @@ fn default_branch_keeps_slashes_from_every_source() {
             remote_head: Some("release/next"),
         },
         dir.path(),
+        origin(dir.path()).as_ref(),
     );
     assert_eq!(remote.name.as_str(), "release/next");
 
     let dir = workspace();
     git(dir.path(), &["checkout", "-q", "-b", "release/next"]);
-    let current = default_branch(&StubRemoteHead { remote_head: None }, dir.path());
+    let current = default_branch(
+        &StubRemoteHead { remote_head: None },
+        dir.path(),
+        origin(dir.path()).as_ref(),
+    );
     assert_eq!(current.name.as_str(), "release/next");
 }
 
@@ -1405,7 +1430,11 @@ fn render_workflow_carries_any_valid_branch_name_exactly() {
 fn default_branch_falls_back_to_the_current_branch() {
     let dir = workspace();
     git(dir.path(), &["checkout", "-q", "-b", "release"]);
-    let resolved = default_branch(&StubRemoteHead { remote_head: None }, dir.path());
+    let resolved = default_branch(
+        &StubRemoteHead { remote_head: None },
+        dir.path(),
+        origin(dir.path()).as_ref(),
+    );
     assert_eq!(resolved.name.as_str(), "release");
     assert_eq!(resolved.source, DefaultBranchSource::CurrentBranch);
 }
@@ -1414,7 +1443,7 @@ fn default_branch_falls_back_to_the_current_branch() {
 #[test]
 fn default_branch_falls_back_to_main_when_nothing_resolves() {
     let none = tempfile::tempdir().unwrap();
-    let resolved = default_branch(&RealGitRunner, none.path());
+    let resolved = default_branch(&RealGitRunner, none.path(), None);
     assert_eq!(resolved.name.as_str(), "main");
     assert_eq!(resolved.source, DefaultBranchSource::Fallback);
 }

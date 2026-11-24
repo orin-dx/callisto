@@ -10,7 +10,7 @@ packages:
             name: "dual",
         },
         fingerprint: SemanticInputDigest(
-            "d9099de57ccfa3fa99c2a818313b1151060d8e55f61ec83df3dcf494a81b3dc7",
+            "b771400689208a27d5912be0b8f0b288a84c079262445b98ef64d45984878a2e",
         ),
     },
     ReleasePackageInputV1 {
@@ -19,7 +19,7 @@ packages:
             name: "dual",
         },
         fingerprint: SemanticInputDigest(
-            "bf4098dd1c6fc1af909b49ce28ab2df094d4165624638446ee2f48c58e8687e3",
+            "cd3e4b6b01e0fdfa3a89893a25940286af93ac883be0121008c5fdf5291fb05f",
         ),
     },
 ]

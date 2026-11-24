@@ -432,7 +432,8 @@ impl GitAccess<'_> {
         needle: &str,
         pathspecs: &[Pathspec],
     ) -> Result<Vec<PathBuf>, VcsError> {
-        let mut args = vec!["grep", "-l", "-z", "-F", "-i", "-e", needle, rev, "--"];
+        // A user's `color.grep=always` would color the names this reads.
+        let mut args = vec!["grep", "--no-color", "-l", "-z", "-F", "-i", "-e", needle, rev, "--"];
         args.extend(pathspecs.iter().map(Pathspec::as_str));
         let output = self.runner.run("git", &args, &self.root)?;
         if output.exit_code == Some(1) {
@@ -1213,6 +1214,7 @@ mod tests {
         std::fs::write(root.join("a.txt"), "hello needle").unwrap();
         real_git(&root, &["add", "a.txt"]);
         real_git(&root, &["commit", "-q", "-m", "one"]);
+        real_git(&root, &["config", "color.grep", "always"]);
 
         assert!(git.resolve_commit("HEAD").unwrap().is_some());
         assert_eq!(git.resolve_commit("no-such-ref").unwrap(), None);

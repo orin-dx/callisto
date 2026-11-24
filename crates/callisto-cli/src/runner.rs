@@ -134,6 +134,13 @@ fn is_named_cargo_registry_token(name: &std::ffi::OsStr) -> bool {
     })
 }
 
+/// Gives a `git` child [`callisto_model::vcs::GIT_ENVIRONMENT`]; call before the child's own variables.
+fn apply_git_environment(command: &mut std::process::Command, program: &str) {
+    if tool_name(program) == "git" {
+        command.envs(callisto_model::vcs::GIT_ENVIRONMENT);
+    }
+}
+
 /// Drops named registry tokens from a non-Cargo child, inherited or explicitly set; call after the child's variables.
 fn remove_unrelated_cargo_registry_tokens(command: &mut std::process::Command, program: &str) {
     if tool_name(program) == "cargo" {
@@ -155,6 +162,7 @@ impl CommandRunner for CliCommandRunner {
     fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
         let mut command = std::process::Command::new(program);
         command.args(args).current_dir(cwd);
+        apply_git_environment(&mut command, program);
         remove_env(&mut command, &unrelated_credentials(program));
         remove_unrelated_cargo_registry_tokens(&mut command, program);
         let output = command
@@ -321,6 +329,7 @@ impl CommandRunner for CliCommandRunner {
     ) -> Result<CommandOutput, CommandError> {
         let mut command = std::process::Command::new(program);
         command.args(args).current_dir(cwd);
+        apply_git_environment(&mut command, program);
         remove_env(&mut command, &unrelated_credentials(program));
         remove_unrelated_cargo_registry_tokens(&mut command, program);
         let mut child = command
@@ -479,6 +488,7 @@ fn run_with_timeout_impl(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    apply_git_environment(&mut command, program);
     for name in child_env.remove {
         command.env_remove(name);
     }
@@ -634,6 +644,32 @@ mod tests {
             .run_with_timeout("true", &[], std::path::Path::new("."), Duration::from_secs(5))
             .unwrap();
         assert!(out.success());
+    }
+
+    /// Every way the runner starts `git` gives it the git environment; `!env` as an alias prints what git's children see.
+    #[cfg(unix)]
+    #[test]
+    fn every_git_child_gets_the_git_environment() {
+        let runner = CliCommandRunner;
+        let args = ["-c", "alias.e=!env", "e"];
+        let here = std::path::Path::new(".");
+        for output in [
+            runner.run("git", &args, here).unwrap(),
+            runner.run_quiet("git", &args, here, Duration::from_secs(30)).unwrap(),
+            runner.run_with_stdin("git", &args, here, b"").unwrap(),
+            runner
+                .run_with_env("git", &args, here, &[("GIT_INDEX_FILE", "x")])
+                .unwrap(),
+        ] {
+            assert!(output.success(), "{}", output.stderr);
+            for (name, value) in callisto_model::vcs::GIT_ENVIRONMENT {
+                assert!(
+                    output.stdout.lines().any(|line| line == format!("{name}={value}")),
+                    "{name}: {}",
+                    output.stdout
+                );
+            }
+        }
     }
 
     #[cfg(unix)]
