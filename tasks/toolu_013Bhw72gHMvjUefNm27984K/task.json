@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_013Bhw72gHMvjUefNm27984K",
+  "agent_id": "a27fafe8c86787670",
+  "subagent_type": "bug-hunter",
+  "task_description": "Pre-review final #634 diff",
+  "token_usage": {
+    "input_tokens": 140,
+    "cache_creation_tokens": 142040,
+    "cache_read_tokens": 7205054,
+    "output_tokens": 31555,
+    "api_call_count": 70
+  },
+  "started_at": "2026-11-23T13:09:10.34143-08:00",
+  "completed_at": "2026-11-23T13:20:46.928135-08:00"
+}

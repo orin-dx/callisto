@@ -1,0 +1,135 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M878CMVR161CHDSA0ERVP9ER",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-24T17:07:20.545359Z",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 30,
+  "save_step_count": 6,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "333f9fe8c73a",
+  "checkpoint_transcript_start": 16429,
+  "transcript_lines_at_start": 16429,
+  "compact_transcript_start": 1564,
+  "token_usage": {
+    "input_tokens": 236,
+    "cache_creation_tokens": 2096566,
+    "cache_read_tokens": 63866490,
+    "output_tokens": 91510,
+    "api_call_count": 111,
+    "subagent_tokens": {
+      "input_tokens": 434,
+      "cache_creation_tokens": 743626,
+      "cache_read_tokens": 19721747,
+      "output_tokens": 180964,
+      "api_call_count": 217
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 3120,
+    "cache_creation_tokens": 5781094,
+    "cache_read_tokens": 621257421,
+    "output_tokens": 784876,
+    "api_call_count": 1351,
+    "subagent_tokens": {
+      "input_tokens": 1418,
+      "cache_creation_tokens": 2166714,
+      "cache_read_tokens": 73913284,
+      "output_tokens": 434815,
+      "api_call_count": 709
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 9,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 11,
+      "entropy": 15,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 329
+  },
+  "summary": {
+    "intent": "Get four consolidated Callisto PRs (#630, #634, #638, #640) through review and merged with no recurring reviewer findings, and stop an endless loop of spot-fix rounds that was costing the user money.",
+    "outcome": "#640 and #639 merged and #630 merged after its type split fix. #634 and #638 went through many push rounds and audits and, at the end, had convergence-checked local fixes being pushed, though new findings kept appearing after earlier pushes. A type-level design note was written and the preflight job was moved to its own main-only workflow.",
+    "learnings": {
+      "repo": [
+        "AGENTS.md requires a full local gate before a push: `just pre-push && just lint && just doc-check && just test`. Fixes also need `fuzz-check` and `check-api`; check-api only meaningfully runs on the release PR after the version bump.",
+        "`BumpReason` served two purposes, the Reason column text and the changelog entry source in the version planner. Overloading one value for both caused the #630 regression. The fix split it into `trigger` (drives the changelog) and `severity_sources` (drives only the Reason cell explanation).",
+        "`severity_sources` is a new permanent key (`severitySources`, skipped when empty) in the release preview JSON. It is not in `version --format json`, and old and new previews parse in both directions.",
+        "Changeset conventions: breaking changes need their own `**Breaking:**` paragraph, and the bump must be `minor` pre-1.0. Public API changes in callisto-graph inside a patch bump will fail cargo-semver-checks.",
+        "The process-count rule in AGENTS.md says a git process per package fails review. `release --dry-run` hint computation must not run commit inference, which adds one `git log` per auto-release package.",
+        "Git remote handling should use `git remote get-url --push origin`. User-supplied remote and registry URLs must never be printed, because masking misses `hg::` helper URLs and tokens in URL paths such as Gemfury's.",
+        "`just check-comments` and a 120-column doc line limit are enforced; `fmt-check` does not catch long doc lines.",
+        "Skipped matrix jobs show a literal `${{ matrix.id }}` in the name on PRs because `if` is evaluated before matrix expansion. The fix was moving the preflight into a main-only workflow.",
+        "Repo conventions: specs in `docs/specs/*.json` and `docs/errors.md` must be updated in the same PR as behaviour changes, and `unsafe_code` is forbidden."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 197,
+          "end_line": 204,
+          "finding": "Selection replaced the inference reason with a changeset reason. The changelog skips retained notes, so the new section lost the commit subject and SHA."
+        },
+        {
+          "path": "crates/callisto-cli/tests/cli_tag_template.rs",
+          "line": 65,
+          "end_line": 81,
+          "finding": "A test still expected `CRATE_VERSION=` in install-callisto.sh after the crates.io fallback was removed, so `just test` would fail."
+        },
+        {
+          "path": "crates/callisto-graph/src/error.rs",
+          "line": 988,
+          "finding": "Masking a URL's userinfo misses credentials in nested `hg::<URL>` remote-helper URLs. The fix was to never print user-supplied remotes."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 177,
+          "finding": "The pending-version hint counted private packages with no publish target. It should be computed on the exact release roster."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 285,
+          "end_line": 290,
+          "finding": "`release --dry-run --package` on an already-released package with a pending changeset fails with E169 before the pending hint prints."
+        }
+      ],
+      "workflow": [
+        "Pushing before the full gate and an adversarial pre-review of the final diff produced repeated paid-review findings, so the rule became: gate green, pre-review, own read, then one push.",
+        "Fixing only the instances a reviewer raised never converged. Sweeping the whole PR by finding class, with the full finding history as the checklist, caught about 29 issues locally, so the loop should run to a clean pass before pushing.",
+        "Write a behaviour contract first, covering exit codes, cancel messages and where output goes, so fixes stop contradicting each other. Freeze PR scope, and block only on wrong results, secrets, data loss or CI failures.",
+        "Subagent pre-reviews can miss things, as when one called the docs snippet copy-paste correct. They are not proof, so the orchestrator must read the diffs too.",
+        "Parallel `cargo run` in a worktree that another session is building breaks the no-parallel-builds rule.",
+        "Type-level invariants such as a Prompts token and a no-Display user-string type prevent whole finding classes better than patching instances."
+      ]
+    },
+    "friction": [
+      "The reviewer kept raising new findings on #634 and #638 after each push, and the user grew very frustrated about cost and repeated rounds, even suggesting replacing the agent.",
+      "Early premature pushes (#630, #638, #640) introduced regressions and CI failures that triggered further review rounds.",
+      "The agent launched fix batches immediately after findings appeared, which added surface and made the loop worse until the user pushed back.",
+      "Stale open findings and freshness flags in the findings tool made resolving them cumbersome and needed debugging.",
+      "Sandbox blocked crates.io, so semver-checks could not be run in some subagents. Several PTY, npm and uv tests failed on environment issues.",
+      "The user repeatedly asked why findings were not resolved, partly because pushed and resolved state lagged behind local batches."
+    ],
+    "open_items": [
+      "Three proposed contract rows await a user decision: `TERM=dumb` never prompts, init's facts and preview go to stderr while prompting, and ticking no packages re-asks instead of failing with E273.",
+      "Type-level design items remain: `ReleaseScope` (its own PR after the release), `UserSourced<T>` with no Display (small PR after #634), and one output sink per command with clippy print lints (after #638). The design note is at `.claude/plans/DESIGN-type-level-invariants.md`.",
+      "The merge order was #247 first, then #242, #246, #248, with the #236 release last. The preflight workflow PR (trail #490) still needs to be opened and merged.",
+      "Accepted limits are documented rather than built: the editor temp file leaks on SIGHUP or SIGTERM, and a mid-prompt resize only redraws on the next key.",
+      "Still unmade or undone: adding a pending hint to release's JSON report (declined as a new permanent key); the `SeveritySources` module-layering inversion (defined in pr_body.rs, re-exported into plan.rs); one extra origin read in init (F9); making the raw push URL field private (deferred to `UserSourced`).",
+      "The final pushes of #634 and #638, containing the rendering removal and the always-send-to-configured-remote fix plus a resume-limit note in the changeset, still needed CI and reviewer results."
+    ]
+  }
+}

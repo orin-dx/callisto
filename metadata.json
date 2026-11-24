@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M878CMVR161CHDSA0ERVP9ER",
+  "strategy": "manual-commit",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 30,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 236,
+    "cache_creation_tokens": 2096566,
+    "cache_read_tokens": 63866490,
+    "output_tokens": 91510,
+    "api_call_count": 111,
+    "subagent_tokens": {
+      "input_tokens": 434,
+      "cache_creation_tokens": 743626,
+      "cache_read_tokens": 19721747,
+      "output_tokens": 180964,
+      "api_call_count": 217
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 9,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 11,
+      "entropy": 15,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

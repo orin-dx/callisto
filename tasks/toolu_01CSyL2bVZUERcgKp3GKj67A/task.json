@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01CSyL2bVZUERcgKp3GKj67A",
+  "agent_id": "af1707b28a21bc4af",
+  "subagent_type": "bug-hunter",
+  "task_description": "Exhaustive audit of #634 by finding class",
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 177706,
+    "cache_read_tokens": 4905287,
+    "output_tokens": 46755,
+    "api_call_count": 45
+  },
+  "started_at": "2026-11-23T20:02:22.634595-08:00",
+  "completed_at": "2026-11-23T20:11:29.428633-08:00"
+}
