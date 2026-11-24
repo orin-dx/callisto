@@ -1,0 +1,98 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M87FE73NQFNXSZ5QFC1446HB",
+  "session_id": "9c4bfda7-c7ff-4d6d-9864-1d4914a0dcaf",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-24T19:10:24.954057Z",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "fe0441c44245",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 178,
+    "cache_creation_tokens": 221007,
+    "cache_read_tokens": 16700247,
+    "output_tokens": 73885,
+    "api_call_count": 86
+  },
+  "session_token_usage": {
+    "input_tokens": 178,
+    "cache_creation_tokens": 221007,
+    "cache_read_tokens": 16700247,
+    "output_tokens": 73885,
+    "api_call_count": 86
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "summary": {
+    "intent": "Replace the cursor-moving inquire MultiSelect package picker in `add` (and init's product-package select) with a line-based numbered prompt (numbers, ranges, names, Enter keeps preselection, Esc/Ctrl-C cancel), update the contract and spec, add pty tests, run a self-audit and the full gate, write a convergence record, and commit locally signed without pushing.",
+    "outcome": "Implemented the line-based picker in tty.rs with add/init wiring, parser unit tests, pty tests, spec and changeset updates; self-audit passes and the full gate (pre-push, lint, doc-check, test) exited 0, and a signed local commit was made. The contract edit was only staged in the job tmp dir and the convergence record and the sha/path report were not completed in the transcript.",
+    "learnings": {
+      "repo": [
+        "AGENTS.md gate is `just pre-push && just lint && just doc-check && just test`, judged per recipe by exit code; `just fuzz-check` only when callisto-model/manifests public signatures change (not needed here).",
+        "The Prompter trait in add.rs and init.rs is the seam for tests: pick() replaced multi_select(), and init's test prompter delegates pick to select.",
+        "Bounded prompts (confirm, two-option versioning, summary) stay on inquire; unbounded lists use tty::pick_many/pick_one.",
+        "rustix is already a dependency (pty feature in dev-deps); the `termios` feature was added for the line reader in the main deps.",
+        "Windows builds need `Typed::Key` gated to unix to avoid a dead-code warning; a Windows reader path exists but isn't compiled on the mac host.",
+        "Workspace lints are strict (-D warnings), so `drop(...)` on a Result and unused imports needed fixing for clippy."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "finding": "Holds the new line-based picker (pick_many/pick_one, choices parser, print_list, read_answer) with Esc/Ctrl-C as line terminators with ISIG off; the choices parser escapes typed words in error messages and rejects names that read as another entry's number."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/add.rs",
+          "finding": "Prompter::multi_select replaced by pick(heading, names, marked); the '(changed)' label suffix is gone in favour of a '*' marker, and major/minor follow-ups use the same pick."
+        }
+      ],
+      "workflow": [
+        "`$TMPDIR` differs between sandboxed and unsandboxed Bash runs; a shared sandbox TMPDIR held another project's mutants output, so logs must be read from the matching TMPDIR.",
+        "cargo-mutants with `--lib` cannot reach terminal-I/O functions; re-run them with `--test add_interactive_pty_tests` and a `--re` filter to see real coverage.",
+        "cargo mutants --in-place temporarily edits sources, so wait for it to finish before committing and check git status afterwards.",
+        "Shared-checkout files (CONTRACT) may not be editable from an isolated session; stage the copy in the job tmp dir and copy it over at the end."
+      ]
+    },
+    "friction": [
+      "TMPDIR confusion between sandboxed and unsandboxed runs briefly made mutants output look like another project's.",
+      "The initial mutants run with `--lib` missed 25 terminal-I/O mutants, requiring extra pty-based mutation runs.",
+      "The contract file in the shared checkout couldn't be edited directly from the isolated session.",
+      "Several clippy/dead-code/compile fixes were needed (clone of mode, drop on Result, unused InputModes import, Windows-only dead code)."
+    ],
+    "open_items": [
+      "Convergence record `.claude/plans/converged/<full HEAD sha>.md` still needs writing with the passes and gate exit codes.",
+      "The staged CONTRACT-interactive-cli.md in the job tmp dir must be copied into /Users/gabe/Projects/callisto/.claude/plans/.",
+      "Report the commit sha and record path to the lead; never push.",
+      "3 surviving mutants: an equivalent `|`→`^` and the Windows-only reader, which isn't compiled or tested here.",
+      "TERM=dumb pty test and the 40x10 long-name test status were not confirmed in the transcript."
+    ]
+  }
+}
