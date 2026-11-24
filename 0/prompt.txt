@@ -1,0 +1,26 @@
+Fix PR #638's rendering by removal, then converge locally before reporting. Worktree /Users/gabe/Projects/callisto/.claude/worktrees/wp-add-inquire (HEAD 8944d2aa7 = pushed to wp-interactive-cli-compare). Trail #487. Read the open findings: entire trail finding list 487 --branch wp-interactive-cli-compare --freshness any --json. Decision (see the 'Rendering' section of /Users/gabe/Projects/callisto/.claude/plans/CONTRACT-interactive-cli.md): Callisto does no terminal sizing and never rewrites labels. (1) Delete the page-size helper and label truncation in tty.rs (about 83) and their uses in add.rs (about 183-191, 277, 293) and init.rs; pass full package names to inquire for both display and filtering, and use inquire's default page size everywhere. Keep the ASCII help messages if they are just text. Make sure the returned index maps to the right package with no truncation involved. (2) docs/specs/cli.json: state the rendering rule and the documented limits (resize mid-prompt or a pane under about 10 rows can misdraw; use a bigger pane or pass --package/--summary). (3) Remove tests that only covered the deleted sizing/truncation; add one asserting two packages differing only at the end are both shown in full and selectable by typing the suffix. Then CONVERGE: self-audit the whole PR diff (origin/main...HEAD) against every row of the contract file (happy path, edge, error, rendering, modes, endings) and the full finding history at /Users/gabe/.claude/jobs/d58474bb/tmp/findings-history-634-638.txt; fix what you find and audit again until a full pass finds nothing; list each pass and what it found. Then the full gate by exit code: just pre-push && just lint && just doc-check && just test (pty unsandboxed), just audit. Commit locally (signed); report sha, the passes, gate results, lines removed. Don't push and don't touch findings. Rules (from the lead session close-gap-for-alpha). Be thorough before a push: a push costs a paid review, so find problems locally first.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Before reporting a change as ready to push, run the AGENTS.md gate in full and judge each by exit code: `just pre-push && just lint && just doc-check && just test` (workspace-wide, not just the touched crate; tests elsewhere read scripts, specs and error registries). Run network/pty tests unsandboxed. Iterate with scoped `cargo test -p` while working.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Every push triggers a paid review. Before reporting, run the checklist in /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md against your full diff. Push once, only after the lead has read your diff and says push; for an existing PR, commit locally and report the worktree and sha first.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<task-notification>
+<task-id>b5pvdzw4z</task-id>
+<tool-use-id>toolu_013feNbyqvf9rroAfF5orFv8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/3ef79785-293c-4b48-b096-8e07089db69e/tasks/b5pvdzw4z.output</output-file>
+<status>completed</status>
+<summary>Background command "Run lint, doc-check, full tests and audit" completed (exit code 0)</summary>
+</task-notification>
