@@ -59,12 +59,12 @@ impl Session {
 
     /// `callisto <args>` with `env` set; `VISUAL` and `EDITOR` are unset unless `env` names them.
     fn start_with(root: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
-        Self::launch(root, args, env, true, 120)
+        Self::launch(root, args, env, true, (120, 30))
     }
 
     /// `callisto <args>` with stdin and stdout on the terminal and stderr piped; read it with [`Session::stderr`].
     fn start_with_piped_stderr(root: &Path, args: &[&str]) -> Self {
-        Self::launch(root, args, &[], false, 120)
+        Self::launch(root, args, &[], false, (120, 30))
     }
 
     fn stderr(&mut self) -> String {
@@ -73,12 +73,18 @@ impl Session {
         text
     }
 
-    /// `callisto add` on a terminal `columns` wide.
-    fn start_narrow(root: &Path, columns: u16) -> Self {
-        Self::launch(root, &["add"], &[], true, columns)
+    /// `callisto add` on a terminal `columns` wide and `rows` high.
+    fn start_small(root: &Path, columns: u16, rows: u16) -> Self {
+        Self::launch(root, &["add"], &[], true, (columns, rows))
     }
 
-    fn launch(root: &Path, args: &[&str], env: &[(&str, &str)], stderr_on_terminal: bool, columns: u16) -> Self {
+    fn launch(
+        root: &Path,
+        args: &[&str],
+        env: &[(&str, &str)],
+        stderr_on_terminal: bool,
+        (columns, rows): (u16, u16),
+    ) -> Self {
         let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         grantpt(&master).unwrap();
         unlockpt(&master).unwrap();
@@ -91,7 +97,7 @@ impl Session {
         rustix::termios::tcsetwinsize(
             &tty,
             rustix::termios::Winsize {
-                ws_row: 30,
+                ws_row: rows,
                 ws_col: columns,
                 ws_xpixel: 0,
                 ws_ypixel: 0,
@@ -103,8 +109,8 @@ impl Session {
             .args(args)
             .env_remove("VISUAL")
             .env_remove("EDITOR")
-            .envs(env.iter().copied())
             .env("TERM", "xterm-256color")
+            .envs(env.iter().copied())
             .stdin(Stdio::from(tty.try_clone().unwrap()))
             .stdout(Stdio::from(tty.try_clone().unwrap()))
             .stderr(if stderr_on_terminal {
@@ -158,7 +164,7 @@ impl Session {
         assert!(status.success());
     }
 
-    /// The terminal is back in line mode with echo, as the shell expects after the child exits.
+    /// The terminal is back in line mode with echo and Ctrl-C signals, as the shell expects after the child exits.
     fn assert_terminal_restored(&self) {
         let out = Command::new("stty")
             .arg("-a")
@@ -168,7 +174,7 @@ impl Session {
         let settings = String::from_utf8_lossy(&out.stdout);
         let flags: Vec<&str> = settings.split(|c: char| c.is_whitespace() || c == ';').collect();
         assert!(
-            flags.contains(&"icanon") && flags.contains(&"echo"),
+            flags.contains(&"icanon") && flags.contains(&"echo") && flags.contains(&"isig"),
             "the terminal is left raw:\n{settings}"
         );
     }
@@ -213,7 +219,7 @@ fn changesets(root: &Path) -> Vec<String> {
 }
 
 #[test]
-fn the_changed_package_is_ticked_so_enter_through_the_wizard_records_it() {
+fn the_changed_package_is_marked_so_enter_through_the_wizard_records_it() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
     add.after("Packages in this change", 1, "\r");
@@ -223,27 +229,62 @@ fn the_changed_package_is_ticked_so_enter_through_the_wizard_records_it() {
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     let screen = add.screen();
-    assert!(screen.contains("b (changed)"), "{screen}");
+    assert!(screen.contains("1 * b\r\n  2   a\r\n"), "{screen}");
     assert!(screen.contains("patch  b"), "the review lists the bump:\n{screen}");
     assert!(screen.contains("Next:"), "{screen}");
     assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
 }
 
 #[test]
-fn ctrl_c_at_a_prompt_restores_the_cursor_writes_nothing_and_exits_130() {
+fn packages_and_bumps_are_picked_by_number_range_or_name() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
-    add.after("Packages in this change", 1, "\x03");
-    assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
-    assert!(add.screen().contains("E343"), "{}", add.screen());
-    let screen = add.screen();
-    assert!(screen.contains("Cancelled, nothing written."), "{screen}");
-    assert!(
-        screen.rfind(SHOW_CURSOR) > screen.rfind(HIDE_CURSOR),
-        "the cursor is left hidden:\n{screen:?}"
+    // The list is `1 * b`, `2   a`; the bump questions list the picked packages in that order.
+    add.after("Packages in this change", 1, "1-2\r");
+    add.after("MAJOR", 1, "a\r");
+    add.after("MINOR", 1, "1\r");
+    add.after("Changelog summary", 1, "Rework\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(changesets(dir.path()), ["---\nb: minor\na: major\n---\n\nRework\n"]);
+}
+
+#[test]
+fn an_answer_that_names_nothing_listed_is_asked_again_with_the_reason() {
+    let dir = workspace();
+    let mut add = Session::start(dir.path());
+    add.after("Packages in this change", 1, "c\r");
+    add.after("`c` is not a number, a range or a listed name", 1, "3\r");
+    add.after("`3` is not in the list (1-2)", 1, "\x1b[A");
+    add.after("only typed text is read here", 1, "2\r");
+    add.after("MAJOR", 1, "\r");
+    add.after("MINOR", 1, "\r");
+    add.after("Changelog summary", 1, "Fix a\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(
+        add.screen().matches("Packages in this change").count(),
+        1,
+        "the list is printed once"
     );
-    add.assert_terminal_restored();
-    assert!(changesets(dir.path()).is_empty());
+    assert_eq!(changesets(dir.path()), ["---\na: patch\n---\n\nFix a\n"]);
+}
+
+#[test]
+fn esc_ctrl_c_or_end_of_input_at_a_list_writes_nothing_and_exits_130() {
+    for key in ["\x1b", "\x03", "1\x1b", "\x04"] {
+        let dir = workspace();
+        let mut add = Session::start(dir.path());
+        add.after("Packages in this change", 1, key);
+        assert_eq!(add.exit_code(), Some(130), "{key:?}: {}", add.screen());
+        let screen = add.screen();
+        assert!(
+            screen.contains("E343") && screen.contains("Cancelled, nothing written."),
+            "{key:?}: {screen}"
+        );
+        add.assert_terminal_restored();
+        assert!(changesets(dir.path()).is_empty());
+    }
 }
 
 #[test]
@@ -381,6 +422,16 @@ fn a_sigint_delivered_to_the_process_at_a_prompt_ends_it_and_writes_nothing() {
     let mut add = Session::start(dir.path());
     to_summary(&mut add);
     add.after("Changelog summary", 1, "");
+    add.interrupt();
+    assert_eq!(add.status().signal(), Some(2), "{}", add.screen());
+    assert!(changesets(dir.path()).is_empty());
+}
+
+#[test]
+fn a_sigint_delivered_to_the_process_at_a_list_ends_it_and_writes_nothing() {
+    let dir = workspace();
+    let mut add = Session::start(dir.path());
+    add.after("Packages in this change", 1, "");
     add.interrupt();
     assert_eq!(add.status().signal(), Some(2), "{}", add.screen());
     assert!(changesets(dir.path()).is_empty());
@@ -578,22 +629,26 @@ fn plain(screen: &str) -> String {
     text
 }
 
+/// The lists are printed once and never redrawn, so a pane smaller than they are cannot misdraw them.
 #[test]
-fn names_wider_than_the_terminal_are_shown_in_full_and_found_by_their_last_word() {
+fn in_a_40_by_10_pane_long_names_are_shown_in_full_and_picked_by_name() {
     let names = [
         "callisto-fixture-package-for-wrapping-left",
         "callisto-fixture-package-for-wrapping-right",
     ];
     let dir = long_names(names);
-    let mut add = Session::start_narrow(dir.path(), 40);
-    // Left unticks both, typing filters to the one ending `right`, Space ticks it and Enter confirms.
-    add.after("Packages in this change", 1, "\x1b[Dright \r");
+    let mut add = Session::start_small(dir.path(), 40, 10);
+    add.after("Packages in this change", 1, &format!("{}\r", names[1]));
     add.after("MAJOR", 1, "\r");
     add.after("MINOR", 1, "\r");
     add.after("Changelog summary", 1, "Fix\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
-    let shown = plain(&add.screen());
+    let screen = add.screen();
+    // The first escape sequence belongs to the summary question, after all three lists.
+    let lists = &screen[..screen.find('\x1b').unwrap()];
+    assert!(lists.ends_with("MINOR bump? (the rest get PATCH)\r\n  1   callisto-fixture-package-for-wrapping-right\r\nEnter picks none, or type numbers, ranges (1-3) or names; Esc cancels.\r\n> \r\n"), "the lists move the cursor or restyle:\n{screen:?}");
+    let shown = plain(lists);
     for name in names {
         assert!(shown.contains(name), "{name} is not shown in full:\n{shown}");
     }
@@ -601,4 +656,60 @@ fn names_wider_than_the_terminal_are_shown_in_full_and_found_by_their_last_word(
         changesets(dir.path()),
         [format!("---\n{}: patch\n---\n\nFix\n", names[1])]
     );
+}
+
+#[test]
+fn the_wizard_runs_on_a_dumb_terminal() {
+    let dir = workspace();
+    let mut add = Session::start_with(dir.path(), &["add"], &[("TERM", "dumb")]);
+    to_summary(&mut add);
+    add.after("Changelog summary", 1, "Fix b\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(changesets(dir.path()), ["---\nb: patch\n---\n\nFix b\n"]);
+}
+
+/// A Cargo workspace with binaries `app` and `tool` and a GitHub `origin`, so `init` asks which is the product.
+fn two_binaries() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"app\", \"tool\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    for member in ["app", "tool"] {
+        std::fs::create_dir_all(root.join(member).join("src")).unwrap();
+        std::fs::write(
+            root.join(member).join("Cargo.toml"),
+            format!("[package]\nname = \"{member}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n"),
+        )
+        .unwrap();
+        std::fs::write(root.join(member).join("src/main.rs"), "fn main() {}\n").unwrap();
+    }
+    init_repo(root);
+    run_git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/tools.git"],
+    );
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-qm", "init"]);
+    dir
+}
+
+#[test]
+fn init_asks_for_exactly_one_product_package_by_number_or_name() {
+    let dir = two_binaries();
+    let mut init = Session::start_with(dir.path(), &["init"], &[]);
+    init.after("How should packages be versioned?", 1, "\r");
+    init.after("Ship binaries", 1, "y\r");
+    init.after("Which package is the product", 1, "\r");
+    init.after("pick exactly one", 1, "1 2\r");
+    init.after("pick exactly one", 2, "cargo/tool\r");
+    init.after("Artifact target triples", 1, "x86_64-unknown-linux-gnu\r");
+    init.after("Generate a GitHub Actions release workflow?", 1, "n\r");
+    init.after("Write callisto.toml?", 1, "\r");
+    assert_eq!(init.exit_code(), Some(0), "{}", init.screen());
+    let written = std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap();
+    assert!(written.contains("product-package = \"cargo/tool\""), "{written}");
 }

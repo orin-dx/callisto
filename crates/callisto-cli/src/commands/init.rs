@@ -61,7 +61,10 @@ const VERSIONING_CHOICES: [&str; 2] = [
 
 /// Asks the operator questions; a scripted implementation drives tests.
 pub trait Prompter {
+    /// One of a few fixed `items`.
     fn select(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError>;
+    /// One of a list of any length, such as the workspace's packages.
+    fn pick(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError>;
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError>;
     fn input(&mut self, prompt: &str, default: Option<&str>) -> Result<String, CliError>;
 }
@@ -74,6 +77,10 @@ impl Prompter for TerminalPrompter {
             .with_help_message("Up/Down move, Enter selects, type to filter")
             .raw_prompt()?
             .index)
+    }
+
+    fn pick(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
+        tty::pick_one(prompt, items)
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
@@ -559,7 +566,7 @@ fn collect_answers(
         (None, [only]) => only,
         (None, _) if prompting => {
             let ids: Vec<String> = binaries.iter().map(|package| package.id.clone()).collect();
-            binaries[prompter.select(PRODUCT_PROMPT, &ids)?]
+            binaries[prompter.pick(PRODUCT_PROMPT, &ids)?]
         }
         (None, _) => return Err(missing("--product-package")),
     };

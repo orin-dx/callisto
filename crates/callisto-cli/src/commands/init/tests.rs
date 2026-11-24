@@ -70,6 +70,9 @@ impl Prompter for Scripted {
             _ => panic!("`{prompt}` is not a select"),
         }
     }
+    fn pick(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
+        self.select(prompt, items)
+    }
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
         match self.next(prompt, Some(&default.to_string())) {
             Answer::Confirm(answer) => Ok(answer),
