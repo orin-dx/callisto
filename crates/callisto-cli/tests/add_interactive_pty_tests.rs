@@ -59,12 +59,12 @@ impl Session {
 
     /// `callisto <args>` with `env` set; `VISUAL` and `EDITOR` are unset unless `env` names them.
     fn start_with(root: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
-        Self::launch(root, args, env, true)
+        Self::launch(root, args, env, true, 30)
     }
 
     /// `callisto <args>` with stdin and stdout on the terminal and stderr piped; read it with [`Session::stderr`].
     fn start_with_piped_stderr(root: &Path, args: &[&str]) -> Self {
-        Self::launch(root, args, &[], false)
+        Self::launch(root, args, &[], false, 30)
     }
 
     fn stderr(&mut self) -> String {
@@ -73,7 +73,12 @@ impl Session {
         text
     }
 
-    fn launch(root: &Path, args: &[&str], env: &[(&str, &str)], stderr_on_terminal: bool) -> Self {
+    /// `callisto add` on a terminal `rows` tall.
+    fn start_sized(root: &Path, rows: u16) -> Self {
+        Self::launch(root, &["add"], &[], true, rows)
+    }
+
+    fn launch(root: &Path, args: &[&str], env: &[(&str, &str)], stderr_on_terminal: bool, rows: u16) -> Self {
         let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         grantpt(&master).unwrap();
         unlockpt(&master).unwrap();
@@ -86,7 +91,7 @@ impl Session {
         rustix::termios::tcsetwinsize(
             &tty,
             rustix::termios::Winsize {
-                ws_row: 30,
+                ws_row: rows,
                 ws_col: 120,
                 ws_xpixel: 0,
                 ws_ypixel: 0,
@@ -525,4 +530,59 @@ fn esc_at_an_init_prompt_writes_nothing_and_exits_130() {
     );
     init.assert_terminal_restored();
     assert!(!dir.path().join("callisto.toml").exists());
+}
+
+/// Twenty npm packages `p00`..`p19`, all changed since their release.
+fn many_packages() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
+    )
+    .unwrap();
+    for n in 0..20 {
+        std::fs::create_dir_all(root.join(format!("packages/p{n:02}"))).unwrap();
+        std::fs::write(
+            root.join(format!("packages/p{n:02}/package.json")),
+            format!(r#"{{"name":"p{n:02}","version":"1.0.0"}}"#),
+        )
+        .unwrap();
+    }
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+    run_git(root, &["add", "-A"]);
+    run_git(root, &["commit", "-qm", "release"]);
+    dir
+}
+
+#[test]
+fn a_short_terminal_shows_fewer_rows_and_unticks_the_highlighted_package() {
+    const ROWS: usize = 10;
+    let dir = many_packages();
+    let mut add = Session::start_sized(dir.path(), ROWS as u16);
+    // Ten Downs then Space unticks the eleventh package, p10.
+    add.after("Packages in this change", 1, &format!("{}{}", "\x1b[B".repeat(10), " "));
+    add.after("[ ]", 1, "\r");
+    add.after("MAJOR", 1, "\r");
+    add.after("MINOR", 1, "\r");
+    add.after("Changelog summary", 1, "Fix\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    let screen = add.screen();
+    let list = screen.split("MAJOR").next().unwrap_or_default();
+    let rows_in_first_frame = list.lines().take_while(|line| !line.contains("to move")).count() + 1;
+    assert!(
+        rows_in_first_frame <= ROWS,
+        "the list frame is {rows_in_first_frame} lines on {ROWS} rows:\n{list}"
+    );
+    let [changeset] = changesets(dir.path()).try_into().expect("one changeset");
+    assert!(
+        changeset.contains("p09: patch") && changeset.contains("p11: patch"),
+        "{changeset}"
+    );
+    assert!(
+        !changeset.contains("p10"),
+        "the highlighted package stays ticked:\n{changeset}"
+    );
 }

@@ -175,7 +175,7 @@ impl AddPrompter for TerminalAddPrompter {
         let picked = tty::prompt(|| {
             MultiSelect::new(prompt, items.to_vec())
                 .with_default(&ticked)
-                .with_page_size(PAGE)
+                .with_page_size(tty::page_size(PAGE))
                 .raw_prompt()
         })?;
         Ok(picked.into_iter().map(|option| option.index).collect())

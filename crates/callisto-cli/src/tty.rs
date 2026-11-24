@@ -20,6 +20,28 @@ impl Prompts {
     }
 }
 
+/// Lines a list prompt draws besides its rows: the question and the help line.
+const LIST_CHROME: usize = 2;
+
+/// Fewest rows a list shows, however short the terminal.
+const MIN_PAGE: usize = 3;
+
+/// Rows a list prompt may show: `wanted`, capped so the rows, question and help fit the terminal. Inquire redraws
+/// relative to the previous frame, so a frame taller than the terminal lands the highlight on the wrong row.
+pub fn page_size(wanted: usize) -> usize {
+    fit_page(
+        wanted,
+        crossterm::terminal::size().ok().map(|(_, rows)| usize::from(rows)),
+    )
+}
+
+fn fit_page(wanted: usize, terminal_rows: Option<usize>) -> usize {
+    match terminal_rows {
+        Some(rows) => wanted.min(rows.saturating_sub(LIST_CHROME)).max(MIN_PAGE),
+        None => wanted,
+    }
+}
+
 /// Printed whenever a prompt run ends without writing.
 pub const CANCELLED: &str = "Cancelled, nothing written.";
 

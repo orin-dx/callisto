@@ -66,11 +66,19 @@ pub trait Prompter {
     fn input(&mut self, prompt: &str, default: Option<&str>) -> Result<String, CliError>;
 }
 
+/// Rows a choice list shows before it pages.
+const PAGE: usize = 7;
+
 struct TerminalPrompter;
 
 impl Prompter for TerminalPrompter {
     fn select(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
-        Ok(tty::prompt(|| Select::new(prompt, items.to_vec()).raw_prompt())?.index)
+        Ok(tty::prompt(|| {
+            Select::new(prompt, items.to_vec())
+                .with_page_size(tty::page_size(PAGE))
+                .raw_prompt()
+        })?
+        .index)
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
