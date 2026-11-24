@@ -1,0 +1,70 @@
+Final change for PR #634. Worktree /Users/gabe/Projects/callisto/.claude/worktrees/wp-onboarding-friction-fix (HEAD da5bee502 = pushed). Trail #487. One thing only: Callisto reads git remote get-url --push origin, so the help of E299 (crates/callisto-cli/src/error.rs about 362) and E132 (crates/callisto-graph/src/error.rs about 1022) must say to inspect with 'git remote get-url --push origin' and fix with 'git remote set-url --push origin <url>'. Update any test asserting the old help text. Full gate by exit code before reporting: just pre-push && just lint && just doc-check && just test (pty and network tests unsandboxed). Commit locally (signed), report the sha, the diff stat and each gate's exit code. Do not push and do not touch findings; the lead does both. Scope is fixed: change nothing outside this list. Rules (from the lead session close-gap-for-alpha). Be thorough before a push: a push costs a paid review, so find problems locally first.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Before reporting a change as ready to push, run the AGENTS.md gate in full and judge each by exit code: `just pre-push && just lint && just doc-check && just test` (workspace-wide, not just the touched crate; tests elsewhere read scripts, specs and error registries). Run network/pty tests unsandboxed. Iterate with scoped `cargo test -p` while working.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Every push triggers a paid review. Before reporting, run the checklist in /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md against your full diff. Push once, only after the lead has read your diff and says push; for an existing PR, commit locally and report the worktree and sha first.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: in addition to the push-URL help text, verify #634 against the 'init and origin' and 'When prompts run' rows of /Users/gabe/Projects/callisto/.claude/plans/CONTRACT-interactive-cli.md: missing or non-hosted origin gives one note and init/preview continue unbound; the remote value is never printed (text and JSON, stdout and stderr); --workflow/--artifact-target without a hosted origin gives E299 with the --push help; init in JSON or non-TTY never prompts (E240). For each row confirm the code, a docs/specs/cli.json criterion and a binary-level test; add what's missing. Report a table: row | code ok | criterion id | test name. Then the full gate. Still don't push.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead, owner says fix everything: also the second open finding on #634 (init.rs about 179/294-296/318): in interactive init, notes queued before the write confirmation (for example why workflow generation was skipped) must be shown once before the confirmation, not only at the end; declining must not drop them; JSON mode still includes them in the report and prints each once on stderr. Test the confirm and decline paths through the real binary. Same batch, same gate, no push.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: an exhaustive audit of #634 found the full set of what's left. Finish your current push-URL and notes-before-confirmation work, then fold ALL of this into the same local batch (no push): F1 E132 help depends on the refusal: OriginRefusal::NoPushUrl / Origin::Missing -> message 'no origin remote is configured', help 'git remote add origin <url>'; NotHosted keeps the --push help; update docs/errors.md:200. F2 .changeset/tough-pandas-leap.md:17 -> 'git remote get-url --push origin'. F3 docs/errors.md:305 E299 row: 'init --workflow/--artifact-target without a hosted origin remote' plus the not-hosted help. F4 carry the fixed refusal reason: InitFacts.origin_not_hosted becomes Option<&'static str>, shown in the init note and in E299's message; define ONE constant for the accepted forms ('an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials') and use it in the OriginRefusal display, the init note, E132/E299 help, README.md:161 and docs/releasing.md:13. Changeset line 9: 'each note once on stderr'. docs/specs/cli.json CLI-INIT-01: Detected origin prints the hosted endpoint or 'not hosted', never the value. F5 in init, render pre-write notes before the write question in BOTH text and JSON modes and don't repeat them in finish(); on decline in JSON mode still emit the report. F6 release --dry-run (crates/callisto-cli/src/commands/release.rs 117-121): when planning fails with ReleaseSelectionInvalid NotARelease, compute pending_version_work for the selection first and print the pending note before returning the error. F7 ShownRegistry (graph error.rs 980-993): show only scheme and host, never the path. F8 the pending hint must not run commit inference: compute it from changesets only (no CommitInference), so release --dry-run adds no git process per auto-release package; narrow REL-CMD-05 to changesets; confirm with git_process_count_tests and an auto-trigger shape if one exists. Do NOT add a pending key to the release JSON report. Tests for F1, F4, F5 (both modes, decline), F6, F7, F8 through the real binary where users see it. Then the full gate by exit code (just pre-push && just lint && just doc-check && just test, network unsandboxed, plus just fuzz-check). Commit locally (signed); report sha, gate exit codes and one line per item. Don't push.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bgs5ud86f</task-id>
+<summary>Monitor event: "wait for current gate to finish"</summary>
+<event>[Monitor expired after 15m with no events delivered. Re-arm it if you still need the watch — and widen the filter if silence was unexpected.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9vinu9so</task-id>
+<tool-use-id>toolu_01U9ZAj4Zj5EF2oQjjmhuLXz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/51bbc6d2-af86-47ea-9a8e-737aa351cf5c/tasks/b9vinu9so.output</output-file>
+<status>completed</status>
+<summary>Background command "(just pre-push &gt;$TMPDIR/g1.log 2&gt;&amp;1; echo PREPUSH=$? &gt;$TMPDIR/g.res; just lint &gt;$TMPDIR/g2.log 2&gt;&amp;1; echo LINT=$? &gt;&gt;$TMPDIR/g.res; just doc-check &gt;$TMPDIR/g3.log 2&gt;&amp;1; echo DOC=$? &gt;&gt;$TMPDIR/g.res; just test &gt;$TMPDIR/g4.log 2&gt;&amp;1; echo TEST=$? &gt;&gt;$TMPDIR/g.res; just fuzz-check &gt;$TMPDIR/g5.log 2&gt;&amp;1; echo FUZZ=$? &gt;&gt;$TMPDIR/g.res; echo DONE &gt;&gt;$TMPDIR/g.res) &gt;/dev/null 2&gt;&amp;1 &amp;
+echo started $TMPDIR" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b3r3o7ewr</task-id>
+<tool-use-id>toolu_01RZ6n9EottwQLYPc3gf534P</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/51bbc6d2-af86-47ea-9a8e-737aa351cf5c/tasks/b3r3o7ewr.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for gate completion" stream ended</summary>
+<event>PREPUSH=0
+LINT=0
+DOC=0
+TEST=100
+FUZZ=0
+DONE</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
