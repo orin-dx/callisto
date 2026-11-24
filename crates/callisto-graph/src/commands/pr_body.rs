@@ -1,6 +1,8 @@
 use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
-use crate::changelog::markdown::{rebase_headings, split_summary};
+use crate::changelog::render::{
+    commit_bullet, dependency_bullet, indent_changeset_summary, peer_bullet, DEPENDENCY_HEADING,
+};
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
@@ -26,30 +28,9 @@ fn severity_emoji(severity: Severity) -> &'static str {
     }
 }
 
-/// One change's bullet text. `None` for a change with nothing to say.
-fn entry_text(kind: &ChangeKind) -> Option<String> {
-    match kind {
-        ChangeKind::Changeset { summary, .. } => Some(summary.trim().to_owned()),
-        ChangeKind::Commit { subject, short_sha, .. } => Some(format!("{subject} ({short_sha})")),
-        ChangeKind::DependencyUpdate { dependency, to } => Some(format!("`{dependency}` → `{to}`")),
-        ChangeKind::PeerEscalation { dependency, to } => {
-            Some(format!("Peer dependency `{dependency}` requires `{to}`"))
-        }
-        ChangeKind::Fallback { reason } => Some(fallback_reason_text(reason)),
-    }
-}
-
-/// A short, stable label for a change's `<summary>`, from its identity and never from its free-text body.
-fn change_label(kind: &ChangeKind) -> String {
-    match kind {
-        ChangeKind::Changeset { filename, .. } => {
-            format!("`{}`", filename.strip_suffix(".md").unwrap_or(filename))
-        }
-        ChangeKind::Commit { short_sha, .. } => format!("Commit `{short_sha}`"),
-        ChangeKind::PeerEscalation { dependency, to } => format!("Peer dependency `{dependency}` → `{to}`"),
-        ChangeKind::DependencyUpdate { dependency, to } => format!("Dependency `{dependency}` → `{to}`"),
-        ChangeKind::Fallback { .. } => unreachable!("Fallback changes render via their sole member, not this label"),
-    }
+/// A changeset's label when its summary is empty, from its filename.
+fn changeset_label(filename: &str) -> String {
+    format!("`{}`", filename.strip_suffix(".md").unwrap_or(filename))
 }
 
 /// Text for a package with no renderable changelog entries, from why it bumps.
@@ -57,7 +38,7 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
     match reason {
         Some(reason) => match reason {
             BumpReason::Changeset { changesets } => {
-                format!("- Associated changesets: `{}`\n", changesets.join("`, `"))
+                format!("Associated changesets: `{}`", changesets.join("`, `"))
             }
             BumpReason::Cascade {
                 via,
@@ -66,7 +47,7 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
                 ..
             } => {
                 format!(
-                    "- Automatic dependency cascade triggered by `{}` (spec `{}` target `{}`).\n",
+                    "Automatic dependency cascade triggered by `{}` (spec `{}` target `{}`).",
                     via.display_name(),
                     spec,
                     dependency_to.render()
@@ -74,37 +55,49 @@ fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
             }
             BumpReason::PeerEscalation { via, spec } => {
                 format!(
-                    "- Peer dependency escalation triggered by `{}` (spec `{}`).\n",
+                    "Peer dependency escalation triggered by `{}` (spec `{}`).",
                     via.display_name(),
                     spec
                 )
             }
             BumpReason::FixedGroupUnion { group } => {
-                format!("- Fixed group synchronization for group `{}`.\n", group.as_str())
+                format!("Fixed group synchronization for group `{}`.", group.as_str())
             }
             BumpReason::LinkedGroupUnion { group } => {
-                format!("- Linked group version alignment for group `{}`.\n", group.as_str())
+                format!("Linked group version alignment for group `{}`.", group.as_str())
             }
             BumpReason::Inference { commits, .. } => {
-                format!("- Inferred from {commits} commit(s) since the last release.\n")
+                format!("Inferred from {commits} commit(s) since the last release.")
             }
             BumpReason::PreRelease { tag } => {
-                format!("- Pre-release finalization (tag `{tag}`).\n")
+                format!("Pre-release finalization (tag `{tag}`).")
             }
             BumpReason::NewGroupMember { group } => {
-                format!("- New member of group `{}`.\n", group.as_str())
+                format!("New member of group `{}`.", group.as_str())
             }
-            _ => "_No changelog entries available._\n".to_string(),
+            _ => "_No changelog entries available._".to_string(),
         },
-        None => "_No changelog entries available._\n".to_string(),
+        None => "_No changelog entries available._".to_string(),
     }
+}
+
+/// More changesets than this are counted in the Triggered by column rather than named.
+const MAX_NAMED_CHANGESETS: usize = 3;
+
+/// The changesets as code spans, or `None` when there are too many to name.
+fn changeset_names(changesets: &[String]) -> Option<String> {
+    (changesets.len() <= MAX_NAMED_CHANGESETS).then(|| {
+        let names: Vec<String> = changesets.iter().map(|name| name.replace('|', "\\|")).collect();
+        format!("`{}`", names.join("`, `"))
+    })
 }
 
 fn reason_cell(reason: &Option<BumpReason>) -> String {
     match reason {
-        Some(BumpReason::Changeset { changesets }) => {
-            format!("Changeset (`{}`)", changesets.join("`, `"))
-        }
+        Some(BumpReason::Changeset { changesets }) => match changeset_names(changesets) {
+            Some(names) => format!("Changeset ({names})"),
+            None => format!("{} changesets", changesets.len()),
+        },
         Some(BumpReason::Cascade { via, .. }) => {
             format!("Cascade from `{}`", via.display_name())
         }
@@ -192,7 +185,7 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
     // Major-first (the order `notes.packages` already has): a reviewer's real question is "is anything breaking,"
     // and that must be answerable from the top of the table without scanning every row.
     body.push_str("### 📊 Release Summary\n\n");
-    body.push_str("| Package | Ecosystem | Current | Target | Bump | Reason |\n");
+    body.push_str("| Package | Ecosystem | Current | Target | Bump | Triggered by |\n");
     body.push_str("| :--- | :--- | :--- | :--- | :--- | :--- |\n");
     for package in &notes.packages {
         body.push_str(&format!(
@@ -246,24 +239,19 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
             continue;
         }
         body.push_str(&format!("#### {} {}\n\n", severity_emoji(level), level_title(level)));
-        let mut after_bullet = false;
-        for change in in_level {
-            after_bullet = render_change(&mut body, change, after_bullet);
-        }
-        if after_bullet {
-            body.push('\n');
-        }
+        render_level(&mut body, level, &in_level);
     }
 
     body.push_str(&workflow_instructions(branch));
     body
 }
 
-/// A change sits under a level-4 bump heading, so an author's own headings start one level below it.
-const DETAIL_FIRST_HEADING_LEVEL: usize = 5;
-
-/// Changes are grouped by their highest bump; a bump of `none` reads as a patch.
+/// Changes are grouped by their highest bump; a bump of `none` reads as a patch, and a dependency update is always a
+/// patch, as in the changelog.
 fn change_level(change: &Change) -> Severity {
+    if matches!(change.kind, ChangeKind::DependencyUpdate { .. }) {
+        return Severity::Patch;
+    }
     match change.max_severity() {
         Severity::None => Severity::Patch,
         level => level,
@@ -278,113 +266,73 @@ fn level_title(level: Severity) -> &'static str {
     }
 }
 
-/// Appends one change and returns whether it was a bullet, so the caller can keep consecutive bullets in one list.
-fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool {
-    let open = if change.max_severity() == Severity::Major {
-        " open"
-    } else {
-        ""
-    };
-
-    if let ChangeKind::Fallback { .. } = change.kind {
-        if after_bullet {
-            body.push('\n');
-        }
-        let member = &change.members[0];
-        body.push_str(&format!(
-            "<details{open}>\n<summary><b>{}</b> ({} {})</summary>\n\n",
-            member.package,
-            severity_emoji(member.severity),
-            member.severity
-        ));
-        push_detail(body, &entry_text(&change.kind).unwrap_or_default());
-        return false;
-    }
-
-    let (title, detail) = match &change.kind {
-        ChangeKind::Changeset { summary, .. } => {
-            let split = split_summary(summary);
-            let detail = rebase_headings(&split.detail, DETAIL_FIRST_HEADING_LEVEL);
-            match split.headline {
-                Some(headline) => (headline, detail),
-                None => (change_label(&change.kind), detail),
-            }
-        }
-        kind => (change_label(kind), entry_text(kind).unwrap_or_default()),
-    };
-    let affected: Vec<String> = change
-        .members
-        .iter()
-        .map(|member| format!("<code>{}</code>", member.package))
-        .collect();
-
-    let pr = match &change.kind {
-        ChangeKind::Changeset { pr: Some(pr), .. } => Some(*pr),
-        _ => None,
-    };
-
-    if detail.is_empty() {
-        let link = pr.map(|pr| format!(" · #{pr}")).unwrap_or_default();
-        body.push_str(&format!(
-            "- **{}** — affects {}{link}\n",
-            bullet_markdown(&title),
-            affected.join(", ")
-        ));
-        return true;
-    }
-    // A raw-HTML `<summary>` does not link `#N`, so the reference closes the detail, where Markdown applies.
-    let detail = match pr {
-        Some(pr) => format!("{}\n\nPull request #{pr}", detail.trim_end()),
-        None => detail,
-    };
-    if after_bullet {
-        body.push('\n');
-    }
+/// One group's collapsible block: a summary written here, then each change as the changelog will render it.
+fn render_level(body: &mut String, level: Severity, changes: &[&Change]) {
+    let open = if level == Severity::Major { " open" } else { "" };
+    let noun = if changes.len() == 1 { "change" } else { "changes" };
     body.push_str(&format!(
-        "<details{open}>\n<summary><b>{}</b> — affects {}</summary>\n\n",
-        summary_html(&title),
-        affected.join(", ")
+        "<details{open}>\n<summary>{}: {} {noun}</summary>\n\n",
+        level_title(level),
+        changes.len()
     ));
-    push_detail(body, &detail);
-    false
-}
-
-/// Markdown is not interpreted inside a raw-HTML `<summary>`, so code spans become `<code>` and everything else is
-/// escaped; otherwise a title such as ``Fix `<T>` `` would lose its `<T>` as an unknown tag.
-fn summary_html(text: &str) -> String {
-    fn escape(text: &str) -> String {
-        text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    for bullet in changes.iter().filter_map(|change| change_bullet(change)) {
+        body.push_str(&bullet);
     }
-    map_code_spans(text, escape, |code| format!("<code>{}</code>", escape(code)))
+    body.push_str(&dependency_updates(changes));
+    body.push_str("</details>\n\n");
 }
 
-/// A bullet is Markdown, so code spans stay as written and a `<` outside one is escaped rather than read as a tag.
-fn bullet_markdown(text: &str) -> String {
-    map_code_spans(text, |plain| plain.replace('<', "\\<"), |code| format!("`{code}`"))
-}
-
-/// Rewrites the text outside single-backtick code spans with `plain` and each span's contents with `code`.
-fn map_code_spans(text: &str, plain: impl Fn(&str) -> String, code: impl Fn(&str) -> String) -> String {
+/// The changelog's one nested "Dependency updates" block for the group, each update naming its own packages.
+fn dependency_updates(changes: &[&Change]) -> String {
     let mut out = String::new();
-    let mut rest = text;
-    while let Some(open) = rest.find('`') {
-        let Some(len) = rest[open + 1..].find('`') else {
-            break;
-        };
-        out.push_str(&plain(&rest[..open]));
-        out.push_str(&code(&rest[open + 1..open + 1 + len]));
-        rest = &rest[open + len + 2..];
+    for change in changes {
+        if let ChangeKind::DependencyUpdate { dependency, to } = &change.kind {
+            if out.is_empty() {
+                out.push_str(DEPENDENCY_HEADING);
+            }
+            let names: Vec<String> = change.members.iter().map(|m| format!("`{}`", m.package)).collect();
+            out.push_str(&format!(
+                "{} · affects {}\n",
+                dependency_bullet(dependency, to),
+                names.join(", ")
+            ));
+        }
     }
-    out.push_str(&plain(rest));
+    if !out.is_empty() {
+        out.push('\n');
+    }
     out
 }
 
-fn push_detail(body: &mut String, text: &str) {
-    body.push_str(text);
-    if !text.ends_with('\n') {
-        body.push('\n');
+/// The changelog's bullet for the change, then who it affects and the pull request that added it.
+/// Dependency updates have no bullet: they render as one block per group.
+fn change_bullet(change: &Change) -> Option<String> {
+    let mut bullet = match &change.kind {
+        ChangeKind::Changeset { summary, filename, .. } => match indent_changeset_summary(summary) {
+            Some(indented) => format!("- {indented}\n"),
+            None => format!("- {}\n", changeset_label(filename)),
+        },
+        ChangeKind::Fallback { reason } => {
+            format!("- `{}`: {}\n", change.members[0].package, fallback_reason_text(reason))
+        }
+        ChangeKind::Commit { subject, short_sha, .. } => commit_bullet(subject, short_sha),
+        ChangeKind::PeerEscalation { dependency, to } => peer_bullet(dependency, to),
+        ChangeKind::DependencyUpdate { .. } => return None,
+    };
+    if !matches!(change.kind, ChangeKind::Fallback { .. }) {
+        let affected: Vec<String> = change
+            .members
+            .iter()
+            .map(|member| format!("`{}`", member.package))
+            .collect();
+        let pr = match &change.kind {
+            ChangeKind::Changeset { pr: Some(pr), .. } => format!(" · #{pr}"),
+            _ => String::new(),
+        };
+        bullet.push_str(&format!("\n  Affects {}{pr}\n", affected.join(", ")));
     }
-    body.push_str("\n</details>\n\n");
+    bullet.push('\n');
+    Some(bullet)
 }
 
 /// Where merging will publish each package, from planning the versioned tree's release.
@@ -701,22 +649,6 @@ mod tests {
     }
 
     #[test]
-    fn a_summary_title_keeps_code_spans_and_escapes_the_rest() {
-        assert_eq!(
-            summary_html("Fix `<T>` & more"),
-            "Fix <code>&lt;T&gt;</code> &amp; more"
-        );
-        assert_eq!(summary_html("a < b `unclosed"), "a &lt; b `unclosed");
-        assert_eq!(summary_html("`a` and `b`"), "<code>a</code> and <code>b</code>");
-    }
-
-    #[test]
-    fn a_bullet_title_keeps_code_spans_and_escapes_a_stray_tag() {
-        assert_eq!(bullet_markdown("Fix `<T>` and <b>"), "Fix `<T>` and \\<b>");
-        assert_eq!(bullet_markdown("plain"), "plain");
-    }
-
-    #[test]
     fn a_change_names_the_pull_request_that_added_it() {
         let write = |package: &str, filename: &str, summary: &str| {
             let package = PackageId::parse(package).unwrap();
@@ -726,7 +658,7 @@ mod tests {
                 to: Version::semver(1, 1, 0),
                 severity: Severity::Minor,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: vec![],
             };
             let write = crate::plan::ChangelogWrite {
@@ -770,18 +702,9 @@ mod tests {
 
         let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
 
-        assert!(
-            body.contains("- **Adds a flag.** — affects <code>pkg-a</code> · #12\n"),
-            "{body}"
-        );
-        assert!(
-            body.contains("Details here.\n\nPull request #34\n\n</details>"),
-            "{body}"
-        );
-        assert!(
-            body.contains("- **No pull request.** — affects <code>pkg-c</code>\n"),
-            "{body}"
-        );
+        assert!(body.contains("- Adds a flag.\n\n  Affects `pkg-a` · #12\n"), "{body}");
+        assert!(body.contains("  Details here.\n\n  Affects `pkg-b` · #34\n"), "{body}");
+        assert!(body.contains("- No pull request.\n\n  Affects `pkg-c`\n"), "{body}");
     }
 
     #[test]
@@ -794,7 +717,7 @@ mod tests {
                 to: Version::semver(2, 0, 0),
                 severity,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: vec![],
             };
             let write = crate::plan::ChangelogWrite {
@@ -845,15 +768,10 @@ mod tests {
         assert!(major < minor, "{body}");
         assert!(!body.contains("#### 🟢 Patch"), "{body}");
         assert!(
-            body.contains(
-                "<details open>\n<summary><b>Drops the old API.</b> — affects <code>pkg-a</code></summary>\n\n##### Migration\n\nCallers must now pass a config.\n\n</details>"
-            ),
+            body.contains("<details open>\n<summary>Major: 1 change</summary>\n\n- Drops the old API."),
             "{body}"
         );
-        assert!(
-            body.contains("- **Adds a flag.** — affects <code>pkg-b</code>\n\n"),
-            "{body}"
-        );
+        assert!(body.contains("Affects `pkg-b`\n"), "{body}");
         assert!(
             !body.contains("`a`") && !body.contains("`b`"),
             "titles are headlines, not filenames: {body}"
@@ -867,7 +785,7 @@ mod tests {
             to,
             severity,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![],
         }
     }
@@ -919,7 +837,7 @@ mod tests {
             to: Version::semver(0, 2, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::Changeset {
+            trigger: Some(BumpReason::Changeset {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
             writes: vec![crate::plan::VersionWriteTarget::Manifest(
@@ -933,7 +851,7 @@ mod tests {
             to: Version::semver(1, 0, 1),
             severity: Severity::Patch,
             governed_by: None,
-            reason: Some(BumpReason::Changeset {
+            trigger: Some(BumpReason::Changeset {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
             writes: vec![crate::plan::VersionWriteTarget::Manifest("web-app/package.json".into())],
@@ -994,7 +912,7 @@ mod tests {
                 to: Version::semver(1, 1, 0),
                 severity: Severity::Minor,
                 governed_by: None,
-                reason: Some(reason),
+                trigger: Some(reason),
                 writes: vec![],
             }],
             rewrites: vec![],
@@ -1071,7 +989,7 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::Cascade {
+            trigger: Some(BumpReason::Cascade {
                 via: PackageId::parse("pkg-core").unwrap(),
                 dep_kind: callisto_model::DepKind::Runtime,
                 spec: "^1.0.0".to_string(),
@@ -1123,7 +1041,7 @@ mod tests {
             report.body
         );
         assert!(
-            report.body.contains("<code>pkg-a</code>"),
+            report.body.contains("`pkg-a`"),
             "body must list pkg-a as affected by the change group; body: {}",
             report.body
         );
@@ -1132,6 +1050,263 @@ mod tests {
             "body must NOT contain the fallback Cascade text when render_section succeeded; body: {}",
             report.body
         );
+    }
+
+    #[test]
+    fn a_changeset_name_with_a_pipe_is_escaped_in_the_reason_cell() {
+        let cell = reason_cell(&Some(BumpReason::Changeset {
+            changesets: vec!["a|b".to_string()],
+        }));
+        assert_eq!(cell, "Changeset (`a\\|b`)");
+    }
+
+    #[test]
+    fn changes_render_as_the_changelog_will_write_them() {
+        let pkg = PackageId::parse("pkg-a").unwrap();
+        let entry = |filename: &str, summary: &str| crate::changelog::ChangelogEntry {
+            severity: Severity::Patch,
+            source: crate::changelog::ChangeSource::Changeset {
+                filename: filename.to_string(),
+                summary: summary.to_string(),
+            },
+        };
+        let input = crate::changelog::ChangelogInput {
+            style: Default::default(),
+            package: pkg.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Some(Version::semver(1, 0, 1)),
+            entries: vec![
+                entry(
+                    "brave-eagles-race.md",
+                    "**Python ranges keep their precision when a bound has a suffix.** A dependent requirement whose bound carries a post, dev or pre-release suffix is now rewritten at the precision it was written with, in any epoch.\n\n- `>=1.2.3.post1,<1.3` becomes `>=1.2.4,<1.3` instead of widening to `<2`.\n- `~=1.2.post1` becomes `~=1.2` instead of narrowing to `~=1.2.1`.",
+                ),
+                entry(
+                    "radiant-pandas-roar.md",
+                    "**`pre enter` and `pre exit` stage only their own `pre.json`.** A changesets directory whose name contains glob characters, such as `notes*`, no longer stages a neighbouring tracked `notes-other/pre.json` as well.",
+                ),
+            ],
+        };
+        let plan = VersionPlan {
+            bumps: vec![
+                PlannedBump {
+                    package: pkg,
+                    from: Version::semver(1, 0, 0),
+                    to: Version::semver(1, 0, 1),
+                    severity: Severity::Patch,
+                    governed_by: None,
+                    trigger: Some(BumpReason::Changeset {
+                        changesets: vec!["brave-eagles-race".to_string(), "radiant-pandas-roar".to_string()],
+                    }),
+                    writes: vec![],
+                },
+                PlannedBump {
+                    package: PackageId::parse("pkg-b").unwrap(),
+                    from: Version::semver(1, 0, 0),
+                    to: Version::semver(1, 0, 1),
+                    severity: Severity::Patch,
+                    governed_by: None,
+                    trigger: Some(BumpReason::Changeset {
+                        changesets: ["a", "b", "c", "d"].map(String::from).to_vec(),
+                    }),
+                    writes: vec![],
+                },
+            ],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input,
+            }],
+            consumed_changesets: vec![],
+            archived_changesets: Vec::new(),
+            inferred: Default::default(),
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
+
+        insta::assert_snapshot!(body);
+    }
+
+    #[test]
+    fn dependency_updates_nest_under_patch_as_the_changelog_writes_them() {
+        let pkg = PackageId::parse("pkg-a").unwrap();
+        let input = crate::changelog::ChangelogInput {
+            style: Default::default(),
+            package: pkg.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Some(Version::semver(1, 1, 0)),
+            entries: vec![
+                crate::changelog::ChangelogEntry {
+                    severity: Severity::Minor,
+                    source: crate::changelog::ChangeSource::Changeset {
+                        filename: "adds-flag.md".to_string(),
+                        summary: "**Adds a flag.** Use it.".to_string(),
+                    },
+                },
+                crate::changelog::ChangelogEntry {
+                    severity: Severity::Minor,
+                    source: crate::changelog::ChangeSource::DependencyUpdate {
+                        dependency: PackageId::parse("pkg-core").unwrap(),
+                        dep_kind: callisto_model::DepKind::Runtime,
+                        to: Version::semver(2, 0, 0),
+                    },
+                },
+            ],
+        };
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: pkg,
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 1, 0),
+                severity: Severity::Minor,
+                governed_by: None,
+                trigger: None,
+                writes: vec![],
+            }],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input,
+            }],
+            consumed_changesets: vec![],
+            archived_changesets: Vec::new(),
+            inferred: Default::default(),
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
+
+        insta::assert_snapshot!(body);
+    }
+
+    #[test]
+    fn a_newline_in_a_dependency_name_keeps_each_update_with_its_own_packages() {
+        let dep_bump = |name: &str, dep: &str| {
+            let pkg = PackageId::parse(name).unwrap();
+            let input = crate::changelog::ChangelogInput {
+                style: Default::default(),
+                package: pkg.clone(),
+                from: Version::semver(1, 0, 0),
+                to: Some(Version::semver(1, 0, 1)),
+                entries: vec![crate::changelog::ChangelogEntry {
+                    severity: Severity::Patch,
+                    source: crate::changelog::ChangeSource::DependencyUpdate {
+                        dependency: PackageId::parse(dep).unwrap(),
+                        dep_kind: callisto_model::DepKind::Runtime,
+                        to: Version::semver(2, 0, 0),
+                    },
+                }],
+            };
+            let bump = PlannedBump {
+                package: pkg,
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 0, 1),
+                severity: Severity::Patch,
+                governed_by: None,
+                trigger: None,
+                writes: vec![],
+            };
+            (bump, input)
+        };
+        let (bump_a, input_a) = dep_bump("app-a", "dep\nx");
+        let (bump_b, input_b) = dep_bump("app-b", "dep-y");
+        let plan = VersionPlan {
+            bumps: vec![bump_a, bump_b],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: [("A", input_a), ("B", input_b)]
+                .into_iter()
+                .map(|(n, input)| crate::plan::ChangelogWrite {
+                    changelog_path: std::path::PathBuf::from(format!("{n}/CHANGELOG.md")),
+                    input,
+                })
+                .collect(),
+            consumed_changesets: vec![],
+            archived_changesets: Vec::new(),
+            inferred: Default::default(),
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
+
+        assert!(body.contains("`dep-y` → `2.0.0` · affects `app-b`"), "{body}");
+        assert!(body.contains("→ `2.0.0` · affects `app-a`"), "{body}");
+        assert!(!body.contains("`dep-y` → `2.0.0` · affects `app-a`"), "{body}");
+    }
+
+    #[test]
+    fn each_dependency_update_names_only_its_own_packages() {
+        let dep_bump = |name: &str, dep: &str, to: u64| {
+            let pkg = PackageId::parse(name).unwrap();
+            let input = crate::changelog::ChangelogInput {
+                style: Default::default(),
+                package: pkg.clone(),
+                from: Version::semver(1, 0, 0),
+                to: Some(Version::semver(1, 0, 1)),
+                entries: vec![crate::changelog::ChangelogEntry {
+                    severity: Severity::Patch,
+                    source: crate::changelog::ChangeSource::DependencyUpdate {
+                        dependency: PackageId::parse(dep).unwrap(),
+                        dep_kind: callisto_model::DepKind::Runtime,
+                        to: Version::semver(to, 0, 0),
+                    },
+                }],
+            };
+            let bump = PlannedBump {
+                package: pkg,
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 0, 1),
+                severity: Severity::Patch,
+                governed_by: None,
+                trigger: None,
+                writes: vec![],
+            };
+            (bump, input)
+        };
+        let (bump_a, input_a) = dep_bump("app-a", "dep-x", 2);
+        let (bump_b, input_b) = dep_bump("app-b", "dep-y", 3);
+        let plan = VersionPlan {
+            bumps: vec![bump_a, bump_b],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: [("A", input_a), ("B", input_b)]
+                .into_iter()
+                .map(|(n, input)| crate::plan::ChangelogWrite {
+                    changelog_path: std::path::PathBuf::from(format!("{n}/CHANGELOG.md")),
+                    input,
+                })
+                .collect(),
+            consumed_changesets: vec![],
+            archived_changesets: Vec::new(),
+            inferred: Default::default(),
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_preview(&build_release_preview(&plan), &PrBodyOptions::default()).body;
+
+        insta::assert_snapshot!(body);
     }
 
     #[test]
@@ -1145,7 +1320,7 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::Cascade {
+            trigger: Some(BumpReason::Cascade {
                 via: PackageId::parse("pkg-core").unwrap(),
                 dep_kind: callisto_model::DepKind::Runtime,
                 spec: "^1.0.0".to_string(),
@@ -1159,7 +1334,7 @@ mod tests {
             to: Version::semver(1, 0, 1),
             severity: Severity::Patch,
             governed_by: None,
-            reason: Some(BumpReason::Changeset {
+            trigger: Some(BumpReason::Changeset {
                 changesets: vec!["fix-1".to_string()],
             }),
             writes: vec![],
@@ -1223,7 +1398,7 @@ mod tests {
             report.body
         );
         assert!(
-            report.body.contains("<code>pkg-b</code>"),
+            report.body.contains("`pkg-b`"),
             "pkg-b must be listed as affected by its change group; body: {}",
             report.body
         );
@@ -1238,7 +1413,7 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::Cascade {
+            trigger: Some(BumpReason::Cascade {
                 via: PackageId::parse("pkg-core").unwrap(),
                 dep_kind: callisto_model::DepKind::Runtime,
                 spec: "^1.0.0".to_string(),
@@ -1294,7 +1469,7 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![],
         };
         let plan = VersionPlan {
@@ -1367,7 +1542,7 @@ mod tests {
                     to: Version::semver(1, 1, 0),
                     severity: Severity::Minor,
                     governed_by: None,
-                    reason: Some(BumpReason::Changeset {
+                    trigger: Some(BumpReason::Changeset {
                         changesets: vec!["delete-dead-abstractions".to_string()],
                     }),
                     writes: vec![],
@@ -1378,7 +1553,7 @@ mod tests {
                     to: Version::semver(1, 1, 0),
                     severity: Severity::Minor,
                     governed_by: None,
-                    reason: Some(BumpReason::Changeset {
+                    trigger: Some(BumpReason::Changeset {
                         changesets: vec!["delete-dead-abstractions".to_string()],
                     }),
                     writes: vec![],
@@ -1406,11 +1581,14 @@ mod tests {
                 .matches("Delete unused abstractions with zero real callers")
                 .count(),
             1,
-            "the shared changeset's text must render exactly once, not once per package; body: {}",
+            "the shared changeset renders once, not once per package; body: {}",
             report.body
         );
-        assert!(report.body.contains("<code>pkg-a</code>"), "body: {}", report.body);
-        assert!(report.body.contains("<code>pkg-b</code>"), "body: {}", report.body);
+        assert!(
+            report.body.contains("Affects `pkg-a`, `pkg-b`"),
+            "body: {}",
+            report.body
+        );
         assert!(
             report.body.contains("`delete-dead-abstractions`"),
             "the group's summary must name its changeset; body: {}",
@@ -1459,7 +1637,9 @@ mod tests {
         });
         let minor_report = render_pr_body_from_preview(&build_release_preview(&minor_only), &PrBodyOptions::default());
         assert!(
-            minor_report.body.contains("<details>\n<summary><b>pkg-a</b>"),
+            minor_report
+                .body
+                .contains("<details>\n<summary>Minor: 1 change</summary>"),
             "a minor-only change's block must default closed; body: {}",
             minor_report.body
         );
@@ -1470,7 +1650,9 @@ mod tests {
         major_plan.bumps[0].severity = Severity::Major;
         let major_report = render_pr_body_from_preview(&build_release_preview(&major_plan), &PrBodyOptions::default());
         assert!(
-            major_report.body.contains("<details open>\n<summary><b>pkg-a</b>"),
+            major_report
+                .body
+                .contains("<details open>\n<summary>Major: 1 change</summary>"),
             "a change containing a major bump must default its own block open; body: {}",
             major_report.body
         );
@@ -1489,7 +1671,7 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity: Severity::Minor,
             governed_by: None,
-            reason: Some(BumpReason::FixedGroupUnion {
+            trigger: Some(BumpReason::FixedGroupUnion {
                 group: callisto_model::GroupName("workspace".to_string()),
             }),
             writes: vec![],
@@ -1533,7 +1715,7 @@ mod tests {
         );
         assert!(report.body.contains("`pkg-a`"), "body: {}", report.body);
         assert_eq!(
-            report.body.matches("<details>\n<summary><b>pkg-a</b>").count(),
+            report.body.matches("Affects `pkg-a`").count(),
             0,
             "a bystander package must not also get its own collapsible block; body: {}",
             report.body
@@ -1568,7 +1750,7 @@ mod tests {
             to: Version::semver(1, 1, 0),
             severity,
             governed_by: None,
-            reason: Some(BumpReason::Changeset {
+            trigger: Some(BumpReason::Changeset {
                 changesets: vec![changeset.to_string()],
             }),
             writes: vec![],

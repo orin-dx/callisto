@@ -64,7 +64,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
             to: snapshot_ver.clone(),
             severity: callisto_model::Severity::Patch,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes,
         });
 

@@ -87,7 +87,7 @@ pub struct PlannedBump {
     pub to: Version,
     pub severity: Severity,
     pub governed_by: Option<ConfigKey>,
-    pub reason: Option<BumpReason>,
+    pub trigger: Option<BumpReason>,
     pub writes: Vec<VersionWriteTarget>,
 }
 
@@ -125,7 +125,7 @@ impl VersionPlan {
     pub fn to_report(&self, ids: &ReportIds, lockfiles: Option<Vec<LockfileRefreshResult>>) -> VersionReport {
         let mut bumps = Vec::new();
         for b in &self.bumps {
-            let mut reason = b.reason.clone();
+            let mut reason = b.trigger.clone();
             if let Some(reason) = &mut reason {
                 ids.reason(reason);
             }
@@ -177,7 +177,7 @@ mod platform_write_from_field_tests {
                 to: Version::semver(1, 1, 0),
                 severity: Severity::Minor,
                 governed_by: None,
-                reason: None,
+                trigger: None,
                 writes: Vec::new(),
             }],
             ..Default::default()

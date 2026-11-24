@@ -576,10 +576,10 @@ mod tests {
 
         assert_eq!(bump.to.render(), "1.1.0", "a `feat:` commit must infer a minor bump");
         assert!(
-            matches!(bump.reason, Some(BumpReason::Inference { .. })),
+            matches!(bump.trigger, Some(BumpReason::Inference { .. })),
             "the bump must be attributed to inference, not a changeset (there is none); got: \
              {:?}",
-            bump.reason
+            bump.trigger
         );
     }
 
