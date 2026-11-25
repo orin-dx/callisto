@@ -8,7 +8,7 @@ import json, os, re, shutil, subprocess, sys
 
 DEFAULT = ".github/workflows/callisto-release.yml"
 CONFIG = "callisto.toml"
-CI_WORKFLOW = ".github/workflows/callisto-ci.yml"
+PREFLIGHT_WORKFLOW = ".github/workflows/callisto-release-preflight.yml"
 BUILD_SCRIPT = ".github/scripts/build-release-artifact.sh"
 INSTALLER = ".github/actions/setup-callisto/scripts/install-callisto.sh"
 COORDINATOR_CONST_SRC = "crates/callisto-model/src/release/github.rs"
@@ -155,13 +155,10 @@ def table_agreement(paths):
             errs.append(f"{label}: ({t}, {a}) disagrees with {paths['config']}")
 
     compare(f"{paths['release']} build-artifact matrix", matrix_pairs(paths["release"], "build-artifact"))
-    ci = load(paths["ci"])
-    ci_pairs = set()
-    for job in ci["jobs"].values():
-        for e in (job.get("strategy") or {}).get("matrix", {}).get("include", []) or []:
-            if "target" in e and "asset" in e:
-                ci_pairs.add((e["target"], e["asset"]))
-    compare(f"{paths['ci']} preflight matrix", ci_pairs)
+    compare(
+        f"{paths['preflight']} preflight matrix",
+        matrix_pairs(paths["preflight"], "release-artifact-preflight"),
+    )
     script = open(paths["script"]).read()
     compare(f"{paths['script']} tuples", set(re.findall(r"^\s*\w+:([^:\s]+):([^\s|\\)]+)[\s|\\)]*$", script, re.M)))
     installer = open(paths["installer"]).read()
@@ -188,7 +185,7 @@ def coordinator_path_agreement(path, src):
 
 
 path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT
-paths = {"config": CONFIG, "release": path, "ci": CI_WORKFLOW, "script": BUILD_SCRIPT, "installer": INSTALLER}
+paths = {"config": CONFIG, "release": path, "preflight": PREFLIGHT_WORKFLOW, "script": BUILD_SCRIPT, "installer": INSTALLER}
 errs = check(path) + table_agreement(paths) + coordinator_path_agreement(DEFAULT, COORDINATOR_CONST_SRC)
 if errs:
     print("release workflow policy failed:\n  " + "\n  ".join(errs), file=sys.stderr)

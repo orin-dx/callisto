@@ -56,7 +56,7 @@ fn apply_version_plan_opens_each_distinct_manifest_path_exactly_once() {
             to: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
             severity: Severity::Minor,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![VersionWriteTarget::Manifest(bump_manifest.clone())],
         }],
         rewrites: vec![SpecRewrite {
@@ -113,7 +113,7 @@ fn apply_version_plan_batches_open_persist_and_dedupes_staged_for_shared_path() 
             to: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
             severity: Severity::Minor,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
         }],
         rewrites: vec![SpecRewrite {
@@ -280,7 +280,7 @@ fn batched_group_skipped_bump_still_increments_persist_call_count_by_one() {
             to: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
             severity: Severity::Minor,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
         }],
         rewrites: vec![SpecRewrite {
@@ -351,7 +351,7 @@ fn resolver_batched_root_manifest_opens_once_and_persists_once_for_bump_plus_mul
             to: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
             severity: Severity::Minor,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![VersionWriteTarget::CargoWorkspacePackage {
                 root_manifest: manifest_rel.clone(),
             }],

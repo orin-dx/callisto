@@ -107,8 +107,19 @@ if ! rg -Fqx '      - run: just release-workflow-behavior' "$ci_workflow"; then
   exit 1
 fi
 
-if ! rg -Fqx '  release-artifact-preflight:' "$ci_workflow"; then
-  printf 'workflow contract failed: PR CI must preflight every production artifact build recipe\n' >&2
+preflight_workflow=.github/workflows/callisto-release-preflight.yml
+if ! rg -Fqx '  release-artifact-preflight:' "$preflight_workflow"; then
+  printf 'workflow contract failed: the release preflight workflow must preflight every production artifact build recipe\n' >&2
+  exit 1
+fi
+
+if rg -q 'release-artifact-preflight' "$ci_workflow" || rg -q 'pull_request' "$preflight_workflow"; then
+  printf 'workflow contract failed: PR CI must not carry the artifact preflight, and the preflight workflow must not run on pull requests\n' >&2
+  exit 1
+fi
+
+if ! rg -Fqx '          persist-credentials: false' "$preflight_workflow"; then
+  printf 'workflow contract failed: the release preflight checkout must disable persisted credentials\n' >&2
   exit 1
 fi
 
@@ -118,10 +129,10 @@ if ! rg -Fqx '        run: just workflow-contracts' "$ci_workflow" \
   exit 1
 fi
 
-if ! rg -Fqx '          - id: macos-arm64' "$ci_workflow" \
-  || ! rg -Fqx '            target: aarch64-apple-darwin' "$ci_workflow" \
-  || ! rg -Fqx '            target: x86_64-unknown-linux-gnu' "$ci_workflow" \
-  || ! rg -Fqx '            target: x86_64-unknown-linux-musl' "$ci_workflow"; then
+if ! rg -Fqx '          - id: macos-arm64' "$preflight_workflow" \
+  || ! rg -Fqx '            target: aarch64-apple-darwin' "$preflight_workflow" \
+  || ! rg -Fqx '            target: x86_64-unknown-linux-gnu' "$preflight_workflow" \
+  || ! rg -Fqx '            target: x86_64-unknown-linux-musl' "$preflight_workflow"; then
   printf 'workflow contract failed: artifact preflight must cover all three product targets\n' >&2
   exit 1
 fi

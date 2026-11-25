@@ -93,13 +93,14 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 - **`fmt`** — `just fmt-check`
 - **`clippy`** — `just lint` + `just doc-check`
 - **`test`** — `just test`, `just release-workflow-behavior`, the Release-PR action's binary contract test, and the problem matcher test, on Linux and macOS
-- **`release-artifact-preflight`** — builds the release binary for each configured target (macOS arm64 and x64, Linux x64 gnu, arm64 gnu and x64 musl)
 - **`coverage`** — `just coverage 90` (workspace line coverage must not regress below 90%) and `just coverage-per-crate 90` (each crate too)
 - **`hygiene`** — `just machete`, `just features-boundary`, and on the release PR `just check-api`
 - **`security`** — `just audit`
 - **`validate`** — changeset and workspace-status validation
 - **`release-asset-attestation`** — downloads the latest release's Linux asset with CI's read-only token and verifies its attestation (same-repo PRs and pushes to main only; skipped when no release exists)
 - **`workflow-contracts`** — actionlint, zizmor, action pin verification (every external action pinned to a full commit, and one commit per action across `.github` and the generated-workflow templates), and the release-workflow contract/policy tests
+
+The release artifact preflight (`.github/workflows/callisto-release-preflight.yml`) is separate from PR CI. It runs on pushes to main and by `workflow_dispatch`, and builds the release binary for each configured target (macOS arm64 and x64, Linux x64 gnu, arm64 gnu and x64 musl).
 
 Tests earn their place by covering a behavior, an edge case or an error state, not a line. A change that adds a diagnostic code also adds its row to [docs/errors.md](docs/errors.md); a test fails without it.
 

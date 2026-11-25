@@ -119,6 +119,13 @@ impl Source {
         }
     }
 
+    fn changeset_id(&self) -> Option<&str> {
+        match self {
+            Source::FreshChangeset { id } | Source::RetainedChangeset { id } => Some(id),
+            Source::Inference { .. } | Source::Group { .. } => None,
+        }
+    }
+
     fn reason(&self) -> BumpReason {
         match self {
             Source::FreshChangeset { id } | Source::RetainedChangeset { id } => BumpReason::Changeset {
@@ -155,7 +162,15 @@ impl Seed {
         }
     }
 
+    /// A source already recorded (a changeset naming one package under two selectors) keeps one entry at the higher severity.
     fn add(&mut self, severity: Severity, source: Source) {
+        if let Some(entry) = std::iter::once(&mut self.first)
+            .chain(self.rest.iter_mut())
+            .find(|(_, existing)| *existing == source)
+        {
+            entry.0 = entry.0.max(severity);
+            return;
+        }
         self.rest.push((severity, source));
     }
 
@@ -182,15 +197,31 @@ impl Seed {
         self.sources().any(Source::is_named)
     }
 
-    /// The reason of the first fresh source at the highest fresh severity; the first source when none is fresh.
-    pub fn reason(&self) -> BumpReason {
+    /// The first fresh source at the highest fresh severity, which triggers the release; the first source when none is
+    /// fresh.
+    fn trigger(&self) -> &(Severity, Source) {
         let mut best = &self.first;
         for entry in self.entries().filter(|(_, source)| source.is_fresh()) {
             if !best.1.is_fresh() || entry.0 > best.0 {
                 best = entry;
             }
         }
-        best.1.reason()
+        best
+    }
+
+    /// The trigger's reason, which the changelog entries are written from. A changeset reason names every changeset
+    /// of the trigger's freshness at its severity.
+    pub fn reason(&self) -> BumpReason {
+        let (severity, source) = self.trigger();
+        if source.changeset_id().is_none() {
+            return source.reason();
+        }
+        let changesets = self
+            .entries()
+            .filter(|(s, other)| s == severity && other.is_fresh() == source.is_fresh())
+            .filter_map(|(_, other)| other.changeset_id().map(str::to_owned))
+            .collect();
+        BumpReason::Changeset { changesets }
     }
 }
 

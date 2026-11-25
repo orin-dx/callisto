@@ -82,6 +82,7 @@ pub struct PackageRelease {
     pub from: String,
     pub to: String,
     pub severity: Severity,
+    /// The bump's trigger.
     pub reason: Option<BumpReason>,
 }
 
@@ -185,7 +186,7 @@ pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {
             from: bump.from.render().to_string(),
             to: bump.to.render().to_string(),
             severity: bump.severity,
-            reason: bump.reason.clone(),
+            reason: bump.trigger.clone(),
         })
         .collect();
 
@@ -483,7 +484,7 @@ fn collect_changes(plan: &VersionPlan) -> (Vec<Change>, Vec<String>) {
                 ChangeKey::Fallback(fallbacks),
                 Change {
                     kind: ChangeKind::Fallback {
-                        reason: bump.reason.clone(),
+                        reason: bump.trigger.clone(),
                     },
                     members: vec![ChangeMember {
                         package: bump.package.display_name().to_string(),
@@ -747,7 +748,7 @@ mod tests {
             to: Version::semver(1, 0, 1),
             severity,
             governed_by: None,
-            reason: None,
+            trigger: None,
             writes: vec![],
         }
     }

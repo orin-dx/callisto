@@ -2049,6 +2049,7 @@ fn aggregate_pre_cycle<I: SeverityInference>(
 }
 
 /// A changeset recorded earlier in the cycle keeps its severity when fresh commits arrive; it must not erase them.
+/// The fresh commits trigger the release and are its reason; the recorded changeset raises it to major.
 #[test]
 fn test_pre_mode_recorded_changeset_keeps_fresh_inference() {
     let commits = FixedCommitsInference {
@@ -2063,10 +2064,14 @@ fn test_pre_mode_recorded_changeset_keeps_fresh_inference() {
     );
     let pkg_a = PackageId::parse("pkg-a").unwrap();
     assert_eq!(agg.severities().get(&pkg_a), Some(&Severity::Major));
-    assert!(matches!(
-        agg.reasons().get(&pkg_a),
-        Some(BumpReason::Inference { commits: 1, .. })
-    ));
+    assert!(
+        matches!(
+            agg.reasons().get(&pkg_a),
+            Some(BumpReason::Inference { commits: 1, .. })
+        ),
+        "got: {:?}",
+        agg.reasons().get(&pkg_a)
+    );
 }
 
 /// A fresh changeset on one fixed-group member releases the group at the cycle's retained severity.
@@ -2082,14 +2087,18 @@ fn test_pre_mode_fresh_group_member_releases_retained_member_at_group_severity()
         Some(GroupKind::Fixed),
         &crate::infer::NoInference,
     );
+    let [pkg_a, pkg_b] = ["pkg-a", "pkg-b"].map(|name| PackageId::parse(name).unwrap());
     let severities = agg.severities();
-    assert_eq!(
-        severities.get(&PackageId::parse("pkg-a").unwrap()),
-        Some(&Severity::Major)
+    assert_eq!(severities.get(&pkg_a), Some(&Severity::Major));
+    assert_eq!(severities.get(&pkg_b), Some(&Severity::Major));
+    let reasons = agg.reasons();
+    assert!(
+        matches!(reasons.get(&pkg_a), Some(BumpReason::FixedGroupUnion { .. })),
+        "the fresh group union, not the recorded changeset, triggers pkg-a: {reasons:?}"
     );
-    assert_eq!(
-        severities.get(&PackageId::parse("pkg-b").unwrap()),
-        Some(&Severity::Major)
+    assert!(
+        matches!(reasons.get(&pkg_b), Some(BumpReason::FixedGroupUnion { .. })),
+        "got: {reasons:?}"
     );
 }
 
@@ -2175,6 +2184,43 @@ fn test_seed_reason_keeps_the_first_source_on_a_tie() {
     assert!(matches!(seed.reason(), BumpReason::Changeset { changesets } if changesets == ["big"]));
 }
 
+/// The fresh notes trigger the release and are its reason, even when a retained note sets a higher bump.
+#[test]
+fn test_seed_reason_is_the_fresh_trigger_over_a_higher_retained_note() {
+    let mut seed = Seed::new(
+        Severity::Major,
+        Source::RetainedChangeset {
+            id: "old-major".to_string(),
+        },
+    );
+    seed.add(
+        Severity::Minor,
+        Source::RetainedChangeset {
+            id: "old-minor".to_string(),
+        },
+    );
+    for id in ["p1", "p2"] {
+        seed.add(Severity::Patch, Source::FreshChangeset { id: id.to_string() });
+    }
+    assert_eq!(seed.severity(), Severity::Major);
+    assert!(
+        matches!(seed.reason(), BumpReason::Changeset { ref changesets } if changesets == &["p1", "p2"]),
+        "got: {:?}",
+        seed.reason()
+    );
+    seed.add(
+        Severity::Major,
+        Source::FreshChangeset {
+            id: "new-major".to_string(),
+        },
+    );
+    assert!(
+        matches!(seed.reason(), BumpReason::Changeset { ref changesets } if changesets == &["new-major"]),
+        "got: {:?}",
+        seed.reason()
+    );
+}
+
 struct NoneSeverityInference;
 
 impl SeverityInference for NoneSeverityInference {
@@ -2198,4 +2244,13 @@ impl SeverityInference for NoneSeverityInference {
 fn test_inference_of_no_bump_seeds_nothing() {
     let agg = aggregate_pre_cycle(&["pkg-a"], &[], &[], None, &NoneSeverityInference);
     assert!(agg.seeds.is_empty(), "got: {:?}", agg.seeds);
+}
+
+#[test]
+fn a_changeset_named_twice_for_one_package_is_one_source_at_the_higher_severity() {
+    let source = || Source::FreshChangeset { id: "cs".into() };
+    let mut seed = Seed::new(Severity::Patch, source());
+    seed.add(Severity::Minor, source());
+    assert_eq!(seed.sources().count(), 1);
+    assert_eq!(seed.severity(), Severity::Minor);
 }

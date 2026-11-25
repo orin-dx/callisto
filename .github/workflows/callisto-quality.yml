@@ -24,6 +24,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-fuzz
@@ -56,6 +58,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-mutants

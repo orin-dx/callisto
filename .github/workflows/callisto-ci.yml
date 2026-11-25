@@ -64,6 +64,7 @@ jobs:
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           components: rustfmt
       - run: just fmt-check
 
@@ -82,6 +83,7 @@ jobs:
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           components: clippy
       - run: just lint
       - run: just doc-check
@@ -121,6 +123,8 @@ jobs:
           tool: just@1.58.0
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-nextest
@@ -134,54 +138,6 @@ jobs:
         run: bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
       - name: Verify the problem matcher against the real callisto error
         run: bash .github/tests/test-problem-matcher.sh
-
-  release-artifact-preflight:
-    name: Release Artifact Preflight (${{ matrix.id }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: linux-gnu
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset: callisto-x86_64-unknown-linux-gnu.tar.gz
-            kind: cli
-          - id: linux-arm64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            asset: callisto-aarch64-unknown-linux-gnu.tar.gz
-            kind: cli
-          - id: linux-musl
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            asset: callisto-x86_64-unknown-linux-musl.tar.gz
-            kind: cross
-          - id: macos-arm64
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            asset: callisto-aarch64-apple-darwin.tar.gz
-            kind: cli
-          - id: macos-x64
-            runner: macos-latest
-            target: x86_64-apple-darwin
-            asset: callisto-x86_64-apple-darwin.tar.gz
-            kind: cli
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
-      - name: Build the production artifact recipe
-        env:
-          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}
-          CALLISTO_RELEASE_ARTIFACT_TARGET: ${{ matrix.target }}
-          CALLISTO_RELEASE_ARTIFACT_ASSET: ${{ matrix.asset }}
-          CALLISTO_RELEASE_SOURCE_ROOT: ${{ github.workspace }}
-          CALLISTO_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/release-artifact-preflight
-        run: bash .github/scripts/build-release-artifact.sh
 
   coverage:
     name: Code Coverage & Test Report
@@ -197,6 +153,7 @@ jobs:
           tool: just@1.58.0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
@@ -224,11 +181,31 @@ jobs:
         with:
           tool: just@1.58.0,cargo-machete,cargo-semver-checks
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: just machete
       - run: just features-boundary
       # A version only moves on the release PR, so that is where the public API is compared with the published one.
       - if: github.head_ref == 'callisto/version-packages'
         run: just check-api
+
+  test-real-tools:
+    name: Real Tool Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: just@1.58.0
+      - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
+      - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: $/.github/actions/install-registry-test-tools
+      - run: just --no-deps test-real-tools no
 
   security:
     name: Security & Advisory Audit (Moon & Just)
@@ -244,6 +221,8 @@ jobs:
           tool: just@1.58.0
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-deny

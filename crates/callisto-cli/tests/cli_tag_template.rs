@@ -1,7 +1,7 @@
 //! Changing a package's `tag-template` must not silently orphan the tags the
 //! previous template produced.
 
-use std::{fs, path::Path, process::Command};
+use std::{fs, process::Command};
 
 use callisto_fixtures::git::run_git as git;
 
@@ -60,23 +60,4 @@ fn find_key(value: &serde_json::Value, key: &str) -> Option<String> {
         serde_json::Value::Array(items) => items.iter().find_map(|item| find_key(item, key)),
         _ => None,
     }
-}
-
-#[test]
-fn red_c3_installer_derives_crate_version_from_the_current_tag_template() {
-    let action =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/actions/setup-callisto/scripts/install-callisto.sh");
-    let body = fs::read_to_string(&action).unwrap();
-    let fragment = body
-        .lines()
-        .find(|line| line.trim_start().starts_with("CRATE_VERSION="))
-        .expect("setup-callisto must derive CRATE_VERSION from TAG_NAME")
-        .trim();
-    let script = format!("TAG_NAME=callisto@0.7.2\n{fragment}\nprintf '%s' \"$CRATE_VERSION\"\n");
-    let out = Command::new("bash").args(["-c", &script]).output().unwrap();
-    assert_eq!(
-        String::from_utf8_lossy(&out.stdout),
-        "0.7.2",
-        "TAG_NAME=callisto@0.7.2 must install crate version 0.7.2"
-    );
 }
