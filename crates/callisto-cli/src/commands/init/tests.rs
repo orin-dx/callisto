@@ -1329,7 +1329,7 @@ fn base_branch_is_reported_when_the_default_workflow_cannot_be_built() {
     let (out, err) = (Shared::default(), Shared::default());
     run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
     assert!(
-        err.text().contains("Skipping the GitHub Actions workflow"),
+        err.text().contains("Keeping the existing GitHub Actions workflow"),
         "{}",
         err.text()
     );
@@ -1682,6 +1682,12 @@ fn an_existing_workflow_is_not_offered_and_is_skipped_with_the_note_yes_prints()
     );
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
     assert_eq!(run.prompter.prompts(), [WRITE_PROMPT]);
-    assert!(run.out.contains("Skipping the GitHub Actions workflow"), "{}", run.out);
+    assert!(
+        run.out.contains("Keeping the existing GitHub Actions workflow"),
+        "{}",
+        run.out
+    );
+    // Retrying as-is would hit the same file, so the note only says how to regenerate it.
+    assert!(!run.out.contains("to retry"), "{}", run.out);
     assert_eq!(std::fs::read_to_string(&workflow).unwrap(), "name: mine\n");
 }

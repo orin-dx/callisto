@@ -238,8 +238,16 @@ pub fn run<R: CommandRunner>(
         Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner, human) {
             Ok(built) => Some(built),
             Err(error) if !asked_for_workflow => {
-                let note =
-                    format!("Skipping the GitHub Actions workflow: {error}. Run `callisto init --workflow` to retry.");
+                let note = match &error {
+                    CliError::Graph(callisto_graph::GraphError::InitWorkflowExists { path }) => format!(
+                        "Keeping the existing GitHub Actions workflow at `{}`; to regenerate it, move it aside and run \
+                         `callisto init --workflow`.",
+                        path.display()
+                    ),
+                    _ => format!(
+                        "Skipping the GitHub Actions workflow: {error}. Run `callisto init --workflow` to retry."
+                    ),
+                };
                 writeln!(human, "{note}")?;
                 diagnostics.push(callisto_model::Diagnostic {
                     code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
