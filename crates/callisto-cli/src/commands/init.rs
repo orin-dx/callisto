@@ -98,8 +98,53 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
     )
 }
 
+/// Diagnostics queued while `init` runs. `run` emits whatever is still unshown when `init` fails, so an error never
+/// swallows a warning that explains it.
+#[derive(Default)]
+struct Notes {
+    items: Vec<callisto_model::Diagnostic>,
+    shown: usize,
+}
+
+impl Notes {
+    /// Renders the unshown notes to stderr and marks them shown.
+    fn emit(&mut self, err: &mut dyn Write) -> Result<(), CliError> {
+        render::render_diagnostics(&self.items[self.shown..], None, &mut &mut *err)?;
+        self.shown = self.items.len();
+        Ok(())
+    }
+}
+
 /// `init` against explicit terminal state, prompter, output streams, and command runner.
-pub fn run<'a, R: CommandRunner>(
+pub fn run<R: CommandRunner>(
+    args: InitArgs,
+    global: &GlobalArgs,
+    interactive: bool,
+    prompter: &mut dyn Prompter,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+    runner: &R,
+) -> Result<ExitCode, CliError> {
+    let mut notes = Notes::default();
+    let result = run_queued(
+        args,
+        global,
+        interactive,
+        prompter,
+        &mut *out,
+        &mut *err,
+        runner,
+        &mut notes,
+    );
+    if result.is_err() {
+        // The original error wins; a failed stderr write must not replace it.
+        drop(notes.emit(err));
+    }
+    result
+}
+
+#[expect(clippy::too_many_arguments, reason = "init's explicit streams plus the note queue")]
+fn run_queued<'a, R: CommandRunner>(
     args: InitArgs,
     global: &GlobalArgs,
     interactive: bool,
@@ -107,6 +152,7 @@ pub fn run<'a, R: CommandRunner>(
     out: &'a mut dyn Write,
     err: &'a mut dyn Write,
     runner: &R,
+    notes: &mut Notes,
 ) -> Result<ExitCode, CliError> {
     validate_flags(&args)?;
     // A repository whose manifests all sit in subdirectories has no root yet: init makes the Git toplevel one.
@@ -182,10 +228,10 @@ pub fn run<'a, R: CommandRunner>(
     }
     let mut answers = collect_answers(&args, &facts, prompting, prompter)?;
 
-    let mut diagnostics = migration.diagnostics.clone();
-    diagnostics.extend(migration.apply_fixed_groups(&mut answers));
+    notes.items.extend(migration.diagnostics.iter().cloned());
+    notes.items.extend(migration.apply_fixed_groups(&mut answers));
     if facts.origin.is_none() {
-        diagnostics.push(callisto_model::Diagnostic {
+        notes.items.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::InitOriginMissing,
             severity: callisto_model::DiagnosticSeverity::Warning,
             message: match facts.origin_not_hosted {
@@ -207,7 +253,7 @@ pub fn run<'a, R: CommandRunner>(
         }
         Err(reason) => {
             let note = workflow_unsupported_note(reason);
-            diagnostics.push(callisto_model::Diagnostic {
+            notes.items.push(callisto_model::Diagnostic {
                 code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
                 severity: callisto_model::DiagnosticSeverity::Warning,
                 message: note,
@@ -236,7 +282,7 @@ pub fn run<'a, R: CommandRunner>(
             Err(error) if !asked_for_workflow => {
                 let note =
                     format!("Skipping the GitHub Actions workflow: {error}. Run `callisto init --workflow` to retry.");
-                diagnostics.push(callisto_model::Diagnostic {
+                notes.items.push(callisto_model::Diagnostic {
                     code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
                     severity: callisto_model::DiagnosticSeverity::Warning,
                     message: note,
@@ -252,7 +298,7 @@ pub fn run<'a, R: CommandRunner>(
         None => None,
     };
     if workflow.is_none() {
-        diagnostics.extend(migration.base_branch_unused());
+        notes.items.extend(migration.base_branch_unused());
     }
 
     let config = scaffold::render_config(&facts, &answers);
@@ -275,9 +321,9 @@ pub fn run<'a, R: CommandRunner>(
             super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human!())?;
             // `origin` already has its own note above, so an unbound tag adds nothing.
             if let Some(plan) = &plan {
-                diagnostics.extend(plan.diagnostics.clone());
+                notes.items.extend(plan.diagnostics.clone());
             }
-            diagnostics.extend(super::release::pending_version_diagnostic(&pending));
+            notes.items.extend(super::release::pending_version_diagnostic(&pending));
         }
         None => writeln!(human!(), "{NO_COMMITS}")?,
     }
@@ -287,7 +333,6 @@ pub fn run<'a, R: CommandRunner>(
 
     // Computed before any write, so the `.changeset/README.md` existence check sees disk state as-is.
     let files = scaffold::init_files(&facts.root, workflow.is_some())?;
-    let mut shown = 0;
     let mut report = if global.dry_run {
         InitReport {
             schema_version: SCHEMA_VERSION,
@@ -299,8 +344,7 @@ pub fn run<'a, R: CommandRunner>(
         }
     } else {
         // Said before the write question so a decline keeps them; `finish` skips them.
-        render::render_diagnostics(&diagnostics, None, &mut &mut *err)?;
-        shown = diagnostics.len();
+        notes.emit(&mut *err)?;
         if prompting && !prompter.confirm(WRITE_PROMPT, true)? {
             if json {
                 let declined = InitReport {
@@ -309,9 +353,9 @@ pub fn run<'a, R: CommandRunner>(
                     config_path: facts.root.join("callisto.toml"),
                     config,
                     files: Vec::new(),
-                    diagnostics,
+                    diagnostics: std::mem::take(&mut notes.items),
                 };
-                return finish(&declined, shown, global, out, err);
+                return finish(&declined, std::mem::take(&mut notes.shown), global, out, err);
             }
             writeln!(human!(), "Initialization cancelled; nothing was written.")?;
             return Ok(ExitCode::SUCCESS);
@@ -320,13 +364,13 @@ pub fn run<'a, R: CommandRunner>(
         let mut report = scaffold::write(&facts.root, &config, &permit)?;
         if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
-            diagnostics.push(announce_workflow(human!(), &facts, branch)?);
+            notes.items.push(announce_workflow(human!(), &facts, branch)?);
         }
         report.files = files;
         report
     };
-    report.diagnostics.extend(diagnostics);
-    finish(&report, shown, global, out, err)
+    report.diagnostics.extend(std::mem::take(&mut notes.items));
+    finish(&report, std::mem::take(&mut notes.shown), global, out, err)
 }
 
 /// The one emitter for `init`'s notes and advice: stderr once in every format, and the JSON report carries them too.

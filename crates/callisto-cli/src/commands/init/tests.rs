@@ -1727,3 +1727,42 @@ fn a_declined_write_in_json_mode_still_emits_the_report_with_each_note_once() {
     assert_eq!(err.text().matches("No `origin` remote").count(), 1, "{}", err.text());
     assert!(!dir.path().join("callisto.toml").exists());
 }
+
+// A skipped-workflow warning is queued before the preview runs; a preview failure must not swallow it.
+#[test]
+fn a_skipped_workflow_warning_prints_once_before_a_preview_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("package.json"),
+        "{\"name\":\"solo\",\"version\":\"1.0.0\",\"packageManager\":\"yarn@4.0.0\"}\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("yarn.lock"), "").unwrap();
+    std::fs::write(
+        root.join(".yarnrc.yml"),
+        "npmRegistryServer: \"https://npm.example.test\"\n",
+    )
+    .unwrap();
+    callisto_fixtures::git::init_repo(root);
+    git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/tools.git"],
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "fixture"]);
+    let args = InitArgs {
+        yes: true,
+        ..Default::default()
+    };
+    let run = run_init_with_runner(root, args, false, vec![], false, &FakeLsRemote { stdout: "" });
+    let error = run.result.unwrap_err();
+    assert!(error.to_string().contains("npmRegistryServer"), "{error}");
+    assert_eq!(
+        run.err.matches("Skipping the GitHub Actions workflow").count(),
+        1,
+        "{}",
+        run.err
+    );
+    assert!(!root.join("callisto.toml").exists());
+}

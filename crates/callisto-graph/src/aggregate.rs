@@ -430,7 +430,7 @@ where
     loaded.extend(archived);
     let mut agg = Aggregation::default();
     // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
-    if graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
+    if inference.requires_full_history() && graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
         git.require_full_history()?;
     }
 
