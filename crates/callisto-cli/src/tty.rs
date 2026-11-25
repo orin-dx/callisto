@@ -126,9 +126,8 @@ fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Ve
     Ok(picked)
 }
 
-/// The listed indices an answer names, in list order. A word is a number or range counted from 1 (`3`, `1-3`) when
-/// those rows exist, else a listed name or `ecosystem/name` id. Words are separated by spaces or commas, and an answer
-/// must name at least one.
+/// The listed indices an answer names, in list order. A word is a listed name or `ecosystem/name` id, else a number or
+/// range counted from 1 (`3`, `1-3`). Words are separated by spaces or commas, and an answer must name at least one.
 fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
     let mut picked = std::collections::BTreeSet::new();
     let mut words = 0;
@@ -139,20 +138,9 @@ fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
         words += 1;
         let shown = word.escape_debug();
         let by_name = items.iter().position(|item| item.name == word || item.id == word);
+        // An exact name wins over a row number; the review before writing shows what was picked.
         let indices = match (by_name, numbered(word, items.len())) {
-            (Some(index), None | Some(Err(_))) => index..=index,
-            (Some(index), Some(Ok(range))) if range == (index..=index) => range,
-            (Some(index), Some(Ok(range))) => {
-                // Qualified ids contain `/`, so they never read as numbers: naming the candidates is unambiguous.
-                let rows = range
-                    .map(|row| format!("`{}`", items[row].id.escape_debug()))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(format!(
-                    "`{shown}` could be `{}` or {rows}; type the name",
-                    items[index].id.escape_debug()
-                ));
-            }
+            (Some(index), _) => index..=index,
             (None, Some(range)) => range?,
             (None, None) => return Err(format!("`{shown}` is not a number, a range or a listed name")),
         };
@@ -362,15 +350,16 @@ mod tests {
     }
 
     #[test]
-    fn a_name_that_reads_as_another_entrys_number_is_refused() {
-        let ambiguous = "; type the name";
-        let refused = choices("2", &names(&["2", "b"])).unwrap_err();
-        assert!(refused.contains(ambiguous));
-        assert!(choices("1-2", &names(&["a", "b", "1-2"]))
-            .unwrap_err()
-            .contains(ambiguous));
-        // A name that is its own number is not ambiguous.
-        assert_eq!(choices("1", &names(&["1", "b"])), Ok(vec![0]));
+    fn an_exact_name_wins_over_a_row_number() {
+        // Rows: `2` then `1`.
+        let listed = npm(&["2", "1"]);
+        assert_eq!(choices("1", &listed), Ok(vec![1]));
+        assert_eq!(choices("2", &listed), Ok(vec![0]));
+        assert_eq!(choices("npm/1", &listed), Ok(vec![1]));
+        assert_eq!(choices("1-2", &listed), Ok(vec![0, 1]));
+        assert_eq!(choices("1-2", &npm(&["a", "b", "1-2"])), Ok(vec![2]));
+        // A number that names no package still means its row.
+        assert_eq!(choices("1", &names(&["a", "b"])), Ok(vec![0]));
     }
 
     #[test]
@@ -405,22 +394,6 @@ mod tests {
             editor_words("code --wait", false),
             Ok(vec!["code".to_owned(), "--wait".to_owned()])
         );
-    }
-
-    #[test]
-    fn the_reason_for_an_ambiguous_word_says_how_to_pick_each() {
-        // Rows: `2` then `1`; typing `1` could mean row 1 (package `2`) or the package named `1`.
-        let listed = npm(&["2", "1"]);
-        assert_eq!(
-            choices("1", &listed).unwrap_err(),
-            "`1` could be `npm/1` or `npm/2`; type the name"
-        );
-        assert_eq!(choices("npm/1", &listed), Ok(vec![1]));
-        assert_eq!(choices("1-1", &listed), Ok(vec![0]));
-        assert_eq!(choices("2-2", &listed), Ok(vec![1]));
-        // A range collision names every candidate.
-        let error = choices("1-2", &npm(&["a", "b", "1-2"])).unwrap_err();
-        assert_eq!(error, "`1-2` could be `npm/1-2` or `npm/a`, `npm/b`; type the name");
     }
 
     #[test]

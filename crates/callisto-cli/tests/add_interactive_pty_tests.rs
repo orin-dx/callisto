@@ -731,14 +731,13 @@ fn enter_with_nothing_picked_at_the_first_list_is_the_no_packages_error() {
     assert!(changesets(dir.path()).is_empty());
 }
 
-/// Packages named `1` and `2`, with `2` changed so it is listed first: typing `1` is row 1 (package `2`) and the
-/// package named `1`.
+/// Packages named `1` and `2`, with `2` changed so it is listed first: typing `1` picks the package named `1`, not
+/// row 1, because an exact name wins over a row number.
 #[test]
-fn a_name_that_is_another_rows_number_says_how_to_pick_each() {
+fn an_exact_name_wins_over_a_row_number() {
     let dir = released(["1", "2"], "2");
     let mut add = Session::start(dir.path());
     add.answer(1, "1\r");
-    add.after("`1` could be `npm/1` or `npm/2`; type the name", 1, "\x7fnpm/1\r");
     add.answer(2, "\r");
     add.answer(3, "\r");
     add.after("Changelog summary", 1, "Fix\r");
