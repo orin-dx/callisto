@@ -60,13 +60,11 @@ pub(crate) fn pick_many(
 ) -> Result<Vec<usize>, CliError> {
     print_list(heading, items, marked);
     if marked.contains(&true) {
-        eprintln!(
-            "Enter keeps the * ones, or type numbers, ranges (1-3) or names (#2 always means row 2); Esc cancels."
-        );
+        eprintln!("Enter keeps the * ones, or type numbers, ranges or names. Esc cancels.");
     } else if empty_ok {
-        eprintln!("Enter picks none, or type numbers, ranges (1-3) or names (#2 always means row 2); Esc cancels.");
+        eprintln!("Enter picks none, or type numbers, ranges or names. Esc cancels.");
     } else {
-        eprintln!("Type numbers, ranges (1-3) or names (#2 always means row 2); Esc cancels.");
+        eprintln!("Type numbers, ranges or names. Esc cancels.");
     }
     read_answer(items, marked, false)
 }
@@ -75,7 +73,7 @@ pub(crate) fn pick_many(
 pub(crate) fn pick_one(heading: &str, ids: &[String]) -> Result<usize, CliError> {
     let items: Vec<Listed> = ids.iter().map(|id| Listed::by_id(id)).collect();
     print_list(heading, &items, &[]);
-    eprintln!("Type a number or a name (#2 always means row 2); Esc cancels.");
+    eprintln!("Type a number or a name. Esc cancels.");
     let picked = read_answer(&items, &[], true)?;
     Ok(*picked
         .first()
@@ -129,8 +127,8 @@ fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Ve
 }
 
 /// The listed indices an answer names, in list order. A word is a number or range counted from 1 (`3`, `1-3`) when
-/// those rows exist, else a listed name or `ecosystem/name` id; `#3` or `#1-3` always means rows. Words are separated
-/// by spaces or commas, and an answer must name at least one.
+/// those rows exist, else a listed name or `ecosystem/name` id. Words are separated by spaces or commas, and an answer
+/// must name at least one.
 fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
     let mut picked = std::collections::BTreeSet::new();
     let mut words = 0;
@@ -140,30 +138,19 @@ fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
     {
         words += 1;
         let shown = word.escape_debug();
-        if let Some(rows) = word.strip_prefix('#') {
-            match numbered(rows, word, items.len()) {
-                Some(range) => picked.extend(range?),
-                None => return Err(format!("`{shown}` is not a row number or range")),
-            }
-            continue;
-        }
         let by_name = items.iter().position(|item| item.name == word || item.id == word);
-        let indices = match (by_name, numbered(word, word, items.len())) {
+        let indices = match (by_name, numbered(word, items.len())) {
             (Some(index), None | Some(Err(_))) => index..=index,
             (Some(index), Some(Ok(range))) if range == (index..=index) => range,
             (Some(index), Some(Ok(range))) => {
-                let rows = match (range.start(), range.end()) {
-                    (first, last) if first == last => format!("#{}", first + 1),
-                    (first, last) => format!("#{}-{}", first + 1, last + 1),
-                };
-                let id = &items[index].id;
-                let package = if id == word {
-                    format!("#{}", index + 1)
-                } else {
-                    id.escape_debug().to_string()
-                };
+                // Qualified ids contain `/`, so they never read as numbers: naming the candidates is unambiguous.
+                let rows = range
+                    .map(|row| format!("`{}`", items[row].id.escape_debug()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return Err(format!(
-                    "`{shown}` is both a package name and a row number; type `{package}` for the package or `{rows}` for the row"
+                    "`{shown}` could be `{}` or {rows}; type the name",
+                    items[index].id.escape_debug()
                 ));
             }
             (None, Some(range)) => range?,
@@ -179,7 +166,7 @@ fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
 
 /// `n` or `a-b`, counted from 1, as indices; `None` when the word is shaped like neither, `Some(Err)` when the rows are
 /// not in the list.
-fn numbered(word: &str, typed: &str, len: usize) -> Option<Result<std::ops::RangeInclusive<usize>, String>> {
+fn numbered(word: &str, len: usize) -> Option<Result<std::ops::RangeInclusive<usize>, String>> {
     let (first, last) = word.split_once('-').unwrap_or((word, word));
     let digits = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
     if !digits(first) || !digits(last) {
@@ -188,11 +175,8 @@ fn numbered(word: &str, typed: &str, len: usize) -> Option<Result<std::ops::Rang
     let listed = |text: &str| text.parse::<usize>().ok().filter(|number| (1..=len).contains(number));
     Some(match (listed(first), listed(last)) {
         (Some(low), Some(high)) if low <= high => Ok(low - 1..=high - 1),
-        (Some(_), Some(_)) => Err(format!(
-            "`{}` runs backwards; put the lower number first",
-            typed.escape_debug()
-        )),
-        _ => Err(format!("`{}` is not in the list (1-{len})", typed.escape_debug())),
+        (Some(_), Some(_)) => Err(format!("`{word}` runs backwards; put the lower number first")),
+        _ => Err(format!("`{word}` is not in the list (1-{len})")),
     })
 }
 
@@ -379,39 +363,14 @@ mod tests {
 
     #[test]
     fn a_name_that_reads_as_another_entrys_number_is_refused() {
-        let ambiguous = "is both a package name and a row number";
+        let ambiguous = "; type the name";
         let refused = choices("2", &names(&["2", "b"])).unwrap_err();
         assert!(refused.contains(ambiguous));
-        // Without a distinct qualified id the way out is the package's own row, never the word just typed.
-        assert!(
-            refused.contains("type `#1` for the package or `#2` for the row"),
-            "{refused}"
-        );
         assert!(choices("1-2", &names(&["a", "b", "1-2"]))
             .unwrap_err()
             .contains(ambiguous));
         // A name that is its own number is not ambiguous.
         assert_eq!(choices("1", &names(&["1", "b"])), Ok(vec![0]));
-    }
-
-    #[test]
-    fn a_hash_always_means_rows_so_every_suggestion_is_unambiguous() {
-        let items = names(&["a", "b", "1-1"]);
-        assert_eq!(choices("#1", &items), Ok(vec![0]));
-        assert_eq!(choices("#1-2", &items), Ok(vec![0, 1]));
-        assert_eq!(choices("#3", &items), Ok(vec![2]));
-        let refused = choices("1-1", &items).unwrap_err();
-        assert!(
-            refused.contains("type `#3` for the package or `#1` for the row"),
-            "{refused}"
-        );
-        assert!(choices("#x", &items).unwrap_err().contains("not a row number or range"));
-        assert!(choices("#9", &items)
-            .unwrap_err()
-            .starts_with("`#9` is not in the list"));
-        assert!(choices("#3-1", &items)
-            .unwrap_err()
-            .starts_with("`#3-1` runs backwards"));
     }
 
     #[test]
@@ -454,18 +413,14 @@ mod tests {
         let listed = npm(&["2", "1"]);
         assert_eq!(
             choices("1", &listed).unwrap_err(),
-            "`1` is both a package name and a row number; type `npm/1` for the package or `#1` for the row"
+            "`1` could be `npm/1` or `npm/2`; type the name"
         );
         assert_eq!(choices("npm/1", &listed), Ok(vec![1]));
-        assert_eq!(choices("#1", &listed), Ok(vec![0]));
         assert_eq!(choices("1-1", &listed), Ok(vec![0]));
         assert_eq!(choices("2-2", &listed), Ok(vec![1]));
-        // A range collision names the rows as one `#` range.
+        // A range collision names every candidate.
         let error = choices("1-2", &npm(&["a", "b", "1-2"])).unwrap_err();
-        assert!(
-            error.ends_with("type `npm/1-2` for the package or `#1-2` for the row"),
-            "{error}"
-        );
+        assert_eq!(error, "`1-2` could be `npm/1-2` or `npm/a`, `npm/b`; type the name");
     }
 
     #[test]

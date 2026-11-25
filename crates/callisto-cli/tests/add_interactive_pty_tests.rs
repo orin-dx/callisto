@@ -688,7 +688,7 @@ fn in_a_40_by_10_pane_long_names_are_shown_in_full_and_picked_by_name() {
     let lists = &screen[..screen.find('\x1b').unwrap()];
     assert!(
         lists.ends_with(
-            "  1 * callisto-fixture-package-for-wrapping-left\r\n  2 * callisto-fixture-package-for-wrapping-right\r\nEnter keeps the * ones, or type numbers, ranges (1-3) or names (#2 always means row 2); Esc cancels.\r\n"
+            "  1 * callisto-fixture-package-for-wrapping-left\r\n  2 * callisto-fixture-package-for-wrapping-right\r\nEnter keeps the * ones, or type numbers, ranges or names. Esc cancels.\r\n"
         ),
         "the list moves the cursor or restyles:\n{screen:?}"
     );
@@ -715,10 +715,7 @@ fn with_nothing_marked_only_the_bump_lists_offer_enter_for_none() {
     let (first, bumps) = screen
         .split_once("Which are a MAJOR bump?")
         .expect("the bump list is asked");
-    assert!(
-        first.contains("Type numbers, ranges (1-3) or names (#2 always means row 2); Esc cancels."),
-        "{first}"
-    );
+    assert!(first.contains("Type numbers, ranges or names. Esc cancels."), "{first}");
     assert!(!first.contains("Enter picks none"), "{first}");
     assert!(bumps.contains("Enter picks none, or type numbers"), "{bumps}");
 }
@@ -741,7 +738,7 @@ fn a_name_that_is_another_rows_number_says_how_to_pick_each() {
     let dir = released(["1", "2"], "2");
     let mut add = Session::start(dir.path());
     add.answer(1, "1\r");
-    add.after("type `npm/1` for the package or `#1` for the row", 1, "\x7fnpm/1\r");
+    add.after("`1` could be `npm/1` or `npm/2`; type the name", 1, "\x7fnpm/1\r");
     add.answer(2, "\r");
     add.answer(3, "\r");
     add.after("Changelog summary", 1, "Fix\r");
