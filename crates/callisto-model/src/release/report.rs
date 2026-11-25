@@ -29,6 +29,9 @@ impl crate::report::Report for ReleaseReport {
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseNothingReport {
     pub nothing_to_release: bool,
+    /// Advisories such as pending version work; omitted when there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<crate::Diagnostic>,
 }
 
 impl crate::report::Report for ReleaseNothingReport {
@@ -39,7 +42,7 @@ impl crate::report::Report for ReleaseNothingReport {
     }
 
     fn diagnostics(&self) -> &[crate::Diagnostic] {
-        &[]
+        &self.diagnostics
     }
 }
 

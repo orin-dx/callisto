@@ -114,7 +114,7 @@
     },
     {
       "id": "REL-CMD-02",
-      "criterion": "When no package qualifies, `callisto release` prints `Nothing to release.` (JSON: `{\"nothingToRelease\": true}`), exits 0 and runs no command that publishes, pushes or creates anything."
+      "criterion": "When no package qualifies, `callisto release` prints `Nothing to release.` (JSON: `{\"nothingToRelease\": true}`, plus a `diagnostics` array when there is pending version work), exits 0 and runs no command that publishes, pushes or creates anything."
     },
     {
       "id": "REL-CMD-03",
