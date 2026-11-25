@@ -1,0 +1,106 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8ADGY4ZHV4X10C51RY5W2QC",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T22:34:30.248778Z",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 2,
+  "save_step_count": 10,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "docs/errors.md",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "17e5a8e4fa15",
+  "checkpoint_transcript_start": 19689,
+  "transcript_lines_at_start": 19689,
+  "compact_transcript_start": 1838,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 26832,
+    "cache_read_tokens": 12432132,
+    "output_tokens": 9417,
+    "api_call_count": 15,
+    "subagent_tokens": {
+      "input_tokens": 6,
+      "cache_creation_tokens": 3934,
+      "cache_read_tokens": 477017,
+      "output_tokens": 6424,
+      "api_call_count": 3
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 3362,
+    "cache_creation_tokens": 6647382,
+    "cache_read_tokens": 707138967,
+    "output_tokens": 873982,
+    "api_call_count": 1466,
+    "subagent_tokens": {
+      "input_tokens": 1824,
+      "cache_creation_tokens": 2973664,
+      "cache_read_tokens": 91403574,
+      "output_tokens": 607494,
+      "api_call_count": 912
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 9,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 11,
+      "entropy": 15,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 357
+  },
+  "summary": {
+    "intent": "Finish and push two PRs (#242/#634 and #246/#638) in the callisto repo: make names win over row numbers in the interactive `add` CLI flow, shorten hints, add a Breaking changeset paragraph, and update docs/specs, then gate and push each.",
+    "outcome": "#242 was pushed (614cc2ae1, valid signature) with all findings resolved after the full gate passed on the merge commit. #246's full gate passed on all four steps, and the commit, merge of latest main, and CLI tests were started, but the push and resolve were not confirmed in the transcript.",
+    "learnings": {
+      "repo": [
+        "Each PR has its own session and a gate record; a push is only ready when main is merged, the full gate is green on that exact commit, and the gate record matches.",
+        "Docs changes need `doc-check` to pass; error docs (docs/errors.md, e.g. E214 row) and changesets (.changeset/*.md) are updated together with behavior changes.",
+        "Breaking behavior changes get a `**Breaking:**` paragraph in the changeset.",
+        "The CLI spec (docs/specs/cli.json) and the PTY tests (add_interactive_pty_tests.rs) must be kept in sync with interactive prompt behavior changes.",
+        "`pre-push` and the full gate are slow, especially when other sessions are building in parallel."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "finding": "Interactive selection logic was changed so that names take precedence over row numbers; hints were shortened."
+        },
+        {
+          "path": "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+          "finding": "PTY test updated to reflect names-win-over-row-numbers behavior."
+        }
+      ],
+      "workflow": [
+        "Run long gates in the background and push the other ready PR meanwhile to parallelize work.",
+        "Merge the latest main before the final gate and push so the gate result applies to the pushed commit.",
+        "Verify the gate record and full-history findings before pushing rather than trusting earlier status."
+      ]
+    },
+    "friction": [
+      "pre-push gate was slow because another session was building in parallel, delaying the #246 commit.",
+      "User had to ask 'Ready to push?' and the answer was not yet, since #246 still needed its gate and commit."
+    ],
+    "open_items": [
+      "Confirm the #246 (#638) push and resolution of its findings after the merge with latest main and CLI tests.",
+      "Verify the CLI tests run after merging main passed."
+    ]
+  }
+}
