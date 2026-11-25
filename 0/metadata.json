@@ -1,0 +1,108 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A5AMQ168EH2WS127AT7VXE",
+  "session_id": "c7dc84c2-3aba-4b4a-a20a-4f24d2794180",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T20:11:16.608069Z",
+  "branch": "worktree-wp-git-boundary-b",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/preflight.rs",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/changed.rs",
+    "crates/callisto-graph/src/changeset_prs.rs",
+    "crates/callisto-graph/src/commands/release/pending.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs",
+    "crates/callisto-graph/src/conventional/window.rs",
+    "crates/callisto-graph/src/history.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-model/src/commit.rs",
+    "crates/callisto-model/src/tag.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/boundary.rs",
+    "crates/callisto-model/src/vcs/checkpoint.rs",
+    "crates/callisto-model/src/vcs/mod.rs",
+    "crates/callisto-model/src/vcs/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2c2c8f7883df",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 280,
+    "cache_creation_tokens": 344460,
+    "cache_read_tokens": 34322506,
+    "output_tokens": 116795,
+    "api_call_count": 139
+  },
+  "session_token_usage": {
+    "input_tokens": 280,
+    "cache_creation_tokens": 344460,
+    "cache_read_tokens": 34322506,
+    "output_tokens": 116795,
+    "api_call_count": 139
+  },
+  "redaction": {
+    "replacements": 6,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Implement git boundary slice B (trail #494) in the callisto repo: a typed Rev for git revisions, a unified GitPath for literal paths, and move direct `git add` calls into GitAccess, with real-git tests, self-audit, full gate, convergence record and a signed local commit.",
+    "outcome": "Rev and GitPath were implemented and all callers migrated across callisto-model, graph and cli, with real-git tests added. The full gate was iterated and a signed commit was made; the transcript ends at the commit, so the convergence record, final gate result and sha report are not confirmed.",
+    "learnings": {
+      "repo": [
+        "Git boundary lives in crates/callisto-model/src/vcs (boundary.rs, access.rs, checkpoint.rs, mod.rs); callers in callisto-graph and callisto-cli must go through GitAccess.",
+        "The e2e harness has a git allow-list of command shapes that had to be updated to accept `--end-of-options`.",
+        "provider_flag_contract_tests.rs probes harness flags against real git and needed updating for `--end-of-options`.",
+        "Gate for model signature changes: just pre-push, lint, doc-check, test, plus just fuzz-check because the fuzz crate is outside the workspace.",
+        "Graph errors from git failures map through GraphError::Command/Vcs and exit_kind; tests asserting old rev-parse args or error variants needed updating."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/checkpoint.rs",
+          "finding": "Plain `git rev-parse --end-of-options <spec>` echoes the flag back as an output line, so blob_hash_at returned the wrong line; `--verify` is needed alongside it."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/boundary.rs",
+          "finding": "Rev is constructed only from CommitSha, HEAD, or fully qualified refs/tags/ or refs/heads/ names; GitPath merges Pathspec::literal and check_ignore_arg with per-command spelling inside."
+        }
+      ],
+      "workflow": [
+        "Probing git behaviour with a scratch script is risky: when its scratch dir couldn't be created it ran in the real worktree and made commits and a tag, which had to be reset and deleted. Always verify the working directory before running such scripts.",
+        "Run cargo-mutants only on new decision logic; it surfaced a gap in commit_time that was fixed with a test, and mutants.out was removed before committing.",
+        "Run the full gate as a background script and judge each step by exit code; reruns exposed real bugs (rev-parse echo) that scoped tests missed."
+      ]
+    },
+    "friction": [
+      "Probe script mishap created accidental commits and a tag in the worktree, requiring cleanup.",
+      "The gate takes long and had to be rerun several times because of formatting drift, harness allow-list failures, the rev-parse bug and contract tests.",
+      "One graph test (npm network) fails in the sandbox and needs unsandboxed runs."
+    ],
+    "open_items": [
+      "Write the convergence record to /Users/gabe/Projects/callisto/.claude/plans/converged/<full HEAD sha>.md and report the sha to the lead.",
+      "Run the review checklist against the full diff and report in under 5 lines; do not push until the lead reads the diff and says push.",
+      "Confirm the final full gate passed after the last test edits, since the transcript ends at the commit."
+    ]
+  }
+}

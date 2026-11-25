@@ -1,0 +1,44 @@
+Git boundary slice B (trail #494). New worktree wp-git-boundary-b off origin/wp-git-boundary (slice A, commit 8b0ab63b1; read its convergence record /Users/gabe/Projects/callisto/.claude/plans/converged/8b0ab63b190ae2b5eab304a7bf009d5d1acbdfc8.md, section 'Split'). Do exactly slice B: (1) Rev in callisto-model's vcs boundary, built only from a CommitSha, HEAD, or a fully qualified refs/tags/<name> or refs/heads/<name>, passed after --end-of-options where git supports it; migrate read_at, commit_time, resolve_commit, path_exists_at, files_containing_at, commits_since (and CommitWalker) and every caller; delete the &str forms. (2) One GitPath for literal paths: merge Pathspec::literal and check_ignore_arg into one type with the per-command spelling inside it. (3) Move the direct git add calls (callisto-graph apply.rs ~654, callisto-cli commands/pre.rs ~21) into GitAccess using GitPath. Tests against real git: a tag named like an option (-x) and with revision syntax (a^, a@{1}), paths with leading ':' '-', spaces and newlines through add, check-ignore and diff. No new traits. Before reporting: class-by-class self-audit of the whole diff (foreign grammar, boundary bypass, option injection) until a full pass is clean; full gate by exit code (just pre-push && just lint && just doc-check && just test, network unsandboxed; just fuzz-check since callisto-model public signatures change); write /Users/gabe/Projects/callisto/.claude/plans/converged/<full HEAD sha>.md. Commit locally (signed); report the sha. Never push. If anything blocks you, say exactly what instead of stopping silently. Rules (from the lead session close-gap-for-alpha). Be thorough before a push: a push costs a paid review, so find problems locally first.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Before reporting a change as ready to push, run the AGENTS.md gate in full and judge each by exit code: `just pre-push && just lint && just doc-check && just test` (workspace-wide, not just the touched crate; tests elsewhere read scripts, specs and error registries). Run network/pty tests unsandboxed. Iterate with scoped `cargo test -p` while working.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Every push triggers a paid review. Before reporting, run the checklist in /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md against your full diff. Push once, only after the lead has read your diff and says push; for an existing PR, commit locally and report the worktree and sha first.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+- Findings: the lead writes a row in /Users/gabe/Projects/callisto/.claude/plans/FINDINGS-LEDGER.md (class, owning boundary, codebase-wide sweep, fix level) before any fix is briefed. If you find a finding without a row, stop and ask the lead.
+
+---
+
+<task-notification>
+<task-id>bzx2avlaz</task-id>
+<tool-use-id>toolu_01NCEUpZgiFUdEr84mzsGdC2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c7dc84c2-3aba-4b4a-a20a-4f24d2794180/tasks/bzx2avlaz.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the full gate script" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8lrppsk9</task-id>
+<tool-use-id>toolu_01KgTP5jnYvR3FYCfPp1h9Vz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c7dc84c2-3aba-4b4a-a20a-4f24d2794180/tasks/b8lrppsk9.output</output-file>
+<status>completed</status>
+<summary>Monitor "Wait for the gate to finish" stream ended</summary>
+<event>pre-push exit=1
+lint exit=0
+doc-check exit=0
+test exit=100
+fuzz-check exit=0
+done</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>

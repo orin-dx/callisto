@@ -1,0 +1,62 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A5AMQ168EH2WS127AT7VXE",
+  "strategy": "manual-commit",
+  "branch": "worktree-wp-git-boundary-b",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/preflight.rs",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/changed.rs",
+    "crates/callisto-graph/src/changeset_prs.rs",
+    "crates/callisto-graph/src/commands/release/pending.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs",
+    "crates/callisto-graph/src/conventional/window.rs",
+    "crates/callisto-graph/src/history.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-model/src/commit.rs",
+    "crates/callisto-model/src/tag.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/boundary.rs",
+    "crates/callisto-model/src/vcs/checkpoint.rs",
+    "crates/callisto-model/src/vcs/mod.rs",
+    "crates/callisto-model/src/vcs/tests.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 280,
+    "cache_creation_tokens": 344460,
+    "cache_read_tokens": 34322506,
+    "output_tokens": 116795,
+    "api_call_count": 139
+  },
+  "redaction": {
+    "replacements": 6,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
