@@ -979,12 +979,9 @@ pub enum ReleaseSelectionInvalidReason {
 pub struct ShownRegistry(String);
 
 impl ShownRegistry {
-    /// `raw` is a registry URL `canonical_registry_binding` already accepted: an `https` URL with a host and no
-    /// userinfo, query or fragment.
-    pub(crate) fn new(raw: &str) -> Self {
-        let url = url::Url::parse(raw).expect("a registry URL accepted by canonical_registry_binding parses");
-        let host = url.host_str().expect("an accepted registry URL has a host");
-        Self(format!("{}://{host}", url.scheme()))
+    /// The scheme and host of a binding Callisto already parsed; the raw text is never parsed again.
+    pub(crate) fn of(binding: &crate::registry_endpoint::RegistryBindingV1) -> Self {
+        Self(format!("{}://{}", binding.scheme, binding.host))
     }
 }
 

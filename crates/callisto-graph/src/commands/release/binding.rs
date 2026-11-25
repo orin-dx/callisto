@@ -83,13 +83,13 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     let publish = publish_raw
         .map(|raw| canonical_registry_binding(key.as_str(), raw))
         .transpose()?;
-    if let (Some(raw), Some(binding)) = (explicit, &index)
+    if let (Some(_), Some(binding)) = (explicit, &index)
         && matches!(target, PublishTarget::Npm { .. })
         && !is_approved_npm_registry(workspace, binding)
     {
         return Err(GraphError::UntrustedNpmRegistry {
             package: package.clone(),
-            registry: ShownRegistry::new(raw),
+            registry: ShownRegistry::of(binding),
         });
     }
     let identity = match (&index, &publish) {
@@ -448,12 +448,18 @@ mod tests {
 
     #[test]
     fn an_untrusted_registry_shows_only_its_scheme_and_host() {
-        let shown = |raw: &str| ShownRegistry::new(raw).to_string();
+        let shown = |raw: &str| {
+            ShownRegistry::of(&canonical_registry_binding("test", raw).expect("an accepted registry URL")).to_string()
+        };
         assert_eq!(shown("https://Registry.Example.com"), "`https://registry.example.com`");
         assert_eq!(
             shown("https://registry.example.com/private/team-path"),
             "`https://registry.example.com`"
         );
+        // A spelling the binding check accepts but a plain URL parse would read differently never panics.
+        if let Ok(binding) = canonical_registry_binding("test", "sparse+https:registry.example.com") {
+            assert!(ShownRegistry::of(&binding).to_string().starts_with('`'));
+        }
         // Credentials, a query and a fragment never reach this type: the binding check refuses them first.
         for secret in [
             "https://u:pw@r.example.test/",
