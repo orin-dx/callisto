@@ -1,0 +1,115 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A6ZRMDPCHZF8HGT3B2FAW5",
+  "session_id": "21e2b22a-2ea4-47a1-a08d-a1e70d007f48",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T20:40:22.708936Z",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/tough-pandas-leap.md",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/errors.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1703f211bb47",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 213038,
+    "cache_read_tokens": 12643208,
+    "output_tokens": 55095,
+    "api_call_count": 90
+  },
+  "session_token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 213038,
+    "cache_read_tokens": 12643208,
+    "output_tokens": 55095,
+    "api_call_count": 90
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Fix two PR #634 findings (init losing queued diagnostics on early error return; changesets-only pending hint requiring full history in shallow clones with auto packages), self-audit, run the full gate, and commit locally. Then apply seven follow-up items from the lead session (E120 wording, origin refusal reason, migration diagnostics queued early, pending hint on real release paths, JSON diagnostics, named pending-check errors, no offset slicing in init).",
+    "outcome": "First commit 71c4b2d71 was made with both fixes, tests, a green gate and a convergence file. A second signed local commit was then created for the seven follow-ups, with e2e and unit tests, docs/spec/changeset updates, and the gate run. Nothing was pushed. The transcript does not show the second gate's exit codes, a new convergence record, or the final sha report.",
+    "learnings": {
+      "repo": [
+        "Init diagnostics are now held in a `Notes` queue in init.rs; `run` wraps `run_queued` and flushes unshown notes on any Err, so the original error wins over a failed stderr write.",
+        "The shallow-clone full-history refusal lives in `crates/callisto-graph/src/aggregate.rs`. It is now gated by a defaulted `requires_full_history` method on the existing `SeverityInference` trait (infer.rs), false for `NoInference`, which avoids adding a new trait.",
+        "The `callisto` e2e helper already passes `--format`, so tests should not add it again.",
+        "Fixtures: `shallow_clone_e2e_tests.rs` has `shallow_clone` and `stdout_and_stderr` helpers; init unit tests use `run_init_with_runner` with `FakeLsRemote`, and a `.yarnrc.yml` `npmRegistryServer` setting makes init's preview fail.",
+        "Docs and specs are tested against code: docs/errors.md and docs/specs/release.json (REL-CMD-05) must be updated alongside error wording changes.",
+        "Gate is `just pre-push && just lint && just doc-check && just test`; `just fmt` may be needed first because pre-push fails on fmt-check."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "line": 222,
+          "end_line": 231,
+          "finding": "Changesets migration diagnostics were queued after `changesets::migrate`, so an E342 return lost them. They must be queued right after migrate."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/binding.rs",
+          "line": 87,
+          "end_line": 92,
+          "finding": "E120 (UntrustedNpmRegistry) shows only scheme and host because a path can carry a token. The message now says publishConfig.registry must match an approved [registries] entry exactly."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "line": 131,
+          "end_line": 139,
+          "finding": "`pending_version_work` errors were silently dropped in release; the follow-up prints a stderr note naming the error code and pointing at `callisto status`."
+        }
+      ],
+      "workflow": [
+        "Heredocs were refused in this environment; use the Edit/Write tools instead.",
+        "Write-then-revert the fix temporarily to confirm a new test fails without it (red check) before keeping it.",
+        "Run the gate one step at a time with logs redirected to files and exit codes echoed, so each is judged by exit code.",
+        "Sandbox blocked writing the convergence file under the main repo's .claude/plans, so it was written in the worktree and copied over.",
+        "The system reminder's session trailer conflicted with the lead's \"no session trailer\" rule, and the lead's rule was followed.",
+        "Peer messages from the lead session were treated as ordinary task requests under the existing no-push constraint."
+      ]
+    },
+    "friction": [
+      "The first `just pre-push` failed on fmt-check and needed `just fmt`.",
+      "`$TMPDIR` log redirection failed, so logs were redirected to the job tmp directory.",
+      "Several compile and lifetime iterations on `run_queued` (the `'a` lifetime and `too_many_arguments`) were needed before the test went red/green as expected.",
+      "The `rtk` wrapper and the plain `grep` and cargo invocations were mixed, with a few failed or redundant runs.",
+      "The e2e tests needed several fix-ups, including a duplicate `--format` flag and the publishConfig fixture.",
+      "The sandbox blocked writing to the main repo's plans/converged directory."
+    ],
+    "open_items": [
+      "The new convergence record for the second commit's HEAD sha and the final report to the lead (sha, gate codes) were not shown in the transcript.",
+      "The gate exit codes for the follow-up commit were not shown. Confirm they were 0 before reporting.",
+      "The lead must read the diff and say push; the PR body, trail linking, merge of the latest origin/main and the review checklist run are still pending.",
+      "`just fuzz-check` was not run. Confirm no public signature in callisto-manifests or callisto-model changed, since `OriginRefusal` was threaded through the release preview in callisto-graph.",
+      "`cargo mutants` was not run for the new decision logic (the `requires_full_history` gate and the origin refusal carrying)."
+    ]
+  }
+}
