@@ -1,0 +1,104 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A8WJC1VZQFHHSFR11JSS1X",
+  "session_id": "21e2b22a-2ea4-47a1-a08d-a1e70d007f48",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T21:13:30.329733Z",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/tough-pandas-leap.md",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-graph/src/commands/init/changesets.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/errors.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "15118ab63e78",
+  "checkpoint_transcript_start": 1497,
+  "transcript_lines_at_start": 1497,
+  "compact_transcript_start": 95,
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 31337,
+    "cache_read_tokens": 5037100,
+    "output_tokens": 16777,
+    "api_call_count": 22
+  },
+  "session_token_usage": {
+    "input_tokens": 228,
+    "cache_creation_tokens": 244375,
+    "cache_read_tokens": 17680308,
+    "output_tokens": 71872,
+    "api_call_count": 112
+  },
+  "redaction": {
+    "replacements": 32,
+    "layers": {
+      "betterleaks": 32,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 9,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Apply four small review follow-ups requested by a peer Claude session on commit d4184cc41: narrow the pending-hint doc claim, drop the duplicate access diagnostic on init's E342 refusal, route the failed pending-check note into init's notes, and reword E120 and the tag-push outlook. Then run the full gate and commit locally with no push.",
+    "outcome": "All four follow-ups were edited across the init, release and error code plus docs, a changeset and tests. The gate ran (fmt, pre-push, lint, doc-check, test), with a pre-push failure fixed in release/local.rs and the gate rerun. A signed local commit was made. The transcript does not show the final gate exit codes, the convergence record or the reported sha.",
+    "learnings": {
+      "repo": [
+        "The worktree is wp-onboarding-friction-fix under /Users/gabe/Projects/callisto/.claude/worktrees; the gate is just pre-push, just lint, just doc-check and just test, run with exit codes captured per step.",
+        "Messages that appear in more than one place must be updated together: the E120 wording lives in error.rs, release/binding.rs, the CLI e2e test (release_command_e2e_tests.rs) and docs/errors.md.",
+        "Release docs are duplicated in docs/specs/release.json and a changeset (.changeset/tough-pandas-leap.md), so claims have to be narrowed in both.",
+        "Init collects its notes and diagnostics in a shared notes queue, which --format json lists under diagnostics; one-off warnings that bypass it are missing from JSON output."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/error.rs",
+          "line": 359,
+          "end_line": 372,
+          "finding": "The E120 message claimed the URL 'differs from every approved entry' while showing only scheme and host. It was reworded to say the URL is not one of the approved [registries] entries and to compare the full URL in package.json."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "line": 337,
+          "finding": "The 'could not check for pending version work' note was emitted outside init's shared notes, so it was absent from JSON diagnostics. It was moved into the queued notes."
+        },
+        {
+          "path": "crates/callisto-graph/src/release_preview.rs",
+          "line": 376,
+          "finding": "The publish outlook text for a non-hosted remote was changed to say tags cannot be pushed until origin is a hosted remote."
+        }
+      ],
+      "workflow": [
+        "BSD sed on macOS rejected the multi-expression sed -i substitution, so the Edit tool was used instead for multi-file wording changes.",
+        "Gate steps were redirected to log files with echo of each exit code, and the log was grepped for errors when a step failed, which kept output small."
+      ]
+    },
+    "friction": [
+      "The sed -i attempt failed on macOS and had to be redone with Edit.",
+      "just pre-push failed on the first run and needed a fix in release/local.rs before the gate would pass.",
+      "The permission-mode and peer-message context meant the work was done at a peer's request without direct user input."
+    ],
+    "open_items": [
+      "Report the new HEAD sha and a convergence record to the requesting session; neither appears in the transcript.",
+      "Confirm that all four gate steps exited 0 on the final run.",
+      "The commit is local only; the peer said no push."
+    ]
+  }
+}
