@@ -6,7 +6,7 @@ ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SCRIPT="$ACTION_DIR/scripts/install-callisto.sh"
 
 extract_snippet() {
-  sed -n '/^TAG_NAME="\$INPUT_CALLISTO_VERSION"$/,/^# Validate verification mode$/p' "$INSTALL_SCRIPT" \
+  sed -n '/^TAG_NAME="\$INPUT_CALLISTO_VERSION"$/,/^# Detect OS platform architecture for pre-built binaries$/p' "$INSTALL_SCRIPT" \
     | sed '$d'
 }
 
@@ -99,6 +99,29 @@ else
   echo "PASS test_explicit_version_override_skips_resolution"
 fi
 
+# 5. A bare version stands for its callisto@ tag; anything else that is not a callisto@ tag fails before any download.
+out=$(run_case "0.21.0" "" "$TAGS")
+if [[ "$out" != *"TAG_NAME=callisto@0.21.0"* || "$out" != *"EXIT=0"* ]]; then
+  echo "FAIL test_bare_version_becomes_its_release_tag: $out"; fail=1
+else
+  echo "PASS test_bare_version_becomes_its_release_tag"
+fi
+out=$(run_case "0.22.0-rc.1" "abc1230000000000000000000000000000000002" "$TAGS")
+if [[ "$out" != *"TAG_NAME=callisto@0.22.0-rc.1"* || "$out" == *"git ls-remote"* ]]; then
+  echo "FAIL test_bare_prerelease_version_becomes_its_release_tag: $out"; fail=1
+else
+  echo "PASS test_bare_prerelease_version_becomes_its_release_tag"
+fi
+for bad in "callisto-cli@0.21.0" "v0.21.0" "main" "callisto@" "callisto@latest" "callisto@0.21.0/../x" "0.21.0 x" $'0.21.0\nx'"-0.21.0" "../0.21.0" ""; do
+  out=$(run_case "$bad" "" "$TAGS")
+  if [[ "$out" != *"::error::setup-callisto version must be latest, a release version such as 0.21.0, or a release tag such as callisto@0.21.0"* \
+    || "$out" != *"EXIT=1"* || "$out" == *"TAG_NAME="* ]]; then
+    echo "FAIL test_unsupported_version_is_rejected (${bad//$'\n'/\\n}): $out"; fail=1
+  else
+    echo "PASS test_unsupported_version_is_rejected (${bad//$'\n'/\\n})"
+  fi
+done
+
 run_installer() (
   local source="$1" version="$2" checkout="$3" action_ref="${4:-}"
   local fixture code
@@ -108,7 +131,7 @@ run_installer() (
   [[ -n "$fixture" && -d "$fixture" ]] || { echo "fixture directory missing" >&2; exit 1; }
   export GITHUB_WORKSPACE="$fixture/checkout with spaces" RUNNER_TEMP="$fixture/runner"
   export GITHUB_PATH="$fixture/github-path" GITHUB_ACTION_REF="$action_ref"
-  export INPUT_CALLISTO_SOURCE="$source" INPUT_CALLISTO_VERSION="$version" INPUT_CALLISTO_VERIFICATION=skip
+  export INPUT_CALLISTO_SOURCE="$source" INPUT_CALLISTO_VERSION="$version"
   mkdir -p "$GITHUB_WORKSPACE/crates/callisto-cli/src" "$RUNNER_TEMP"
   printf '# consumer depends on callisto-cli\n' > "$GITHUB_WORKSPACE/Cargo.toml"
   : > "$GITHUB_WORKSPACE/crates/callisto-cli/Cargo.toml"
@@ -139,7 +162,6 @@ run_installer() (
                  else $root + "/crates/callisto-cli/src/main.rs" end)}]}]}'
         ;;
       build) ;;
-      install) [[ "$checkout" != install-failure ]] ;;
       *) return 99 ;;
     esac
   }
@@ -148,7 +170,6 @@ run_installer() (
   curl() { echo "curl $*" >> "$fixture/calls"; return 1; }
   gh() { echo "unexpected gh $*" >> "$fixture/calls"; return 99; }
   tar() { echo "unexpected tar $*" >> "$fixture/calls"; return 99; }
-  unzip() { echo "unexpected unzip $*" >> "$fixture/calls"; return 99; }
   cp() { echo "cp $*" >> "$fixture/calls"; }
   (cd "$fixture" && source "$INSTALL_SCRIPT")
   code=$?
@@ -159,7 +180,7 @@ run_installer() (
 
 for checkout in dependency owned; do
   out=$(run_installer auto callisto@0.5.0 "$checkout"); code=$?
-  if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --version 0.5.0 "* \
+  if [[ $code -eq 0 || "$out" != *"curl "*"/releases/download/callisto@0.5.0/"* \
     || "$out" == *"cargo build"* || "$out" == *"cargo metadata"* || "$out" == *"git ls-remote"* ]]; then
     echo "FAIL auto_explicit_pin_$checkout: code=$code out=$out"; fail=1
   else
@@ -168,7 +189,7 @@ for checkout in dependency owned; do
 done
 
 out=$(run_installer auto latest owned abc1230000000000000000000000000000000002); code=$?
-if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --version 0.8.0 "* || "$out" == *"cargo build"* ]]; then
+if [[ $code -eq 0 || "$out" != *"curl "*"/releases/download/callisto@0.8.0/"* || "$out" == *"cargo build"* ]]; then
   echo "FAIL auto_action_ref_pin_owned: code=$code out=$out"; fail=1
 else
   echo "PASS auto_action_ref_pin_owned"
@@ -197,8 +218,8 @@ done
 
 for action_ref in '' 0000000000000000000000000000000000000f; do
   out=$(run_installer auto latest dependency "$action_ref"); code=$?
-  if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --locked "* \
-    || "$out" == *"--version"* || "$out" == *"cargo build"* || "$out" == *"cargo metadata"* ]]; then
+  if [[ $code -eq 0 || "$out" != *"curl "*"/releases/latest/download/"* \
+    || "$out" == *"cargo install"* || "$out" == *"cargo build"* || "$out" == *"cargo metadata"* ]]; then
     echo "FAIL auto_latest_consumer_${action_ref:-unset}: code=$code out=$out"; fail=1
   else
     echo "PASS auto_latest_consumer_${action_ref:-unset}"
