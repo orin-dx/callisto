@@ -60,11 +60,13 @@ pub(crate) fn pick_many(
 ) -> Result<Vec<usize>, CliError> {
     print_list(heading, items, marked);
     if marked.contains(&true) {
-        eprintln!("Enter keeps the * ones, or type numbers, ranges (1-3) or names; Esc cancels.");
+        eprintln!(
+            "Enter keeps the * ones, or type numbers, ranges (1-3) or names (#2 always means row 2); Esc cancels."
+        );
     } else if empty_ok {
-        eprintln!("Enter picks none, or type numbers, ranges (1-3) or names; Esc cancels.");
+        eprintln!("Enter picks none, or type numbers, ranges (1-3) or names (#2 always means row 2); Esc cancels.");
     } else {
-        eprintln!("Type numbers, ranges (1-3) or names; Esc cancels.");
+        eprintln!("Type numbers, ranges (1-3) or names (#2 always means row 2); Esc cancels.");
     }
     read_answer(items, marked, false)
 }
@@ -73,7 +75,7 @@ pub(crate) fn pick_many(
 pub(crate) fn pick_one(heading: &str, ids: &[String]) -> Result<usize, CliError> {
     let items: Vec<Listed> = ids.iter().map(|id| Listed::by_id(id)).collect();
     print_list(heading, &items, &[]);
-    eprintln!("Type a number or a name; Esc cancels.");
+    eprintln!("Type a number or a name (#2 always means row 2); Esc cancels.");
     let picked = read_answer(&items, &[], true)?;
     Ok(*picked
         .first()
@@ -139,14 +141,14 @@ fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
         words += 1;
         let shown = word.escape_debug();
         if let Some(rows) = word.strip_prefix('#') {
-            match numbered(rows, items.len()) {
+            match numbered(rows, word, items.len()) {
                 Some(range) => picked.extend(range?),
                 None => return Err(format!("`{shown}` is not a row number or range")),
             }
             continue;
         }
         let by_name = items.iter().position(|item| item.name == word || item.id == word);
-        let indices = match (by_name, numbered(word, items.len())) {
+        let indices = match (by_name, numbered(word, word, items.len())) {
             (Some(index), None | Some(Err(_))) => index..=index,
             (Some(index), Some(Ok(range))) if range == (index..=index) => range,
             (Some(index), Some(Ok(range))) => {
@@ -177,7 +179,7 @@ fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
 
 /// `n` or `a-b`, counted from 1, as indices; `None` when the word is shaped like neither, `Some(Err)` when the rows are
 /// not in the list.
-fn numbered(word: &str, len: usize) -> Option<Result<std::ops::RangeInclusive<usize>, String>> {
+fn numbered(word: &str, typed: &str, len: usize) -> Option<Result<std::ops::RangeInclusive<usize>, String>> {
     let (first, last) = word.split_once('-').unwrap_or((word, word));
     let digits = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
     if !digits(first) || !digits(last) {
@@ -186,8 +188,11 @@ fn numbered(word: &str, len: usize) -> Option<Result<std::ops::RangeInclusive<us
     let listed = |text: &str| text.parse::<usize>().ok().filter(|number| (1..=len).contains(number));
     Some(match (listed(first), listed(last)) {
         (Some(low), Some(high)) if low <= high => Ok(low - 1..=high - 1),
-        (Some(_), Some(_)) => Err(format!("`{word}` runs backwards; put the lower number first")),
-        _ => Err(format!("`{word}` is not in the list (1-{len})")),
+        (Some(_), Some(_)) => Err(format!(
+            "`{}` runs backwards; put the lower number first",
+            typed.escape_debug()
+        )),
+        _ => Err(format!("`{}` is not in the list (1-{len})", typed.escape_debug())),
     })
 }
 
@@ -259,17 +264,19 @@ impl Editor {
 }
 
 /// The program and arguments an editor setting names. Unix settings follow shell quoting; Windows paths use
-/// backslashes as separators, so there a setting splits on whitespace outside double quotes and keeps every backslash.
+/// backslashes as separators, so there a setting splits on whitespace outside single or double quotes (as Git for
+/// Windows' sh does) and keeps every backslash.
 fn editor_words(command: &str, windows: bool) -> Result<Vec<String>, String> {
     if !windows {
         return shell_words::split(command).map_err(|error| format!("it does not split into words: {error}"));
     }
     let mut words = Vec::new();
-    let (mut word, mut quoted, mut started) = (String::new(), false, false);
+    let (mut word, mut quote, mut started) = (String::new(), None::<char>, false);
     for c in command.chars() {
         match c {
-            '"' => (quoted, started) = (!quoted, true),
-            c if c.is_whitespace() && !quoted => {
+            '"' | '\'' if quote.is_none() => (quote, started) = (Some(c), true),
+            c if quote == Some(c) => quote = None,
+            c if c.is_whitespace() && quote.is_none() => {
                 if started {
                     words.push(std::mem::take(&mut word));
                 }
@@ -281,8 +288,8 @@ fn editor_words(command: &str, windows: bool) -> Result<Vec<String>, String> {
             }
         }
     }
-    if quoted {
-        return Err("it does not split into words: a double quote is not closed".to_owned());
+    if quote.is_some() {
+        return Err("it does not split into words: a quote is not closed".to_owned());
     }
     if started {
         words.push(word);
@@ -399,7 +406,12 @@ mod tests {
             "{refused}"
         );
         assert!(choices("#x", &items).unwrap_err().contains("not a row number or range"));
-        assert!(choices("#9", &items).is_err());
+        assert!(choices("#9", &items)
+            .unwrap_err()
+            .starts_with("`#9` is not in the list"));
+        assert!(choices("#3-1", &items)
+            .unwrap_err()
+            .starts_with("`#3-1` runs backwards"));
     }
 
     #[test]
@@ -422,6 +434,14 @@ mod tests {
             Ok(vec![r"C:\Program Files\Editor\ed.exe".to_owned(), "--wait".to_owned()])
         );
         assert!(editor_words(r#""C:\open"#, true).is_err());
+        assert_eq!(
+            editor_words("'C:/Program Files/Notepad++/notepad++.exe' -multiInst -nosession", true),
+            Ok(vec![
+                "C:/Program Files/Notepad++/notepad++.exe".to_owned(),
+                "-multiInst".to_owned(),
+                "-nosession".to_owned()
+            ])
+        );
         assert_eq!(
             editor_words("code --wait", false),
             Ok(vec!["code".to_owned(), "--wait".to_owned()])
