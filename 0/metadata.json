@@ -1,0 +1,134 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A8QGS3PPGHYXWSW9NA4R7F",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T21:10:52.191413Z",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 22,
+  "save_step_count": 8,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "44e0ed058016",
+  "checkpoint_transcript_start": 18167,
+  "transcript_lines_at_start": 18167,
+  "compact_transcript_start": 1709,
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 792086,
+    "cache_read_tokens": 43607185,
+    "output_tokens": 51860,
+    "api_call_count": 62,
+    "subagent_tokens": {
+      "input_tokens": 232,
+      "cache_creation_tokens": 439215,
+      "cache_read_tokens": 9091628,
+      "output_tokens": 96711,
+      "api_call_count": 116
+    },
+    "subagent_tokens_complete": true
+  },
+  "session_token_usage": {
+    "input_tokens": 3252,
+    "cache_creation_tokens": 6573180,
+    "cache_read_tokens": 664864606,
+    "output_tokens": 836736,
+    "api_call_count": 1413,
+    "subagent_tokens": {
+      "input_tokens": 1650,
+      "cache_creation_tokens": 2605929,
+      "cache_read_tokens": 83004912,
+      "output_tokens": 531526,
+      "api_call_count": 825
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 9,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 11,
+      "entropy": 15,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 351
+  },
+  "summary": {
+    "intent": "Get two outstanding Callisto PRs (#242 onboarding / #634 and #246 interactive add-init / #638) to a mergeable state with no further review findings, by fixing the underlying architectural patterns rather than spot-fixing each reviewer finding.",
+    "outcome": "Pivoted to boundary-level fixes: #242's URL changes were reverted and pushed (1abf4f227), the Git boundary work (#494, slice A pushed, slice B in progress) was started, and #246 moved to a line-based picker. Independent whole-PR reviews and delta reviews found only low items, which were being fixed; the full gate passed on both, but final pushes of #634 and #638 were not yet done.",
+    "learnings": {
+      "repo": [
+        "Local Git access goes through the GitAccess boundary in callisto-model, but remote access had no model. Raw URL strings were parsed and rewritten with url::Url across callisto-graph, which caused the recurring URL/git findings.",
+        "Planned fix: a GitRemote type that calls Git by remote name (push origin, ls-remote origin) and fingerprints Git's own get-url output. Also Rev, a single GitPath, git add moved inside GitAccess, and one central Git environment policy.",
+        "CommandRunner is the single test seam, so no new trait is needed for the Git boundary.",
+        "Prompt design decision (final): unbounded lists are printed once as plain text and answered via inquire's one-line Text prompt. There is no custom terminal code, and findings about inquire's internal behaviour (resize, pane size, keys) are dismissed with a documented limit.",
+        "Changesets v3 uses @clack/prompts as shipped and builds no terminal handling of its own. Callisto's wins are around the widget: preselected changed packages, a review step, clean non-TTY errors.",
+        "Registry URLs in E120 show only scheme and host on purpose, because some registries (Gemfury) put tokens in the path. The message should point to where to compare instead.",
+        "The rustix dev-dependency needs both the pty and termios features in callisto-cli because the pty tests call tcsetwinsize; crossterm only enables termios incidentally."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "line": 62,
+          "end_line": 68,
+          "finding": "The hint text depends on marked rows and the empty_ok flag. The first list passes false and the bump lists pass true, so an empty Enter on the first list becomes E273."
+        },
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "line": 138,
+          "finding": "position() matches the first package whose name or qualified id equals the typed word, so a duplicate match silently goes to the first row."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/add.rs",
+          "line": 338,
+          "end_line": 343,
+          "finding": "review() now escapes package names with escape_debug(), matching print_list, so control characters in names can't drive the terminal."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "line": 222,
+          "end_line": 231,
+          "finding": "E342 returns before the Changesets migration warnings are queued, so they are dropped. The fix is to extend notes right after changesets::migrate."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/binding.rs",
+          "line": 87,
+          "end_line": 92,
+          "finding": "ShownRegistry::new strips the registry URL down to scheme and host. This hides the differing path, but it is kept deliberately for security."
+        }
+      ],
+      "workflow": [
+        "Findings should be triaged by class and owning boundary, with a codebase-wide sweep, before any fix is briefed. Treating each reviewer finding as a lone to-do caused the endless loop.",
+        "The user rejected hand-maintained ledgers and a push-gate hook as ceremony, so the commitment is recorded in memory and the audit is run by agents.",
+        "Converge locally (audit, fix, audit until clean) before one push. An independent whole-PR review plus a delta review of the final batch catches issues before the paid reviewer does.",
+        "Subagent reports are treated as input, not authority. Security-relevant suggestions (showing the full registry path) were overridden with reasoning.",
+        "Report only gate exit codes actually observed, and don't promise zero future findings."
+      ]
+    },
+    "friction": [
+      "The same URL/git findings kept recurring on #242 across about 13 findings, because each fix re-implemented Git's resolution differently.",
+      "Flip-flopping on #246 between a checkbox widget, sizing, truncation, hand-built termios, and inquire; #246 had more findings after a push than before.",
+      "The user repeatedly said they had asked for pattern-level analysis, felt ignored, and was frustrated by repeated findings.",
+      "The #242 fix session ended without committing, likely blocked by the ledger rule lacking rows for new findings.",
+      "The user questioned whether ledgers and hooks were human bureaucracy, and asked for speed and token efficiency alongside quality."
+    ],
+    "open_items": [
+      "Git boundary slice B (Rev, one GitPath, git add inside the boundary) is in progress in session c7dc84c2 on trail #494.",
+      "#634 final batch of 7 low fixes still needs to be committed, its convergence record written, and the push done, then its findings resolved.",
+      "#638 follow-ups (termios feature, collision message) are committed or in progress and need a push after delta review, then resolving 3 findings. The five-item batch is done.",
+      "Pending contract decisions for the owner: TERM=dumb never prompts, init context to stderr while prompting, and re-asking on an empty selection instead of E273.",
+      "#628 Release 0.23.0 merges last, after #242 and #246 merge.",
+      "Contrived collision cases in the tty.rs name-matching (a package whose name equals another's qualified id, a package literally named `1-1`) were left unfixed.",
+      "The E299 help still says `git remote add origin` instead of naming `get-url --push`.",
+      "Dry-run JSON should carry the pending-version diagnostic, and the release dry-run note should carry the origin refusal reason (#634 review items)."
+    ]
+  }
+}
