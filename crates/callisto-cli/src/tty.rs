@@ -31,65 +31,94 @@ pub const CANCELLED: &str = "Cancelled, nothing written.";
 /// Exit status for a prompt cancelled with Esc or Ctrl-C: 130, as shells report SIGINT.
 pub const CANCELLED_EXIT: u8 = 130;
 
-/// Asks which of `names` to pick, as `git add -i` does: the list is printed once, numbered, with `marked` ones starred,
-/// then one typed line answers. Nothing is redrawn, so no terminal size or resize can misdraw it. Enter keeps the marked
-/// ones; an answer that names nothing listed is asked again with the reason.
-pub(crate) fn pick_many(heading: &str, names: &[String], marked: &[bool]) -> Result<Vec<usize>, CliError> {
-    print_list(heading, names, marked);
-    let enter = if marked.contains(&true) {
-        "Enter keeps the * ones"
-    } else {
-        "Enter picks none"
-    };
-    eprintln!("{enter}, or type numbers, ranges (1-3) or names; Esc cancels.");
-    read_answer(names, marked, false)
+/// A package in a list: the name the list shows, and its `ecosystem/name` id, which is also accepted when typed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Listed {
+    pub name: String,
+    pub id: String,
 }
 
-/// Asks for exactly one of `names`, the way [`pick_many`] asks for several.
-pub(crate) fn pick_one(heading: &str, names: &[String]) -> Result<usize, CliError> {
-    print_list(heading, names, &[]);
+impl Listed {
+    /// An entry shown by its id.
+    pub fn by_id(id: &str) -> Self {
+        Self {
+            name: id.to_owned(),
+            id: id.to_owned(),
+        }
+    }
+}
+
+/// Asks which of `items` to pick, as `git add -i` does: the list is printed once, numbered, with `marked` ones starred,
+/// then one typed line answers. Nothing is redrawn, so no terminal size or resize can misdraw it. Enter keeps the marked
+/// ones (and, when `empty_ok`, picks none if none is marked); an answer that names nothing listed is asked again with
+/// the reason.
+pub(crate) fn pick_many(
+    heading: &str,
+    items: &[Listed],
+    marked: &[bool],
+    empty_ok: bool,
+) -> Result<Vec<usize>, CliError> {
+    print_list(heading, items, marked);
+    if marked.contains(&true) {
+        eprintln!("Enter keeps the * ones, or type numbers, ranges (1-3) or names; Esc cancels.");
+    } else if empty_ok {
+        eprintln!("Enter picks none, or type numbers, ranges (1-3) or names; Esc cancels.");
+    } else {
+        eprintln!("Type numbers, ranges (1-3) or names; Esc cancels.");
+    }
+    read_answer(items, marked, false)
+}
+
+/// Asks for exactly one of `ids`, the way [`pick_many`] asks for several.
+pub(crate) fn pick_one(heading: &str, ids: &[String]) -> Result<usize, CliError> {
+    let items: Vec<Listed> = ids.iter().map(|id| Listed::by_id(id)).collect();
+    print_list(heading, &items, &[]);
     eprintln!("Type a number or a name; Esc cancels.");
-    let picked = read_answer(names, &[], true)?;
+    let picked = read_answer(&items, &[], true)?;
     Ok(*picked
         .first()
         .expect("the validator accepts only an answer naming exactly one entry"))
 }
 
-fn print_list(heading: &str, names: &[String], marked: &[bool]) {
-    let width = names.len().to_string().len();
+fn print_list(heading: &str, items: &[Listed], marked: &[bool]) {
+    let width = items.len().to_string().len();
     let mut text = format!("{heading}\n");
-    for (index, name) in names.iter().enumerate() {
+    for (index, item) in items.iter().enumerate() {
         let mark = if marked.get(index) == Some(&true) { '*' } else { ' ' };
         // A control character in a manifest's name must not drive the terminal.
-        text.push_str(&format!("  {:>width$} {mark} {}\n", index + 1, name.escape_debug()));
+        text.push_str(&format!(
+            "  {:>width$} {mark} {}\n",
+            index + 1,
+            item.name.escape_debug()
+        ));
     }
     eprint!("{text}");
 }
 
 /// One line typed at a single-line prompt; the prompt's validator asks again with the reason until [`answer`] accepts
 /// it, and Esc or Ctrl-C is [`CliError::Cancelled`].
-fn read_answer(names: &[String], marked: &[bool], one: bool) -> Result<Vec<usize>, CliError> {
-    let (valid_names, valid_marked) = (names.to_vec(), marked.to_vec());
+fn read_answer(items: &[Listed], marked: &[bool], one: bool) -> Result<Vec<usize>, CliError> {
+    let (valid_items, valid_marked) = (items.to_vec(), marked.to_vec());
     let line = Text::new("Your answer")
         .with_validator(move |line: &str| {
-            Ok(match answer(line, &valid_names, &valid_marked, one) {
+            Ok(match answer(line, &valid_items, &valid_marked, one) {
                 Ok(_) => Validation::Valid,
                 Err(reason) => Validation::Invalid(reason.into()),
             })
         })
         .prompt()?;
-    Ok(answer(&line, names, marked, one).expect("the validator accepted this line"))
+    Ok(answer(&line, items, marked, one).expect("the validator accepted this line"))
 }
 
 /// The listed indices a typed line picks: the `marked` ones for an empty line (when several may be picked), else the
 /// ones [`choices`] names; `one` requires exactly one.
-fn answer(line: &str, names: &[String], marked: &[bool], one: bool) -> Result<Vec<usize>, String> {
+fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Vec<usize>, String> {
     let picked = if line.trim().is_empty() && !one {
-        (0..names.len())
+        (0..items.len())
             .filter(|&index| marked.get(index) == Some(&true))
             .collect()
     } else {
-        choices(line, names)?
+        choices(line, items)?
     };
     if one && picked.len() != 1 {
         return Err("pick exactly one".to_owned());
@@ -98,20 +127,27 @@ fn answer(line: &str, names: &[String], marked: &[bool], one: bool) -> Result<Ve
 }
 
 /// The listed indices an answer names, in list order. A word is a number or range counted from 1 (`3`, `1-3`) when
-/// those rows exist, else a listed name; words are separated by spaces or commas.
-fn choices(answer: &str, names: &[String]) -> Result<Vec<usize>, String> {
+/// those rows exist, else a listed name or `ecosystem/name` id; words are separated by spaces or commas.
+fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
     let mut picked = std::collections::BTreeSet::new();
     for word in answer
         .split(|c: char| c == ',' || c.is_whitespace())
         .filter(|word| !word.is_empty())
     {
         let shown = word.escape_debug();
-        let by_name = names.iter().position(|name| name == word);
-        let indices = match (by_name, numbered(word, names.len())) {
+        let by_name = items.iter().position(|item| item.name == word || item.id == word);
+        let indices = match (by_name, numbered(word, items.len())) {
             (Some(index), None | Some(Err(_))) => index..=index,
             (Some(index), Some(Ok(range))) if range == (index..=index) => range,
-            (Some(_), Some(Ok(_))) => {
-                return Err(format!("`{shown}` is both a listed name and another entry's number"))
+            (Some(index), Some(Ok(range))) => {
+                let rows = range
+                    .map(|row| format!("{0}-{0}", row + 1))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let id = items[index].id.escape_debug();
+                return Err(format!(
+                    "`{shown}` is both a package name and a row number; type `{id}` for the package or `{rows}` for the row"
+                ));
             }
             (None, Some(range)) => range?,
             (None, None) => return Err(format!("`{shown}` is not a number, a range or a listed name")),
@@ -240,10 +276,21 @@ mod editor_owns_ctrl_c {
 
 #[cfg(test)]
 mod tests {
-    use super::{answer, choices};
+    use super::{answer, choices, Listed};
 
-    fn names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|name| (*name).to_owned()).collect()
+    fn names(names: &[&str]) -> Vec<Listed> {
+        names.iter().map(|name| Listed::by_id(name)).collect()
+    }
+
+    /// npm packages shown by their bare names.
+    fn npm(names: &[&str]) -> Vec<Listed> {
+        names
+            .iter()
+            .map(|name| Listed {
+                name: (*name).to_owned(),
+                id: format!("npm/{name}"),
+            })
+            .collect()
     }
 
     #[test]
@@ -276,13 +323,39 @@ mod tests {
 
     #[test]
     fn a_name_that_reads_as_another_entrys_number_is_refused() {
-        let ambiguous = "is both a listed name and another entry's number";
+        let ambiguous = "is both a package name and a row number";
         assert!(choices("2", &names(&["2", "b"])).unwrap_err().contains(ambiguous));
         assert!(choices("1-2", &names(&["a", "b", "1-2"]))
             .unwrap_err()
             .contains(ambiguous));
         // A name that is its own number is not ambiguous.
         assert_eq!(choices("1", &names(&["1", "b"])), Ok(vec![0]));
+    }
+
+    #[test]
+    fn the_reason_for_an_ambiguous_word_says_how_to_pick_each() {
+        // Rows: `2` then `1`; typing `1` could mean row 1 (package `2`) or the package named `1`.
+        let listed = npm(&["2", "1"]);
+        assert_eq!(
+            choices("1", &listed).unwrap_err(),
+            "`1` is both a package name and a row number; type `npm/1` for the package or `1-1` for the row"
+        );
+        assert_eq!(choices("npm/1", &listed), Ok(vec![1]));
+        assert_eq!(choices("1-1", &listed), Ok(vec![0]));
+        assert_eq!(choices("2-2", &listed), Ok(vec![1]));
+        // A range collision lists the rows singly.
+        let error = choices("1-2", &npm(&["a", "b", "1-2"])).unwrap_err();
+        assert!(
+            error.ends_with("type `npm/1-2` for the package or `1-1,2-2` for the row"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_qualified_id_is_accepted_as_a_listed_name() {
+        let listed = npm(&["a", "b"]);
+        assert_eq!(choices("npm/b a", &listed), Ok(vec![0, 1]));
+        assert!(choices("cargo/a", &listed).is_err());
     }
 
     #[test]

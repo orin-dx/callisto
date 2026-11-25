@@ -13,9 +13,17 @@ use rustix::pty::{grantpt, openpt, ptsname, unlockpt, OpenptFlags};
 
 const HIDE_CURSOR: &str = "\x1b[?25l";
 const SHOW_CURSOR: &str = "\x1b[?25h";
+/// How the answer prompt of a package list reads while it is asked, and once its answer is accepted.
+const ANSWER_ASKED: &str = "? Your answer";
+const ANSWER_ACCEPTED: &str = "> Your answer";
 
 /// npm packages `a` and `b`, both released at 1.0.0, then `b` changed.
 fn workspace() -> tempfile::TempDir {
+    released(["a", "b"], "b")
+}
+
+/// Two npm packages, both released at 1.0.0, then `changed` changed.
+fn released(names: [&str; 2], changed: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init_repo(root);
@@ -24,7 +32,7 @@ fn workspace() -> tempfile::TempDir {
         r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
     )
     .unwrap();
-    for name in ["a", "b"] {
+    for name in names {
         std::fs::create_dir_all(root.join(format!("packages/{name}"))).unwrap();
         std::fs::write(
             root.join(format!("packages/{name}/package.json")),
@@ -35,9 +43,10 @@ fn workspace() -> tempfile::TempDir {
     std::fs::write(root.join("callisto.toml"), "").unwrap();
     run_git(root, &["add", "-A"]);
     run_git(root, &["commit", "-qm", "release"]);
-    run_git(root, &["tag", "a@1.0.0"]);
-    run_git(root, &["tag", "b@1.0.0"]);
-    std::fs::write(root.join("packages/b/index.js"), "x").unwrap();
+    for name in names {
+        run_git(root, &["tag", &format!("{name}@1.0.0")]);
+    }
+    std::fs::write(root.join(format!("packages/{changed}/index.js")), "x").unwrap();
     run_git(root, &["add", "-A"]);
     run_git(root, &["commit", "-qm", "change b"]);
     dir
@@ -59,12 +68,12 @@ impl Session {
 
     /// `callisto <args>` with `env` set; `VISUAL` and `EDITOR` are unset unless `env` names them.
     fn start_with(root: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
-        Self::launch(root, args, env, true, (120, 30), true)
+        Self::launch(root, args, env, true, (120, 30))
     }
 
     /// `callisto <args>` with stdin and stdout on the terminal and stderr piped; read it with [`Session::stderr`].
     fn start_with_piped_stderr(root: &Path, args: &[&str]) -> Self {
-        Self::launch(root, args, &[], false, (120, 30), true)
+        Self::launch(root, args, &[], false, (120, 30))
     }
 
     fn stderr(&mut self) -> String {
@@ -75,12 +84,7 @@ impl Session {
 
     /// `callisto add` on a terminal `columns` wide and `rows` high.
     fn start_small(root: &Path, columns: u16, rows: u16) -> Self {
-        Self::launch(root, &["add"], &[], true, (columns, rows), true)
-    }
-
-    /// `callisto add` on a terminal set up with `stty -iexten`, as some users have it.
-    fn start_without_iexten(root: &Path) -> Self {
-        Self::launch(root, &["add"], &[], true, (120, 30), false)
+        Self::launch(root, &["add"], &[], true, (columns, rows))
     }
 
     fn launch(
@@ -89,7 +93,6 @@ impl Session {
         env: &[(&str, &str)],
         stderr_on_terminal: bool,
         (columns, rows): (u16, u16),
-        iexten: bool,
     ) -> Self {
         let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         grantpt(&master).unwrap();
@@ -110,11 +113,6 @@ impl Session {
             },
         )
         .unwrap();
-        if !iexten {
-            let mut mode = rustix::termios::tcgetattr(&tty).unwrap();
-            mode.local_modes -= rustix::termios::LocalModes::IEXTEN;
-            rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &mode).unwrap();
-        }
         let child = Command::new(env!("CARGO_BIN_EXE_callisto"))
             .args(["--cwd", root.to_str().unwrap()])
             .args(args)
@@ -163,6 +161,32 @@ impl Session {
         }
         // Let the prompt finish drawing and switch the terminal to raw mode before typing.
         std::thread::sleep(Duration::from_millis(200));
+        self.master.write_all(keys.as_bytes()).unwrap();
+    }
+
+    /// Types `keys` at the answer prompt of package list number `list` (from 1, over the whole run), once the previous
+    /// list's answer was accepted and this prompt is drawn, which is after the terminal is ready for keys.
+    fn answer(&mut self, list: usize, keys: &str) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let shown = unescaped(&self.screen());
+            let from = match list {
+                1 => Some(0),
+                _ => shown
+                    .match_indices(ANSWER_ACCEPTED)
+                    .nth(list - 2)
+                    .map(|(at, found)| at + found.len()),
+            };
+            if from.is_some_and(|from| shown[from..].contains(ANSWER_ASKED)) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "never saw the answer prompt of list {list}:\n{}",
+                self.screen()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
         self.master.write_all(keys.as_bytes()).unwrap();
     }
 
@@ -233,9 +257,9 @@ fn changesets(root: &Path) -> Vec<String> {
 fn the_changed_package_is_marked_so_enter_through_the_wizard_records_it() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
-    add.after("Packages in this change", 1, "\r");
-    add.after("MAJOR", 1, "\r");
-    add.after("MINOR", 1, "\r");
+    add.answer(1, "\r");
+    add.answer(2, "\r");
+    add.answer(3, "\r");
     add.after("Changelog summary", 1, "Fix b\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
@@ -251,9 +275,9 @@ fn packages_and_bumps_are_picked_by_number_range_or_name() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
     // The list is `1 * b`, `2   a`; the bump questions list the picked packages in that order.
-    add.after("Packages in this change", 1, "1-2\r");
-    add.after("MAJOR", 1, "a\r");
-    add.after("MINOR", 1, "1\r");
+    add.answer(1, "1-2\r");
+    add.answer(2, "a\r");
+    add.answer(3, "1\r");
     add.after("Changelog summary", 1, "Rework\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
@@ -264,11 +288,11 @@ fn packages_and_bumps_are_picked_by_number_range_or_name() {
 fn an_answer_that_names_nothing_listed_is_asked_again_with_the_reason() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
-    add.after("Packages in this change", 1, "c\r");
+    add.answer(1, "c\r");
     add.after("`c` is not a number, a range or a listed name", 1, "\x7f3\r");
     add.after("`3` is not in the list (1-2)", 1, "\x7f2\r");
-    add.after("MAJOR", 1, "\r");
-    add.after("MINOR", 1, "\r");
+    add.answer(2, "\r");
+    add.answer(3, "\r");
     add.after("Changelog summary", 1, "Fix a\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
@@ -282,23 +306,12 @@ fn an_answer_that_names_nothing_listed_is_asked_again_with_the_reason() {
 
 #[test]
 fn esc_or_ctrl_c_at_a_list_writes_nothing_and_exits_130() {
-    // A quick double Esc is two Escape keys, not an arrow's sequence; `stty -iexten` leaves Ctrl-C a key.
-    for (key, iexten) in [
-        ("\x1b", true),
-        ("\x03", true),
-        ("1\x1b", true),
-        ("\x1b\x1b", true),
-        ("\x03", false),
-        ("\x1b", false),
-    ] {
+    // A quick double Esc is two Escape keys, not an arrow's escape sequence.
+    for key in ["\x1b", "\x03", "1\x1b", "\x1b\x1b"] {
         let dir = workspace();
-        let mut add = if iexten {
-            Session::start(dir.path())
-        } else {
-            Session::start_without_iexten(dir.path())
-        };
-        add.after("Packages in this change", 1, key);
-        assert_eq!(add.exit_code(), Some(130), "{key:?} iexten={iexten}: {}", add.screen());
+        let mut add = Session::start(dir.path());
+        add.answer(1, key);
+        assert_eq!(add.exit_code(), Some(130), "{key:?}: {}", add.screen());
         let screen = add.screen();
         assert!(
             screen.contains("E343") && screen.contains("Cancelled, nothing written."),
@@ -313,8 +326,8 @@ fn esc_or_ctrl_c_at_a_list_writes_nothing_and_exits_130() {
 fn esc_at_a_prompt_writes_nothing_and_exits_130() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
-    add.after("Packages in this change", 1, "\r");
-    add.after("MAJOR", 1, "\x1b");
+    add.answer(1, "\r");
+    add.answer(2, "\x1b");
     assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
     assert!(add.screen().contains("E343"), "{}", add.screen());
     assert!(add.screen().contains("Cancelled, nothing written."), "{}", add.screen());
@@ -323,9 +336,9 @@ fn esc_at_a_prompt_writes_nothing_and_exits_130() {
 
 /// Walks the wizard to the summary question.
 fn to_summary(add: &mut Session) {
-    add.after("Packages in this change", 1, "\r");
-    add.after("MAJOR", 1, "\r");
-    add.after("MINOR", 1, "\r");
+    add.answer(1, "\r");
+    add.answer(2, "\r");
+    add.answer(3, "\r");
 }
 
 #[test]
@@ -453,7 +466,7 @@ fn a_sigint_delivered_to_the_process_at_a_prompt_ends_it_and_writes_nothing() {
 fn a_sigint_delivered_to_the_process_at_a_list_ends_it_and_writes_nothing() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
-    add.after("Packages in this change", 1, "");
+    add.answer(1, "");
     add.interrupt();
     assert_eq!(add.status().signal(), Some(2), "{}", add.screen());
     assert!(changesets(dir.path()).is_empty());
@@ -634,6 +647,11 @@ fn long_names(names: [&str; 2]) -> tempfile::TempDir {
 
 /// The text a terminal shows, without escape sequences or line breaks, so a wrapped line reads as one.
 fn plain(screen: &str) -> String {
+    unescaped(screen).replace(['\r', '\n'], "")
+}
+
+/// The text a terminal shows, without escape sequences.
+fn unescaped(screen: &str) -> String {
     let mut text = String::new();
     let mut chars = screen.chars();
     while let Some(c) = chars.next() {
@@ -644,7 +662,6 @@ fn plain(screen: &str) -> String {
                     chars.find(|c| ('@'..='~').contains(c));
                 }
             }
-            '\r' | '\n' => {}
             c => text.push(c),
         }
     }
@@ -660,9 +677,9 @@ fn in_a_40_by_10_pane_long_names_are_shown_in_full_and_picked_by_name() {
     ];
     let dir = long_names(names);
     let mut add = Session::start_small(dir.path(), 40, 10);
-    add.after("Packages in this change", 1, &format!("{}\r", names[1]));
-    add.after("MAJOR", 1, "\r");
-    add.after("MINOR", 1, "\r");
+    add.answer(1, &format!("{}\r", names[1]));
+    add.answer(2, "\r");
+    add.answer(3, "\r");
     add.after("Changelog summary", 1, "Fix\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
@@ -685,6 +702,56 @@ fn in_a_40_by_10_pane_long_names_are_shown_in_full_and_picked_by_name() {
     );
 }
 
+/// With nothing marked, the first list does not offer Enter (it needs a pick); the bump lists do.
+#[test]
+fn with_nothing_marked_only_the_bump_lists_offer_enter_for_none() {
+    let dir = workspace();
+    run_git(dir.path(), &["tag", "-f", "b@1.0.0"]);
+    let mut add = Session::start(dir.path());
+    add.answer(1, "a\r");
+    add.answer(2, "\x03");
+    assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
+    let screen = plain(&add.screen());
+    let (first, bumps) = screen
+        .split_once("Which are a MAJOR bump?")
+        .expect("the bump list is asked");
+    assert!(
+        first.contains("Type numbers, ranges (1-3) or names; Esc cancels."),
+        "{first}"
+    );
+    assert!(!first.contains("Enter picks none"), "{first}");
+    assert!(bumps.contains("Enter picks none, or type numbers"), "{bumps}");
+}
+
+#[test]
+fn enter_with_nothing_picked_at_the_first_list_is_the_no_packages_error() {
+    let dir = workspace();
+    run_git(dir.path(), &["tag", "-f", "b@1.0.0"]);
+    let mut add = Session::start(dir.path());
+    add.answer(1, "\r");
+    assert_eq!(add.exit_code(), Some(1), "{}", add.screen());
+    assert!(add.screen().contains("E273"), "{}", add.screen());
+    assert!(changesets(dir.path()).is_empty());
+}
+
+/// Packages named `1` and `2`, with `2` changed so it is listed first: typing `1` is row 1 (package `2`) and the
+/// package named `1`.
+#[test]
+fn a_name_that_is_another_rows_number_says_how_to_pick_each() {
+    let dir = released(["1", "2"], "2");
+    let mut add = Session::start(dir.path());
+    add.answer(1, "1\r");
+    add.after("type `npm/1` for the package or `1-1` for the row", 1, "\x7fnpm/1\r");
+    add.answer(2, "\r");
+    add.answer(3, "\r");
+    add.after("Changelog summary", 1, "Fix\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    let screen = add.screen();
+    assert!(screen.contains("1 * 2\r\n  2   1\r\n"), "{screen}");
+    assert_eq!(changesets(dir.path()), ["---\n1: patch\n---\n\nFix\n"]);
+}
+
 /// A package named `42` in a workspace of one: no row 42 exists, so typing `42` names the package.
 #[test]
 fn a_package_named_with_digits_is_picked_by_name_when_that_row_does_not_exist() {
@@ -693,9 +760,9 @@ fn a_package_named_with_digits_is_picked_by_name_when_that_row_does_not_exist() 
     run_git(dir.path(), &["add", "-A"]);
     run_git(dir.path(), &["commit", "-qm", "one package"]);
     let mut add = Session::start(dir.path());
-    add.after("Packages in this change", 1, "42\r");
-    add.after("MAJOR", 1, "\r");
-    add.after("MINOR", 1, "\r");
+    add.answer(1, "42\r");
+    add.answer(2, "\r");
+    add.answer(3, "\r");
     add.after("Changelog summary", 1, "Fix\r");
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
@@ -741,20 +808,34 @@ fn two_binaries() -> tempfile::TempDir {
     dir
 }
 
-#[test]
-fn init_asks_for_exactly_one_product_package_by_number_or_name() {
+/// Runs `init` up to the product question, where `answers` are typed in turn, then to the end; returns `callisto.toml`.
+fn init_with_product_answers(answers: impl FnOnce(&mut Session)) -> String {
     let dir = two_binaries();
     let mut init = Session::start_with(dir.path(), &["init"], &[]);
     init.after("How should packages be versioned?", 1, "\r");
     init.after("Ship binaries", 1, "y\r");
-    init.after("Which package is the product", 1, "\r");
-    init.after("pick exactly one", 1, "1 2\r");
-    // The refused line stays in the prompt, so erase `1 2` first; the reason is already on screen.
-    init.after("pick exactly one", 1, "\x7f\x7f\x7fcargo/tool\r");
+    answers(&mut init);
     init.after("Artifact target triples", 1, "x86_64-unknown-linux-gnu\r");
     init.after("Generate a GitHub Actions release workflow?", 1, "n\r");
     init.after("Write callisto.toml?", 1, "\r");
     assert_eq!(init.exit_code(), Some(0), "{}", init.screen());
-    let written = std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap();
+    std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap()
+}
+
+#[test]
+fn init_asks_again_until_exactly_one_product_package_is_named() {
+    let written = init_with_product_answers(|init| {
+        // The prompt does not repeat a reason it is already showing, so each refusal differs from the one before.
+        init.answer(1, "\r");
+        init.after("pick exactly one", 1, "x\r");
+        init.after("`x` is not a number, a range or a listed name", 1, "\x7f1 2\r");
+        init.after("pick exactly one", 2, "\x7f\x7f\x7fcargo/tool\r");
+    });
+    assert!(written.contains("product-package = \"cargo/tool\""), "{written}");
+}
+
+#[test]
+fn init_picks_the_product_package_by_number() {
+    let written = init_with_product_answers(|init| init.answer(1, "2\r"));
     assert!(written.contains("product-package = \"cargo/tool\""), "{written}");
 }

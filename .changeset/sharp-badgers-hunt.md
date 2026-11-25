@@ -14,5 +14,6 @@ callisto-cli: minor
 - Esc or Ctrl-C at any `add` or `init` question cancels: it prints `Cancelled, nothing written.`, restores the terminal and exits 130.
   - A SIGINT sent to Callisto from outside at a question ends it with default signal behaviour; run `reset` if the terminal is left raw.
 - If Callisto cannot tell which packages changed, it warns once and marks none instead of failing.
-- With `--format json`, `add` and `init` never prompt: they ask for `--package` or `--yes` instead.
-  - `init` prompts on the same terms: with stderr redirected (`callisto init 2>log`) it no longer asks, and fails with E240 unless you pass `--yes`.
+- `add` and `init` prompt only when stdin and stderr are terminals and the format is text.
+  - `callisto add 2>log` and `callisto --format json add` now exit 2 with E214 instead of prompting; pass `--package` and `--summary`.
+  - `callisto init 2>log` and `callisto --format json init` fail with E240 unless you pass `--yes`.

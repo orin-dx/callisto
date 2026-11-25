@@ -11,7 +11,7 @@ use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
 use crate::output::{emit_line, emit_report, log_line, prompt_line};
 use crate::runner::CliCommandRunner;
-use crate::tty;
+use crate::tty::{self, Listed};
 use crate::workspace::load_workspace;
 
 pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
@@ -158,7 +158,13 @@ impl Summary {
 /// [`CliError::Cancelled`].
 trait AddPrompter {
     /// The indices of the packages the contributor picked; `marked` ones are picked when they just press Enter.
-    fn pick(&mut self, heading: &str, names: &[String], marked: &[bool]) -> Result<Vec<usize>, CliError>;
+    fn pick(
+        &mut self,
+        heading: &str,
+        items: &[Listed],
+        marked: &[bool],
+        empty_ok: bool,
+    ) -> Result<Vec<usize>, CliError>;
     /// The summary; an empty answer opens `$EDITOR` for a longer one. `None` when the editor saves nothing.
     fn summary(&mut self, prompt: &str) -> Result<Option<Summary>, CliError>;
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError>;
@@ -169,8 +175,14 @@ struct TerminalAddPrompter {
 }
 
 impl AddPrompter for TerminalAddPrompter {
-    fn pick(&mut self, heading: &str, names: &[String], marked: &[bool]) -> Result<Vec<usize>, CliError> {
-        tty::pick_many(heading, names, marked)
+    fn pick(
+        &mut self,
+        heading: &str,
+        items: &[Listed],
+        marked: &[bool],
+        empty_ok: bool,
+    ) -> Result<Vec<usize>, CliError> {
+        tty::pick_many(heading, items, marked, empty_ok)
     }
 
     fn summary(&mut self, prompt: &str) -> Result<Option<Summary>, CliError> {
@@ -211,7 +223,7 @@ impl AddPrompter for TerminalAddPrompter {
 
 /// A package the wizard offers, and whether it changed since its last tag.
 struct Choice {
-    name: String,
+    item: Listed,
     changed: bool,
 }
 
@@ -245,31 +257,33 @@ fn ask(
 
     let mut ordered: Vec<&Choice> = choices.iter().collect();
     ordered.sort_by_key(|choice| !choice.changed);
-    let names: Vec<String> = ordered.iter().map(|choice| choice.name.clone()).collect();
+    let items: Vec<Listed> = ordered.iter().map(|choice| choice.item.clone()).collect();
     let changed: Vec<bool> = ordered.iter().map(|choice| choice.changed).collect();
     let selected_indices = prompter.pick(
         "Packages in this change (* changed since its last release):",
-        &names,
+        &items,
         &changed,
+        false,
     )?;
     if selected_indices.is_empty() {
         return Err(CliError::AddNoPackagesSelected);
     }
-    let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| ordered[i].name.clone()).collect();
+    let selected_packages: Vec<Listed> = selected_indices.into_iter().map(|i| items[i].clone()).collect();
     let unmarked = vec![false; selected_packages.len()];
 
     let majors = prompter.pick(
         "Which are a MAJOR bump? (breaking changes only)",
         &selected_packages,
         &unmarked,
+        true,
     )?;
     let major_set: std::collections::HashSet<usize> = majors.into_iter().collect();
 
-    let minor_candidates: Vec<String> = selected_packages
+    let minor_candidates: Vec<Listed> = selected_packages
         .iter()
         .enumerate()
         .filter(|(idx, _)| !major_set.contains(idx))
-        .map(|(_, name)| name.clone())
+        .map(|(_, item)| item.clone())
         .collect();
     let minor_set: std::collections::HashSet<String> = if minor_candidates.is_empty() {
         std::collections::HashSet::new()
@@ -278,18 +292,22 @@ fn ask(
             "Which are a MINOR bump? (the rest get PATCH)",
             &minor_candidates,
             &unmarked[..minor_candidates.len()],
+            true,
         )?;
-        minors.into_iter().map(|idx| minor_candidates[idx].clone()).collect()
+        minors
+            .into_iter()
+            .map(|idx| minor_candidates[idx].name.clone())
+            .collect()
     };
 
     let entries: Vec<Entry> = selected_packages
         .iter()
         .enumerate()
-        .map(|(idx, name)| Entry {
-            name: name.clone(),
+        .map(|(idx, item)| Entry {
+            name: item.name.clone(),
             severity: if major_set.contains(&idx) {
                 Severity::Major
-            } else if minor_set.contains(name) {
+            } else if minor_set.contains(&item.name) {
                 Severity::Minor
             } else {
                 Severity::Patch
@@ -317,7 +335,12 @@ fn ask(
 fn review(entries: &[Entry], summary: &str) -> String {
     let mut text = String::from("\nThis changeset records:\n");
     for entry in entries {
-        text.push_str(&format!("  {:<5}  {}\n", entry.severity.to_string(), entry.name));
+        // A control character in a manifest's name must not drive the terminal.
+        text.push_str(&format!(
+            "  {:<5}  {}\n",
+            entry.severity.to_string(),
+            entry.name.escape_debug()
+        ));
     }
     text.push('\n');
     for line in summary.trim().lines() {
@@ -349,7 +372,10 @@ fn wizard_choices<'a>(
     });
     packages
         .map(|pkg| Choice {
-            name: pkg.id.display_name(),
+            item: Listed {
+                name: pkg.id.display_name(),
+                id: pkg.canonical_id().display_name(),
+            },
             changed: changed.get(&pkg.id).copied().unwrap_or(false),
         })
         .collect()
@@ -482,13 +508,22 @@ mod tests {
         shown: Vec<Vec<String>>,
         /// Which names each list marked.
         marked: Vec<Vec<bool>>,
+        /// Whether each list accepted Enter with nothing picked.
+        empty_ok: Vec<bool>,
         summary_asked: bool,
     }
 
     impl AddPrompter for Scripted {
-        fn pick(&mut self, _heading: &str, names: &[String], marked: &[bool]) -> Result<Vec<usize>, CliError> {
-            self.shown.push(names.to_vec());
+        fn pick(
+            &mut self,
+            _heading: &str,
+            items: &[Listed],
+            marked: &[bool],
+            empty_ok: bool,
+        ) -> Result<Vec<usize>, CliError> {
+            self.shown.push(items.iter().map(|item| item.name.clone()).collect());
             self.marked.push(marked.to_vec());
+            self.empty_ok.push(empty_ok);
             self.selections
                 .pop_front()
                 .expect("an unexpected package list")
@@ -526,7 +561,7 @@ mod tests {
         names
             .iter()
             .map(|name| Choice {
-                name: (*name).to_owned(),
+                item: Listed::by_id(name),
                 changed: false,
             })
             .collect()
@@ -541,7 +576,7 @@ mod tests {
             ("cargo/d", true),
         ]
         .map(|(name, changed)| Choice {
-            name: name.to_owned(),
+            item: Listed::by_id(name),
             changed,
         });
         let mut prompter = Scripted {
@@ -557,6 +592,11 @@ mod tests {
         assert_eq!(prompter.marked[0], [true, true, false, false]);
         assert_eq!(prompter.shown[1], names(&["cargo/b", "cargo/d", "cargo/a"]));
         assert_eq!(prompter.marked[1], [false, false, false]);
+        assert_eq!(
+            prompter.empty_ok[..3],
+            [false, true, true],
+            "only the first list needs a pick, so only the bump lists offer Enter for none"
+        );
         assert_eq!(
             severities(&entries),
             [
@@ -633,6 +673,17 @@ mod tests {
             review(&entries, "Add v2 exports\n\n- faster\n"),
             "\nThis changeset records:\n  minor  cargo/a\n  patch  cargo/b\n\n  Add v2 exports\n  \n  - faster\n"
         );
+    }
+
+    #[test]
+    fn the_review_shows_a_control_character_in_a_name_escaped() {
+        let entries = [Entry {
+            name: "a\x1b[2Jb".to_owned(),
+            severity: Severity::Patch,
+        }];
+        let text = review(&entries, "Fix");
+        assert!(text.contains("a\\u{1b}[2Jb"), "{text:?}");
+        assert!(!text.contains('\x1b'), "{text:?}");
     }
 
     fn severities(entries: &[Entry]) -> Vec<(&str, Severity)> {
@@ -917,7 +968,7 @@ mod tests {
         let packages = [make_package("cargo/foo"), make_package("npm/foo")];
         let names: Vec<String> = wizard_choices(packages.iter(), Ok(std::collections::BTreeMap::new()))
             .into_iter()
-            .map(|choice| choice.name)
+            .map(|choice| choice.item.name)
             .collect();
 
         assert_eq!(names.len(), 2, "expected 2 entries; got {names:?}");
