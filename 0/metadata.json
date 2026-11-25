@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A3Z5J5X7Y7V1AQGERKEPWX",
+  "session_id": "9c4bfda7-c7ff-4d6d-9864-1d4914a0dcaf",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T19:47:30.714348Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "fe0441c44245",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 4775,
+    "cache_read_tokens": 1258491,
+    "output_tokens": 3940,
+    "api_call_count": 5
+  },
+  "session_token_usage": {
+    "input_tokens": 188,
+    "cache_creation_tokens": 225782,
+    "cache_read_tokens": 17958738,
+    "output_tokens": 77825,
+    "api_call_count": 91
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 4
+  }
+}
