@@ -18,8 +18,13 @@ pub trait SeverityInference: Send + Sync {
         window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError>;
 
-    /// Whether `infer` reads commit history: when it doesn't, neither its window nor full history is worked out.
-    fn reads_history(&self) -> bool {
+    /// Whether `infer` reads commit history, so a shallow clone would silently shorten its window.
+    fn requires_full_history(&self) -> bool {
+        true
+    }
+
+    /// Whether inference runs at all: when it doesn't, its window is not worked out and `infer` is not called.
+    fn is_active(&self) -> bool {
         true
     }
 }
@@ -52,7 +57,11 @@ impl SeverityInference for NoInference {
         Ok(None)
     }
 
-    fn reads_history(&self) -> bool {
+    fn requires_full_history(&self) -> bool {
+        false
+    }
+
+    fn is_active(&self) -> bool {
         false
     }
 }

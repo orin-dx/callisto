@@ -2254,3 +2254,222 @@ fn a_changeset_named_twice_for_one_package_is_one_source_at_the_higher_severity(
     assert_eq!(seed.sources().count(), 1);
     assert_eq!(seed.severity(), Severity::Minor);
 }
+
+/// Real git that records every command and fails those whose arguments contain one of `fail`.
+struct ScriptedGit {
+    fail: &'static [&'static str],
+    seen: Mutex<Vec<String>>,
+}
+
+impl ScriptedGit {
+    fn failing(fail: &'static [&'static str]) -> Self {
+        ScriptedGit {
+            fail,
+            seen: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn ran(&self, needle: &str) -> bool {
+        self.seen.lock().unwrap().iter().any(|line| line.contains(needle))
+    }
+}
+
+impl CommandRunner for ScriptedGit {
+    fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+        let line = args.join(" ");
+        self.seen.lock().unwrap().push(line.clone());
+        if self.fail.iter().any(|needle| line.contains(needle)) {
+            return Err(CommandError::Io {
+                program: program.to_string(),
+                message: format!("injected failure: {line}"),
+            });
+        }
+        RealGitRunner.run(program, args, cwd)
+    }
+}
+
+/// An inference double whose activity and history needs are set per test; it counts `infer` calls, records the
+/// window's `since`, and fails `infer` when inactive so a call that should not happen cannot pass silently.
+struct ProbeInference {
+    active: bool,
+    full_history: bool,
+    calls: AtomicUsize,
+    since: Mutex<Option<CommitSha>>,
+}
+
+impl ProbeInference {
+    fn new(active: bool, full_history: bool) -> Self {
+        ProbeInference {
+            active,
+            full_history,
+            calls: AtomicUsize::new(0),
+            since: Mutex::new(None),
+        }
+    }
+}
+
+impl SeverityInference for ProbeInference {
+    fn infer(
+        &self,
+        _pkg: &Package,
+        _git: &GitAccess<'_>,
+        window: InferenceWindowSpec<'_>,
+    ) -> Result<Option<InferenceOutcome>, GraphError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        *self.since.lock().unwrap() = window.since;
+        if !self.active {
+            return Err(GraphError::Vcs(callisto_model::vcs::VcsError::Git(
+                "injected inference failure".into(),
+            )));
+        }
+        Ok(Some(InferenceOutcome {
+            severity: Severity::Patch,
+            commit_count: 1,
+            remapped: false,
+            commits: Vec::new(),
+        }))
+    }
+
+    fn requires_full_history(&self) -> bool {
+        self.full_history
+    }
+
+    fn is_active(&self) -> bool {
+        self.active
+    }
+}
+
+/// An auto package whose release tag points at another annotated tag, so working out the inference window has to ask
+/// git for the tag's commit, plus a pending patch changeset for it.
+fn auto_package_with_tag_of_tag() -> (tempfile::TempDir, SinglePackageGraph, CommitSha) {
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+    init_repo(root);
+    std::fs::write(root.join("README.md"), "hello\n").unwrap();
+    run_git(root, &["add", "."]);
+    run_git(root, &["commit", "-q", "-m", "initial commit"]);
+    run_git(root, &["tag", "-a", "inner", "-m", "inner"]);
+    run_git(root, &["tag", "-a", "pkg-a@1.0.0", "-m", "outer", "inner"]);
+    std::fs::create_dir_all(root.join(".changeset")).unwrap();
+    std::fs::write(root.join(".changeset/fix.md"), "---\npkg-a: patch\n---\n\nFix a bug.\n").unwrap();
+    let head = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    let head = CommitSha::parse(String::from_utf8_lossy(&head.stdout).trim()).unwrap();
+    let graph = SinglePackageGraph {
+        pkg: make_pkg(PackageId::parse("pkg-a").unwrap()),
+    };
+    (ws_dir, graph, head)
+}
+
+fn aggregate_with(
+    root: &Path,
+    graph: &SinglePackageGraph,
+    runner: &dyn CommandRunner,
+    inference: &ProbeInference,
+) -> Result<Aggregation, GraphError> {
+    let cfg = crate::config::load(root).unwrap();
+    let tags = TagIndex::build(&GitAccess::new(root, &RealGitRunner), graph, &Default::default(), &cfg).unwrap();
+    assert!(
+        tags.last_tag(&graph.pkg.id).is_some(),
+        "the fixture's release tag is the package's last tag"
+    );
+    aggregate(
+        graph,
+        &identity_for(&graph.pkg),
+        &cfg,
+        &GitAccess::new(root, runner),
+        &tags,
+        &BTreeMap::new(),
+        None,
+        inference,
+    )
+}
+
+/// Disabled inference works out no window: no tag peel, no shallow check, no `infer` call, so failures injected into
+/// all three leave the changeset-driven plan intact.
+#[test]
+fn disabled_inference_prepares_no_window_and_its_failures_do_not_reach_the_plan() {
+    let (dir, graph, _) = auto_package_with_tag_of_tag();
+    let runner = ScriptedGit::failing(&["^{commit}", "--is-shallow-repository"]);
+    let inference = ProbeInference::new(false, false);
+
+    let agg = aggregate_with(dir.path(), &graph, &runner, &inference).unwrap();
+
+    assert_eq!(inference.calls.load(Ordering::SeqCst), 0);
+    assert!(!runner.ran("^{commit}"), "{:?}", runner.seen.lock().unwrap());
+    assert!(
+        !runner.ran("--is-shallow-repository"),
+        "{:?}",
+        runner.seen.lock().unwrap()
+    );
+    assert_eq!(
+        agg.seeds.get(&graph.pkg.id).map(Seed::severity),
+        Some(Severity::Patch),
+        "the pending changeset still plans a bump"
+    );
+}
+
+/// The shipped disabled inference answers both questions as disabled.
+#[test]
+fn no_inference_is_inactive_and_needs_no_history() {
+    assert!(!crate::infer::NoInference.is_active());
+    assert!(!crate::infer::NoInference.requires_full_history());
+}
+
+/// Active inference that needs no full history still gets its window and runs, without a shallow check.
+#[test]
+fn active_inference_without_full_history_still_runs() {
+    let (dir, graph, head) = auto_package_with_tag_of_tag();
+    let runner = ScriptedGit::failing(&["--is-shallow-repository"]);
+    let inference = ProbeInference::new(true, false);
+
+    aggregate_with(dir.path(), &graph, &runner, &inference).unwrap();
+
+    assert_eq!(inference.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        *inference.since.lock().unwrap(),
+        Some(head),
+        "the window starts at the peeled tag's commit"
+    );
+    assert!(
+        !runner.ran("--is-shallow-repository"),
+        "{:?}",
+        runner.seen.lock().unwrap()
+    );
+}
+
+/// Active inference that needs full history still fails in a shallow clone.
+#[test]
+fn active_inference_needing_full_history_fails_in_a_shallow_clone() {
+    let (origin, _, _) = auto_package_with_tag_of_tag();
+    run_git(origin.path(), &["commit", "-q", "--allow-empty", "-m", "second"]);
+    let clone_dir = tempfile::tempdir().unwrap();
+    let clone = clone_dir.path().join("clone");
+    let url = format!("file://{}", origin.path().display());
+    let status = std::process::Command::new("git")
+        .args(["clone", "-q", "--depth", "1", "--no-single-branch", &url])
+        .arg(&clone)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    run_git(&clone, &["fetch", "-q", "--depth", "1", "origin", "tag", "pkg-a@1.0.0"]);
+    let graph = SinglePackageGraph {
+        pkg: make_pkg(PackageId::parse("pkg-a").unwrap()),
+    };
+    let inference = ProbeInference::new(true, true);
+
+    let result = aggregate_with(&clone, &graph, &RealGitRunner, &inference);
+
+    assert!(
+        matches!(
+            result,
+            Err(GraphError::Vcs(callisto_model::vcs::VcsError::ShallowHistory))
+        ),
+        "{:?}",
+        result.map(|_| ())
+    );
+    assert_eq!(inference.calls.load(Ordering::SeqCst), 0);
+}

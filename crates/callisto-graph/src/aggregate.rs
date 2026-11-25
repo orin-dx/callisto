@@ -461,12 +461,11 @@ where
     loaded.extend(archived);
     let mut agg = Aggregation::default();
     // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
-    if inference.reads_history() && graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
+    if inference.requires_full_history() && graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
         git.require_full_history()?;
     }
 
     for pkg in graph.packages() {
-        let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
         let last_tag = tags.last_tag(&pkg.id);
         let cur_ver = last_tag
             .map(|t| t.version.clone())
@@ -478,15 +477,14 @@ where
                 })
             })?;
 
-        let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
-        let policy = resolve_package_config(&native_names, config)
-            .and_then(|pcfg| pcfg.pre_major_inference)
-            .unwrap_or(PreMajorInferencePolicy::Off);
-
-        // release_trigger: Changeset packages take severity from pending changesets only --
-        // commit inference must not run for them, so neither does resolving its window; nor for any package when the
-        // inference reads no history (the changesets-only hint), which would otherwise peel tags package by package.
-        let inferred = if pkg.release_trigger == ReleaseTrigger::Auto && inference.reads_history() {
+        // Changeset packages take severity from pending changesets only, and disabled inference infers nothing: neither
+        // works out an inference window, which would otherwise peel tags package by package.
+        let inferred = if pkg.release_trigger == ReleaseTrigger::Auto && inference.is_active() {
+            let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
+            let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
+            let policy = resolve_package_config(&native_names, config)
+                .and_then(|pcfg| pcfg.pre_major_inference)
+                .unwrap_or(PreMajorInferencePolicy::Off);
             let since = last_tag
                 .map(|t| resolve_since(git, tags, t.name.as_str()))
                 .transpose()?;
