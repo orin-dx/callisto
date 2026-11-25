@@ -6,7 +6,7 @@ callisto-cli: minor
 
 `init` prints each note once and a one-line summary of the generated workflow instead of its whole text, and `release --dry-run` now points the way when it cannot show what you expect.
 
-- `init` prints each note and piece of advice once on stderr, with `--format json` too, where the report also lists them; in an interactive run the notes come before the write question and a decline keeps them.
+- `init` prints each note once on stderr, with `--format json` too, where the report also lists them; in an interactive run the notes come before the write question and a decline keeps them.
 - `init` names the workflow file, the branch it runs on and what it does, instead of printing the file.
 - `init --workflow` in an already configured workspace says it wrote the workflow instead of claiming it initialized the configuration.
 - `release --dry-run` says to run `callisto version` (or merge the release PR) first while it has work for the packages being released; `release` says it too when there is nothing to release yet or the selection is not a release.

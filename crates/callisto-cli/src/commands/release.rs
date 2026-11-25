@@ -79,29 +79,24 @@ impl PendingWork {
         pending_version_diagnostic(&self.packages)
     }
 
-    /// Why the check could not run, naming the error code and where to see the cause.
-    pub(crate) fn unchecked_diagnostic(&self) -> Option<callisto_model::Diagnostic> {
-        let error = self.unchecked.as_ref()?;
-        let code = miette::Diagnostic::code(error).map_or_else(|| "no code".to_owned(), |code| code.to_string());
-        Some(callisto_model::Diagnostic {
-            code: callisto_model::DiagnosticCode::PendingVersionWork,
-            severity: callisto_model::DiagnosticSeverity::Warning,
-            message: format!("could not check for pending version work ({code}); run `callisto status` for the cause"),
-            package: None,
-            path: None,
-            escalated_by: None,
-            governed_by: None,
-        })
+    /// One stderr line saying why the check could not run, naming the error code and where to see the cause. Never a
+    /// report diagnostic: the pending-work code means work was found.
+    pub(crate) fn write_unchecked_note(&self, err: &mut dyn std::io::Write) -> Result<(), CliError> {
+        if let Some(error) = &self.unchecked {
+            let code = miette::Diagnostic::code(error).map_or_else(|| "no code".to_owned(), |code| code.to_string());
+            writeln!(
+                err,
+                "note: could not check for pending version work ({code}); run `callisto status` for the cause"
+            )?;
+        }
+        Ok(())
     }
 
     fn write_notes(&self, err: &mut dyn std::io::Write) -> Result<(), CliError> {
         if let Some(note) = self.diagnostic() {
             writeln!(err, "note: {}", note.message)?;
         }
-        if let Some(note) = self.unchecked_diagnostic() {
-            writeln!(err, "note: {}", note.message)?;
-        }
-        Ok(())
+        self.write_unchecked_note(err)
     }
 }
 

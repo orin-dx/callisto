@@ -1752,11 +1752,41 @@ fn a_failed_pending_work_check_is_named_in_the_preview() {
     run_with_json(dir.path(), args, false, &out, &err);
     let note = "could not check for pending version work (E";
     assert_eq!(err.text().matches(note).count(), 1, "{}", err.text());
+    // The pending-work code means work was found, so a failed check stays out of the report.
     let listed = report_diagnostics(&out)
         .iter()
         .filter(|d| d["message"].as_str().is_some_and(|m| m.contains(note)))
         .count();
-    assert_eq!(listed, 1, "{}", out.text());
+    assert_eq!(listed, 0, "{}", out.text());
+}
+
+// In text mode the merge note and its advice come before the next steps.
+#[test]
+fn the_merge_note_precedes_the_next_steps() {
+    let dir = workspace(0);
+    let combined = Shared::default();
+    let args = InitArgs {
+        workflow: true,
+        ..yes(InitVersioning::Independent)
+    };
+    let code = run(
+        args,
+        &global(dir.path(), OutputFormat::Text, false),
+        false,
+        &mut Scripted::new(vec![], &combined),
+        &mut combined.clone(),
+        &mut combined.clone(),
+        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+    )
+    .unwrap();
+    assert_eq!(code, ExitCode::SUCCESS);
+    let text = combined.text();
+    let merge = text
+        .find("Merging to `main` publishes: require pull requests")
+        .expect(&text);
+    let next = text.find("Next steps:").expect(&text);
+    assert!(merge < next, "{text}");
+    assert_eq!(text.matches("Merging to `main` publishes").count(), 1, "{text}");
 }
 
 // A skipped-workflow warning is queued before the preview runs; a preview failure must not swallow it.

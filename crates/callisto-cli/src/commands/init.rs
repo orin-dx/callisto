@@ -335,7 +335,7 @@ fn run_queued<'a, R: CommandRunner>(
             }
             let pending = super::release::PendingWork::of(pending);
             notes.items.extend(pending.diagnostic());
-            notes.items.extend(pending.unchecked_diagnostic());
+            pending.write_unchecked_note(&mut *err)?;
         }
         None => writeln!(human!(), "{NO_COMMITS}")?,
     }
@@ -376,7 +376,14 @@ fn run_queued<'a, R: CommandRunner>(
         let mut report = scaffold::write(&facts.root, &config, &permit)?;
         if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
-            notes.items.push(announce_workflow(human!(), &facts, branch)?);
+            notes.items.push(merge_publishes_diagnostic(branch));
+            // The merge note and its advice come before the next steps.
+            notes.emit(&mut *err)?;
+            writeln!(
+                human!(),
+                "{}",
+                next_steps_note(&scaffold::registry_secret_names(&facts))
+            )?;
         }
         report.files = files;
         report
@@ -404,23 +411,17 @@ fn workflow_summary(root: &std::path::Path, branch: &BranchName) -> String {
     )
 }
 
-/// Prints what a written workflow means and what to do next; the same text is recorded as a diagnostic.
-fn announce_workflow(
-    human: &mut dyn Write,
-    facts: &InitFacts,
-    branch: &BranchName,
-) -> Result<callisto_model::Diagnostic, CliError> {
-    let note = merge_publishes_note(branch);
-    writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(facts)))?;
-    Ok(callisto_model::Diagnostic {
+/// What a written workflow means for the branch it runs on, recorded as a diagnostic and said on stderr.
+fn merge_publishes_diagnostic(branch: &BranchName) -> callisto_model::Diagnostic {
+    callisto_model::Diagnostic {
         code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
         severity: callisto_model::DiagnosticSeverity::Info,
-        message: note,
+        message: merge_publishes_note(branch),
         package: None,
         path: None,
         escalated_by: None,
         governed_by: None,
-    })
+    }
 }
 
 /// `init --workflow` in a workspace that already has `callisto.toml`: writes only the workflow.
@@ -455,7 +456,11 @@ fn run_workflow_only<R: CommandRunner>(
     if !global.dry_run {
         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
         scaffold::write_workflow(&facts.root, &workflow, &permit)?;
-        diagnostics.push(announce_workflow(human, &facts, &branch)?);
+        let note = merge_publishes_diagnostic(&branch);
+        render::render_diagnostics(std::slice::from_ref(&note), None, &mut &mut *err)?;
+        let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
+        writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(&facts)))?;
+        diagnostics.push(note);
     }
     let config_path = facts.root.join("callisto.toml");
     let config = callisto_model::strict_fs::read_optional(&config_path)
@@ -464,7 +469,6 @@ fn run_workflow_only<R: CommandRunner>(
             message: error.to_string(),
         })?
         .unwrap_or_default();
-    render::render_diagnostics(&diagnostics, None, &mut &mut *err)?;
     let report = InitReport {
         schema_version: SCHEMA_VERSION,
         initialized: !global.dry_run,
