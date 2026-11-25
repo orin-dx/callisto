@@ -144,10 +144,18 @@ fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
                     .map(|row| format!("{0}-{0}", row + 1))
                     .collect::<Vec<_>>()
                     .join(",");
-                let id = items[index].id.escape_debug();
-                return Err(format!(
-                    "`{shown}` is both a package name and a row number; type `{id}` for the package or `{rows}` for the row"
-                ));
+                let package = index + 1;
+                let id = &items[index].id;
+                return Err(if id == word {
+                    format!(
+                        "`{shown}` is both a package name and a row number; type `{package}-{package}` for the package or `{rows}` for the row"
+                    )
+                } else {
+                    format!(
+                        "`{shown}` is both a package name and a row number; type `{}` for the package or `{rows}` for the row",
+                        id.escape_debug()
+                    )
+                });
             }
             (None, Some(range)) => range?,
             (None, None) => return Err(format!("`{shown}` is not a number, a range or a listed name")),
@@ -324,7 +332,13 @@ mod tests {
     #[test]
     fn a_name_that_reads_as_another_entrys_number_is_refused() {
         let ambiguous = "is both a package name and a row number";
-        assert!(choices("2", &names(&["2", "b"])).unwrap_err().contains(ambiguous));
+        let refused = choices("2", &names(&["2", "b"])).unwrap_err();
+        assert!(refused.contains(ambiguous));
+        // Without a distinct qualified id the way out is the package's own row, never the word just typed.
+        assert!(
+            refused.contains("type `1-1` for the package or `2-2` for the row"),
+            "{refused}"
+        );
         assert!(choices("1-2", &names(&["a", "b", "1-2"]))
             .unwrap_err()
             .contains(ambiguous));

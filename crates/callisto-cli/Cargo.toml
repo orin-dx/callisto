@@ -58,4 +58,4 @@ base64.workspace = true
 jsonschema = { version = "0.62", default-features = false }
 
 [target.'cfg(unix)'.dev-dependencies]
-rustix = { version = "1.1", features = ["pty"] }
+rustix = { version = "1.1", features = ["pty", "termios"] }
