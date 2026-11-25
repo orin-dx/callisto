@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A3ZEWW8D99PKDF7CGGM6BF",
+  "session_id": "b137ffb4-5b20-44e7-9b28-5ff0c79bdd61",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T19:47:42.032074Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "63e75bc2ee8a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 64509,
+    "cache_read_tokens": 914162,
+    "output_tokens": 5801,
+    "api_call_count": 12
+  },
+  "session_token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 64509,
+    "cache_read_tokens": 914162,
+    "output_tokens": 5801,
+    "api_call_count": 12
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  }
+}

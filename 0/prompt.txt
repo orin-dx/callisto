@@ -1,0 +1,21 @@
+Final round on PR #638 (branch wp-interactive-cli-compare; check it out in a worktree, push to the same branch). Trail #487. Four findings, fix each minimally: (1) 01M84ZJS85VP53854G9A54MW77: changed-package preselection must never block add: if change detection errors, print one warning to stderr and show the full list with nothing preselected (add.rs about 60). Test with a forced detection failure. (2) 01M84ZJS8AQBPEZ5EQACT6V2DT: a SIGINT received while the editor is open must not accept the draft: record it in the existing terminal-owner state and, when the editor returns, run the existing cancel() instead of accepting. No signal forwarding. (3) 01M84ZJS8F3HPKBHM8360YCA2G: in add.rs check prompt eligibility (json mode without --package -> E214 with the --package hint) before validating --summary. (4) 01M84ZJS8M50Y8W4TPR11DA9F5: the pty test Session's Drop kills and reaps the child. Resolve each with entire trail finding resolve <id> --trail 487 --branch wp-interactive-cli-compare -m '<one line>'. After pushing, if the next review raises more low findings, report them to the lead instead of fixing. cargo test -p callisto-cli, just lint, merge origin/main, push. Rules (from the lead session close-gap-for-alpha). Be fast and lean; GitHub CI runs the full suite, so don't duplicate it.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Local checks: `cargo test -p <touched crate>` and `just lint` (clippy) for the crates you touched; `just doc-check` if docs changed. Do not run local `just ci` or a fresh reviewer unless the lead asks; let GitHub CI do the full run.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: stop now and push nothing further. Report what you already pushed, if anything. The tty.rs signal design is being replaced by a switch to the inquire prompt library (a separate session), so these patches would be thrown away. Exception: the 'preselection failure must not block add' fix and the json-mode check order are design-independent; if they're already committed, push them, then stop.
+</cross-session-message>
