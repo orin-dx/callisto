@@ -118,6 +118,10 @@ impl Session {
             .args(args)
             .env_remove("VISUAL")
             .env_remove("EDITOR")
+            // The waits below match inquire's coloured rendering, so an inherited colour setting must not change it.
+            .env_remove("NO_COLOR")
+            .env_remove("CLICOLOR")
+            .env_remove("CLICOLOR_FORCE")
             .env("TERM", "xterm-256color")
             .envs(env.iter().copied())
             .stdin(Stdio::from(tty.try_clone().unwrap()))

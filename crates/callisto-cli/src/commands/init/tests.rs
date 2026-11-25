@@ -1667,6 +1667,27 @@ fn flag_only_mistakes_fail_before_any_question() {
     }
 }
 
+/// Only an existing workflow skips the question: a workflow path that cannot be checked (a symlink loop) is still
+/// offered, and accepting it surfaces the error before anything is written.
+#[cfg(unix)]
+#[test]
+fn a_workflow_path_that_cannot_be_checked_is_still_offered_and_fails_before_writing() {
+    let dir = workspace(0);
+    let workflow = scaffold::workflow_path(dir.path());
+    std::fs::create_dir_all(workflow.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&workflow, &workflow).unwrap();
+    let run = run_init(
+        dir.path(),
+        InitArgs::default(),
+        true,
+        vec![Answer::Confirm(true), Answer::Confirm(true)],
+        false,
+    );
+    assert!(run.result.is_err(), "{}", run.out);
+    assert_eq!(run.prompter.prompts().first().copied(), Some(WORKFLOW_PROMPT));
+    assert!(!dir.path().join("callisto.toml").exists());
+}
+
 #[test]
 fn an_existing_workflow_is_not_offered_and_is_skipped_with_the_note_yes_prints() {
     let dir = workspace(0);

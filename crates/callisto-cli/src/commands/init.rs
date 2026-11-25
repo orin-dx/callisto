@@ -221,7 +221,11 @@ pub fn run<R: CommandRunner>(
         Ok(shape) => Some(shape),
     };
     // An existing workflow is never overwritten, so it is not offered: `build_workflow` reports the same error.
-    let workflow_blocked = scaffold::ensure_workflow_absent(&facts.root).is_err();
+    // Only an existing workflow skips the question; any other failure surfaces when the workflow is built.
+    let workflow_blocked = matches!(
+        scaffold::ensure_workflow_absent(&facts.root),
+        Err(callisto_graph::GraphError::InitWorkflowExists { .. })
+    );
     let want_workflow = match shape {
         None => false,
         Some(_) if args.workflow => true,

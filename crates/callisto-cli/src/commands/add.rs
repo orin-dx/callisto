@@ -150,7 +150,7 @@ impl Summary {
         if trimmed.is_empty() {
             return Err(CliError::AddSummaryEmpty);
         }
-        Ok(Self(trimmed.replace("\r\n", "\n")))
+        Ok(Self(trimmed.replace("\r\n", "\n").replace('\r', "\n")))
     }
 }
 
@@ -323,6 +323,11 @@ fn ask(
         },
     };
 
+    // A changeset that cannot be written is refused before the question, not after the user confirms it.
+    callisto_model::format::write_changeset(&Changeset {
+        entries: entries.clone(),
+        summary: summary.0.clone(),
+    })?;
     prompt_line(&review(&entries, &summary.0));
     if dry_run || prompter.confirm("Write this changeset?", true)? {
         Ok(Some((entries, summary)))
@@ -839,6 +844,24 @@ mod tests {
         assert_eq!(
             Summary::new("\u{feff}Fix b\r\n\r\n- one\r\n").unwrap().0,
             "Fix b\n\n- one"
+        );
+        // A lone CR (classic Mac line ends) is a line end too, as the changeset reader treats it.
+        assert_eq!(Summary::new("Fix b\r- one\r").unwrap().0, "Fix b\n- one");
+    }
+
+    #[test]
+    fn a_changeset_that_cannot_be_written_is_refused_before_the_confirmation() {
+        let choices = unchanged(&["npm/a\"b"]);
+        let mut prompter = Scripted {
+            selections: picks([vec![0], vec![], vec![]]),
+            summary: Some(Summary::new("Fix").unwrap()),
+            confirm: true,
+            ..Default::default()
+        };
+        assert!(run_wizard(&choices, None, false, &mut prompter).is_err());
+        assert!(
+            !prompter.confirm_asked,
+            "the question must not be asked for a changeset that cannot be written"
         );
     }
 
