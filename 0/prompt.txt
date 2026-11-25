@@ -1,0 +1,81 @@
+We've done a lot of work to get callisto to a v1 alpha stage. We might be approaching it but I wants us to do some deep research of the current state of the industry. Understand where chagesets is, knope, nx release and release please (and any other alternatives that are worthy). I want to compare market fit, where we are ahead and where we are not. I want us to understand the space and evaluate callisto from a purely user/developer/monorepo owner POV.
+
+Do the research, analyze our offerings (validate what we have, don't assume) and give me a report.
+
+---
+
+What can we learn from changesets v3, sampo and the npm release management? DO deep dives into the functionality, specially changesets v3 which is our inspiration. how they handle things, what improved and changed in v3. Inspect codebases if need be to get a good understanding.
+
+---
+
+When it comes to OIDC what should we tackle? I expect the native tools to provide more and more support so doing too much seems counter-intuitive. Do we even need to support it or just get out of the way? What do changesets v3 and sampo do here?
+
+---
+
+What can we learn about the sampo implementation, changeset v3 implementation and release please impl???
+
+---
+
+How do we apply the learnings to our Rust codebase and its patterns? Do we adopt adapter patterns? Traits? workflows? async? tokio? other crates to help us?
+
+---
+
+Can we now do a very deep and thorough adversarial analysis of our codebase with focuses on performance, security, UX/DX of our workflows, actions, config and CLI? Also consider our architecture and semantic models.
+
+---
+
+Evaluate our NPM publishing practices against: https://e18e.dev/docs/publishing.html
+
+---
+
+I need you to spin off a agent swarm with the express goal of finding bugs and performance issues in our codebase. Use agentic techniques but lean on industry knowledge to find bugs. Understand the tool, the patterns, failure modes, common issues and use that along with fuzzying to track down bugs. Have different agents validate the issues and come up with a comprehensive list that also identifies patterns, architectural or semantic model shortcomings that may have contributed to these bugs.
+
+Act like an expert QA engineer and principal at picking apart our codebase.
+
+---
+
+Did you find bugs or stop?
+
+---
+
+Can you check on the agents???
+
+---
+
+Are you confident you found all of the existing bugs?
+
+---
+
+Can you address the gap and look for other bugs?
+
+---
+
+Isn't the redirected registry the correct thing? Callist shouldn't be in the business of authorizing where our users chose to publish right?
+
+---
+
+Any other places where you made similar mistakes?
+
+---
+
+Give me the summary of everything and what you've walked back and why so I can pass it to claude
+
+---
+
+Anything else that we should check? You're confident in your search?
+
+---
+
+Sounds good to me, let's chase these down
+
+---
+
+Can we run these against our proposed features, UX/DX and industry best practices?
+
+---
+
+We've made a lot of changes, can you validate those against the findings above?
+
+---
+
+What context should I give to claude to address the other findings that are still outstanding? I've merged more fixes. Full from latest main and check too

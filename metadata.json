@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A3XWYR9HZ16A0V0T2AFHAJ",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 16,
+  "files_touched": [
+    "docs/research/2026-11-17-release-tool-landscape.json",
+    "docs/research/2026-11-17-release-tools-deep-dive.json",
+    "docs/research/2026-11-17-rust-implementation-lessons.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2844098,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 132981120,
+    "output_tokens": 380532,
+    "api_call_count": 595,
+    "subagent_tokens": {
+      "input_tokens": 2847013,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 169532928,
+      "output_tokens": 430068,
+      "api_call_count": 923
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 370,
+    "layers": {
+      "betterleaks": 87,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 42,
+      "credentialed_uri": 4,
+      "entropy": 269,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
