@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8AB3GS6S2VRH51M5Z5G0MTV",
+  "strategy": "manual-commit",
+  "branch": "wp-add-inquire",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 10299,
+    "cache_read_tokens": 6438752,
+    "output_tokens": 7441,
+    "api_call_count": 8,
+    "subagent_tokens": {
+      "input_tokens": 114,
+      "cache_creation_tokens": 172972,
+      "cache_read_tokens": 7031345,
+      "output_tokens": 54091,
+      "api_call_count": 57
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 9,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 11,
+      "entropy": 15,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

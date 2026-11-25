@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_016cfMgMYGZpedEbwyNt9BfA",
+  "agent_id": "a716aa0904b4e8903",
+  "subagent_type": "bug-hunter",
+  "task_description": "Final full-history sweep #638",
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 163028,
+    "cache_read_tokens": 3510948,
+    "output_tokens": 32119,
+    "api_call_count": 34
+  },
+  "started_at": "2026-11-25T13:45:01.949006-08:00",
+  "completed_at": "2026-11-25T13:51:56.418324-08:00"
+}
