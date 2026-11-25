@@ -1,0 +1,97 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8A3YPVQ9HGY2JAQDBTS9VZ6",
+  "session_id": "74971c6c-73e3-473f-94a9-d02bdc417376",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T19:47:21.1626Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-cli/src/error.rs",
+    "docs/errors.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "853b0196ec7c",
+  "compact_transcript_start": 0,
+  "session_token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 187522,
+    "cache_read_tokens": 8324171,
+    "output_tokens": 45826,
+    "api_call_count": 62
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "summary": {
+    "intent": "Fix PR #638 so inquire list prompts in callisto `add` and `init` fit short terminals (page size capped to terminal height), then fold in a lead-session audit batch of about 15 contract, validation and refactor items as local commits without pushing.",
+    "outcome": "Two signed local commits (1b83a59e7, then 8944d2aa7) in the wp-add-inquire worktree. They add a shared `tty::fit_list` helper and the audit items, and the full gate (fmt, pre-push, lint, doc-check, test, audit) exited 0. Three contract items were held pending lead confirmation, and nothing was pushed.",
+    "learnings": {
+      "repo": [
+        "AGENTS.md gate is `just pre-push && just lint && just doc-check && just test`, judged by exit code, with pty tests run unsandboxed. The lead's rules also require a review checklist before reporting, signed commits with no session trailer, and no push until the lead has read the diff.",
+        "inquire 0.9.4 redraws relative to the previous frame, so a list frame taller than the terminal puts the highlight and checkboxes on the wrong rows. Page size must account for prompt rows, help rows and a spare row.",
+        "Option prefix width is 6 columns for MultiSelect (`> [x] `) and 2 for Select. Labels need truncating to width minus the prefix to stay one row each, and unicode-width is needed to count wide characters.",
+        "callisto-cli had no direct crossterm dependency. Adding `crossterm 0.29` (default-features off) and `unicode-width 0.2` only added Cargo.lock lines, since both packages were already in the lockfile.",
+        "`CliError::NotATty` became a struct variant carrying `missing: Vec<&'static str>`. E214 text lives in error.rs, docs/errors.md and spec criterion CLI-ADD-04 in docs/specs/cli.json, and all three must stay in sync.",
+        "`Prompts::allowed` (Result) became `Prompts::detect` (Option). `init::run` now takes `Option<tty::Prompts>` instead of a bool, and tests build one via a `#[cfg(test)]` `for_tests()` constructor.",
+        "The cli.json spec has long single-line criteria, so edits are done with Python string replaces. Changesets live in .changeset/ (here sharp-badgers-hunt.md).",
+        "There is no terminal emulator crate in the lockfile, so pty tests cannot assert which row is drawn highlighted. The lead ruled out adding a pty crate, so size-dependent logic is unit-tested with explicit (width, height) inputs instead.",
+        "Pty tests should wait on text only the target prompt draws (e.g. 'summary (Esc cancels)') rather than on counts plus sleeps."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "finding": "Holds `ListKind` (prefix width and ASCII help), `fit_list`/`fit_list_to` (page size from terminal rows, prompt and help wrapping, and spare row) and `truncate`. It falls back to the wanted page size and untruncated labels when the terminal size is unknown."
+        },
+        {
+          "path": "crates/callisto-cli/src/main.rs",
+          "finding": "Exit code logic is now 'Cancelled -> 130, else match exit_kind exhaustively', replacing the `Cancelled => Runtime` mapping in error.rs."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "finding": "Flag-only validation moved into `requested_release`, which runs before `collect_answers` so bad flags fail before any prompt. The workflow question is skipped when `ensure_workflow_absent` fails."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/add.rs",
+          "finding": "`run_wizard` and `ask` take a `dry_run` flag that skips the 'Write this changeset?' confirm. `Summary::new` strips a leading U+FEFF and normalises CRLF to LF."
+        }
+      ],
+      "workflow": [
+        "The mutation check is to temporarily revert the fix, confirm the new test fails, then restore it. On macOS, BSD `sed` needs `-i ''`.",
+        "Chained long gate commands in one backgrounded shell hung for 20 minutes. Running each `just` target separately with output redirected to a log file and echoing the exit code was reliable.",
+        "Messages from the lead session arrive as cross-session messages and can extend the scope of the task. Items the lead explicitly holds should be left undone even if no confirmation arrives before commit."
+      ]
+    },
+    "friction": [
+      "The first pty test attempt asserted on frame line count, which the lead later ruled out as size-dependent, so the assertion had to be removed and replaced with unit tests.",
+      "The BSD vs GNU `sed -i` difference caused a failed revert-the-fix check on the first two attempts.",
+      "`just pre-push` hung when chained with the other gate steps (monitor expired after 20m) and had to be stopped, then passed quickly when run alone. The cause was guessed to be a stale lock and was not confirmed.",
+      "Many edits were done as large Python string-replace scripts, so line-number-based `sed` edits to init/tests.rs were fragile.",
+      "The final commit's file-modified list in the report shows only four files, even though the diff spans many more."
+    ],
+    "open_items": [
+      "Three contract items are held until the lead confirms: TERM=dumb handling, init context to stderr while prompting, and re-ask on empty selection.",
+      "Push is pending: the lead must read the diff and say push. Before pushing, merge the latest origin/main, link trail #487, and run the review checklist.",
+      "`just ci`, `just fuzz-check` and `cargo mutants` were not run. No public callisto-manifests or callisto-model signature changed, and the lead's rules say to run mutants only for new decision logic, but the new `fit_list_to` page-size logic might qualify.",
+      "The pty test cannot verify the highlighted row visually, only which package ends up toggled."
+    ]
+  }
+}
