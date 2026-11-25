@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01BHqrEHrjZikcT3o2EDi6Dh",
+  "agent_id": "a2101fc6be46cb0cd",
+  "subagent_type": "bug-hunter",
+  "task_description": "Delta review of #638 last commit",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 46109,
+    "cache_read_tokens": 276871,
+    "output_tokens": 7544,
+    "api_call_count": 9
+  },
+  "started_at": "2026-11-25T13:43:34.097372-08:00",
+  "completed_at": "2026-11-25T13:45:11.189087-08:00"
+}
