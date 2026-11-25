@@ -1728,6 +1728,15 @@ fn a_declined_write_in_json_mode_still_emits_the_report_with_each_note_once() {
     assert_eq!(report["files"], serde_json::json!([]), "{report}");
     assert_eq!(report["diagnostics"].as_array().unwrap().len(), 1, "{report}");
     assert_eq!(err.text().matches("No `origin` remote").count(), 1, "{}", err.text());
+    assert_eq!(
+        err.text()
+            .matches("Initialization cancelled; nothing was written.")
+            .count(),
+        1,
+        "{}",
+        err.text()
+    );
+    assert!(!out.text().contains("Initialization cancelled"), "{}", out.text());
     assert!(!dir.path().join("callisto.toml").exists());
 }
 

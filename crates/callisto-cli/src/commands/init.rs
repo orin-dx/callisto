@@ -359,6 +359,8 @@ fn run_queued<'a, R: CommandRunner>(
         notes.emit(&mut *err)?;
         if prompting && !prompter.confirm(WRITE_PROMPT, true)? {
             if json {
+                // The person who declined reads stderr; stdout may be a file.
+                writeln!(err, "Initialization cancelled; nothing was written.")?;
                 let declined = InitReport {
                     schema_version: SCHEMA_VERSION,
                     initialized: false,
