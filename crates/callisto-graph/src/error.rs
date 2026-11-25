@@ -356,7 +356,7 @@ pub enum GraphError {
     },
 
     #[error(
-        "package `{package}` sets `publishConfig.registry` in package.json to {registry} (scheme and host shown), which differs from every approved `[registries]` entry; it must match one exactly"
+        "package `{package}` sets `publishConfig.registry` in package.json to {registry}, which is not one of the approved `[registries]` entries; only the scheme and host are shown, compare the full URL in package.json"
     )]
     #[diagnostic(
         code(E120),
@@ -974,27 +974,23 @@ pub enum ReleaseSelectionInvalidReason {
     DependencyNotSelected,
 }
 
-/// A registry's scheme and host only, never its path: a URL with userinfo, a query or a fragment, or a value that is
-/// not a URL, is left out of every message.
+/// A registry's scheme and host only, never its path, which can carry a token.
 #[derive(Clone, PartialEq, Eq)]
-pub struct ShownRegistry(Option<String>);
+pub struct ShownRegistry(String);
 
 impl ShownRegistry {
+    /// `raw` is a registry URL `canonical_registry_binding` already accepted: an `https` URL with a host and no
+    /// userinfo, query or fragment.
     pub(crate) fn new(raw: &str) -> Self {
-        let shown = url::Url::parse(raw).ok().filter(|url| {
-            url.username().is_empty() && url.password().is_none() && url.query().is_none() && url.fragment().is_none()
-        });
-        let origin = shown.and_then(|url| url.host_str().map(|host| format!("{}://{host}", url.scheme())));
-        Self(origin.filter(|origin| !origin.chars().any(char::is_control)))
+        let url = url::Url::parse(raw).expect("a registry URL accepted by canonical_registry_binding parses");
+        let host = url.host_str().expect("an accepted registry URL has a host");
+        Self(format!("{}://{host}", url.scheme()))
     }
 }
 
 impl std::fmt::Display for ShownRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.0 {
-            Some(raw) => write!(f, "`{raw}`"),
-            None => f.write_str("a registry whose URL is not shown"),
-        }
+        write!(f, "`{}`", self.0)
     }
 }
 

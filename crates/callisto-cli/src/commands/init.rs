@@ -228,10 +228,11 @@ fn run_queued<'a, R: CommandRunner>(
     }
     let prompting = interactive && !args.yes;
     let migration = changesets::migrate(&facts.root, &facts);
-    // Queued first so a refusal below still shows them.
-    notes.items.extend(migration.diagnostics.iter().cloned());
-    // A dry run writes nothing, so it previews with the warning instead.
-    if !migration.public_scoped.is_empty() && !args.yes && !global.dry_run {
+    // A dry run writes nothing, so it previews with the warning instead of refusing.
+    let refusing = !migration.public_scoped.is_empty() && !args.yes && !global.dry_run;
+    // Queued first so a refusal below still shows them; the refusal itself names the access hazard.
+    notes.items.extend(migration.diagnostics_unless_refused(refusing));
+    if refusing {
         return Err(CliError::InitChangesetsAccess {
             packages: migration.public_scoped,
         });
@@ -334,7 +335,7 @@ fn run_queued<'a, R: CommandRunner>(
             }
             let pending = super::release::PendingWork::of(pending);
             notes.items.extend(pending.diagnostic());
-            pending.write_unchecked_note(&mut *err)?;
+            notes.items.extend(pending.unchecked_diagnostic());
         }
         None => writeln!(human!(), "{NO_COMMITS}")?,
     }

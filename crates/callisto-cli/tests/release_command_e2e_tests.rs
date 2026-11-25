@@ -680,8 +680,8 @@ fn an_unapproved_publish_registry_is_refused_without_its_path() {
     assert!(!text.contains("secret-path-xyz"), "{text}");
     for part in [
         "`publishConfig.registry` in package.json",
-        "differs from every approved `[registries]` entry",
-        "must match one exactly",
+        "is not one of the approved `[registries]` entries",
+        "only the scheme and host are shown, compare the full URL in package.json",
     ] {
         assert!(text.contains(&squash_report(part)), "{part}: {text}");
     }

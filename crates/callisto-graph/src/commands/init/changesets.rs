@@ -29,6 +29,8 @@ pub struct Migration {
     pub public_scoped: Vec<String>,
     /// One warning per key `init` does not carry over.
     pub diagnostics: Vec<Diagnostic>,
+    /// Where the `access` warning sits in `diagnostics`, if it was raised.
+    access_warning: Option<usize>,
 }
 
 fn config_path(root: &Path) -> PathBuf {
@@ -113,6 +115,7 @@ pub fn migrate(root: &Path, facts: &InitFacts) -> Migration {
             .collect();
         if !migration.public_scoped.is_empty() {
             let packages = migration.public_scoped.join(", ");
+            migration.access_warning = Some(migration.diagnostics.len());
             migration.warn(
                 "access",
                 &format!(
@@ -126,6 +129,17 @@ pub fn migrate(root: &Path, facts: &InitFacts) -> Migration {
 }
 
 impl Migration {
+    /// The warnings to show; a refusal over the public-access hazard leaves out its own warning, which the refusal
+    /// already says.
+    pub fn diagnostics_unless_refused(&self, refused: bool) -> Vec<Diagnostic> {
+        self.diagnostics
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !(refused && Some(*index) == self.access_warning))
+            .map(|(_, diagnostic)| diagnostic.clone())
+            .collect()
+    }
+
     fn warn(&mut self, key: &str, message: &str) {
         self.diagnostics.push(self.warning(format!("`{key}` {message}")));
     }

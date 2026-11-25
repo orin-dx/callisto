@@ -1228,7 +1228,8 @@ fn restricted_access_refuses_without_yes_naming_each_public_package() {
         .to_string()
         .contains("publishConfig.access"));
     assert_eq!(miette::Diagnostic::code(&error).unwrap().to_string(), "E342");
-    // The migration's other findings are not lost behind the refusal.
+    // The refusal names the hazard; its own warning would only repeat it, while the other findings are not lost.
+    assert!(!run.err.contains("restricted or absent"), "{}", run.err);
     assert_eq!(run.err.matches("`changelog` is not honoured").count(), 1, "{}", run.err);
     assert!(run.prompter.prompts().is_empty());
     assert!(!dir.path().join("callisto.toml").exists());
@@ -1747,14 +1748,15 @@ fn a_failed_pending_work_check_is_named_in_the_preview() {
         no_workflow: true,
         ..Default::default()
     };
-    let run = run_init(dir.path(), args, false, vec![], false);
-    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
-    assert_eq!(
-        run.err.matches("could not check for pending version work (E").count(),
-        1,
-        "{}",
-        run.err
-    );
+    let (out, err) = (Shared::default(), Shared::default());
+    run_with_json(dir.path(), args, false, &out, &err);
+    let note = "could not check for pending version work (E";
+    assert_eq!(err.text().matches(note).count(), 1, "{}", err.text());
+    let listed = report_diagnostics(&out)
+        .iter()
+        .filter(|d| d["message"].as_str().is_some_and(|m| m.contains(note)))
+        .count();
+    assert_eq!(listed, 1, "{}", out.text());
 }
 
 // A skipped-workflow warning is queued before the preview runs; a preview failure must not swallow it.

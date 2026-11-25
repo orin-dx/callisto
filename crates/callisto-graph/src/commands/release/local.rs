@@ -601,6 +601,39 @@ mod tests {
         ));
     }
 
+    // The publish outlook says why tags cannot be pushed, for a missing and for a non-hosted `origin`.
+    #[test]
+    fn the_publish_outlook_names_why_tags_cannot_be_pushed() {
+        for (set_origin, reason) in [
+            (None, "no `origin` remote is configured"),
+            (Some("/srv/git/repo.git"), "`origin` is not a hosted remote"),
+        ] {
+            let (dir, _) = fixture();
+            match set_origin {
+                None => git(dir.path(), &["remote", "remove", "origin"]),
+                Some(url) => git(dir.path(), &["remote", "set-url", "origin", url]),
+            };
+            let preview = load_and_plan(
+                dir.path(),
+                &crate::IgnoreWalkLocator::new(dir.path()),
+                &RealGitRunner,
+                &[],
+                LocalReleaseSource::Preview,
+            )
+            .unwrap();
+            let crate::release_preview::PublishOutlook::Planned { notes, .. } =
+                crate::release_preview::publish_outlook(Ok(preview))
+            else {
+                panic!("a plan with unbound tags is still planned");
+            };
+            assert!(
+                notes.iter().any(|note| note.contains(reason)
+                    && note.contains("so tags cannot be pushed until `origin` is a hosted remote.")),
+                "{notes:?}"
+            );
+        }
+    }
+
     #[test]
     fn preview_with_origin_binds_tags() {
         let (dir, _) = fixture();

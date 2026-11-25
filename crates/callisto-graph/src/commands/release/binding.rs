@@ -447,19 +447,20 @@ mod tests {
     }
 
     #[test]
-    fn an_untrusted_registry_shows_only_its_scheme_and_host_unless_it_carries_credentials() {
+    fn an_untrusted_registry_shows_only_its_scheme_and_host() {
         let shown = |raw: &str| ShownRegistry::new(raw).to_string();
         assert_eq!(shown("https://Registry.Example.com"), "`https://registry.example.com`");
         assert_eq!(
             shown("https://registry.example.com/private/team-path"),
             "`https://registry.example.com`"
         );
+        // Credentials, a query and a fragment never reach this type: the binding check refuses them first.
         for secret in [
             "https://u:pw@r.example.test/",
             "https://r.example.test/?token=pw",
-            "not a url pw",
+            "https://r.example.test/#pw",
         ] {
-            assert!(!shown(secret).contains("pw"), "{secret}");
+            assert!(canonical_registry_binding("corp", secret).is_err(), "{secret}");
         }
     }
 
@@ -667,8 +668,8 @@ mod tests {
             assert!(
                 message.contains("publishConfig.registry")
                     && message.contains("package.json")
-                    && message.contains("differs from every approved `[registries]` entry")
-                    && message.contains("must match one exactly"),
+                    && message.contains("is not one of the approved `[registries]` entries")
+                    && message.contains("only the scheme and host are shown, compare the full URL in package.json"),
                 "{message}"
             );
         }
