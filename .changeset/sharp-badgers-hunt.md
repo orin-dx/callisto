@@ -7,6 +7,7 @@ callisto-cli: minor
 - Package lists work as in `git add -i`: printed once, numbered, then you type numbers, ranges (`1-3`) or package names on one line, and Enter keeps the marked ones.
   - Names are shown in full, and nothing is redrawn, so any terminal size works.
   - An answer that names nothing in the list is asked again with the reason.
+  - A number is a row only when that row exists, so a package named `42` is picked by typing `42`.
   - `init` asks for the product package the same way when several packages build binaries.
 - Before writing, a review lists each package's bump and the summary; afterwards `add` prints the next step.
 - Leave the summary empty to write a longer one, with bullets, in `$VISUAL` or `$EDITOR`. If that editor cannot start, `add` warns and asks for the summary inline, keeping your other answers.

@@ -59,12 +59,12 @@ impl Session {
 
     /// `callisto <args>` with `env` set; `VISUAL` and `EDITOR` are unset unless `env` names them.
     fn start_with(root: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
-        Self::launch(root, args, env, true, (120, 30))
+        Self::launch(root, args, env, true, (120, 30), true)
     }
 
     /// `callisto <args>` with stdin and stdout on the terminal and stderr piped; read it with [`Session::stderr`].
     fn start_with_piped_stderr(root: &Path, args: &[&str]) -> Self {
-        Self::launch(root, args, &[], false, (120, 30))
+        Self::launch(root, args, &[], false, (120, 30), true)
     }
 
     fn stderr(&mut self) -> String {
@@ -75,7 +75,12 @@ impl Session {
 
     /// `callisto add` on a terminal `columns` wide and `rows` high.
     fn start_small(root: &Path, columns: u16, rows: u16) -> Self {
-        Self::launch(root, &["add"], &[], true, (columns, rows))
+        Self::launch(root, &["add"], &[], true, (columns, rows), true)
+    }
+
+    /// `callisto add` on a terminal set up with `stty -iexten`, as some users have it.
+    fn start_without_iexten(root: &Path) -> Self {
+        Self::launch(root, &["add"], &[], true, (120, 30), false)
     }
 
     fn launch(
@@ -84,6 +89,7 @@ impl Session {
         env: &[(&str, &str)],
         stderr_on_terminal: bool,
         (columns, rows): (u16, u16),
+        iexten: bool,
     ) -> Self {
         let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         grantpt(&master).unwrap();
@@ -104,6 +110,11 @@ impl Session {
             },
         )
         .unwrap();
+        if !iexten {
+            let mut mode = rustix::termios::tcgetattr(&tty).unwrap();
+            mode.local_modes -= rustix::termios::LocalModes::IEXTEN;
+            rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &mode).unwrap();
+        }
         let child = Command::new(env!("CARGO_BIN_EXE_callisto"))
             .args(["--cwd", root.to_str().unwrap()])
             .args(args)
@@ -254,9 +265,8 @@ fn an_answer_that_names_nothing_listed_is_asked_again_with_the_reason() {
     let dir = workspace();
     let mut add = Session::start(dir.path());
     add.after("Packages in this change", 1, "c\r");
-    add.after("`c` is not a number, a range or a listed name", 1, "3\r");
-    add.after("`3` is not in the list (1-2)", 1, "\x1b[A");
-    add.after("only typed text is read here", 1, "2\r");
+    add.after("`c` is not a number, a range or a listed name", 1, "\x7f3\r");
+    add.after("`3` is not in the list (1-2)", 1, "\x7f2\r");
     add.after("MAJOR", 1, "\r");
     add.after("MINOR", 1, "\r");
     add.after("Changelog summary", 1, "Fix a\r");
@@ -271,12 +281,24 @@ fn an_answer_that_names_nothing_listed_is_asked_again_with_the_reason() {
 }
 
 #[test]
-fn esc_ctrl_c_or_end_of_input_at_a_list_writes_nothing_and_exits_130() {
-    for key in ["\x1b", "\x03", "1\x1b", "\x04"] {
+fn esc_or_ctrl_c_at_a_list_writes_nothing_and_exits_130() {
+    // A quick double Esc is two Escape keys, not an arrow's sequence; `stty -iexten` leaves Ctrl-C a key.
+    for (key, iexten) in [
+        ("\x1b", true),
+        ("\x03", true),
+        ("1\x1b", true),
+        ("\x1b\x1b", true),
+        ("\x03", false),
+        ("\x1b", false),
+    ] {
         let dir = workspace();
-        let mut add = Session::start(dir.path());
+        let mut add = if iexten {
+            Session::start(dir.path())
+        } else {
+            Session::start_without_iexten(dir.path())
+        };
         add.after("Packages in this change", 1, key);
-        assert_eq!(add.exit_code(), Some(130), "{key:?}: {}", add.screen());
+        assert_eq!(add.exit_code(), Some(130), "{key:?} iexten={iexten}: {}", add.screen());
         let screen = add.screen();
         assert!(
             screen.contains("E343") && screen.contains("Cancelled, nothing written."),
@@ -645,9 +667,14 @@ fn in_a_40_by_10_pane_long_names_are_shown_in_full_and_picked_by_name() {
     add.after("Write this changeset?", 1, "\r");
     assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
     let screen = add.screen();
-    // The first escape sequence belongs to the summary question, after all three lists.
+    // The first escape sequence is the answer prompt's, after the first list is printed whole.
     let lists = &screen[..screen.find('\x1b').unwrap()];
-    assert!(lists.ends_with("MINOR bump? (the rest get PATCH)\r\n  1   callisto-fixture-package-for-wrapping-right\r\nEnter picks none, or type numbers, ranges (1-3) or names; Esc cancels.\r\n> \r\n"), "the lists move the cursor or restyle:\n{screen:?}");
+    assert!(
+        lists.ends_with(
+            "  1 * callisto-fixture-package-for-wrapping-left\r\n  2 * callisto-fixture-package-for-wrapping-right\r\nEnter keeps the * ones, or type numbers, ranges (1-3) or names; Esc cancels.\r\n"
+        ),
+        "the list moves the cursor or restyles:\n{screen:?}"
+    );
     let shown = plain(lists);
     for name in names {
         assert!(shown.contains(name), "{name} is not shown in full:\n{shown}");
@@ -656,6 +683,23 @@ fn in_a_40_by_10_pane_long_names_are_shown_in_full_and_picked_by_name() {
         changesets(dir.path()),
         [format!("---\n{}: patch\n---\n\nFix\n", names[1])]
     );
+}
+
+/// A package named `42` in a workspace of one: no row 42 exists, so typing `42` names the package.
+#[test]
+fn a_package_named_with_digits_is_picked_by_name_when_that_row_does_not_exist() {
+    let dir = long_names(["42", "other"]);
+    std::fs::remove_dir_all(dir.path().join("packages/p1")).unwrap();
+    run_git(dir.path(), &["add", "-A"]);
+    run_git(dir.path(), &["commit", "-qm", "one package"]);
+    let mut add = Session::start(dir.path());
+    add.after("Packages in this change", 1, "42\r");
+    add.after("MAJOR", 1, "\r");
+    add.after("MINOR", 1, "\r");
+    add.after("Changelog summary", 1, "Fix\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    assert_eq!(changesets(dir.path()), ["---\n42: patch\n---\n\nFix\n"]);
 }
 
 #[test]
@@ -705,7 +749,8 @@ fn init_asks_for_exactly_one_product_package_by_number_or_name() {
     init.after("Ship binaries", 1, "y\r");
     init.after("Which package is the product", 1, "\r");
     init.after("pick exactly one", 1, "1 2\r");
-    init.after("pick exactly one", 2, "cargo/tool\r");
+    // The refused line stays in the prompt, so erase `1 2` first; the reason is already on screen.
+    init.after("pick exactly one", 1, "\x7f\x7f\x7fcargo/tool\r");
     init.after("Artifact target triples", 1, "x86_64-unknown-linux-gnu\r");
     init.after("Generate a GitHub Actions release workflow?", 1, "n\r");
     init.after("Write callisto.toml?", 1, "\r");
