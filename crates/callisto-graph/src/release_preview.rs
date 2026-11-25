@@ -372,8 +372,8 @@ pub fn publish_outlook(planned: Result<Option<LocalReleasePlan>, GraphError>) ->
     let releases = group_operations(plan.intent.operations.iter().map(|operation| operation.id()));
 
     let mut notes: Vec<String> = Vec::new();
-    if plan.tags_unbound {
-        notes.push("`origin` is missing or not a hosted remote, so tags cannot be pushed until one is set.".to_owned());
+    if let Some(refusal) = &plan.tags_unbound {
+        notes.push(format!("{refusal}, so tags cannot be pushed until one is set."));
     }
     notes.extend(plan.diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
     PublishOutlook::Planned {

@@ -589,14 +589,17 @@ pub fn preview<L: ProjectLocator, R: CommandRunner>(
     config: &str,
     locator: &L,
     runner: &R,
-) -> Result<(Option<LocalReleasePlan>, Vec<callisto_model::ReleasePackageId>), GraphError> {
+) -> Result<(Option<LocalReleasePlan>, PendingVersionWork), GraphError> {
     let resolved = resolve_config_text(&facts.root, config)?;
     let workspace = Workspace::load_with_config(facts.root.clone(), resolved, locator, runner)?;
     let plan = plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)?;
-    // Advisory: a plan `version` cannot derive is that command's error to report.
-    let pending = crate::commands::pending_version_work(&workspace, &[]).unwrap_or_default();
+    // Advisory: the caller reports why it could not be checked rather than failing the preview.
+    let pending = crate::commands::pending_version_work(&workspace, &[]);
     Ok((plan, pending))
 }
+
+/// The packages `version` has pending work for, or the error that stopped the check.
+pub type PendingVersionWork = Result<Vec<callisto_model::ReleasePackageId>, GraphError>;
 
 /// Validates artifact target triples.
 ///

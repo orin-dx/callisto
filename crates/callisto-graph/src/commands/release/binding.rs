@@ -199,6 +199,15 @@ impl Origin {
         }
     }
 
+    /// Why a preview cannot bind tags: `None` for a hosted remote.
+    pub(crate) fn refusal(&self) -> Option<OriginRefusal> {
+        match self {
+            Self::Hosted(_) => None,
+            Self::Missing => Some(OriginRefusal::NoPushUrl),
+            Self::NotHosted(reason) => Some(OriginRefusal::NotHosted { reason }),
+        }
+    }
+
     /// A preview: a remote that is not hosted reads exactly like no remote.
     pub(crate) fn preview(self) -> Option<PreparedGitRemote> {
         match self {
@@ -643,13 +652,24 @@ mod tests {
     #[test]
     fn npm_override_must_match_a_configured_npm_registry() {
         assert!(npm_binding(CORP, "https://npm.corp.example/").is_ok());
-        for untrusted in ["https://npm.evil.example/", "https://npm.corp.example/other/"] {
+        for untrusted in ["https://npm.evil.example/", "https://npm.corp.example/other/token-abc/"] {
+            let error = npm_binding(CORP, untrusted).err();
             assert!(
-                matches!(
-                    npm_binding(CORP, untrusted),
-                    Err(GraphError::UntrustedNpmRegistry { .. })
-                ),
+                matches!(error, Some(GraphError::UntrustedNpmRegistry { .. })),
                 "{untrusted}"
+            );
+            let message = error.expect("checked above").to_string();
+            // A path can carry a token, so only scheme and host show; the text still says what must match.
+            assert!(
+                !message.contains("token-abc") && !message.contains("/other"),
+                "{message}"
+            );
+            assert!(
+                message.contains("publishConfig.registry")
+                    && message.contains("package.json")
+                    && message.contains("differs from every approved `[registries]` entry")
+                    && message.contains("must match one exactly"),
+                "{message}"
             );
         }
         let cargo_kind = "[registries.corp]\nkind = \"cargo\"\n";

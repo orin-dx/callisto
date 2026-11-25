@@ -145,8 +145,8 @@ impl OriginTagProbe {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalReleasePlan {
     pub intent: ReleaseIntentV1,
-    /// A preview only: `origin` has no push URL, so tags carry no remote and a run would refuse.
-    pub tags_unbound: bool,
+    /// A preview only: why `origin` cannot bind tags, so they carry no remote and a run would refuse.
+    pub tags_unbound: Option<crate::error::OriginRefusal>,
     /// Advisory findings from derivation (e.g. an artifact owner selected without its product).
     pub diagnostics: Vec<callisto_model::Diagnostic>,
 }
@@ -451,12 +451,16 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
         remote,
         &mut diagnostics,
     )?;
-    let tags_unbound = mode == LocalReleaseSource::Preview
+    let tags_unbound = if mode == LocalReleaseSource::Preview
         && intent
             .operations
             .iter()
             .any(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
-        && workspace.origin()?.preview().is_none();
+    {
+        workspace.origin()?.refusal()
+    } else {
+        None
+    };
     Ok(Some(LocalReleasePlan {
         intent,
         tags_unbound,
@@ -585,7 +589,7 @@ mod tests {
         )
         .unwrap()
         .expect("unreleased");
-        assert!(preview.tags_unbound);
+        assert_eq!(preview.tags_unbound, Some(crate::error::OriginRefusal::NoPushUrl));
         assert!(preview
             .intent
             .operations
@@ -609,7 +613,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert!(!preview.tags_unbound);
+        assert_eq!(preview.tags_unbound, None);
     }
 
     /// Real git, and a registry that never answers: every `cargo info` fails the way an unreachable network does.
@@ -731,7 +735,7 @@ mod tests {
             .unwrap()
             .expect("an unobservable tagged release stays planned");
         assert_eq!(released_names(&plan), ["app", "lib"]);
-        assert!(plan.tags_unbound);
+        assert!(plan.tags_unbound.is_some());
     }
 
     /// Real git, except `ls-remote` answers "no such ref" and every other program is unavailable: a

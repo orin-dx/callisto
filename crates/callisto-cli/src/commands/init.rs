@@ -102,16 +102,24 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
 /// swallows a warning that explains it.
 #[derive(Default)]
 struct Notes {
+    /// Queued and not yet on stderr.
     items: Vec<callisto_model::Diagnostic>,
-    shown: usize,
+    shown: Vec<callisto_model::Diagnostic>,
 }
 
 impl Notes {
-    /// Renders the unshown notes to stderr and marks them shown.
+    /// Renders the queued notes to stderr and moves them to the shown ones.
     fn emit(&mut self, err: &mut dyn Write) -> Result<(), CliError> {
-        render::render_diagnostics(&self.items[self.shown..], None, &mut &mut *err)?;
-        self.shown = self.items.len();
+        render::render_diagnostics(&self.items, None, &mut &mut *err)?;
+        self.shown.append(&mut self.items);
         Ok(())
+    }
+
+    /// Every note, shown or not, for the JSON report; call `emit` first so each reaches stderr once.
+    fn take_all(&mut self) -> Vec<callisto_model::Diagnostic> {
+        let mut all = std::mem::take(&mut self.shown);
+        all.append(&mut self.items);
+        all
     }
 }
 
@@ -220,6 +228,8 @@ fn run_queued<'a, R: CommandRunner>(
     }
     let prompting = interactive && !args.yes;
     let migration = changesets::migrate(&facts.root, &facts);
+    // Queued first so a refusal below still shows them.
+    notes.items.extend(migration.diagnostics.iter().cloned());
     // A dry run writes nothing, so it previews with the warning instead.
     if !migration.public_scoped.is_empty() && !args.yes && !global.dry_run {
         return Err(CliError::InitChangesetsAccess {
@@ -228,7 +238,6 @@ fn run_queued<'a, R: CommandRunner>(
     }
     let mut answers = collect_answers(&args, &facts, prompting, prompter)?;
 
-    notes.items.extend(migration.diagnostics.iter().cloned());
     notes.items.extend(migration.apply_fixed_groups(&mut answers));
     if facts.origin.is_none() {
         notes.items.push(callisto_model::Diagnostic {
@@ -318,12 +327,14 @@ fn run_queued<'a, R: CommandRunner>(
     match plan {
         Some((plan, pending)) => {
             writeln!(human!(), "First release preview (`callisto release --dry-run`):")?;
-            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human!())?;
+            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, None, human!())?;
             // `origin` already has its own note above, so an unbound tag adds nothing.
             if let Some(plan) = &plan {
                 notes.items.extend(plan.diagnostics.clone());
             }
-            notes.items.extend(super::release::pending_version_diagnostic(&pending));
+            let pending = super::release::PendingWork::of(pending);
+            notes.items.extend(pending.diagnostic());
+            pending.write_unchecked_note(&mut *err)?;
         }
         None => writeln!(human!(), "{NO_COMMITS}")?,
     }
@@ -343,7 +354,7 @@ fn run_queued<'a, R: CommandRunner>(
             diagnostics: Vec::new(),
         }
     } else {
-        // Said before the write question so a decline keeps them; `finish` skips them.
+        // Said before the write question so a decline keeps them.
         notes.emit(&mut *err)?;
         if prompting && !prompter.confirm(WRITE_PROMPT, true)? {
             if json {
@@ -353,9 +364,9 @@ fn run_queued<'a, R: CommandRunner>(
                     config_path: facts.root.join("callisto.toml"),
                     config,
                     files: Vec::new(),
-                    diagnostics: std::mem::take(&mut notes.items),
+                    diagnostics: notes.take_all(),
                 };
-                return finish(&declined, std::mem::take(&mut notes.shown), global, out, err);
+                return finish(&declined, global, out);
             }
             writeln!(human!(), "Initialization cancelled; nothing was written.")?;
             return Ok(ExitCode::SUCCESS);
@@ -369,19 +380,13 @@ fn run_queued<'a, R: CommandRunner>(
         report.files = files;
         report
     };
-    report.diagnostics.extend(std::mem::take(&mut notes.items));
-    finish(&report, std::mem::take(&mut notes.shown), global, out, err)
+    notes.emit(&mut *err)?;
+    report.diagnostics.extend(notes.take_all());
+    finish(&report, global, out)
 }
 
-/// The one emitter for `init`'s notes and advice: stderr once in every format, and the JSON report carries them too.
-fn finish(
-    report: &InitReport,
-    shown: usize,
-    global: &GlobalArgs,
-    out: &mut dyn Write,
-    err: &mut dyn Write,
-) -> Result<ExitCode, CliError> {
-    render::render_diagnostics(&report.diagnostics[shown..], None, &mut &mut *err)?;
+/// Writes the report to stdout; its diagnostics already reached stderr.
+fn finish(report: &InitReport, global: &GlobalArgs, out: &mut dyn Write) -> Result<ExitCode, CliError> {
     if global.format == OutputFormat::Json {
         emit_report(&mut &mut *out, report, global.dry_run)?;
     } else {
@@ -458,6 +463,7 @@ fn run_workflow_only<R: CommandRunner>(
             message: error.to_string(),
         })?
         .unwrap_or_default();
+    render::render_diagnostics(&diagnostics, None, &mut &mut *err)?;
     let report = InitReport {
         schema_version: SCHEMA_VERSION,
         initialized: !global.dry_run,
@@ -466,7 +472,7 @@ fn run_workflow_only<R: CommandRunner>(
         files: vec![scaffold::workflow_path(&facts.root)],
         diagnostics,
     };
-    finish(&report, 0, global, out, err)
+    finish(&report, global, out)
 }
 
 /// The workflow text and the default branch it triggers on.

@@ -356,7 +356,7 @@ pub enum GraphError {
     },
 
     #[error(
-        "package `{package}` sets `publishConfig.registry` to {registry}, which is not an operator-approved npm registry"
+        "package `{package}` sets `publishConfig.registry` in package.json to {registry} (scheme and host shown), which differs from every approved `[registries]` entry; it must match one exactly"
     )]
     #[diagnostic(
         code(E120),

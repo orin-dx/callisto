@@ -1228,6 +1228,8 @@ fn restricted_access_refuses_without_yes_naming_each_public_package() {
         .to_string()
         .contains("publishConfig.access"));
     assert_eq!(miette::Diagnostic::code(&error).unwrap().to_string(), "E342");
+    // The migration's other findings are not lost behind the refusal.
+    assert_eq!(run.err.matches("`changelog` is not honoured").count(), 1, "{}", run.err);
     assert!(run.prompter.prompts().is_empty());
     assert!(!dir.path().join("callisto.toml").exists());
 }
@@ -1726,6 +1728,33 @@ fn a_declined_write_in_json_mode_still_emits_the_report_with_each_note_once() {
     assert_eq!(report["diagnostics"].as_array().unwrap().len(), 1, "{report}");
     assert_eq!(err.text().matches("No `origin` remote").count(), 1, "{}", err.text());
     assert!(!dir.path().join("callisto.toml").exists());
+}
+
+// A pending-work check that fails is named on stderr once; init still succeeds.
+#[test]
+fn a_failed_pending_work_check_is_named_in_the_preview() {
+    let dir = workspace(0);
+    std::fs::create_dir_all(dir.path().join(".changeset")).unwrap();
+    std::fs::write(
+        dir.path().join(".changeset/broken.md"),
+        "---\n\"cargo/core\": nonsense\n---\n\nText.\n",
+    )
+    .unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-q", "-m", "broken changeset"]);
+    let args = InitArgs {
+        yes: true,
+        no_workflow: true,
+        ..Default::default()
+    };
+    let run = run_init(dir.path(), args, false, vec![], false);
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert_eq!(
+        run.err.matches("could not check for pending version work (E").count(),
+        1,
+        "{}",
+        run.err
+    );
 }
 
 // A skipped-workflow warning is queued before the preview runs; a preview failure must not swallow it.

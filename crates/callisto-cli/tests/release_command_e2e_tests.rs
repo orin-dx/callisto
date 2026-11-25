@@ -382,6 +382,11 @@ fn dry_run_without_origin_notes_unbound_tags() {
         "{}",
         stderr(&preview)
     );
+    assert!(
+        stderr(&preview).contains("no `origin` remote is configured, so tag operations are unbound"),
+        "{}",
+        stderr(&preview)
+    );
     // The missing-origin probe must never leak git's own raw stderr for an absent remote -- only the one deliberate
     // note above.
     assert!(
@@ -421,6 +426,12 @@ fn an_origin_that_is_not_hosted_previews_unbound_and_refuses_by_name() {
             assert_eq!(
                 stderr(&preview).matches("not a hosted remote").count(),
                 1,
+                "{origin}: {}",
+                stderr(&preview)
+            );
+            // The note carries the refusal's reason and the accepted forms, never the value.
+            assert!(
+                stderr(&preview).contains("use an https:// or ssh://git@ URL") && !stderr(&preview).contains(origin),
                 "{origin}: {}",
                 stderr(&preview)
             );
@@ -552,6 +563,133 @@ fn nothing_to_release_with_a_new_changeset_points_at_version() {
         "{}",
         stderr(&preview)
     );
+}
+
+/// The real release says there is nothing to release and still points at pending changesets, and a selection that is
+/// not a release gets the pointer before E169 without `--dry-run` too.
+#[test]
+fn a_real_release_with_nothing_to_release_points_at_pending_changesets() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let released = rig.run(root, &["release"]);
+    assert!(released.status.success(), "{}", stderr(&released));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    // A real release trusts only a clean worktree.
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "add a changeset"]);
+
+    let run = rig.run(root, &["--format", "text", "release"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "Nothing to release.\n");
+    assert_eq!(
+        stderr(&run).matches("run `callisto version`").count(),
+        1,
+        "{}",
+        stderr(&run)
+    );
+
+    let selected = rig.run(root, &["--format", "text", "release", "--package", "cargo/core-crate"]);
+    assert!(!selected.status.success(), "{}", stderr(&selected));
+    assert!(stderr(&selected).contains("E169"), "{}", stderr(&selected));
+    assert_eq!(
+        stderr(&selected).matches("run `callisto version`").count(),
+        1,
+        "{}",
+        stderr(&selected)
+    );
+}
+
+/// The JSON preview carries the pending-work pointer in its existing `diagnostics`, and says it on stderr once.
+#[test]
+fn the_json_preview_carries_the_pending_work_pointer_in_diagnostics() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+
+    let preview = rig.run(root, &["--format", "json", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let pointing = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "pending-version-work")
+        .count();
+    assert_eq!(pointing, 1, "{report}");
+    assert_eq!(
+        stderr(&preview).matches("run `callisto version`").count(),
+        1,
+        "{}",
+        stderr(&preview)
+    );
+}
+
+/// When the pending-work check itself fails, the preview still succeeds and says which error stopped it.
+#[test]
+fn a_failed_pending_work_check_is_named_not_dropped() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/broken.md"),
+        "---\n\"cargo/core-crate\": nonsense\n---\n\nText.\n",
+    )
+    .unwrap();
+
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let text = stderr(&preview);
+    assert_eq!(
+        text.matches("could not check for pending version work (E").count(),
+        1,
+        "{text}"
+    );
+    assert!(text.contains("callisto status"), "{text}");
+}
+
+/// An unapproved `publishConfig.registry` is refused with E120 naming only scheme and host, and what must match.
+#[test]
+fn an_unapproved_publish_registry_is_refused_without_its_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    git(root, &["remote", "add", "origin", "https://github.com/example/web.git"]);
+    fs::write(
+        root.join("package.json"),
+        r#"{"name":"web","version":"1.0.0","publishConfig":{"registry":"https://npm.evil.example/secret-path-xyz/"}}"#,
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "initial"]);
+    let out = callisto(root, &["--dry-run", "release"]);
+    assert!(!out.status.success(), "{}", stderr(&out));
+    let text = squash_report(&stderr(&out));
+    assert!(text.contains("E120"), "{text}");
+    assert!(text.contains(&squash_report("`https://npm.evil.example`")), "{text}");
+    assert!(!text.contains("secret-path-xyz"), "{text}");
+    for part in [
+        "`publishConfig.registry` in package.json",
+        "differs from every approved `[registries]` entry",
+        "must match one exactly",
+    ] {
+        assert!(text.contains(&squash_report(part)), "{part}: {text}");
+    }
+}
+
+/// The report wraps long values, so compare without its layout.
+fn squash_report(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace() && *c != '│').collect()
 }
 
 /// A prerelease note `version` already applied stays on disk but is not pending, so the hint goes away.

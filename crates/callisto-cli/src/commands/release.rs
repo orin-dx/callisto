@@ -49,9 +49,55 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
     }
 }
 
-/// Stderr note when a preview's tags have no `origin` to push to.
-pub const TAGS_UNBOUND_NOTE: &str =
-    "note: `origin` is missing or not a hosted remote, so tag operations are unbound; a real `callisto release` needs a hosted remote";
+/// Stderr note when a preview's tags have no `origin` to push to; `refusal` says why.
+fn tags_unbound_note(refusal: &callisto_graph::error::OriginRefusal) -> String {
+    format!("note: {refusal}, so tag operations are unbound; a real `callisto release` needs a hosted remote")
+}
+
+/// The version work `callisto version` has pending for a selection, or the error that stopped the check. Advisory: it
+/// never fails the command it decorates.
+pub(crate) struct PendingWork {
+    packages: Vec<ReleasePackageId>,
+    unchecked: Option<GraphError>,
+}
+
+impl PendingWork {
+    pub(crate) fn of(result: Result<Vec<ReleasePackageId>, GraphError>) -> Self {
+        match result {
+            Ok(packages) => Self {
+                packages,
+                unchecked: None,
+            },
+            Err(error) => Self {
+                packages: Vec::new(),
+                unchecked: Some(error),
+            },
+        }
+    }
+
+    pub(crate) fn diagnostic(&self) -> Option<callisto_model::Diagnostic> {
+        pending_version_diagnostic(&self.packages)
+    }
+
+    /// One stderr line saying why the check could not run, naming the error code and where to see the cause.
+    pub(crate) fn write_unchecked_note(&self, err: &mut dyn std::io::Write) -> Result<(), CliError> {
+        if let Some(error) = &self.unchecked {
+            let code = miette::Diagnostic::code(error).map_or_else(|| "no code".to_owned(), |code| code.to_string());
+            writeln!(
+                err,
+                "note: could not check for pending version work ({code}); run `callisto status` for the cause"
+            )?;
+        }
+        Ok(())
+    }
+
+    fn write_notes(&self, err: &mut dyn std::io::Write) -> Result<(), CliError> {
+        if let Some(note) = self.diagnostic() {
+            writeln!(err, "note: {}", note.message)?;
+        }
+        self.write_unchecked_note(err)
+    }
+}
 
 /// The advisory when `callisto version` has work for the selection: a release plans only versions already written.
 pub(crate) fn pending_version_diagnostic(
@@ -118,31 +164,36 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
     }
     let plan = match planned {
         Err(error)
-            if global.dry_run
-                && matches!(
-                    &error,
-                    GraphError::ReleaseSelectionInvalid {
-                        reason: callisto_graph::error::ReleaseSelectionInvalidReason::NotARelease,
-                        ..
-                    }
-                ) =>
+            if matches!(
+                &error,
+                GraphError::ReleaseSelectionInvalid {
+                    reason: callisto_graph::error::ReleaseSelectionInvalidReason::NotARelease,
+                    ..
+                }
+            ) =>
         {
             // The version work that would make the selection a release is the answer to the refusal.
-            let pending = pending_version_work(&workspace, &selections).unwrap_or_default();
+            let pending = PendingWork::of(pending_version_work(&workspace, &selections));
             write_release_preview_notes(None, &pending, &mut std::io::stderr())?;
             return Err(error.into());
         }
         other => other?,
     };
     if global.dry_run {
-        // Advisory: a plan `version` cannot derive is that command's error to report.
-        let pending = pending_version_work(&workspace, &selections).unwrap_or_default();
-        write_release_preview(plan.as_ref(), global.format, &mut std::io::stdout())?;
+        let pending = PendingWork::of(pending_version_work(&workspace, &selections));
+        write_release_preview(
+            plan.as_ref(),
+            global.format,
+            pending.diagnostic(),
+            &mut std::io::stdout(),
+        )?;
         write_release_preview_notes(plan.as_ref(), &pending, &mut std::io::stderr())?;
         return Ok(ExitCode::SUCCESS);
     }
     let Some(plan) = plan else {
         print_nothing_to_release(global)?;
+        let pending = PendingWork::of(pending_version_work(&workspace, &selections));
+        write_release_preview_notes(None, &pending, &mut std::io::stderr())?;
         return Ok(ExitCode::SUCCESS);
     };
     for diagnostic in &plan.diagnostics {
@@ -199,10 +250,11 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
     Ok(ExitCode::SUCCESS)
 }
 
-/// Writes a `release --dry-run` preview of `plan`; `init` shows the same one.
+/// Writes a `release --dry-run` preview of `plan`; `init` shows the same one. `pending` joins the JSON diagnostics.
 pub(crate) fn write_release_preview(
     plan: Option<&LocalReleasePlan>,
     format: OutputFormat,
+    pending: Option<callisto_model::Diagnostic>,
     out: &mut dyn std::io::Write,
 ) -> Result<(), CliError> {
     match (plan, format) {
@@ -218,7 +270,7 @@ pub(crate) fn write_release_preview(
             &mut &mut *out,
             &ReleaseDryRunReport {
                 intent: plan.intent.clone(),
-                diagnostics: plan.diagnostics.clone(),
+                diagnostics: plan.diagnostics.iter().cloned().chain(pending).collect(),
             },
             true,
         )?,
@@ -232,21 +284,18 @@ pub(crate) fn write_release_preview(
 /// The notes `release --dry-run` adds to a preview, on stderr.
 fn write_release_preview_notes(
     plan: Option<&LocalReleasePlan>,
-    pending: &[callisto_model::ReleasePackageId],
+    pending: &PendingWork,
     err: &mut dyn std::io::Write,
 ) -> Result<(), CliError> {
     if let Some(plan) = plan {
-        if plan.tags_unbound {
-            writeln!(err, "{TAGS_UNBOUND_NOTE}")?;
+        if let Some(refusal) = &plan.tags_unbound {
+            writeln!(err, "{}", tags_unbound_note(refusal))?;
         }
         for diagnostic in &plan.diagnostics {
             writeln!(err, "warning: {}", diagnostic.message)?;
         }
     }
-    if let Some(note) = pending_version_diagnostic(pending) {
-        writeln!(err, "note: {}", note.message)?;
-    }
-    Ok(())
+    pending.write_notes(err)
 }
 
 fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
