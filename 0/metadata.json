@@ -1,0 +1,113 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8AENGGDCCTXSF2PQ5ZXHYDQ",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T22:54:35.494869Z",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "db75f87810bb",
+  "compact_transcript_start": 0,
+  "session_token_usage": {
+    "input_tokens": 3422,
+    "cache_creation_tokens": 6678948,
+    "cache_read_tokens": 731941934,
+    "output_tokens": 890301,
+    "api_call_count": 1495,
+    "subagent_tokens": {
+      "input_tokens": 1824,
+      "cache_creation_tokens": 2973664,
+      "cache_read_tokens": 91403574,
+      "output_tokens": 607494,
+      "api_call_count": 912
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 41,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 14,
+      "entropy": 15,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 359
+  },
+  "summary": {
+    "intent": "Act as lead session for Callisto v1 alpha: launch and monitor background sessions, track work packages in the plan file, coordinate PR merge order and rebases, and escalate to the user only for merge-ready PRs or credentials. Later, the user pushed to get fixes and review findings on PRs #242/#634 and #246/#638 resolved.",
+    "outcome": "Sessions were coordinated and PR #560 (WP A) merged, which unblocked the others. Findings on changes 169 and 173 were fixed and resolved. #634 and #638 went through several review rounds and were pushed with findings resolved or dismissed. The v1 alpha work packages had not all merged, and `just verify-real` had not run.",
+    "learnings": {
+      "repo": [
+        "RUSTSEC-2026-0542 (humantime unmaintained, via dev-dep trycmd) fails the cargo-deny audit on every PR until deny.toml ignores it; WP A's #560 carries that fix, so other PRs must rebase after it merges.",
+        "The launch rules forbid `Claude-Session:` trailers and no-stack branches; commits must be signed, and each WP diff needs cargo mutants run.",
+        "cargo-mutants output under `mutants.out.old/` was committed in PRs #565 and #567; .gitignore only covered `mutants.out/` and was widened to `mutants.out*/`.",
+        "`claude --bg --resume` needs the full session id, not the 8-char job id.",
+        "A plain `git push` can fail silently when the local branch name differs from its upstream; use an explicit refspec and verify with `git ls-remote`.",
+        "Entire trails group WPs by outcome (#357, #457-#460); sessions link branches with `entire trail link` and close findings with `entire trail finding resolve`.",
+        "#563 (WP I) conflicts with #560 in crates/callisto-cli/benches/commands.rs and shares walk.rs with #561, so it merges after E.",
+        "Two flaky tests were seen: registry_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim and init::tests::an_existing_config_errors."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "line": 62,
+          "end_line": 68,
+          "finding": "Prompt hint selection: marked rows give 'Enter keeps the * ones', empty_ok gives 'Enter picks none', otherwise 'Type numbers...'. An empty line returns [] and becomes E273 in add.rs."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/binding.rs",
+          "line": 87,
+          "end_line": 92,
+          "finding": "E120 shows only the scheme and host of the registry URL via ShownRegistry::new. The path is kept hidden on purpose because some registries put tokens in the path; the message now says which setting to compare."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "line": 222,
+          "end_line": 231,
+          "finding": "E342 returned before the Changesets migration warnings were queued, so they were dropped. The migration diagnostics should be queued right after changesets::migrate."
+        }
+      ],
+      "workflow": [
+        "The Entire trail gate needs a human reviewer approval, so a PR with green CI can still show a failing gate.",
+        "Passing a subagent review does not guarantee zero new findings; the user wanted the whole finding history swept against the current code before each push.",
+        "Verify a session's claims against the remote (`git ls-remote`, diff against main, signature check) before recording a PR as ready.",
+        "The user pushed back on over-explained UX; short hints and dropping the `#N` syntax were preferred over wordier edge-case documentation."
+      ]
+    },
+    "friction": [
+      "The sandbox blocked the session daemon socket, so `claude agents` had to be run outside the sandbox.",
+      "Session 3 was blocked when the auto-mode classifier refused a commit that carried a forbidden Claude-Session trailer.",
+      "Session 2 sat at a worktree permission prompt that only the user could answer.",
+      "The first resume of Session 5 used the short id and silently failed.",
+      "I wrongly told the user that all PRs would go green after #560 merged. #563 still had a bench-file conflict.",
+      "Session 1's reported push of #567 never reached the remote because of the upstream-name mismatch.",
+      "Review rounds on #634 and #638 kept producing new low-severity findings; the user expressed frustration over repeated findings and days of effort.",
+      "Session 2 skipped cargo mutants on its final commits until asked.",
+      "Slow gates when two worktrees built in parallel."
+    ],
+    "open_items": [
+      "Merge #562, #564, #566, #567, #568, #561, #565, #563 and #569 in wave order, with rebases after #560.",
+      "WP E's changeset needs a decision on whether it is Breaking; I recommended yes.",
+      "WPs G, H, K, L, M, Q and R, and Session 4's `just verify-real`, are not done; L waits for #565 to merge and #569 merges after L.",
+      "PR #645 (Git boundary, #253) was moved to draft and needs a redesign.",
+      "Interactive-CLI contract decisions remain: re-asking instead of E273 on empty input, and `TERM=dumb` never prompting.",
+      "E299 help still mentions `git remote add origin` instead of `get-url --push`.",
+      "Contrived collision edge cases in tty.rs (a package named like another's qualified id) were left unfixed.",
+      "The latest push of both PRs resolves new findings on #634 and #638; the reviewer will run again and may raise more."
+    ]
+  }
+}
