@@ -741,7 +741,7 @@ fn a_name_that_is_another_rows_number_says_how_to_pick_each() {
     let dir = released(["1", "2"], "2");
     let mut add = Session::start(dir.path());
     add.answer(1, "1\r");
-    add.after("type `npm/1` for the package or `1-1` for the row", 1, "\x7fnpm/1\r");
+    add.after("type `npm/1` for the package or `#1` for the row", 1, "\x7fnpm/1\r");
     add.answer(2, "\r");
     add.answer(3, "\r");
     add.after("Changelog summary", 1, "Fix\r");

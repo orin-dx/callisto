@@ -113,12 +113,12 @@ fn read_answer(items: &[Listed], marked: &[bool], one: bool) -> Result<Vec<usize
 /// The listed indices a typed line picks: the `marked` ones for an empty line (when several may be picked), else the
 /// ones [`choices`] names; `one` requires exactly one.
 fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Vec<usize>, String> {
-    let picked = if line.trim().is_empty() && !one {
-        (0..items.len())
+    let picked = match (line.trim().is_empty(), one) {
+        (true, false) => (0..items.len())
             .filter(|&index| marked.get(index) == Some(&true))
-            .collect()
-    } else {
-        choices(line, items)?
+            .collect(),
+        (true, true) => Vec::new(),
+        (false, _) => choices(line, items)?,
     };
     if one && picked.len() != 1 {
         return Err("pick exactly one".to_owned());
@@ -127,40 +127,50 @@ fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Ve
 }
 
 /// The listed indices an answer names, in list order. A word is a number or range counted from 1 (`3`, `1-3`) when
-/// those rows exist, else a listed name or `ecosystem/name` id; words are separated by spaces or commas.
+/// those rows exist, else a listed name or `ecosystem/name` id; `#3` or `#1-3` always means rows. Words are separated
+/// by spaces or commas, and an answer must name at least one.
 fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
     let mut picked = std::collections::BTreeSet::new();
+    let mut words = 0;
     for word in answer
         .split(|c: char| c == ',' || c.is_whitespace())
         .filter(|word| !word.is_empty())
     {
+        words += 1;
         let shown = word.escape_debug();
+        if let Some(rows) = word.strip_prefix('#') {
+            match numbered(rows, items.len()) {
+                Some(range) => picked.extend(range?),
+                None => return Err(format!("`{shown}` is not a row number or range")),
+            }
+            continue;
+        }
         let by_name = items.iter().position(|item| item.name == word || item.id == word);
         let indices = match (by_name, numbered(word, items.len())) {
             (Some(index), None | Some(Err(_))) => index..=index,
             (Some(index), Some(Ok(range))) if range == (index..=index) => range,
             (Some(index), Some(Ok(range))) => {
-                let rows = range
-                    .map(|row| format!("{0}-{0}", row + 1))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let package = index + 1;
+                let rows = match (range.start(), range.end()) {
+                    (first, last) if first == last => format!("#{}", first + 1),
+                    (first, last) => format!("#{}-{}", first + 1, last + 1),
+                };
                 let id = &items[index].id;
-                return Err(if id == word {
-                    format!(
-                        "`{shown}` is both a package name and a row number; type `{package}-{package}` for the package or `{rows}` for the row"
-                    )
+                let package = if id == word {
+                    format!("#{}", index + 1)
                 } else {
-                    format!(
-                        "`{shown}` is both a package name and a row number; type `{}` for the package or `{rows}` for the row",
-                        id.escape_debug()
-                    )
-                });
+                    id.escape_debug().to_string()
+                };
+                return Err(format!(
+                    "`{shown}` is both a package name and a row number; type `{package}` for the package or `{rows}` for the row"
+                ));
             }
             (None, Some(range)) => range?,
             (None, None) => return Err(format!("`{shown}` is not a number, a range or a listed name")),
         };
         picked.extend(indices);
+    }
+    if words == 0 {
+        return Err("type at least one number, range or name".to_owned());
     }
     Ok(picked.into_iter().collect())
 }
@@ -221,8 +231,7 @@ impl Editor {
     }
 
     fn try_edit(&self) -> Result<Option<String>, String> {
-        let words =
-            shell_words::split(&self.command).map_err(|error| format!("it does not split into words: {error}"))?;
+        let words = editor_words(&self.command, cfg!(windows))?;
         let Some((program, args)) = words.split_first() else {
             return Err("it names no program".to_owned());
         };
@@ -247,6 +256,38 @@ impl Editor {
             .map(Some)
             .map_err(|error| format!("what it saved is not UTF-8 text: {}", error.utf8_error()))
     }
+}
+
+/// The program and arguments an editor setting names. Unix settings follow shell quoting; Windows paths use
+/// backslashes as separators, so there a setting splits on whitespace outside double quotes and keeps every backslash.
+fn editor_words(command: &str, windows: bool) -> Result<Vec<String>, String> {
+    if !windows {
+        return shell_words::split(command).map_err(|error| format!("it does not split into words: {error}"));
+    }
+    let mut words = Vec::new();
+    let (mut word, mut quoted, mut started) = (String::new(), false, false);
+    for c in command.chars() {
+        match c {
+            '"' => (quoted, started) = (!quoted, true),
+            c if c.is_whitespace() && !quoted => {
+                if started {
+                    words.push(std::mem::take(&mut word));
+                }
+                started = false;
+            }
+            c => {
+                word.push(c);
+                started = true;
+            }
+        }
+    }
+    if quoted {
+        return Err("it does not split into words: a double quote is not closed".to_owned());
+    }
+    if started {
+        words.push(word);
+    }
+    Ok(words)
 }
 
 #[cfg(unix)]
@@ -284,7 +325,7 @@ mod editor_owns_ctrl_c {
 
 #[cfg(test)]
 mod tests {
-    use super::{answer, choices, Listed};
+    use super::{answer, choices, editor_words, Listed};
 
     fn names(names: &[&str]) -> Vec<Listed> {
         names.iter().map(|name| Listed::by_id(name)).collect()
@@ -336,7 +377,7 @@ mod tests {
         assert!(refused.contains(ambiguous));
         // Without a distinct qualified id the way out is the package's own row, never the word just typed.
         assert!(
-            refused.contains("type `1-1` for the package or `2-2` for the row"),
+            refused.contains("type `#1` for the package or `#2` for the row"),
             "{refused}"
         );
         assert!(choices("1-2", &names(&["a", "b", "1-2"]))
@@ -347,20 +388,62 @@ mod tests {
     }
 
     #[test]
+    fn a_hash_always_means_rows_so_every_suggestion_is_unambiguous() {
+        let items = names(&["a", "b", "1-1"]);
+        assert_eq!(choices("#1", &items), Ok(vec![0]));
+        assert_eq!(choices("#1-2", &items), Ok(vec![0, 1]));
+        assert_eq!(choices("#3", &items), Ok(vec![2]));
+        let refused = choices("1-1", &items).unwrap_err();
+        assert!(
+            refused.contains("type `#3` for the package or `#1` for the row"),
+            "{refused}"
+        );
+        assert!(choices("#x", &items).unwrap_err().contains("not a row number or range"));
+        assert!(choices("#9", &items).is_err());
+    }
+
+    #[test]
+    fn an_answer_of_only_separators_is_asked_again() {
+        let items = names(&["a", "b"]);
+        assert_eq!(
+            choices(",, ,", &items),
+            Err("type at least one number, range or name".to_owned())
+        );
+    }
+
+    #[test]
+    fn windows_editor_settings_keep_backslashes() {
+        assert_eq!(
+            editor_words(r"C:\Tools\vim.exe", true),
+            Ok(vec![r"C:\Tools\vim.exe".to_owned()])
+        );
+        assert_eq!(
+            editor_words(r#""C:\Program Files\Editor\ed.exe" --wait"#, true),
+            Ok(vec![r"C:\Program Files\Editor\ed.exe".to_owned(), "--wait".to_owned()])
+        );
+        assert!(editor_words(r#""C:\open"#, true).is_err());
+        assert_eq!(
+            editor_words("code --wait", false),
+            Ok(vec!["code".to_owned(), "--wait".to_owned()])
+        );
+    }
+
+    #[test]
     fn the_reason_for_an_ambiguous_word_says_how_to_pick_each() {
         // Rows: `2` then `1`; typing `1` could mean row 1 (package `2`) or the package named `1`.
         let listed = npm(&["2", "1"]);
         assert_eq!(
             choices("1", &listed).unwrap_err(),
-            "`1` is both a package name and a row number; type `npm/1` for the package or `1-1` for the row"
+            "`1` is both a package name and a row number; type `npm/1` for the package or `#1` for the row"
         );
         assert_eq!(choices("npm/1", &listed), Ok(vec![1]));
+        assert_eq!(choices("#1", &listed), Ok(vec![0]));
         assert_eq!(choices("1-1", &listed), Ok(vec![0]));
         assert_eq!(choices("2-2", &listed), Ok(vec![1]));
-        // A range collision lists the rows singly.
+        // A range collision names the rows as one `#` range.
         let error = choices("1-2", &npm(&["a", "b", "1-2"])).unwrap_err();
         assert!(
-            error.ends_with("type `npm/1-2` for the package or `1-1,2-2` for the row"),
+            error.ends_with("type `npm/1-2` for the package or `#1-2` for the row"),
             "{error}"
         );
     }
