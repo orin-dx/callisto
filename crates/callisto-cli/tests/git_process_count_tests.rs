@@ -98,3 +98,84 @@ fn release_dry_run_probes_origin_once_and_starts_no_credential_helper() {
     assert_eq!(count("\"ls-remote\""), 1, "{starts:#?}");
     assert_eq!(count("credential"), 0, "{starts:#?}");
 }
+
+/// A Cargo workspace of `crates` auto-triggered crates whose release tags point at another annotated tag, which the
+/// bulk tag listing cannot peel to a commit.
+fn auto_crates_with_tags_of_tags(crates: usize) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let git = |args: &[&str]| {
+        let status = Command::new("git").args(args).current_dir(root).status().unwrap();
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["config", "user.email", "t@example.test"]);
+    git(&["config", "user.name", "t"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    git(&["config", "tag.gpgsign", "false"]);
+    let members: Vec<String> = (0..crates).map(|i| format!("\"c{i}\"")).collect();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        format!("[workspace]\nmembers = [{}]\nresolver = \"2\"\n", members.join(", ")),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"cargo/*\"\nrelease-trigger = \"auto\"\n",
+    )
+    .unwrap();
+    for i in 0..crates {
+        let crate_dir = root.join(format!("c{i}"));
+        std::fs::create_dir_all(crate_dir.join("src")).unwrap();
+        std::fs::write(
+            crate_dir.join("Cargo.toml"),
+            format!("[package]\nname = \"c{i}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n"),
+        )
+        .unwrap();
+        std::fs::write(crate_dir.join("src/lib.rs"), "").unwrap();
+    }
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "release"]);
+    for i in 0..crates {
+        git(&["tag", "-a", &format!("inner-c{i}"), "-m", "inner"]);
+        git(&[
+            "tag",
+            "-a",
+            &format!("c{i}@1.0.0"),
+            "-m",
+            "outer",
+            &format!("inner-c{i}"),
+        ]);
+    }
+    dir
+}
+
+fn release_dry_run_git_processes(repository: &std::path::Path) -> usize {
+    let trace_dir = tempfile::tempdir().unwrap();
+    let trace = trace_dir.path().join("trace.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .arg("--cwd")
+        .arg(repository)
+        .args(["--dry-run", "release"])
+        .env("GIT_TRACE2_EVENT", &trace)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    std::fs::read_to_string(&trace)
+        .unwrap()
+        .lines()
+        .filter(|line| line.contains("\"event\":\"start\""))
+        .count()
+}
+
+/// The changesets-only pending hint works out no inference window, so tags of tags are not peeled package by package.
+#[test]
+fn release_dry_run_peels_no_tag_per_auto_package_for_the_pending_hint() {
+    let few = release_dry_run_git_processes(auto_crates_with_tags_of_tags(2).path());
+    let many = release_dry_run_git_processes(auto_crates_with_tags_of_tags(6).path());
+    assert_eq!(
+        few, many,
+        "{few} git processes for 2 auto crates, {many} for 6: a git process per package"
+    );
+}
