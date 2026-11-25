@@ -563,13 +563,6 @@ fn nothing_to_release_with_a_new_changeset_points_at_version() {
         "{}",
         stderr(&preview)
     );
-
-    // JSON carries the same advisory in the nothing-to-release report.
-    let json = rig.run(root, &["--format", "json", "--dry-run", "release"]);
-    assert!(json.status.success(), "{}", stderr(&json));
-    let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(report["nothingToRelease"], true, "{report}");
-    assert_eq!(report["diagnostics"][0]["code"], "pending-version-work", "{report}");
 }
 
 /// The real release says there is nothing to release and still points at pending changesets, and a selection that is

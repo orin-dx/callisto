@@ -192,8 +192,8 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
         return Ok(ExitCode::SUCCESS);
     }
     let Some(plan) = plan else {
+        print_nothing_to_release(global)?;
         let pending = PendingWork::of(pending_version_work(&workspace, &selections));
-        print_nothing_to_release(global, pending.diagnostic())?;
         write_release_preview_notes(None, &pending, &mut std::io::stderr())?;
         return Ok(ExitCode::SUCCESS);
     };
@@ -263,7 +263,6 @@ pub(crate) fn write_release_preview(
             &mut &mut *out,
             &ReleaseNothingReport {
                 nothing_to_release: true,
-                diagnostics: pending.into_iter().collect(),
             },
             true,
         )?,
@@ -300,13 +299,12 @@ fn write_release_preview_notes(
     pending.write_notes(err)
 }
 
-fn print_nothing_to_release(global: &GlobalArgs, pending: Option<callisto_model::Diagnostic>) -> Result<(), CliError> {
+fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
     match global.format {
         OutputFormat::Json => emit_report(
             &mut std::io::stdout(),
             &ReleaseNothingReport {
                 nothing_to_release: true,
-                diagnostics: pending.into_iter().collect(),
             },
             global.dry_run,
         )?,
