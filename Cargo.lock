@@ -256,7 +256,7 @@ checksum = "776dfebd015e2d8732c684a2c71003674ccb49457b539b9e82151ba38e96dd7c"
 
 [[package]]
 name = "callisto-cli"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "anstream",
  "base64",
@@ -288,7 +288,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-fixtures"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "callisto-model",
  "tempfile",
@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-graph"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "callisto-fixtures",
  "callisto-manifests",
@@ -326,7 +326,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-manifests"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "callisto-fixtures",
  "callisto-model",
@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-model"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "base64",
  "camino",

@@ -1,5 +1,19 @@
 # callisto-graph
 
+## 0.23.0
+
+_2026-11-26 · [compare](https://github.com/orin-dx/callisto/compare/callisto-graph@0.22.0...callisto-graph@0.23.0)_
+
+### Minor Changes
+
+- Released together with the `workspace` fixed group.
+
+### Patch Changes
+
+- Dependency updates
+  - `callisto-manifests` → `0.23.0`
+  - `callisto-model` → `0.23.0`
+
 ## 0.22.0
 
 _2026-11-21 · [compare](https://github.com/orin-dx/callisto/compare/callisto-graph@0.21.1...callisto-graph@0.22.0)_
