@@ -72,3 +72,54 @@ fn distinct_packages_still_write_one_changeset() {
     let text = std::fs::read_to_string(root.join(".changeset").join(&files[0])).unwrap();
     assert!(text.contains("a: patch") && text.contains("b: major"), "{text}");
 }
+
+/// A package with an npm and a Python manifest answers to both ids; naming it by each is still one package twice.
+#[test]
+fn two_ids_of_one_package_are_one_package_given_twice() {
+    let dir = workspace();
+    let root = dir.path();
+    let dual = root.join("dual");
+    std::fs::create_dir_all(&dual).unwrap();
+    std::fs::write(dual.join("package.json"), r#"{"name":"dual","version":"0.1.0"}"#).unwrap();
+    std::fs::write(
+        dual.join("pyproject.toml"),
+        "[project]\nname = \"dual\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    for packages in [
+        ["npm/dual:patch", "pypi/dual:minor"],
+        ["pypi/dual:patch", "npm/dual:patch"],
+    ] {
+        let out = add(root, &packages);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{packages:?}: {stderr}");
+        assert!(
+            stderr.contains("E329") && stderr.contains(packages[1].split_once(':').unwrap().0),
+            "{packages:?}: {stderr}"
+        );
+        assert!(changesets(root).is_empty(), "{packages:?} must write nothing");
+    }
+    let out = add(root, &["pypi/dual:minor", "cargo/a:patch"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let files = changesets(root);
+    let text = std::fs::read_to_string(root.join(".changeset").join(&files[0])).unwrap();
+    assert_eq!(text, "---\ndual: minor\na: patch\n---\n\ns\n");
+}
+
+/// The first selector naming a package already given is the one reported, after every earlier one resolved.
+#[test]
+fn the_first_repeat_is_reported_in_flag_order() {
+    let dir = workspace();
+    let root = dir.path();
+    let out = add(
+        root,
+        &["cargo/a:patch", "cargo/b:patch", "cargo/b:minor", "cargo/a:minor"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(stderr.contains("cargo/b") && !stderr.contains("cargo/a"), "{stderr}");
+    let out = add(root, &["cargo/a:patch", "cargo/missing:patch", "cargo/a:minor"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("E102") && !stderr.contains("E329"), "{stderr}");
+    assert!(changesets(root).is_empty());
+}

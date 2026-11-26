@@ -625,8 +625,8 @@ fn esc_at_an_init_prompt_writes_nothing_and_exits_130() {
     assert!(!dir.path().join("callisto.toml").exists());
 }
 
-/// Two npm packages, never released, whose names differ only in their last word.
-fn long_names(names: [&str; 2]) -> tempfile::TempDir {
+/// npm packages, never released, so each is marked as changed.
+fn unreleased(names: &[&str]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init_repo(root);
@@ -639,7 +639,7 @@ fn long_names(names: [&str; 2]) -> tempfile::TempDir {
         std::fs::create_dir_all(root.join(format!("packages/p{n}"))).unwrap();
         std::fs::write(
             root.join(format!("packages/p{n}/package.json")),
-            format!(r#"{{"name":"{name}","version":"1.0.0"}}"#),
+            serde_json::json!({ "name": name, "version": "1.0.0" }).to_string(),
         )
         .unwrap();
     }
@@ -679,7 +679,7 @@ fn in_a_40_by_10_pane_long_names_are_shown_in_full_and_picked_by_name() {
         "callisto-fixture-package-for-wrapping-left",
         "callisto-fixture-package-for-wrapping-right",
     ];
-    let dir = long_names(names);
+    let dir = unreleased(&names);
     let mut add = Session::start_small(dir.path(), 40, 10);
     add.answer(1, &format!("{}\r", names[1]));
     add.answer(2, "\r");
@@ -755,7 +755,7 @@ fn an_exact_name_wins_over_a_row_number() {
 /// A package named `42` in a workspace of one: no row 42 exists, so typing `42` names the package.
 #[test]
 fn a_package_named_with_digits_is_picked_by_name_when_that_row_does_not_exist() {
-    let dir = long_names(["42", "other"]);
+    let dir = unreleased(&["42", "other"]);
     std::fs::remove_dir_all(dir.path().join("packages/p1")).unwrap();
     run_git(dir.path(), &["add", "-A"]);
     run_git(dir.path(), &["commit", "-qm", "one package"]);
@@ -895,4 +895,120 @@ fn a_name_with_a_leading_tab_is_written_so_status_reads_it_back() {
     let report: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
     assert_eq!(report["pending"], 1, "{:?}: {report}", changesets(dir.path()));
     assert!(report.get("diagnostics").is_none(), "{report}");
+}
+
+/// The changesets `status` attributes to each package, by id.
+fn pending_by_package(root: &Path) -> Vec<(String, serde_json::Value)> {
+    let status = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", root.to_str().unwrap(), "status", "--format", "json"])
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    report["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|package| {
+            (
+                package["package"].as_str().unwrap().to_owned(),
+                package["pendingChangesets"].clone(),
+            )
+        })
+        .collect()
+}
+
+/// With `trail` and `trail ` listed, typing `trail ` or `npm/trail ` must not pick `trail`: the list says to pick by
+/// row, typed names are asked again, and row 2 writes `trail ` for `status` to attribute to it.
+#[test]
+fn a_name_that_cannot_be_typed_makes_the_list_rows_only_and_the_row_keeps_its_identity() {
+    let dir = unreleased(&["trail", "trail "]);
+    let mut add = Session::start(dir.path());
+    add.answer(1, "trail \r");
+    add.after(
+        "`trail` is not a row number",
+        1,
+        &format!("{}npm/trail \r", "\x7f".repeat(6)),
+    );
+    add.after(
+        "`npm/trail` is not a row number",
+        1,
+        &format!("{}2\r", "\x7f".repeat(10)),
+    );
+    add.answer(2, "\r");
+    add.answer(3, "\r");
+    add.after("Changelog summary", 1, "Fix\r");
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    let screen = unescaped(&add.screen());
+    assert!(
+        screen.contains(
+            "  1 * trail\r\n  2 * trail \r\nSome names here cannot be typed, so pick by row number. Enter keeps the * ones, or type numbers or ranges. Esc cancels.\r\n"
+        ),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("\r\n  patch  trail \r\n"),
+        "the review shows the row picked:\n{screen}"
+    );
+    assert_eq!(changesets(dir.path()), ["---\n\"trail \": patch\n---\n\nFix\n"]);
+    let pending: Vec<(String, usize)> = pending_by_package(dir.path())
+        .into_iter()
+        .map(|(package, changesets)| (package, changesets.as_array().map_or(0, Vec::len)))
+        .collect();
+    assert_eq!(pending, [("npm/trail".to_owned(), 0), ("npm/trail ".to_owned(), 1)]);
+}
+
+/// `a b` typed beside packages `a` and `b` is refused, not split into them; Esc then writes nothing.
+#[test]
+fn a_name_with_a_space_is_not_split_into_the_packages_its_parts_name() {
+    let dir = unreleased(&["a", "b", "a b"]);
+    let mut add = Session::start(dir.path());
+    add.answer(1, "a b\r");
+    add.after("`a` is not a row number", 1, "\x1b");
+    assert_eq!(add.exit_code(), Some(130), "{}", add.screen());
+    assert!(add.screen().contains("Cancelled, nothing written."), "{}", add.screen());
+    add.assert_terminal_restored();
+    assert!(changesets(dir.path()).is_empty());
+}
+
+/// `a,b` typed beside packages `a` and `b` is refused; its row is reviewed by its full name, and declining writes
+/// nothing.
+#[test]
+fn a_name_with_a_comma_is_picked_by_its_row_and_declining_writes_nothing() {
+    let dir = unreleased(&["a", "b", "a,b"]);
+    let mut add = Session::start(dir.path());
+    add.answer(1, "a,b\r");
+    add.after("`a` is not a row number", 1, "\x7f\x7f\x7f2\r");
+    add.answer(2, "\r");
+    add.answer(3, "\r");
+    add.after("Changelog summary", 1, "Fix\r");
+    add.after("Write this changeset?", 1, "n\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    let screen = unescaped(&add.screen());
+    assert!(screen.contains("  1 * a\r\n  2 * a,b\r\n  3 * b\r\n"), "{screen}");
+    assert!(screen.contains("\r\n  patch  a,b\r\n"), "{screen}");
+    assert!(screen.contains("Cancelled, nothing written."), "{screen}");
+    assert!(changesets(dir.path()).is_empty());
+}
+
+/// A bare name two workspace packages share is refused for the reason `--product-package` gives, then the id picks.
+#[test]
+fn init_refuses_a_product_name_two_packages_share() {
+    let dir = two_binaries();
+    let npm = dir.path().join("js");
+    std::fs::create_dir_all(&npm).unwrap();
+    std::fs::write(npm.join("package.json"), r#"{"name":"tool","version":"1.0.0"}"#).unwrap();
+    run_git(dir.path(), &["add", "-A"]);
+    run_git(dir.path(), &["commit", "-qm", "npm tool"]);
+    let mut init = Session::start_with(dir.path(), &["init"], &[]);
+    init.after("How should packages be versioned?", 1, "\r");
+    init.after("Ship binaries", 1, "y\r");
+    init.answer(1, "tool\r");
+    init.after("more than one package", 1, "\x7f\x7f\x7f\x7fcargo/tool\r");
+    init.after("Artifact target triples", 1, "x86_64-unknown-linux-gnu\r");
+    init.after("Generate a GitHub Actions release workflow?", 1, "n\r");
+    init.after("Write callisto.toml?", 1, "\r");
+    assert_eq!(init.exit_code(), Some(0), "{}", init.screen());
+    let written = std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap();
+    assert!(written.contains("product-package = \"cargo/tool\""), "{written}");
 }

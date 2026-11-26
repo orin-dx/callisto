@@ -210,6 +210,7 @@ pub fn write_changeset(changeset: &Changeset) -> Result<String, WriteError> {
         return Err(WriteError::EmptySummary);
     }
     let mut out = String::from("---\n");
+    let mut written = std::collections::HashSet::with_capacity(changeset.entries.len());
     for (index, entry) in changeset.entries.iter().enumerate() {
         if entry.name.is_empty() {
             return Err(WriteError::EmptyName { index });
@@ -221,9 +222,7 @@ pub fn write_changeset(changeset: &Changeset) -> Result<String, WriteError> {
         };
         // No escapes and one entry per line; the reader rejects a repeated name.
         let reads_back = !entry.name.contains(['"', '\r', '\n'])
-            && !changeset.entries[..index]
-                .iter()
-                .any(|earlier| earlier.name == entry.name)
+            && written.insert(entry.name.as_str())
             && frontmatter_entry(&line).and_then(Result::ok).as_ref() == Some(entry);
         if !reads_back {
             return Err(WriteError::NameNotRepresentable {

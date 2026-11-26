@@ -58,15 +58,62 @@ pub(crate) fn pick_many(
     marked: &[bool],
     empty_ok: bool,
 ) -> Result<Vec<usize>, CliError> {
+    let by_name = |word: &str| listed_name(items, word);
+    let words = Words::for_list(items, &by_name);
     print_list(heading, items, marked);
+    let (lead, what) = (words.lead(), words.what());
     if marked.contains(&true) {
-        eprintln!("Enter keeps the * ones, or type numbers, ranges or names. Esc cancels.");
+        eprintln!("{lead}Enter keeps the * ones, or type {what}. Esc cancels.");
     } else if empty_ok {
-        eprintln!("Enter picks none, or type numbers, ranges or names. Esc cancels.");
+        eprintln!("{lead}Enter picks none, or type {what}. Esc cancels.");
     } else {
-        eprintln!("Type numbers, ranges or names. Esc cancels.");
+        eprintln!("{lead}Type {what}. Esc cancels.");
     }
-    read_answer(items, marked, false, &|word| listed_name(items, word))
+    read_answer(items, marked, false, words)
+}
+
+/// How a typed word picks from a list: by name, else by row; or only by row when some listed name or id cannot be
+/// typed back exactly, so no typed text is split into, or taken for, another entry.
+#[derive(Clone, Copy)]
+enum Words<'a> {
+    NamesOrRows(NameLookup<'a>),
+    RowsOnly,
+}
+
+impl<'a> Words<'a> {
+    fn for_list(items: &[Listed], by_name: NameLookup<'a>) -> Self {
+        if items.iter().all(|item| typable(&item.name) && typable(&item.id)) {
+            Self::NamesOrRows(by_name)
+        } else {
+            Self::RowsOnly
+        }
+    }
+
+    /// Said before a rows-only list's hint.
+    fn lead(self) -> &'static str {
+        match self {
+            Self::NamesOrRows(_) => "",
+            Self::RowsOnly => "Some names here cannot be typed, so pick by row number. ",
+        }
+    }
+
+    /// What may be typed to pick several.
+    fn what(self) -> &'static str {
+        match self {
+            Self::NamesOrRows(_) => "numbers, ranges or names",
+            Self::RowsOnly => "numbers or ranges",
+        }
+    }
+}
+
+/// Whether `text`, typed as a list shows it, is one word equal to it.
+fn typable(text: &str) -> bool {
+    !text.is_empty() && !text.contains(separator) && text.escape_debug().eq(text.chars())
+}
+
+/// Words in an answer are separated by spaces or commas.
+fn separator(c: char) -> bool {
+    c == ',' || c.is_whitespace()
 }
 
 /// Which listed entry a typed word names: `None` when it names nothing, so it may be a row number, and `Err` with the
@@ -84,9 +131,13 @@ fn listed_name(items: &[Listed], word: &str) -> Option<Result<usize, String>> {
 /// Asks for exactly one of `ids`, the way [`pick_many`] asks for several, with typed names resolved by `by_name`.
 pub(crate) fn pick_one(heading: &str, ids: &[String], by_name: NameLookup<'_>) -> Result<usize, CliError> {
     let items: Vec<Listed> = ids.iter().map(|id| Listed::by_id(id)).collect();
+    let words = Words::for_list(&items, by_name);
     print_list(heading, &items, &[]);
-    eprintln!("Type a number or a name. Esc cancels.");
-    let picked = read_answer(&items, &[], true, by_name)?;
+    match words {
+        Words::NamesOrRows(_) => eprintln!("Type a number or a name. Esc cancels."),
+        Words::RowsOnly => eprintln!("{}Type a number. Esc cancels.", words.lead()),
+    }
+    let picked = read_answer(&items, &[], true, words)?;
     Ok(*picked
         .first()
         .expect("the validator accepts only an answer naming exactly one entry"))
@@ -109,34 +160,28 @@ fn print_list(heading: &str, items: &[Listed], marked: &[bool]) {
 
 /// One line typed at a single-line prompt; the prompt's validator asks again with the reason until [`answer`] accepts
 /// it, and Esc or Ctrl-C is [`CliError::Cancelled`].
-fn read_answer(items: &[Listed], marked: &[bool], one: bool, by_name: NameLookup<'_>) -> Result<Vec<usize>, CliError> {
+fn read_answer(items: &[Listed], marked: &[bool], one: bool, words: Words<'_>) -> Result<Vec<usize>, CliError> {
     let (valid_items, valid_marked) = (items.to_vec(), marked.to_vec());
     let line = Text::new("Your answer")
         .with_validator(move |line: &str| {
-            Ok(match answer(line, &valid_items, &valid_marked, one, by_name) {
+            Ok(match answer(line, &valid_items, &valid_marked, one, words) {
                 Ok(_) => Validation::Valid,
                 Err(reason) => Validation::Invalid(reason.into()),
             })
         })
         .prompt()?;
-    Ok(answer(&line, items, marked, one, by_name).expect("the validator accepted this line"))
+    Ok(answer(&line, items, marked, one, words).expect("the validator accepted this line"))
 }
 
 /// The listed indices a typed line picks: the `marked` ones for an empty line (when several may be picked), else the
 /// ones [`choices`] names; `one` requires exactly one.
-fn answer(
-    line: &str,
-    items: &[Listed],
-    marked: &[bool],
-    one: bool,
-    by_name: NameLookup<'_>,
-) -> Result<Vec<usize>, String> {
+fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool, words: Words<'_>) -> Result<Vec<usize>, String> {
     let picked = match (line.trim().is_empty(), one) {
         (true, false) => (0..items.len())
             .filter(|&index| marked.get(index) == Some(&true))
             .collect(),
         (true, true) => Vec::new(),
-        (false, _) => choices(line, items.len(), by_name)?,
+        (false, _) => choices(line, items.len(), words)?,
     };
     if one && picked.len() != 1 {
         return Err("pick exactly one".to_owned());
@@ -144,27 +189,36 @@ fn answer(
     Ok(picked)
 }
 
-/// The indices of a `len`-entry list an answer names, in list order. A word is a name `by_name` resolves, else a number
-/// or range counted from 1 (`3`, `1-3`). Words are separated by spaces or commas, and an answer must name at least one.
-fn choices(answer: &str, len: usize, by_name: NameLookup<'_>) -> Result<Vec<usize>, String> {
+/// The indices of a `len`-entry list an answer names, in list order. A word is a name the lookup resolves, else a number
+/// or range counted from 1 (`3`, `1-3`); in a rows-only list it is only a number or range. Words are separated by
+/// spaces or commas, and an answer must name at least one.
+fn choices(answer: &str, len: usize, words: Words<'_>) -> Result<Vec<usize>, String> {
     let mut picked = std::collections::BTreeSet::new();
-    let mut words = 0;
-    for word in answer
-        .split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|word| !word.is_empty())
-    {
-        words += 1;
+    let mut count = 0;
+    for word in answer.split(separator).filter(|word| !word.is_empty()) {
+        count += 1;
         let shown = word.escape_debug();
-        // An exact name wins over a row number; the review before writing shows what was picked.
-        let indices = match (by_name(word), numbered(word, len)) {
-            (Some(named), _) => named.map(|index| index..=index)?,
-            (None, Some(range)) => range?,
-            (None, None) => return Err(format!("`{shown}` is not a number, a range or a listed name")),
+        let indices = match words {
+            // An exact name wins over a row number; the review before writing shows what was picked.
+            Words::NamesOrRows(by_name) => match (by_name(word), numbered(word, len)) {
+                (Some(named), _) => named.map(|index| index..=index)?,
+                (None, Some(range)) => range?,
+                (None, None) => return Err(format!("`{shown}` is not a number, a range or a listed name")),
+            },
+            Words::RowsOnly => numbered(word, len).unwrap_or_else(|| {
+                Err(format!(
+                    "`{shown}` is not a row number; some names here cannot be typed"
+                ))
+            })?,
         };
         picked.extend(indices);
     }
-    if words == 0 {
-        return Err("type at least one number, range or name".to_owned());
+    if count == 0 {
+        return Err(match words {
+            Words::NamesOrRows(_) => "type at least one number, range or name",
+            Words::RowsOnly => "type at least one number or range",
+        }
+        .to_owned());
     }
     Ok(picked.into_iter().collect())
 }
@@ -321,15 +375,17 @@ mod editor_owns_ctrl_c {
 
 #[cfg(test)]
 mod tests {
-    use super::{editor_words, listed_name, Listed};
+    use super::{editor_words, listed_name, Listed, Words};
 
     /// The grammar [`super::pick_many`] reads: a name is a listed name or id.
     fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
-        super::choices(answer, items.len(), &|word| listed_name(items, word))
+        let by_name = |word: &str| listed_name(items, word);
+        super::choices(answer, items.len(), Words::for_list(items, &by_name))
     }
 
     fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Vec<usize>, String> {
-        super::answer(line, items, marked, one, &|word| listed_name(items, word))
+        let by_name = |word: &str| listed_name(items, word);
+        super::answer(line, items, marked, one, Words::for_list(items, &by_name))
     }
 
     #[test]
@@ -340,18 +396,19 @@ mod tests {
             "lib" => Some(Err("`lib` does not produce a binary".to_owned())),
             _ => None,
         };
-        assert_eq!(super::choices("tool", 2, &lookup), Ok(vec![1]));
-        assert_eq!(super::choices("2", 2, &lookup), Ok(vec![0]), "a name wins over row 2");
+        let words = Words::NamesOrRows(&lookup);
+        assert_eq!(super::choices("tool", 2, words), Ok(vec![1]));
+        assert_eq!(super::choices("2", 2, words), Ok(vec![0]), "a name wins over row 2");
         assert_eq!(
-            super::choices("1", 2, &lookup),
+            super::choices("1", 2, words),
             Ok(vec![0]),
             "a word naming nothing is a row"
         );
         assert_eq!(
-            super::choices("lib", 2, &lookup),
+            super::choices("lib", 2, words),
             Err("`lib` does not produce a binary".to_owned())
         );
-        assert!(super::choices("other", 2, &lookup).is_err());
+        assert!(super::choices("other", 2, words).is_err());
     }
 
     fn names(names: &[&str]) -> Vec<Listed> {
@@ -459,6 +516,87 @@ mod tests {
         assert_eq!(choices("3-1", &names(&["a", "3-1"])), Ok(vec![1]));
         // The rows exist, so the number is a row.
         assert_eq!(choices("1", &names(&["42"])), Ok(vec![0]));
+    }
+
+    /// What [`super::pick_many`] accepts for `line` over `items`.
+    fn pick(line: &str, items: &[Listed], marked: &[bool]) -> Result<Vec<usize>, String> {
+        answer(line, items, marked, false)
+    }
+
+    /// What [`super::pick_one`] accepts for `line` over `ids`, with typed names resolved by `by_name`.
+    fn pick_one(line: &str, ids: &[&str], by_name: super::NameLookup<'_>) -> Result<Vec<usize>, String> {
+        let items = names(ids);
+        super::answer(line, &items, &[], true, Words::for_list(&items, by_name))
+    }
+
+    #[test]
+    fn a_list_with_a_name_that_cannot_be_typed_is_picked_by_row_only() {
+        // Typing `trail ` (or its id) must not pick the package named `trail`.
+        let listed = npm(&["trail", "trail "]);
+        for line in ["trail ", "trail", "npm/trail ", "npm/trail", "2 trail"] {
+            let error = pick(line, &listed, &[]).expect_err(line);
+            assert!(error.contains("is not a row number"), "{line:?}: {error}");
+        }
+        assert_eq!(pick("2", &listed, &[]), Ok(vec![1]));
+        assert_eq!(pick("1-2", &listed, &[]), Ok(vec![0, 1]));
+        assert_eq!(pick(" ", &listed, &[false, true]), Ok(vec![1]));
+        assert_eq!(
+            pick(",, ,", &listed, &[]),
+            Err("type at least one number or range".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_parts_of_a_name_with_a_separator_do_not_pick_other_packages() {
+        for name in ["a b", "a,b", "a\u{a0}b", "a\tb"] {
+            let listed = npm(&["a", "b", name]);
+            for line in [name, "a", "b", &format!("npm/{name}")] {
+                assert!(pick(line, &listed, &[]).is_err(), "{name:?}: {line:?} is refused");
+            }
+            assert_eq!(pick("3", &listed, &[]), Ok(vec![2]), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn a_name_shown_differently_from_how_it_reads_makes_the_list_rows_only() {
+        // Edge or inner whitespace, a comma, and anything the list shows escaped.
+        for name in [
+            " lead",
+            "trail ",
+            "\u{a0}nbsp",
+            "in\u{3000}side",
+            "a,b",
+            "bell\u{7}",
+            "quo\"te",
+            "back\\slash",
+        ] {
+            let listed = npm(&["ok", name]);
+            assert!(pick("ok", &listed, &[]).is_err(), "{name:?}");
+            assert_eq!(pick("1", &listed, &[]), Ok(vec![0]), "{name:?}");
+        }
+        for name in ["é", "@scope/pkg", "a-b", "a.b_c", "1-2"] {
+            let listed = npm(&["ok", name]);
+            assert_eq!(pick("ok", &listed, &[]), Ok(vec![0]), "{name:?} can be typed");
+        }
+    }
+
+    #[test]
+    fn in_a_rows_only_list_a_number_is_a_row_even_when_a_package_has_that_name() {
+        // Rows: `2`, `1`, `a b`.
+        let listed = npm(&["2", "1", "a b"]);
+        assert_eq!(pick("1", &listed, &[]), Ok(vec![0]));
+        assert_eq!(pick("2-3", &listed, &[]), Ok(vec![1, 2]));
+        assert!(pick("npm/1", &listed, &[]).is_err());
+    }
+
+    #[test]
+    fn a_rows_only_single_pick_ignores_the_name_lookup() {
+        // The product question resolves names its own way; a row is still a row.
+        let lookup = |word: &str| (word == "tool" || word == "1").then_some(Ok(1));
+        assert!(pick_one("tool", &["cargo/a b", "cargo/tool"], &lookup).is_err());
+        assert_eq!(pick_one("1", &["cargo/a b", "cargo/tool"], &lookup), Ok(vec![0]));
+        assert_eq!(pick_one("2", &["cargo/a b", "cargo/tool"], &lookup), Ok(vec![1]));
+        assert_eq!(pick_one("1", &["cargo/app", "cargo/tool"], &lookup), Ok(vec![1]));
     }
 
     #[test]

@@ -51,6 +51,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         wizard = true;
     } else {
         // Non-interactive mode (flags supplied via CLI or agent)
+        let mut given = std::collections::HashSet::with_capacity(args.packages.len());
         for pkg_str in args.packages {
             let (name, sev_str) = pkg_str
                 .rsplit_once(':')
@@ -65,8 +66,9 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 .map_err(callisto_graph::GraphError::Config)?;
             let resolved = ws.identity.resolve(name)?;
 
+            // Keyed by the package each selector resolves to, so two ids of one package are one package twice.
             let package = resolved.display_name();
-            if entries.iter().any(|e: &Entry| e.name == package) {
+            if !given.insert(resolved) {
                 return Err(CliError::AddDuplicatePackage {
                     package: name.to_owned(),
                 });

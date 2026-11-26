@@ -191,6 +191,60 @@ fn write_refuses_a_name_given_twice() {
     );
 }
 
+/// The first repeat is refused wherever it falls, and a name refused earlier wins over a later repeat.
+#[test]
+fn write_refuses_the_first_repeat_in_entry_order() {
+    for (names, index, name) in [
+        (&["a", "a", "b", "c"][..], 1, "a"),
+        (&["a", "b", "c", "b", "a"][..], 3, "b"),
+        (&["a", "b", "c", "c"][..], 3, "c"),
+        (&["a", "bad\nname", "a"][..], 1, "bad\nname"),
+        (&["a", "b", "a", "bad\nname"][..], 2, "a"),
+    ] {
+        let changeset = cs(names.iter().map(|name| (*name, Severity::Patch)).collect(), "Summary.");
+        assert_eq!(
+            write_changeset(&changeset).unwrap_err(),
+            WriteError::NameNotRepresentable {
+                index,
+                name: name.to_string()
+            },
+            "{names:?}"
+        );
+    }
+}
+
+/// Many distinct names, quoted and bare, are written in entry order and read back unchanged.
+#[test]
+fn many_distinct_names_are_written_in_order_and_read_back_unchanged() {
+    let names: Vec<String> = (0..20_000)
+        .map(|n| {
+            if n % 2 == 0 {
+                format!("pkg-{n:05}")
+            } else {
+                format!("pkg {n:05} ")
+            }
+        })
+        .collect();
+    let changeset = Changeset {
+        entries: names
+            .iter()
+            .rev()
+            .map(|name| Entry {
+                name: name.clone(),
+                severity: Severity::Minor,
+            })
+            .collect(),
+        summary: "Summary.".to_string(),
+    };
+    let written = write_changeset(&changeset).unwrap();
+    assert!(
+        written.starts_with("---\n\"pkg 19999 \": minor\npkg-19998: minor\n"),
+        "{}",
+        &written[..80]
+    );
+    assert_eq!(parse_changeset(&written).unwrap(), changeset);
+}
+
 /// Every whitespace character the reader trims from a bare name is kept by quoting it, as are delimiters.
 #[test]
 fn names_with_boundary_whitespace_or_delimiters_read_back_unchanged() {
