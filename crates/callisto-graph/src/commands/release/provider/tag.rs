@@ -1,15 +1,17 @@
 //! The tag role: a local annotated tag plus the push that makes it remote.
 
-use callisto_model::vcs::{GitAccess, GitRemote, RemoteTag, TagSignPolicy, VcsError};
+use std::path::Path;
+
+use callisto_model::vcs::{GitAccess, TagSignPolicy};
 use callisto_model::{
-    CommandError, CommitSha, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause,
+    CommandRunner, CommitSha, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause,
     ProviderObservationV1, TagName,
 };
 
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
 
-use super::policy::{self, programs, timeouts, Attempt};
+use super::policy::{self, programs, run_observation, timeouts, Attempt};
 use super::{
     confirmed_evidence, wrong_role, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest,
     ReleaseProvider, TagOperation,
@@ -71,8 +73,8 @@ impl ReleaseProvider for TagProvider {
                 effect.permit,
             )?;
         }
-        let git = GitAccess::new(context.root(), context.runner());
-        push_tag(&git, context.checked_git_remote()?, operation)?;
+        let remote_endpoint = context.checked_git_remote()?.endpoint.clone();
+        push_tag(context.runner(), context.root(), &remote_endpoint, operation)?;
         confirmed_evidence(
             tag_observation(context, operation)?,
             request.id,
@@ -85,9 +87,17 @@ impl ReleaseProvider for TagProvider {
 /// differ from every branch tip.
 const WORKFLOW_GUARD_REFUSAL: &str = "refusing to allow a GitHub App to create or update workflow";
 
-fn push_tag(git: &GitAccess<'_>, remote: &GitRemote, operation: &TagOperation) -> Result<(), GraphError> {
-    let pushed = git.push_tag(remote, &operation.name, timeouts::GIT_PUSH)?;
-    if pushed.success() {
+fn push_tag(
+    runner: &dyn CommandRunner,
+    root: &Path,
+    endpoint: &str,
+    operation: &TagOperation,
+) -> Result<(), GraphError> {
+    // A bare name is ambiguous when a branch shares it.
+    let refspec = format!("refs/tags/{0}:refs/tags/{0}", operation.name.as_str());
+    let push_args = ["push", endpoint, refspec.as_str()];
+    let pushed = runner.run_with_timeout(programs::GIT, &push_args, root, timeouts::GIT_PUSH)?;
+    if pushed.exit_code == Some(0) {
         return Ok(());
     }
     if pushed.stderr.contains(WORKFLOW_GUARD_REFUSAL) {
@@ -98,11 +108,7 @@ fn push_tag(git: &GitAccess<'_>, remote: &GitRemote, operation: &TagOperation) -
     }
     Err(GraphError::ReleaseCommand {
         program: programs::GIT.to_string(),
-        args: vec![
-            "push".to_owned(),
-            remote.name().to_owned(),
-            format!("refs/tags/{0}:refs/tags/{0}", operation.name),
-        ],
+        args: push_args.iter().map(ToString::to_string).collect(),
         failure: CommandFailure::NonZeroExit {
             exit_code: pushed.exit_code,
             stderr: pushed.stderr,
@@ -163,22 +169,70 @@ fn observed_remote_tag(
     context: &ProviderContext<'_>,
     name: &TagName,
 ) -> Result<Attempt<RemoteTagObservation>, GraphError> {
-    let remote = context.checked_git_remote()?;
-    let git = GitAccess::new(context.root(), context.runner());
-    match git.remote_tags(remote, &[name], timeouts::GIT_LS_REMOTE) {
-        Ok(Some(tags)) => Ok(Attempt::Settled(match tags.get(name) {
-            None => RemoteTagObservation::Absent,
-            Some(RemoteTag::Annotated { commit }) => RemoteTagObservation::Annotated { target: commit.clone() },
-            Some(RemoteTag::Lightweight { .. }) => RemoteTagObservation::Unannotated,
-        })),
-        Ok(None) | Err(VcsError::Command(CommandError::TimedOut { .. } | CommandError::Io { .. })) => {
-            Ok(Attempt::Transient {
+    let endpoint = context.checked_git_remote()?.endpoint.clone();
+    let reference = format!("refs/tags/{name}");
+    // The peeled ref resolves an annotated tag to its commit; a lightweight
+    // tag has no peeled line at all.
+    let peeled = format!("{reference}^{{}}");
+    let args = ["ls-remote", endpoint.as_str(), reference.as_str(), peeled.as_str()];
+    let observed = match run_observation(
+        context.runner(),
+        programs::GIT,
+        &args,
+        context.root(),
+        timeouts::GIT_LS_REMOTE,
+        true,
+    )? {
+        Ok(observed) => observed,
+        Err(_unavailable) => {
+            return Ok(Attempt::Transient {
                 value: RemoteTagObservation::Indeterminate,
                 retry_after: None,
             })
         }
-        Err(error) => Err(error.into()),
+    };
+    if observed.exit_code != Some(0) {
+        return Ok(Attempt::Transient {
+            value: RemoteTagObservation::Indeterminate,
+            retry_after: None,
+        });
     }
+    classify_ls_remote(&observed.stdout, &reference, &peeled, &args).map(Attempt::Settled)
+}
+
+/// Reads `ls-remote` output for `reference` and its peeled `^{}` form.
+fn classify_ls_remote(
+    stdout: &str,
+    reference: &str,
+    peeled: &str,
+    args: &[&str],
+) -> Result<RemoteTagObservation, GraphError> {
+    let mut tag_object = None;
+    let mut peeled_commit = None;
+    for line in stdout.lines() {
+        let Some((sha, found)) = line.split_once('\t') else {
+            continue;
+        };
+        match found.trim() {
+            found if found == peeled => peeled_commit = Some(sha),
+            found if found == reference => tag_object = Some(sha),
+            _ => {}
+        }
+    }
+    let Some(sha) = peeled_commit.or(tag_object) else {
+        return Ok(RemoteTagObservation::Absent);
+    };
+    if peeled_commit.is_none() {
+        return Ok(RemoteTagObservation::Unannotated);
+    }
+    let target = CommitSha::parse(sha.trim()).map_err(|error| GraphError::ReleaseCommand {
+        program: programs::GIT.to_string(),
+        args: args.iter().map(ToString::to_string).collect(),
+        failure: CommandFailure::MalformedOutput {
+            detail: error.to_string(),
+        },
+    })?;
+    Ok(RemoteTagObservation::Annotated { target })
 }
 
 fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<LocalTagObservation, GraphError> {
@@ -234,18 +288,12 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
 }
 
 #[cfg(test)]
+mod native_remote_tests;
+
+#[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use callisto_model::CommandRunner;
-
     use super::super::loopback::fixtures;
     use super::*;
-
-    /// `git remote -v` for an `origin` whose fetch and push URL are both `url`.
-    fn remote_v(url: &str) -> String {
-        format!("origin\t{url} (fetch)\norigin\t{url} (push)\n")
-    }
 
     /// Delegates local git plumbing to a real repo at `root`, but scripts `remote`/`ls-remote` for test control.
     struct LocalRepoRemoteScript {
@@ -264,7 +312,7 @@ mod tests {
             match args.first() {
                 Some(&"remote") => Ok(callisto_model::CommandOutput {
                     exit_code: Some(0),
-                    stdout: remote_v(self.url),
+                    stdout: self.url.to_owned(),
                     stderr: String::new(),
                 }),
                 Some(&"ls-remote") => Ok(callisto_model::CommandOutput {
@@ -313,11 +361,12 @@ mod tests {
         let mut operation = local_annotated_tag_operation(dir.path(), "callisto@0.8.0", "operation's own message");
         operation.annotation = "a completely different message than the local tag carries".to_owned();
 
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
         let runner = LocalRepoRemoteScript {
             url: "https://github.com/orin-dx/callisto",
             ls_remote_stdout: fixtures::LS_REMOTE_ABSENT,
         };
-        let remote = crate::commands::release::binding::prepared_git_remote(dir.path(), &runner).unwrap();
         let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
 
         assert_eq!(
@@ -339,11 +388,12 @@ mod tests {
             "Release callisto@0.8.0\n\nhand-written notes\n\n-----BEGIN PGP SIGNATURE-----\nAAAA\n-----END PGP SIGNATURE-----",
         );
 
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
         let runner = LocalRepoRemoteScript {
             url: "https://github.com/orin-dx/callisto",
             ls_remote_stdout: fixtures::LS_REMOTE_ABSENT,
         };
-        let remote = crate::commands::release::binding::prepared_git_remote(dir.path(), &runner).unwrap();
         let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
 
         assert_eq!(
@@ -367,11 +417,12 @@ mod tests {
             annotation: "Release callisto@0.8.0".to_owned(),
         };
 
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
         let runner = LocalRepoRemoteScript {
             url: "https://github.com/orin-dx/callisto",
             ls_remote_stdout: fixtures::LS_REMOTE_ABSENT,
         };
-        let remote = crate::commands::release::binding::prepared_git_remote(dir.path(), &runner).unwrap();
         let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
 
         assert_eq!(
@@ -393,11 +444,12 @@ mod tests {
             target: CommitSha::parse("caf945cc9d5a11a71c57f419d1a73d0627c1756b").unwrap(),
             annotation: "a message that has nothing to do with the remote tag's own message".to_owned(),
         };
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
         let runner = LocalRepoRemoteScript {
             url: "https://github.com/orin-dx/callisto",
             ls_remote_stdout: fixtures::LS_REMOTE_ANNOTATED,
         };
-        let remote = crate::commands::release::binding::prepared_git_remote(dir.path(), &runner).unwrap();
         let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
 
         assert_eq!(
@@ -410,18 +462,10 @@ mod tests {
         );
     }
 
-    fn classify(captured: &'static str, tag: &str) -> Result<RemoteTagObservation, GraphError> {
-        let runner = LocalRepoRemoteScript {
-            url: "https://github.com/orin-dx/callisto",
-            ls_remote_stdout: captured,
-        };
-        let root = std::env::temp_dir();
-        let remote = crate::commands::release::binding::prepared_git_remote(&root, &runner).unwrap();
-        let context = ProviderContext::new(&root, &runner, Some(&remote));
-        match observed_remote_tag(&context, &TagName::new_unchecked(tag.to_owned()))? {
-            Attempt::Settled(observed) => Ok(observed),
-            Attempt::Transient { .. } => panic!("a clean ls-remote settles"),
-        }
+    fn classify(captured: &str, tag: &str) -> Result<RemoteTagObservation, GraphError> {
+        let reference = format!("refs/tags/{tag}");
+        let peeled = format!("{reference}^{{}}");
+        classify_ls_remote(captured, &reference, &peeled, &["ls-remote"])
     }
 
     #[test]
@@ -450,12 +494,15 @@ mod tests {
         );
         let garbled = fixtures::LS_REMOTE_ANNOTATED.replace("caf945cc9d5a11a71c57f419d1a73d0627c1756b", "not-a-sha");
         assert!(matches!(
-            classify(garbled.leak(), "callisto-changelog@0.3.1"),
-            Err(GraphError::Vcs(VcsError::InvalidCommitSha { .. }))
+            classify(&garbled, "callisto-changelog@0.3.1"),
+            Err(GraphError::ReleaseCommand {
+                failure: CommandFailure::MalformedOutput { .. },
+                ..
+            })
         ));
     }
 
-    /// Answers `git remote -v` deterministically, then hands back one scripted `ls-remote` result per call.
+    /// Answers `git remote get-url` deterministically, then hands back one scripted `ls-remote` result per call.
     struct FlakyLsRemote {
         url: &'static str,
         results: std::sync::Mutex<
@@ -474,7 +521,7 @@ mod tests {
             if args.first() == Some(&"remote") {
                 return Ok(callisto_model::CommandOutput {
                     exit_code: Some(0),
-                    stdout: remote_v(self.url),
+                    stdout: self.url.to_owned(),
                     stderr: String::new(),
                 });
             }
@@ -486,6 +533,8 @@ mod tests {
     /// A `git ls-remote` that times out once must retry and settle, not abort the whole observation with a hard error.
     #[test]
     fn observed_remote_tag_retries_past_a_timed_out_ls_remote() {
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
         let runner = FlakyLsRemote {
             url: "https://github.com/orin-dx/callisto",
             results: std::sync::Mutex::new(
@@ -505,7 +554,6 @@ mod tests {
         };
         let sleeper = policy::tests::RecordingSleeper::new();
         let root = std::env::temp_dir();
-        let remote = crate::commands::release::binding::prepared_git_remote(&root, &runner).unwrap();
         let context = ProviderContext::new(&root, &runner, Some(&remote)).with_sleeper(&sleeper);
         let name = TagName::new_unchecked("callisto-no-such-tag".to_owned());
         let result = policy::retry_observation(context.sleeper(), || observed_remote_tag(&context, &name));
@@ -534,7 +582,7 @@ mod tests {
                 stderr: String::new(),
             };
             match args.first() {
-                Some(&"remote") => Ok(ok(&remote_v("https://github.com/orin-dx/callisto"))),
+                Some(&"remote") => Ok(ok("https://github.com/orin-dx/callisto")),
                 Some(&"ls-remote") => Ok(ok(fixtures::LS_REMOTE_ABSENT)),
                 Some(&"rev-parse") => Ok(callisto_model::CommandOutput {
                     exit_code: self.exit_code,
@@ -555,8 +603,9 @@ mod tests {
     }
 
     fn observe_with_rev_parse(script: &ScriptedRevParse) -> Result<ProviderObservationV1, GraphError> {
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
         let root = std::env::temp_dir();
-        let remote = crate::commands::release::binding::prepared_git_remote(&root, script).unwrap();
         let context = ProviderContext::new(&root, script, Some(&remote));
         tag_observation(&context, &tag_operation_at_target())
     }
@@ -637,16 +686,10 @@ mod tests {
     fn a_repository_git_cannot_read_is_a_command_failure_not_an_absent_tag() {
         let dir = tempfile::tempdir().unwrap();
         callisto_fixtures::git::init_repo(dir.path());
-        callisto_fixtures::git::run_git(
-            dir.path(),
-            &["remote", "add", "origin", "https://github.com/orin-dx/callisto"],
-        );
-        let remote = GitAccess::new(dir.path(), &callisto_fixtures::git::GitRunner)
-            .remote(GitRemote::ORIGIN)
-            .unwrap()
-            .unwrap();
         std::fs::write(dir.path().join(".git").join("HEAD"), "garbage\n").unwrap();
         let operation = tag_operation_at_target();
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
         let context = ProviderContext::new(dir.path(), &callisto_fixtures::git::GitRunner, Some(&remote));
         let observed = observed_local_tag(&context, &operation.name);
         assert!(
@@ -671,14 +714,8 @@ mod tests {
         callisto_fixtures::git::init_repo(dir.path());
         callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
         let operation = tag_operation_at_target();
-        callisto_fixtures::git::run_git(
-            dir.path(),
-            &["remote", "add", "origin", "https://github.com/orin-dx/callisto"],
-        );
-        let remote = GitAccess::new(dir.path(), &callisto_fixtures::git::GitRunner)
-            .remote(GitRemote::ORIGIN)
-            .unwrap()
-            .unwrap();
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
         let context = ProviderContext::new(dir.path(), &callisto_fixtures::git::GitRunner, Some(&remote));
         assert_eq!(
             observed_local_tag(&context, &operation.name).unwrap(),
@@ -695,15 +732,7 @@ mod tests {
             args: &[&str],
             _cwd: &Path,
         ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
-            assert_eq!(program, "git");
-            if args.first() == Some(&"remote") {
-                return Ok(callisto_model::CommandOutput {
-                    exit_code: Some(0),
-                    stdout: remote_v("https://github.com/orin-dx/callisto"),
-                    stderr: String::new(),
-                });
-            }
-            assert_eq!(args.first(), Some(&"push"));
+            assert_eq!((program, args.first().copied()), ("git", Some("push")));
             Ok(callisto_model::CommandOutput {
                 exit_code: Some(1),
                 stdout: String::new(),
@@ -734,13 +763,8 @@ mod tests {
             target: CommitSha::parse(String::from_utf8(head.stdout).unwrap().trim()).unwrap(),
             annotation: "v1".to_owned(),
         };
-        callisto_fixtures::git::run_git(
-            dir.path(),
-            &["remote", "add", "origin", remote.path().to_str().unwrap()],
-        );
-        let git = GitAccess::new(dir.path(), &callisto_fixtures::git::GitRunner);
-        let origin = git.remote(GitRemote::ORIGIN).unwrap().unwrap();
-        push_tag(&git, &origin, &operation).unwrap();
+        let endpoint = remote.path().to_str().unwrap();
+        push_tag(&callisto_fixtures::git::GitRunner, dir.path(), endpoint, &operation).unwrap();
 
         let refs = std::process::Command::new("git")
             .args(["for-each-ref", "--format=%(refname)"])
@@ -756,11 +780,13 @@ mod tests {
             target: CommitSha::parse(TARGET).unwrap(),
             annotation: "callisto@0.8.0".to_owned(),
         };
-        let runner = FailedPush(stderr);
-        let root = std::env::temp_dir();
-        let git = GitAccess::new(&root, &runner);
-        let origin = git.remote(GitRemote::ORIGIN).unwrap().unwrap();
-        push_tag(&git, &origin, &operation).unwrap_err()
+        push_tag(
+            &FailedPush(stderr),
+            &std::env::temp_dir(),
+            "https://github.com/orin-dx/callisto",
+            &operation,
+        )
+        .unwrap_err()
     }
 
     #[test]

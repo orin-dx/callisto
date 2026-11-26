@@ -8,8 +8,6 @@ use callisto_model::{
     PublishTarget, TagName, TagTemplate, Version, SCHEMA_VERSION,
 };
 
-use callisto_model::vcs::{GitAccess, GitRemote, RemoteTag, VcsError};
-
 use crate::commands::registry_argv::npm_default_access;
 use crate::commands::release::{
     canonical_root, is_platform_package, optional_git_remote, plan_workspace_release, programs, timeouts,
@@ -101,8 +99,8 @@ pub struct InitFacts {
     pub root: PathBuf,
     pub ecosystems: BTreeSet<Ecosystem>,
     pub packages: Vec<InitPackage>,
-    /// `origin`, or `None` when no `origin` remote is configured.
-    pub origin: Option<GitRemote>,
+    /// Canonical `origin` push URL, or `None` when no `origin` remote is configured.
+    pub origin: Option<String>,
     /// `origin` as a GitHub `owner/repo`, when it is one.
     pub origin_repository: Option<GitHubRepository>,
     /// Non-default tag templates to write, keyed by qualified package id.
@@ -300,8 +298,8 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
         root: root.clone(),
         ecosystems: BTreeSet::new(),
         packages: Vec::new(),
-        origin_repository: origin.as_ref().and_then(GitRemote::github_repository),
-        origin,
+        origin: origin.as_ref().map(|remote| remote.endpoint.clone()),
+        origin_repository: origin.as_ref().and_then(|remote| remote.github_repository.clone()),
         tag_templates,
         has_commit: head.exit_code == Some(0),
         has_platform_packages: false,
@@ -756,17 +754,14 @@ pub struct DefaultBranch {
 
 /// The repository's default branch: local `origin/HEAD`, else a live query of `origin`,
 /// else the branch currently checked out, else `main`.
-pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path, origin: Option<&GitRemote>) -> DefaultBranch {
-    let git = GitAccess::new(root, runner);
-    // A repository with no `origin/HEAD` (a fresh clone, or one built by hand) misses here on the common path.
-    if let Some(name) = origin.and_then(|origin| git.remote_head_local(origin)) {
+pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path) -> DefaultBranch {
+    if let Some(name) = local_origin_head(runner, root) {
         return DefaultBranch {
             name,
             source: DefaultBranchSource::OriginHead,
         };
     }
-    // Asking the remote resolves it without a fetch.
-    if let Some(name) = origin.and_then(|origin| git.remote_head_live(origin, timeouts::GIT_LS_REMOTE)) {
+    if let Some(name) = remote_origin_head(runner, root) {
         return DefaultBranch {
             name,
             source: DefaultBranchSource::RemoteHead,
@@ -782,6 +777,44 @@ pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path, origin: Option<
         name: BranchName::fallback(),
         source: DefaultBranchSource::Fallback,
     }
+}
+
+// A repository with no `origin/HEAD` (a fresh clone, or one built by hand, as in tests)
+// fails this on the common path, not just exceptionally.
+fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
+    let output = runner
+        .run_quiet(
+            programs::GIT,
+            &["symbolic-ref", "refs/remotes/origin/HEAD"],
+            root,
+            timeouts::LOCAL_GIT,
+        )
+        .ok()?;
+    if output.exit_code != Some(0) {
+        return None;
+    }
+    BranchName::from_remote_ref(&output.stdout, "origin")
+}
+
+// A shallow or hand-built clone (or one `remote set-head` never ran on) has no local
+// `origin/HEAD`; asking the remote directly still resolves it without a fetch.
+fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<BranchName> {
+    let output = runner
+        .run_quiet(
+            programs::GIT,
+            &["ls-remote", "--symref", "origin", "HEAD"],
+            root,
+            timeouts::GIT_LS_REMOTE,
+        )
+        .ok()?;
+    if output.exit_code != Some(0) {
+        return None;
+    }
+    // Output line shape: "ref: refs/heads/<branch>\tHEAD".
+    output.stdout.lines().find_map(|line| {
+        let (target, name) = line.strip_prefix("ref: ")?.split_once('\t')?;
+        (name.trim() == "HEAD").then(|| BranchName::from_full_ref(target))?
+    })
 }
 
 // No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch
@@ -895,25 +928,41 @@ pub fn resolve_release_commit<R: CommandRunner>(
     version: &semver::Version,
 ) -> Result<CommitSha, GraphError> {
     const ENDPOINT: &str = "https://github.com/orin-dx/callisto.git";
-    let unresolved = || GraphError::InitWorkflowVersionUnresolved {
-        version: version.to_string(),
-    };
-    let tag = TagName::parse(&format!("callisto@{version}"))
-        .expect("a semver version holds only characters a Git ref name allows");
+    let reference = format!("refs/tags/callisto@{version}");
+    // The peeled ref resolves an annotated tag to its commit; a lightweight
+    // tag has no peeled line, and its own SHA already is the commit.
+    let peeled = format!("{reference}^{{}}");
     // A transport-level failure (git not found, timed out, ...) keeps its
     // real cause via `GraphError::Command`; only a clean run that still
     // can't find the tag becomes `InitWorkflowVersionUnresolved`.
-    let tags = match GitAccess::new(root, runner).url_tags(ENDPOINT, &[&tag], timeouts::GIT_LS_REMOTE) {
-        Ok(tags) => tags,
-        Err(VcsError::Command(error)) => return Err(GraphError::Command(error)),
-        // Output git printed but Callisto cannot read proves no tag either.
-        Err(_) => None,
+    let output = runner.run_quiet(
+        programs::GIT,
+        &["ls-remote", ENDPOINT, &reference, &peeled],
+        root,
+        timeouts::GIT_LS_REMOTE,
+    )?;
+    let unresolved = || GraphError::InitWorkflowVersionUnresolved {
+        version: version.to_string(),
     };
-    // A lightweight tag's own object already is the commit.
-    match tags.as_ref().and_then(|tags| tags.get(&tag)) {
-        Some(RemoteTag::Annotated { commit } | RemoteTag::Lightweight { object: commit }) => Ok(commit.clone()),
-        None => Err(unresolved()),
+    if output.exit_code != Some(0) {
+        return Err(unresolved());
     }
+    let mut tag_object = None;
+    let mut commit = None;
+    for line in output.stdout.lines() {
+        let Some((sha, found)) = line.split_once('\t') else {
+            continue;
+        };
+        match found.trim() {
+            found if found == peeled => commit = Some(sha.trim().to_owned()),
+            found if found == reference => tag_object = Some(sha.trim().to_owned()),
+            _ => {}
+        }
+    }
+    commit
+        .or(tag_object)
+        .and_then(|sha| CommitSha::parse(&sha).ok())
+        .ok_or_else(unresolved)
 }
 
 /// The repository secrets the generated workflow reads, one per registry ecosystem the workspace has.

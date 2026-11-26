@@ -53,7 +53,7 @@ pub(crate) fn split_routes_digest(
 }
 
 /// Maps a `url::ParseError` to a specific, static diagnostic reason for
-/// [`GraphError::UnsafeRegistryBinding`],
+/// [`GraphError::UnsafeRegistryBinding`]/[`GraphError::UnsafeGitRemote`],
 /// rather than discarding it behind one generic "invalid URL" message.
 pub(crate) fn url_parse_error_reason(error: url::ParseError) -> &'static str {
     match error {

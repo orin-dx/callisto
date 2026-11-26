@@ -258,7 +258,7 @@ fn interactive_run_for_one_package_skips_versioning_and_defaults_the_workflow_to
     let before = run.prompter.output_at_first_prompt.clone().unwrap();
     for fact in [
         "ecosystems: cargo",
-        "origin: example/tools on GitHub",
+        "origin: https://github.com/example/tools.git",
         "cargo/core 1.0.0 (last tag: none)",
     ] {
         assert!(before.contains(fact), "`{fact}` before the first question:\n{before}");

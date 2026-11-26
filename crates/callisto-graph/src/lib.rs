@@ -210,7 +210,7 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
             return Ok(Some(configured));
         }
         Ok(crate::commands::release::optional_git_remote(&self.root, self.runner)?
-            .and_then(|remote| remote.github_repository()))
+            .and_then(|remote| remote.github_repository))
     }
 
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {

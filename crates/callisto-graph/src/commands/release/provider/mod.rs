@@ -16,9 +16,8 @@ use callisto_model::{
 use crate::error::{ReleasePreconditionRequirement, RemoteConflict};
 use crate::GraphError;
 
-use super::binding::{recheck_git_remote, PreparedRegistryBinding};
+use super::binding::{recheck_git_remote, PreparedGitRemote, PreparedRegistryBinding};
 use super::release_artifacts::VerifiedArtifactManifest;
-use callisto_model::vcs::GitRemote;
 
 pub(crate) use pypi_files::{seal_distributions, PypiFileSets};
 pub(crate) use registry::{build_python_into, pack_npm_into, package_cargo_workspace};
@@ -254,7 +253,7 @@ pub(crate) struct ProviderContext<'a> {
     route: PublishRoute,
     root: &'a Path,
     runner: &'a dyn CommandRunner,
-    git_remote: Option<&'a GitRemote>,
+    git_remote: Option<&'a PreparedGitRemote>,
     sleeper: &'a dyn policy::Sleeper,
     /// The Python file sets built so far in this run.
     file_sets: Option<&'a PypiFileSets>,
@@ -263,7 +262,11 @@ pub(crate) struct ProviderContext<'a> {
 }
 
 impl<'a> ProviderContext<'a> {
-    pub(crate) fn new(root: &'a Path, runner: &'a dyn CommandRunner, git_remote: Option<&'a GitRemote>) -> Self {
+    pub(crate) fn new(
+        root: &'a Path,
+        runner: &'a dyn CommandRunner,
+        git_remote: Option<&'a PreparedGitRemote>,
+    ) -> Self {
         ProviderContext {
             route: PublishRoute::Local,
             root,
@@ -322,13 +325,12 @@ impl<'a> ProviderContext<'a> {
         self.sleeper
     }
 
-    /// The `host/owner/repo` of the origin the release is bound to, if one is prepared and hosted. Not re-checked: it
-    /// only labels a warning.
-    pub(crate) fn origin_identity(&self) -> Option<String> {
-        self.git_remote.and_then(GitRemote::repository_identity)
+    /// The origin URL the release is bound to, if one is prepared. Not re-checked: it only labels a warning.
+    pub(crate) fn origin_endpoint(&self) -> Option<&'a str> {
+        self.git_remote.map(|remote| remote.endpoint.as_str())
     }
 
-    pub(crate) fn checked_git_remote(&self) -> Result<&'a GitRemote, GraphError> {
+    pub(crate) fn checked_git_remote(&self) -> Result<&'a PreparedGitRemote, GraphError> {
         let expected = self.git_remote.ok_or(GraphError::ReleasePreconditionUnmet {
             requirement: ReleasePreconditionRequirement::GitRemotePrepared,
         })?;
@@ -340,7 +342,8 @@ impl<'a> ProviderContext<'a> {
     pub(crate) fn github_repository_slug(&self) -> Result<String, GraphError> {
         Ok(self
             .checked_git_remote()?
-            .github_repository()
+            .github_repository
+            .as_ref()
             .ok_or(GraphError::ReleasePreconditionUnmet {
                 requirement: ReleasePreconditionRequirement::GitHubRemote,
             })?

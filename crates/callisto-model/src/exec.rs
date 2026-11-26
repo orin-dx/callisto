@@ -7,7 +7,7 @@ use std::time::Duration;
 /// [`CommandError::IncompatibleVersion`]'s message can never drift apart.
 pub const REQUIRED_GIT: &str = ">=2.20";
 
-/// The deadline for purely local git reads (`rev-parse`, `for-each-ref`, `remote -v`, `diff --cached`).
+/// The deadline for purely local git reads (`rev-parse`, `for-each-ref`, `remote get-url`, `diff --cached`).
 pub const LOCAL_GIT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Trait for executing subprocess commands.

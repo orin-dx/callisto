@@ -609,11 +609,7 @@ mod tests {
             let subcommand = args.first().copied().unwrap_or_default();
             self.0.lock().unwrap().push(subcommand.to_owned());
             let (exit_code, stdout, stderr) = match subcommand {
-                "remote" => (
-                    0,
-                    "origin\thttps://github.com/orin-dx/callisto (fetch)\norigin\thttps://github.com/orin-dx/callisto (push)\n",
-                    "",
-                ),
+                "remote" => (0, "https://github.com/orin-dx/callisto", ""),
                 "rev-parse" => (128, "", "fatal: not a git repository\n"),
                 _ => (0, "", ""),
             };

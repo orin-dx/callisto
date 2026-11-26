@@ -5,12 +5,17 @@
 
 use std::path::Path;
 
-use callisto_model::vcs::{GitAccess, GitRemote};
-use callisto_model::{CommandRunner, Ecosystem, PackageId, PublishTarget, RegistryBindingDigest, RegistryKey};
+use callisto_model::{
+    CanonicalTranscript, CommandRunner, Ecosystem, GitHubRepository, GitHubRepositoryParseError, PackageId,
+    PublishTarget, RegistryBindingDigest, RegistryKey, SemanticInputDigest,
+};
 
-use crate::registry_endpoint::{canonical_registry_url, split_routes_digest, RegistryBindingV1};
+use crate::registry_endpoint::{
+    canonical_registry_url, split_routes_digest, url_parse_error_reason, RegistryBindingV1,
+};
 use crate::{DependencyResolver, GraphError, Workspace};
 
+use super::provider::policy::{programs, timeouts};
 use super::StaleReason;
 
 /// Credential-free, canonical registry routing. `endpoint` is populated only
@@ -34,6 +39,16 @@ impl PreparedRegistryBinding {
     pub(crate) fn upload_endpoint(&self) -> Option<&str> {
         self.publish_endpoint.as_deref().or(self.endpoint.as_deref())
     }
+}
+
+/// Immutable, credential-free destination for Git effects. Its canonical
+/// digest is included in each tag-producing package fingerprint; the URL is
+/// retained only in the validated, non-serializable capability.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PreparedGitRemote {
+    pub(crate) endpoint: String,
+    pub(crate) identity: SemanticInputDigest,
+    pub(crate) github_repository: Option<GitHubRepository>,
 }
 
 /// The single registry-trust validator: resolves `target`'s own registry key, rejects a
@@ -112,37 +127,186 @@ pub(crate) fn canonical_registry_binding(registry: &str, raw: &str) -> Result<Re
     })
 }
 
-/// `origin`, as git resolves it. Release intents record a digest of its URLs, and a digest of a guessable password
-/// can be recovered by guessing, so a URL that carries credentials is refused.
-pub(crate) fn optional_git_remote(root: &Path, runner: &dyn CommandRunner) -> Result<Option<GitRemote>, GraphError> {
-    let remote = GitAccess::new(root, runner).remote(GitRemote::ORIGIN)?;
-    if remote.as_ref().is_some_and(GitRemote::embeds_credentials) {
+/// Maps a [`GitHubRepositoryParseError`] to a specific, static diagnostic
+/// reason for [`GraphError::UnsafeGitRemote`], rather than discarding it
+/// behind one generic message for every distinct parse failure.
+fn github_repository_parse_error_reason(error: &GitHubRepositoryParseError) -> &'static str {
+    match error {
+        GitHubRepositoryParseError::MissingSeparator { .. } => "GitHub remote path must be in owner/repo form",
+        GitHubRepositoryParseError::TooManyParts { .. } => "GitHub remote path has more than one `/`",
+        GitHubRepositoryParseError::InvalidOwner { .. } => "GitHub owner name is invalid",
+        GitHubRepositoryParseError::InvalidRepo { .. } => "GitHub repository name is invalid",
+        GitHubRepositoryParseError::DotComponent { .. } => "GitHub owner or repository is a dot component",
+        #[allow(unreachable_patterns)]
+        _ => "GitHub owner or repository name is invalid",
+    }
+}
+
+pub(crate) fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Result<PreparedGitRemote, GraphError> {
+    // A missing/unset `origin` is an answer this call interprets itself (into
+    // `UnsafeGitRemote`), not an unexpected failure worth echoing git's own
+    // "No such remote" to the terminal -- so this is a quiet probe.
+    let output = runner.run_quiet(
+        programs::GIT,
+        &["remote", "get-url", "--push", programs::GIT_REMOTE],
+        root,
+        timeouts::LOCAL_GIT,
+    )?;
+    if output.exit_code != Some(0) {
         return Err(GraphError::UnsafeGitRemote {
-            reason: "a fetch or push URL of origin carries credentials",
+            reason: "origin must have a push URL",
         });
     }
-    Ok(remote)
+    canonical_git_remote(printed_url(&output.stdout))
 }
 
-/// [`optional_git_remote`] for a run that pushes tags, which needs `origin`.
-pub(crate) fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Result<GitRemote, GraphError> {
-    optional_git_remote(root, runner)?.ok_or(GraphError::UnsafeGitRemote {
-        reason: "origin is not configured",
-    })
+/// `origin`'s canonical push URL, or `None` when `origin` has no push URL.
+pub(crate) fn optional_git_remote(
+    root: &Path,
+    runner: &dyn CommandRunner,
+) -> Result<Option<PreparedGitRemote>, GraphError> {
+    // A repository with no `origin` is an expected, common case here (e.g.
+    // before `init` adds one), not a failure -- probe quietly so git's own
+    // "error: No such remote 'origin'" never reaches the terminal.
+    let output = runner.run_quiet(
+        programs::GIT,
+        &["remote", "get-url", "--push", programs::GIT_REMOTE],
+        root,
+        timeouts::LOCAL_GIT,
+    )?;
+    if output.exit_code != Some(0) {
+        return Ok(None);
+    }
+    canonical_git_remote(printed_url(&output.stdout)).map(Some)
 }
 
-/// Re-reads `origin` and refuses unless git still resolves it to exactly the URLs the intent was validated against.
+/// Re-reads `origin`'s push URL and refuses unless it is still exactly the
+/// remote the intent was validated against.
 pub(crate) fn recheck_git_remote(
     root: &Path,
     runner: &dyn CommandRunner,
-    expected: &GitRemote,
+    expected: &PreparedGitRemote,
 ) -> Result<(), GraphError> {
-    if prepared_git_remote(root, runner)?.fingerprint() != expected.fingerprint() {
+    if prepared_git_remote(root, runner)? != *expected {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::git_remote_changed(),
         });
     }
     Ok(())
+}
+
+/// The URL `git remote get-url` printed, without the newline that ends it.
+fn printed_url(stdout: &str) -> &str {
+    stdout.strip_suffix('\n').unwrap_or(stdout)
+}
+
+pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
+    // Git keeps a line break as part of the URL, where `url::Url` would drop it.
+    if raw.contains(['\r', '\n']) {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "URL contains a line break",
+        });
+    }
+    let raw = raw.trim();
+    let ssh_url = if raw.starts_with("git@") && !raw.contains("//") {
+        let (host, path) =
+            raw.strip_prefix("git@")
+                .and_then(|value| value.split_once(':'))
+                .ok_or(GraphError::UnsafeGitRemote {
+                    reason: "invalid SSH remote syntax",
+                })?;
+        format!("ssh://git@{host}/{path}")
+    } else {
+        raw.to_string()
+    };
+    let parsed = url::Url::parse(&ssh_url).map_err(|error| GraphError::UnsafeGitRemote {
+        reason: url_parse_error_reason(error),
+    })?;
+    if parsed.cannot_be_a_base() || parsed.host_str().is_none() {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "URL must have an authority",
+        });
+    }
+    if !matches!(parsed.scheme(), "https" | "ssh") {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "URL scheme must be HTTPS or SSH",
+        });
+    }
+    if parsed.password().is_some() || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "credentials, query strings, and fragments are forbidden",
+        });
+    }
+    if parsed.scheme() == "https" && !parsed.username().is_empty() {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "HTTPS userinfo is forbidden",
+        });
+    }
+    if parsed.scheme() == "ssh" && parsed.username() != "git" {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "SSH remotes must use the git account",
+        });
+    }
+    let host = parsed.host_str().expect("validated authority").to_ascii_lowercase();
+    let mut components = parsed.path_segments().ok_or(GraphError::UnsafeGitRemote {
+        reason: "remote path is invalid",
+    })?;
+    let owner = components
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or(GraphError::UnsafeGitRemote {
+            reason: "remote path must name an owner and repository",
+        })?;
+    let repository = components
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or(GraphError::UnsafeGitRemote {
+            reason: "remote path must name an owner and repository",
+        })?;
+    if components.next().is_some() || owner == "." || owner == ".." || repository == "." || repository == ".." {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "remote path must contain exactly an owner and repository",
+        });
+    }
+    let repository = repository.strip_suffix(".git").unwrap_or(repository);
+    if repository.is_empty() {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "repository name is empty",
+        });
+    }
+    let port = parsed.port_or_known_default();
+    let port_text = match (parsed.scheme(), port) {
+        ("https", Some(443)) | ("ssh", Some(22)) | (_, None) => String::new(),
+        (_, Some(port)) => format!(":{port}"),
+    };
+    let endpoint = match parsed.scheme() {
+        "https" => format!("https://{host}{port_text}/{owner}/{repository}.git"),
+        "ssh" => format!("ssh://git@{host}{port_text}/{owner}/{repository}.git"),
+        _ => unreachable!("scheme checked above"),
+    };
+    let mut transcript = CanonicalTranscript::semantic_input_v1();
+    transcript.push_str("gitRemote.scheme", parsed.scheme());
+    transcript.push_str("gitRemote.host", &host);
+    transcript.push_str(
+        "gitRemote.port",
+        &port.map_or_else(String::new, |port| port.to_string()),
+    );
+    transcript.push_str("gitRemote.owner", owner);
+    transcript.push_str("gitRemote.repository", repository);
+    let github_repository = if host == "github.com" {
+        Some(
+            GitHubRepository::parse(&format!("{owner}/{repository}")).map_err(|error| GraphError::UnsafeGitRemote {
+                reason: github_repository_parse_error_reason(&error),
+            })?,
+        )
+    } else {
+        None
+    };
+    Ok(PreparedGitRemote {
+        endpoint,
+        identity: SemanticInputDigest::from_transcript(&transcript),
+        github_repository,
+    })
 }
 
 #[cfg(test)]
@@ -173,8 +337,27 @@ mod tests {
         assert_eq!(explicit.path, "/index");
     }
 
-    /// Answers `git remote -v` with no remotes and records whether the probe went through the live-echoing
-    /// `run_with_timeout` path or the quiet one: a remote read never echoes git's own output.
+    struct RemoteUrl(&'static str);
+    impl callisto_model::CommandRunner for RemoteUrl {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            Ok(callisto_model::CommandOutput {
+                exit_code: Some(if self.0.is_empty() { 2 } else { 0 }),
+                stdout: self.0.to_owned(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    /// Answers `git remote get-url` with a failure (no `origin`) and records
+    /// whether the probe went through the live-echoing `run_with_timeout` path
+    /// or the quiet one -- `prepared_git_remote`/`optional_git_remote` must
+    /// never let git's own "No such remote" reach the terminal for this
+    /// expected, common case.
     struct NoRemote {
         used_live_echo: std::sync::atomic::AtomicBool,
     }
@@ -188,9 +371,9 @@ mod tests {
 
         fn failing_output() -> callisto_model::CommandOutput {
             callisto_model::CommandOutput {
-                exit_code: Some(0),
+                exit_code: Some(2),
                 stdout: String::new(),
-                stderr: String::new(),
+                stderr: "error: No such remote 'origin'".to_string(),
             }
         }
     }
@@ -227,53 +410,6 @@ mod tests {
         }
     }
 
-    /// Answers `git remote -v` with `origin` at the URL held, or with no remotes when it holds none.
-    struct Origin(std::sync::Mutex<&'static str>);
-
-    impl callisto_model::CommandRunner for Origin {
-        fn run(
-            &self,
-            _program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
-            assert_eq!(args, ["remote", "-v"]);
-            let url = *self.0.lock().unwrap();
-            Ok(callisto_model::CommandOutput {
-                exit_code: Some(0),
-                stdout: if url.is_empty() {
-                    String::new()
-                } else {
-                    format!("origin\t{url} (fetch)\norigin\t{url} (push)\n")
-                },
-                stderr: String::new(),
-            })
-        }
-    }
-
-    #[test]
-    fn recheck_reports_a_missing_origin_as_itself_and_moved_urls_as_stale() {
-        let runner = Origin(std::sync::Mutex::new("https://github.com/example/release-fixture.git"));
-        let root = Path::new(".");
-        let expected = prepared_git_remote(root, &runner).unwrap();
-        recheck_git_remote(root, &runner, &expected).unwrap();
-        *runner.0.lock().unwrap() = "https://github.com/example/other.git";
-        assert!(matches!(
-            recheck_git_remote(root, &runner, &expected),
-            Err(GraphError::ReleaseIntentStale { .. })
-        ));
-        *runner.0.lock().unwrap() = "";
-        assert!(matches!(
-            recheck_git_remote(root, &runner, &expected),
-            Err(GraphError::UnsafeGitRemote { .. })
-        ));
-        *runner.0.lock().unwrap() = "https://token@github.com/example/release-fixture.git";
-        assert!(matches!(
-            optional_git_remote(root, &runner),
-            Err(GraphError::UnsafeGitRemote { .. })
-        ));
-    }
-
     #[test]
     fn optional_git_remote_probes_quietly_when_origin_is_missing() {
         let runner = NoRemote::new();
@@ -297,6 +433,37 @@ mod tests {
             !runner.used_live_echo.load(std::sync::atomic::Ordering::SeqCst),
             "prepared_git_remote must probe via run_quiet, not the live-echoing run_with_timeout"
         );
+    }
+
+    #[test]
+    fn recheck_reports_a_unreadable_remote_as_itself_and_a_moved_remote_as_stale() {
+        let expected = canonical_git_remote("https://github.com/example/release-fixture.git").unwrap();
+        let root = Path::new(".");
+        recheck_git_remote(
+            root,
+            &RemoteUrl("https://github.com/example/release-fixture.git"),
+            &expected,
+        )
+        .unwrap();
+        assert!(matches!(
+            recheck_git_remote(root, &RemoteUrl(""), &expected),
+            Err(GraphError::UnsafeGitRemote { .. })
+        ));
+        assert!(matches!(
+            recheck_git_remote(root, &RemoteUrl("https://github.com/example/other.git"), &expected),
+            Err(GraphError::ReleaseIntentStale { .. })
+        ));
+    }
+
+    #[test]
+    fn git_remote_binding_normalizes_credential_free_ssh_and_rejects_credentialed_https() {
+        let ssh = canonical_git_remote("git@GitHub.com:example/release-fixture.git").unwrap();
+        assert_eq!(ssh.endpoint, "ssh://git@github.com/example/release-fixture.git");
+        assert_eq!(
+            ssh.github_repository.as_ref().map(GitHubRepository::as_slug),
+            Some("example/release-fixture".to_string())
+        );
+        assert!(canonical_git_remote("https://token@github.com/example/release-fixture.git").is_err());
     }
 
     #[test]

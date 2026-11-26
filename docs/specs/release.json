@@ -18,7 +18,7 @@
         "Dirty worktree: E267.",
         "Workspace needs the CI route: E239.",
         "Invalid --package, or a snapshot version: E227, E102 or E169.",
-        "Missing origin, or an origin URL with credentials: E132."
+        "Missing or unsafe origin push URL: E132."
       ]
     },
     {
@@ -126,7 +126,7 @@
     },
     {
       "id": "REL-CMD-05",
-      "criterion": "Without an `origin` remote, `--dry-run` prints one stderr note that tag operations are unbound, and `callisto release` fails with E132 before any effect. With neither `forge-repository` nor a GitHub `origin`, `--dry-run` still validates each artifact's owner (E179) and reports every configured asset as an `artifact-without-forge-destination` warning, a diagnostic with no error code, since the asset is bound to no destination.",
+      "criterion": "Without an `origin` push URL, `--dry-run` prints one stderr note that tag operations are unbound, and `callisto release` fails with E132 before any effect. With neither `forge-repository` nor a GitHub `origin`, `--dry-run` still validates each artifact's owner (E179) and reports every configured asset as an `artifact-without-forge-destination` warning, a diagnostic with no error code, since the asset is bound to no destination.",
       "is_error_case": true
     },
     {
@@ -192,7 +192,7 @@
     },
     {
       "id": "REL-AUTH-07",
-      "criterion": "Before each operation, the executor re-checks HEAD, worktree cleanliness and the fetch and push URLs git resolves for `origin` (with `insteadOf`, `pushInsteadOf` and `pushurl` applied). A change stops the run before that operation's effect, with E124 for a moved HEAD or changed `origin` URLs, E132 when `origin` is gone, and E267 for a dirty worktree.",
+      "criterion": "Before each operation, the executor re-checks HEAD, worktree cleanliness and the `origin` push URL. A change stops the run before that operation's effect, with E124 for a moved HEAD or a changed `origin` push URL, E132 when `origin` has lost its push URL, and E267 for a dirty worktree.",
       "is_error_case": true
     },
     {
@@ -245,7 +245,7 @@
     },
     {
       "id": "REL-PUB-05",
-      "criterion": "A `publishConfig.registry` in package.json that does not match the `url` of an npm-kind `[registries]` entry fails with E120. A registry URL that is not `https`, or has userinfo, a query or a fragment, fails with E126. An `origin` fetch or push URL that carries a password, or a user name over HTTP(S), fails with E132; any other URL git accepts, including a local path or `file://`, is used as git resolves it. All three fail before any effect.",
+      "criterion": "A `publishConfig.registry` in package.json that does not match the `url` of an npm-kind `[registries]` entry fails with E120. A registry URL that is not `https`, or has userinfo, a query or a fragment, fails with E126. An `origin` push URL that is not HTTPS or `git@` SSH, that carries credentials, or that contains a line break, fails with E132. All three fail before any effect.",
       "is_error_case": true
     },
     {
@@ -356,7 +356,7 @@
     },
     {
       "id": "REL-GH-01",
-      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to `origin` by name, so git resolves its push URL."
+      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to the `origin` push URL."
     },
     {
       "id": "REL-GH-02",

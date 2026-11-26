@@ -22,13 +22,8 @@ enum StaleKind {
     TrustEvidenceChanged,
     #[error("the re-observed source identity no longer matches what the intent was validated against")]
     SourceIdentityChanged,
-    #[error("git now resolves `origin` to other URLs than the intent was validated against")]
+    #[error("the re-observed Git push remote no longer matches what the intent was validated against")]
     GitRemoteChanged,
-    #[error(
-        "a package's release inputs differ from the intent's: a manifest, publish setting or `origin`'s URLs changed, or \
-         Callisto 0.22.0 or earlier planned the intent"
-    )]
-    PackageInputsChanged,
     #[error("a fresh derivation from the current workspace no longer matches the intent that was validated")]
     IntentDiffersFromFreshDerivation,
 }
@@ -55,12 +50,6 @@ impl StaleReason {
     fn git_remote_changed() -> Self {
         StaleReason {
             kind: StaleKind::GitRemoteChanged,
-        }
-    }
-
-    fn package_inputs_changed() -> Self {
-        StaleReason {
-            kind: StaleKind::PackageInputsChanged,
         }
     }
 
@@ -1033,38 +1022,6 @@ pub(crate) mod tests {
         let error = validate_release_intent(dir.path(), &locator, &runner, intent)
             .expect_err("a dirty checkout cannot produce Git commit trust evidence");
         assert!(matches!(error, GraphError::Vcs(_)));
-    }
-
-    /// An intent bound to other `origin` URLs, as one planned before the binding changed form is, names its inputs.
-    #[test]
-    fn an_intent_bound_to_another_origin_is_refused_naming_the_package_inputs() {
-        let (dir, runner) = fixture();
-        let locator = crate::IgnoreWalkLocator::new(dir.path());
-        let intent = build_release_intent(
-            dir.path(),
-            &locator,
-            &runner,
-            &decision(),
-            ExecutionTrustProfileV1::GitCommit,
-            None,
-        )
-        .unwrap()
-        .0;
-        callisto_fixtures::git::run_git(
-            dir.path(),
-            &[
-                "remote",
-                "set-url",
-                "--push",
-                "origin",
-                "https://github.com/example/elsewhere.git",
-            ],
-        );
-        let error = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap_err();
-        assert!(
-            matches!(&error, GraphError::ReleaseIntentStale { reason } if reason.to_string().contains("0.22.0 or earlier")),
-            "{error}"
-        );
     }
 
     #[test]

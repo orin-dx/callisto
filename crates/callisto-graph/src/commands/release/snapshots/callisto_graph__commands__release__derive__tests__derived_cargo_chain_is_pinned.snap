@@ -10,7 +10,7 @@ packages:
             name: "a",
         },
         fingerprint: SemanticInputDigest(
-            "a443e3d091631a0209be271cea937fc5d214c7b91ebcd2d6aa15ea560f1c0e6a",
+            "f04c328d5a1d2bfc6ef8fb040c8d6f2123080a4669650699fbab70db2d7642d8",
         ),
     },
     ReleasePackageInputV1 {
@@ -19,7 +19,7 @@ packages:
             name: "b",
         },
         fingerprint: SemanticInputDigest(
-            "a56c93539b2c001ce3f5cd58a5d71dad1004a4459e38d9cbfc4c3c1b412a3d4d",
+            "31fff5f941e399fe3e0441bc3c26e950ca369b32c7ca7ebf16b5adcf99520606",
         ),
     },
     ReleasePackageInputV1 {
@@ -28,7 +28,7 @@ packages:
             name: "c",
         },
         fingerprint: SemanticInputDigest(
-            "8a1dfe94f163471ee51f5b2cba72fd32fd2a438fd59652ba73291c37d3812be4",
+            "f1195559c49457d54b474e94371e7ced4cda604ed805e1a7d53c1e1e797f6742",
         ),
     },
 ]
