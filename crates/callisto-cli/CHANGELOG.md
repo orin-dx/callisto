@@ -1,5 +1,60 @@
 # callisto-cli
 
+## 0.23.0
+
+_2026-11-26 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.22.0...callisto@0.23.0)_
+
+### Minor Changes
+
+- **setup-callisto always verifies the Callisto release**
+
+  Workflows from `callisto init` install a binary whose release attestation was verified, in the job that holds publish credentials.
+
+  **Breaking:** `setup-callisto` no longer accepts the `verification` input and never falls back to installing from crates.io. It downloads the release archive, runs `gh attestation verify` on it and only then extracts it; a missing platform asset, a failed verification or a missing `gh` fails the step. Remove `verification:` from your workflow. On runners without `gh` or on other CI systems, follow `docs/install-in-ci.md`.
+
+  - Why it matters: the job with `id-token: write` and registry credentials only runs a binary that the release workflow attested.
+  - How to adopt: nothing to change beyond removing `verification:`; GitHub-hosted runners include `gh`.
+  - The `version` input takes `latest`, a release version such as `0.21.0`, or a tag such as `callisto@0.21.0`; other values, such as `callisto-cli@X`, fail the step.
+  - Limits: releases built before the first attested release carry no attestation and cannot be installed by the action.
+- **`callisto add` starts from what you changed**: packages changed since their last release are listed first and marked `*`, so a typical changeset is Enter, pick bumps, type a summary.
+
+  - Package lists work as in `git add -i`: printed once, numbered, then you type numbers, ranges (`1-3`) or package names on one line, and Enter keeps the marked ones.
+    - Names are shown in full, and nothing is redrawn, so any terminal size works.
+    - An answer that names nothing in the list is asked again with the reason.
+    - An exact package name wins over a row number.
+    - When a listed name cannot be typed exactly, such as one with a space or comma, the list says to pick by row number and typed names are asked again.
+    - `init` asks for the product package the same way when several packages build binaries, and accepts any name `--product-package` accepts, such as `tool` for `cargo/tool`.
+  - Before writing, a review lists each package's bump and the summary; afterwards `add` prints the next step.
+  - Leave the summary empty to write a longer one, with bullets, in `$VISUAL` or `$EDITOR`. If that editor cannot start, `add` warns and asks for the summary inline, keeping your other answers.
+  - Esc or Ctrl-C at any `add` or `init` question cancels: it prints `Cancelled, nothing written.`, restores the terminal and exits 130.
+    - A SIGINT sent to Callisto from outside at a question ends it with default signal behaviour; run `reset` if the terminal is left raw.
+  - If Callisto cannot tell which packages changed, it warns once and marks none instead of failing.
+
+  **Breaking:** `add` and `init` prompt only when stdin and stderr are terminals and the format is text. Before, a terminal on stdin was enough, so `callisto add 2>log` or `callisto --format json add` opened the wizard; now `add` exits 2 with E214 and `init` with E240. Pass `--package` and `--summary` to `add`, and `--yes` to `init`, in scripts.
+
+### Patch Changes
+
+- **Python ranges keep their precision when a bound has a suffix.** A dependent requirement whose bound carries a post, dev or pre-release suffix is now rewritten at the precision it was written with, in any epoch.
+
+  - `>=1.2.3.post1,<1.3` becomes `>=1.2.4,<1.3` instead of widening to `<2`.
+  - `~=1.2.post1` becomes `~=1.2` instead of narrowing to `~=1.2.1`.
+- **Paths starting with a colon are no longer refused as ignored.** A plan that writes a file such as `:core/Cargo.toml` was refused when `.gitignore` listed `core/`, because the ignore check read the colon as Git pathspec magic. The check now reads every path literally, so only files Git really ignores are refused.
+- **Releases that publish only to crates.io no longer fail with a false dependency cycle (E104).** A package with both a `Cargo.toml` and a `package.json` now releases its crates even when the npm manifests, which the release does not publish, depend on each other.
+
+  - A cycle between packages the release does publish still fails with E104.
+- **Release PRs and changelogs name the dependency version actually released.** A dependent bumped because a dependency changed now reports that dependency's final version, including when a fixed group realigned it after the cascade first ran.
+- **`pre enter` and `pre exit` stage only their own `pre.json`.** A changesets directory whose name contains glob characters, such as `notes*`, no longer stages a neighbouring tracked `notes-other/pre.json` as well.
+- **A release is no longer refused for a dependency in a manifest it does not publish.** Releasing a package whose npm manifest depends on a package you have not released, while the release publishes only the crate, now proceeds.
+  - A dependency is required only when the dependent's own manifest declares it and the dependency publishes to that registry.
+- **`callisto add` writes only changesets that `status` reads back as written**: a package name with a tab, no-break space or other whitespace at either end is now quoted, so its change is no longer lost.
+
+  - A package name with a line break fails with E268 before anything is written, instead of producing a file `status` cannot parse.
+- **The release PR shows each change exactly as the changelog will.** What's Changing lists every change as it will be written to `CHANGELOG.md`, grouped under collapsible Major, Minor and Patch blocks, and the Triggered by column names the changesets behind each bump, or counts them when there are more than three.
+- Dependency updates
+  - `callisto-graph` → `0.23.0`
+  - `callisto-manifests` → `0.23.0`
+  - `callisto-model` → `0.23.0`
+
 ## 0.22.0
 
 _2026-11-21 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.21.1...callisto@0.22.0)_
