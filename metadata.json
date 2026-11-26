@@ -1,0 +1,64 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8D4D1QRS9S0X1P4T4CEAH80",
+  "strategy": "manual-commit",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".changeset/sharp-badgers-hunt.md",
+    ".changeset/sharp-wolves-race.md",
+    "Cargo.lock",
+    "README.md",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/init/tests.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-cli/src/tty.rs",
+    "crates/callisto-cli/tests/add_duplicate_package_tests.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "crates/callisto-cli/tests/add_name_representation_tests.rs",
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-model/src/format/changeset/frontmatter.rs",
+    "crates/callisto-model/src/format/changeset/mod.rs",
+    "crates/callisto-model/src/format/changeset/tests.rs",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/versioning.json",
+    "docs/stability.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 56056,
+    "cache_read_tokens": 18627548,
+    "output_tokens": 21372,
+    "api_call_count": 45
+  },
+  "redaction": {
+    "replacements": 18,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
