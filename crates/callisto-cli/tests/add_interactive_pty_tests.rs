@@ -839,3 +839,60 @@ fn init_picks_the_product_package_by_number() {
     let written = init_with_product_answers(|init| init.answer(1, "2\r"));
     assert!(written.contains("product-package = \"cargo/tool\""), "{written}");
 }
+
+#[test]
+fn init_picks_the_product_package_by_its_bare_name_as_the_flag_does() {
+    let written = init_with_product_answers(|init| init.answer(1, "tool\r"));
+    assert!(written.contains("product-package = \"cargo/tool\""), "{written}");
+}
+
+/// One never-released npm package named `name`, alone in its workspace.
+fn single(name: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo(dir.path());
+    let manifest = serde_json::json!({ "name": name, "version": "1.0.0" });
+    std::fs::write(dir.path().join("package.json"), manifest.to_string()).unwrap();
+    std::fs::write(dir.path().join("callisto.toml"), "").unwrap();
+    dir
+}
+
+/// Picks the only package, no major or minor bump, and gives the summary `Fix`.
+fn pick_the_only_package_as_a_patch(add: &mut Session) {
+    add.answer(1, "1\r");
+    add.answer(2, "\r");
+    add.answer(3, "\r");
+    add.after("Changelog summary", 1, "Fix\r");
+}
+
+#[test]
+fn a_name_a_changeset_cannot_hold_is_refused_before_the_review() {
+    for args in [&["add"][..], &["add", "--dry-run"]] {
+        let dir = single("bad\nname");
+        let mut add = Session::start_with(dir.path(), args, &[]);
+        pick_the_only_package_as_a_patch(&mut add);
+        assert_ne!(add.exit_code(), Some(0), "{args:?}: {}", add.screen());
+        let screen = add.screen();
+        assert!(screen.contains("E268"), "{args:?}: {screen}");
+        assert!(
+            !screen.contains("This changeset records") && !screen.contains("Write this changeset?"),
+            "{args:?}: nothing is reviewed or asked:\n{screen}"
+        );
+        assert!(changesets(dir.path()).is_empty(), "{args:?}: nothing is written");
+    }
+}
+
+#[test]
+fn a_name_with_a_leading_tab_is_written_so_status_reads_it_back() {
+    let dir = single("\tlead");
+    let mut add = Session::start(dir.path());
+    pick_the_only_package_as_a_patch(&mut add);
+    add.after("Write this changeset?", 1, "\r");
+    assert_eq!(add.exit_code(), Some(0), "{}", add.screen());
+    let status = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", dir.path().to_str().unwrap(), "status", "--format", "json"])
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(report["pending"], 1, "{:?}: {report}", changesets(dir.path()));
+    assert!(report.get("diagnostics").is_none(), "{report}");
+}

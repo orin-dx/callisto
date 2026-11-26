@@ -162,17 +162,77 @@ fn write_accepts_empty_changeset() {
     assert_eq!(parse_changeset(&written).unwrap(), changeset);
 }
 
+/// A name the line grammar cannot hold is refused, never written in a form that reads back as another name.
 #[test]
-fn write_rejects_name_containing_a_literal_quote() {
-    let changeset = cs(vec![("weird\"name", Severity::Patch)], "Summary.");
-    let err = write_changeset(&changeset).unwrap_err();
+fn write_refuses_a_name_with_a_quote_carriage_return_or_line_feed() {
+    for name in ["weird\"name", "bad\nname", "bad\rname", "bad\r\nname", "trailing\n"] {
+        let changeset = cs(vec![("ok", Severity::Minor), (name, Severity::Patch)], "Summary.");
+        assert_eq!(
+            write_changeset(&changeset).unwrap_err(),
+            WriteError::NameNotRepresentable {
+                index: 1,
+                name: name.to_string()
+            },
+            "{name:?}"
+        );
+    }
+}
+
+/// The reader rejects a name given twice, so the writer refuses to write one.
+#[test]
+fn write_refuses_a_name_given_twice() {
+    let changeset = cs(vec![("a", Severity::Patch), ("a", Severity::Major)], "Summary.");
     assert_eq!(
-        err,
-        WriteError::NameContainsQuote {
-            index: 0,
-            name: "weird\"name".to_string()
+        write_changeset(&changeset).unwrap_err(),
+        WriteError::NameNotRepresentable {
+            index: 1,
+            name: "a".to_string()
         }
     );
+}
+
+/// Every whitespace character the reader trims from a bare name is kept by quoting it, as are delimiters.
+#[test]
+fn names_with_boundary_whitespace_or_delimiters_read_back_unchanged() {
+    for name in [
+        " lead",
+        "trail ",
+        "\tlead",
+        "trail\t",
+        "\u{a0}lead",
+        "trail\u{a0}",
+        "\u{3000}wide",
+        "line\u{2028}",
+        "\u{85}next",
+        "\u{b}vt",
+        "in\tside",
+        "in\u{a0}side",
+        "a:b",
+        "maven/org.example:core",
+        "a#b",
+        "#lead",
+        "@scope/pkg",
+        "cargo/foo",
+        "plain",
+        "-dash",
+        "---",
+    ] {
+        let changeset = cs(vec![(name, Severity::Minor)], "Summary.");
+        let written = write_changeset(&changeset).unwrap();
+        assert_eq!(
+            parse_changeset(&written).unwrap(),
+            changeset,
+            "{name:?} wrote {written:?}"
+        );
+    }
+}
+
+/// The written file uses LF only, so a summary's CR or CRLF line ends read back as the LF the reader yields.
+#[test]
+fn a_summary_with_carriage_returns_is_written_with_lf_line_ends() {
+    let written = write_changeset(&cs(vec![("a", Severity::Patch)], "First\r\nSecond\rThird")).unwrap();
+    assert!(!written.contains('\r'), "{written:?}");
+    assert_eq!(parse_changeset(&written).unwrap().summary, "First\nSecond\nThird");
 }
 
 /// write_changeset must reject a changeset that has entries but an empty summary.
@@ -210,22 +270,38 @@ fn parse_rejects_whitespace_only_summary_with_entries() {
 
 use proptest::prelude::*;
 
+/// Names drawn from letters plus whitespace, delimiter, quote and line-break characters.
+fn any_name() -> impl Strategy<Value = String> {
+    let special = prop::sample::select(vec![
+        ' ', '\t', '\u{a0}', '\u{3000}', '\u{2028}', '\u{85}', '\u{b}', '\u{c}', ':', '#', '@', '/', '-', '"', '\'',
+        '\r', '\n',
+    ]);
+    proptest::collection::vec(prop_oneof![3 => proptest::char::range('a', 'c'), 1 => special], 1..6)
+        .prop_map(|chars| chars.into_iter().collect())
+}
+
+fn any_severity() -> impl Strategy<Value = Severity> {
+    prop::sample::select(vec![Severity::None, Severity::Patch, Severity::Minor, Severity::Major])
+}
+
 proptest! {
+    /// A changeset is either written so it reads back unchanged, or refused at the first name it cannot represent.
     #[test]
-    fn proptest_changeset_roundtrip(
-        pkg_name in "[a-z0-9_\\-/]{1,20}",
-        summary in "[a-zA-Z0-9_\\.\\,\\!]{1,100}"
+    fn written_changesets_read_back_unchanged(
+        entries in proptest::collection::vec((any_name(), any_severity()), 1..4),
+        summary in "[a-z][a-zA-Z0-9_ .,!\n]{0,40}",
     ) {
         let changeset = Changeset {
-            entries: vec![Entry {
-                name: pkg_name,
-                severity: Severity::Minor,
-            }],
-            summary: summary.to_string(),
+            entries: entries.into_iter().map(|(name, severity)| Entry { name, severity }).collect(),
+            summary: summary.trim().to_string(),
         };
-        if let Ok(written) = write_changeset(&changeset) {
-            let reparsed = parse_changeset(&written).unwrap();
-            prop_assert_eq!(reparsed, changeset);
+        let refused_at = changeset.entries.iter().enumerate().position(|(index, entry)| {
+            entry.name.contains(['"', '\r', '\n']) || changeset.entries[..index].iter().any(|e| e.name == entry.name)
+        });
+        match (write_changeset(&changeset), refused_at) {
+            (Ok(written), None) => prop_assert_eq!(parse_changeset(&written).unwrap(), changeset),
+            (Err(WriteError::NameNotRepresentable { index, .. }), Some(expected)) => prop_assert_eq!(index, expected),
+            (result, expected) => prop_assert!(false, "{:?} for {:?}, expected refusal at {:?}", result, changeset, expected),
         }
     }
 }

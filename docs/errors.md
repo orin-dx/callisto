@@ -98,7 +98,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E055 | Changeset has entries but an empty or whitespace-only summary | Add a non-empty summary after the closing `---` delimiter. |
 | E056 | Cannot write changeset: entries present but summary is empty or whitespace-only | Provide a non-empty summary describing the change. |
 | E057 | Entry <index> has an empty package name | — |
-| E268 | Entry <index> name contains a literal `"`, which cannot be written (no escaping convention is defined for this grammar) | Remove the literal `"` from the package name before writing the changeset. |
+| E268 | Entry <index> name <name> cannot be written so it reads back unchanged: a changeset name cannot contain `"`, a carriage return or a line feed, or repeat another entry | Rename the package so its name has no `"`, carriage return or line feed, and name each package once. |
 
 ## callisto-model — Git access
 

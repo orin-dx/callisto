@@ -63,8 +63,8 @@ const VERSIONING_CHOICES: [&str; 2] = [
 pub trait Prompter {
     /// One of a few fixed `items`.
     fn select(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError>;
-    /// One of a list of any length, such as the workspace's packages.
-    fn pick(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError>;
+    /// One of a list of any length, such as the workspace's packages; a typed name is resolved by `by_name`.
+    fn pick(&mut self, prompt: &str, items: &[String], by_name: tty::NameLookup<'_>) -> Result<usize, CliError>;
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError>;
     fn input(&mut self, prompt: &str, default: Option<&str>) -> Result<String, CliError>;
 }
@@ -79,8 +79,8 @@ impl Prompter for TerminalPrompter {
             .index)
     }
 
-    fn pick(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
-        tty::pick_one(prompt, items)
+    fn pick(&mut self, prompt: &str, items: &[String], by_name: tty::NameLookup<'_>) -> Result<usize, CliError> {
+        tty::pick_one(prompt, items, by_name)
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
@@ -578,7 +578,7 @@ fn collect_answers(
         (None, [only]) => only,
         (None, _) if prompting => {
             let ids: Vec<String> = binaries.iter().map(|package| package.id.clone()).collect();
-            binaries[prompter.pick(PRODUCT_PROMPT, &ids)?]
+            binaries[prompter.pick(PRODUCT_PROMPT, &ids, &|word| product_named(facts, &binaries, word))?]
         }
         (None, _) => return Err(missing("--product-package")),
     };
@@ -606,6 +606,25 @@ fn collect_answers(
         }),
         fixed_groups: Vec::new(),
     })
+}
+
+/// The index in `binaries` of the product a typed word names, resolved as `--product-package` resolves it, or why it
+/// cannot be the product; `None` when it names no workspace package, so it may be a row number.
+fn product_named(facts: &InitFacts, binaries: &[&InitPackage], word: &str) -> Option<Result<usize, String>> {
+    if facts.named(word).is_empty() {
+        return None;
+    }
+    Some(
+        facts
+            .product_package(word)
+            .map(|product| {
+                binaries
+                    .iter()
+                    .position(|package| package.id == product.id)
+                    .expect("product_package accepts only a package binary_packages lists")
+            })
+            .map_err(|error| error.to_string()),
+    )
 }
 
 #[cfg(test)]

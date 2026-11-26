@@ -66,15 +66,27 @@ pub(crate) fn pick_many(
     } else {
         eprintln!("Type numbers, ranges or names. Esc cancels.");
     }
-    read_answer(items, marked, false)
+    read_answer(items, marked, false, &|word| listed_name(items, word))
 }
 
-/// Asks for exactly one of `ids`, the way [`pick_many`] asks for several.
-pub(crate) fn pick_one(heading: &str, ids: &[String]) -> Result<usize, CliError> {
+/// Which listed entry a typed word names: `None` when it names nothing, so it may be a row number, and `Err` with the
+/// reason when what it names cannot be picked.
+pub(crate) type NameLookup<'a> = &'a dyn Fn(&str) -> Option<Result<usize, String>>;
+
+/// A word names the entry it is the listed name or `ecosystem/name` id of.
+fn listed_name(items: &[Listed], word: &str) -> Option<Result<usize, String>> {
+    items
+        .iter()
+        .position(|item| item.name == word || item.id == word)
+        .map(Ok)
+}
+
+/// Asks for exactly one of `ids`, the way [`pick_many`] asks for several, with typed names resolved by `by_name`.
+pub(crate) fn pick_one(heading: &str, ids: &[String], by_name: NameLookup<'_>) -> Result<usize, CliError> {
     let items: Vec<Listed> = ids.iter().map(|id| Listed::by_id(id)).collect();
     print_list(heading, &items, &[]);
     eprintln!("Type a number or a name. Esc cancels.");
-    let picked = read_answer(&items, &[], true)?;
+    let picked = read_answer(&items, &[], true, by_name)?;
     Ok(*picked
         .first()
         .expect("the validator accepts only an answer naming exactly one entry"))
@@ -97,28 +109,34 @@ fn print_list(heading: &str, items: &[Listed], marked: &[bool]) {
 
 /// One line typed at a single-line prompt; the prompt's validator asks again with the reason until [`answer`] accepts
 /// it, and Esc or Ctrl-C is [`CliError::Cancelled`].
-fn read_answer(items: &[Listed], marked: &[bool], one: bool) -> Result<Vec<usize>, CliError> {
+fn read_answer(items: &[Listed], marked: &[bool], one: bool, by_name: NameLookup<'_>) -> Result<Vec<usize>, CliError> {
     let (valid_items, valid_marked) = (items.to_vec(), marked.to_vec());
     let line = Text::new("Your answer")
         .with_validator(move |line: &str| {
-            Ok(match answer(line, &valid_items, &valid_marked, one) {
+            Ok(match answer(line, &valid_items, &valid_marked, one, by_name) {
                 Ok(_) => Validation::Valid,
                 Err(reason) => Validation::Invalid(reason.into()),
             })
         })
         .prompt()?;
-    Ok(answer(&line, items, marked, one).expect("the validator accepted this line"))
+    Ok(answer(&line, items, marked, one, by_name).expect("the validator accepted this line"))
 }
 
 /// The listed indices a typed line picks: the `marked` ones for an empty line (when several may be picked), else the
 /// ones [`choices`] names; `one` requires exactly one.
-fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Vec<usize>, String> {
+fn answer(
+    line: &str,
+    items: &[Listed],
+    marked: &[bool],
+    one: bool,
+    by_name: NameLookup<'_>,
+) -> Result<Vec<usize>, String> {
     let picked = match (line.trim().is_empty(), one) {
         (true, false) => (0..items.len())
             .filter(|&index| marked.get(index) == Some(&true))
             .collect(),
         (true, true) => Vec::new(),
-        (false, _) => choices(line, items)?,
+        (false, _) => choices(line, items.len(), by_name)?,
     };
     if one && picked.len() != 1 {
         return Err("pick exactly one".to_owned());
@@ -126,9 +144,9 @@ fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Ve
     Ok(picked)
 }
 
-/// The listed indices an answer names, in list order. A word is a listed name or `ecosystem/name` id, else a number or
-/// range counted from 1 (`3`, `1-3`). Words are separated by spaces or commas, and an answer must name at least one.
-fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
+/// The indices of a `len`-entry list an answer names, in list order. A word is a name `by_name` resolves, else a number
+/// or range counted from 1 (`3`, `1-3`). Words are separated by spaces or commas, and an answer must name at least one.
+fn choices(answer: &str, len: usize, by_name: NameLookup<'_>) -> Result<Vec<usize>, String> {
     let mut picked = std::collections::BTreeSet::new();
     let mut words = 0;
     for word in answer
@@ -137,10 +155,9 @@ fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
     {
         words += 1;
         let shown = word.escape_debug();
-        let by_name = items.iter().position(|item| item.name == word || item.id == word);
         // An exact name wins over a row number; the review before writing shows what was picked.
-        let indices = match (by_name, numbered(word, items.len())) {
-            (Some(index), _) => index..=index,
+        let indices = match (by_name(word), numbered(word, len)) {
+            (Some(named), _) => named.map(|index| index..=index)?,
             (None, Some(range)) => range?,
             (None, None) => return Err(format!("`{shown}` is not a number, a range or a listed name")),
         };
@@ -304,7 +321,38 @@ mod editor_owns_ctrl_c {
 
 #[cfg(test)]
 mod tests {
-    use super::{answer, choices, editor_words, Listed};
+    use super::{editor_words, listed_name, Listed};
+
+    /// The grammar [`super::pick_many`] reads: a name is a listed name or id.
+    fn choices(answer: &str, items: &[Listed]) -> Result<Vec<usize>, String> {
+        super::choices(answer, items.len(), &|word| listed_name(items, word))
+    }
+
+    fn answer(line: &str, items: &[Listed], marked: &[bool], one: bool) -> Result<Vec<usize>, String> {
+        super::answer(line, items, marked, one, &|word| listed_name(items, word))
+    }
+
+    #[test]
+    fn a_name_the_lookup_resolves_wins_over_a_row_and_its_refusal_is_the_reason() {
+        let lookup = |word: &str| match word {
+            "tool" => Some(Ok(1)),
+            "2" => Some(Ok(0)),
+            "lib" => Some(Err("`lib` does not produce a binary".to_owned())),
+            _ => None,
+        };
+        assert_eq!(super::choices("tool", 2, &lookup), Ok(vec![1]));
+        assert_eq!(super::choices("2", 2, &lookup), Ok(vec![0]), "a name wins over row 2");
+        assert_eq!(
+            super::choices("1", 2, &lookup),
+            Ok(vec![0]),
+            "a word naming nothing is a row"
+        );
+        assert_eq!(
+            super::choices("lib", 2, &lookup),
+            Err("`lib` does not produce a binary".to_owned())
+        );
+        assert!(super::choices("other", 2, &lookup).is_err());
+    }
 
     fn names(names: &[&str]) -> Vec<Listed> {
         names.iter().map(|name| Listed::by_id(name)).collect()

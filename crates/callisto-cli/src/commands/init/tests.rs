@@ -70,7 +70,7 @@ impl Prompter for Scripted {
             _ => panic!("`{prompt}` is not a select"),
         }
     }
-    fn pick(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
+    fn pick(&mut self, prompt: &str, items: &[String], _: crate::tty::NameLookup<'_>) -> Result<usize, CliError> {
         self.select(prompt, items)
     }
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
@@ -1711,4 +1711,44 @@ fn an_existing_workflow_is_not_offered_and_is_skipped_with_the_note_yes_prints()
     // Retrying as-is would hit the same file, so the note only says how to regenerate it.
     assert!(!run.out.contains("to retry"), "{}", run.out);
     assert_eq!(std::fs::read_to_string(&workflow).unwrap(), "name: mine\n");
+}
+
+/// The product question resolves a typed name as `--product-package` does, against the whole workspace.
+#[test]
+fn a_typed_product_name_resolves_as_the_flag_does() {
+    let dir = workspace(2);
+    let root = dir.path();
+    // npm libraries: `app` shares a binary's bare name, `1` and `2` look like row numbers.
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"js","private":true,"workspaces":["js/*"]}"#,
+    )
+    .unwrap();
+    for name in ["app", "1"] {
+        std::fs::create_dir_all(root.join("js").join(name)).unwrap();
+        std::fs::write(
+            root.join("js").join(name).join("package.json"),
+            format!(r#"{{"name":"{name}","version":"1.0.0"}}"#),
+        )
+        .unwrap();
+    }
+    let facts = scaffold::detect(root, &IgnoreWalkLocator::new(root), &CliCommandRunner).unwrap();
+    let binaries: Vec<&InitPackage> = facts.binary_packages().collect();
+    let ids: Vec<&str> = binaries.iter().map(|package| package.id.as_str()).collect();
+    assert_eq!(ids, ["cargo/app", "cargo/tool"]);
+    let named = |word| product_named(&facts, &binaries, word);
+
+    assert_eq!(named("tool"), Some(Ok(1)), "a bare name only one package has");
+    assert_eq!(named("cargo/app"), Some(Ok(0)), "a qualified id");
+    for word in ["app", "1", "core", "npm/app"] {
+        let flag = facts.product_package(word).unwrap_err().to_string();
+        assert_eq!(
+            named(word),
+            Some(Err(flag)),
+            "{word}: refused for the flag's reason, not taken as a row"
+        );
+    }
+    assert!(named("app").unwrap().unwrap_err().contains("more than one package"));
+    assert_eq!(named("2"), None, "a word naming no package may be a row");
+    assert_eq!(named("missing"), None);
 }

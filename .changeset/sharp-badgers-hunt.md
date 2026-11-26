@@ -8,7 +8,7 @@ callisto-cli: minor
   - Names are shown in full, and nothing is redrawn, so any terminal size works.
   - An answer that names nothing in the list is asked again with the reason.
   - An exact package name wins over a row number.
-  - `init` asks for the product package the same way when several packages build binaries.
+  - `init` asks for the product package the same way when several packages build binaries, and accepts any name `--product-package` accepts, such as `tool` for `cargo/tool`.
 - Before writing, a review lists each package's bump and the summary; afterwards `add` prints the next step.
 - Leave the summary empty to write a longer one, with bullets, in `$VISUAL` or `$EDITOR`. If that editor cannot start, `add` warns and asks for the summary inline, keeping your other answers.
 - Esc or Ctrl-C at any `add` or `init` question cancels: it prints `Cancelled, nothing written.`, restores the terminal and exits 130.

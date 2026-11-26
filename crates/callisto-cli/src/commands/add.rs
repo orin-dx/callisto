@@ -851,18 +851,62 @@ mod tests {
 
     #[test]
     fn a_changeset_that_cannot_be_written_is_refused_before_the_confirmation() {
-        let choices = unchanged(&["npm/a\"b"]);
-        let mut prompter = Scripted {
-            selections: picks([vec![0], vec![], vec![]]),
-            summary: Some(Summary::new("Fix").unwrap()),
-            confirm: true,
-            ..Default::default()
-        };
-        assert!(run_wizard(&choices, None, false, &mut prompter).is_err());
-        assert!(
-            !prompter.confirm_asked,
-            "the question must not be asked for a changeset that cannot be written"
-        );
+        for name in ["npm/a\"b", "npm/a\nb", "npm/a\rb"] {
+            for dry_run in [false, true] {
+                let mut prompter = Scripted {
+                    selections: picks([vec![0], vec![], vec![]]),
+                    summary: Some(Summary::new("Fix").unwrap()),
+                    confirm: true,
+                    ..Default::default()
+                };
+                assert!(
+                    matches!(
+                        run_wizard(&unchanged(&[name]), None, dry_run, &mut prompter),
+                        Err(CliError::ChangesetWrite(
+                            callisto_model::format::WriteError::NameNotRepresentable { .. }
+                        ))
+                    ),
+                    "{name:?} dry_run={dry_run}"
+                );
+                assert!(
+                    !prompter.confirm_asked,
+                    "{name:?}: the question must not be asked for a changeset that cannot be written"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_name_with_boundary_whitespace_reaches_the_review_and_is_kept_or_declined() {
+        for name in ["npm/\tlead", "npm/trail\u{a0}", "npm/ lead"] {
+            for (confirm, esc_at_confirm, dry_run) in [
+                (true, false, false),
+                (false, false, false),
+                (true, true, false),
+                (false, false, true),
+            ] {
+                let mut prompter = Scripted {
+                    selections: picks([vec![0], vec![], vec![]]),
+                    summary: Some(Summary::new("Fix").unwrap()),
+                    confirm,
+                    esc_at_confirm,
+                    ..Default::default()
+                };
+                let result = run_wizard(&unchanged(&[name]), None, dry_run, &mut prompter);
+                assert_eq!(prompter.confirm_asked, !dry_run, "{name:?}");
+                match result {
+                    Ok(Some((entries, _))) => {
+                        assert!((confirm || dry_run) && !esc_at_confirm, "{name:?}");
+                        assert_eq!(severities(&entries), [(name, Severity::Patch)]);
+                    }
+                    Ok(None) => assert!(!confirm && !dry_run, "{name:?}"),
+                    Err(err) => assert!(
+                        esc_at_confirm && matches!(err, CliError::Cancelled),
+                        "{name:?}: {err:?}"
+                    ),
+                }
+            }
+        }
     }
 
     #[test]
