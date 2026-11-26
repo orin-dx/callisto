@@ -665,8 +665,8 @@ mod tests {
             for (name, value) in callisto_model::vcs::GIT_ENVIRONMENT {
                 assert!(
                     output.stdout.lines().any(|line| line == format!("{name}={value}")),
-                    "{name}: {}",
-                    output.stdout
+                    // Never print the captured environment: it can hold inherited secrets.
+                    "{name}={value} is missing from git's child environment"
                 );
             }
         }
