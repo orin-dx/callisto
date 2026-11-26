@@ -13,7 +13,7 @@ callisto-cli: minor
   - With `--package`, only work for the selected packages and their groups counts.
   - In a prerelease cycle, notes `callisto version` already applied do not count.
   - It reads changesets only, so it works in a shallow clone too.
-  - `release --dry-run --format json` also lists it in the report's `diagnostics`.
+  - When a release is planned, `release --dry-run --format json` also lists it in the report's `diagnostics`; with nothing to release the note is on stderr only.
   - If the check cannot run, one note names the error code; run `callisto status` for the cause.
 - An `origin` that is not a hosted remote, such as a local path or a `file://` URL, previews like no `origin`: the dry run shows the plan with one note that says why tags are unbound.
   - A real `callisto release` refuses it with an error that names the accepted forms: an `https://` or `ssh://git@` URL, or `git@host:owner/repo`.
