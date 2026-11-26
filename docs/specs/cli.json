@@ -162,7 +162,7 @@
     },
     {
       "id": "CLI-OUT-10",
-      "criterion": "A closed or failing stderr never changes a command's exit code: notes, warnings, a tool's echoed output and the final error card are best effort, a usage error still exits 2 and a failure still exits 1 with its own error, never a panic."
+      "criterion": "Notes, warnings, a tool's echoed output and the final error card are best effort on stderr: when stderr is closed or failing they are lost without changing the exit code, so a usage error still exits 2 and a failure still exits 1 with its own error, never a panic. Output a command needs on stderr, such as `add`'s wizard prompts and `init`'s review of what it detected and will write (on stderr under `--format json`), still fails the command when it cannot be written."
     },
     {
       "id": "CLI-STATUS-01",
@@ -285,7 +285,7 @@
     },
     {
       "id": "CLI-INIT-15",
-      "criterion": "When init fails to write callisto.toml, .changeset/README.md, or a generated workflow file, it exits 1 with E278 naming the exact path it failed to write.",
+      "criterion": "When init fails to write callisto.toml, .changeset/README.md, or a generated workflow file, it exits 1 with E278 naming the exact path it failed to write. It writes .changeset/README.md before callisto.toml, so a README it cannot write leaves no callisto.toml and a plain `callisto init` retry completes; a workflow it cannot write after callisto.toml is retried with `callisto init --workflow`.",
       "is_error_case": true
     },
     {

@@ -642,7 +642,7 @@ pub fn init_files(root: &Path, workflow: bool) -> Result<Vec<PathBuf>, GraphErro
     Ok(files)
 }
 
-/// Writes `callisto.toml` and, when absent, `.changeset/README.md`.
+/// Writes `.changeset/README.md` when absent, then `callisto.toml`.
 ///
 /// # Errors
 ///
@@ -651,8 +651,9 @@ pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitRepo
     ensure_uninitialized(root)?;
     let config_path = root.join("callisto.toml");
     let files = init_files(root, false)?;
-    callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err(&config_path))?;
+    // `callisto.toml` marks the workspace initialized, so it is written last and a failed README leaves a retry open.
     write_changeset_readme(root, permit)?;
+    callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err(&config_path))?;
     Ok(InitReport {
         schema_version: SCHEMA_VERSION,
         initialized: true,

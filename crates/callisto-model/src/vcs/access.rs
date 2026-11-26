@@ -423,16 +423,24 @@ impl GitAccess<'_> {
         Err(probe_failed(&args, &self.root, &output))
     }
 
-    /// Files in `rev`'s tree matching one of `pathspecs` whose text contains `needle`, ignoring case.
+    /// Files in `rev`'s tree matching one of `pathspecs` whose text contains any of `needles`, ignoring case, from one
+    /// `git grep`.
     ///
-    /// No match is an empty list; a revision that cannot be searched is an error.
+    /// No match, or no needle, is an empty list; a revision that cannot be searched is an error.
     pub fn files_containing_at(
         &self,
         rev: &str,
-        needle: &str,
+        needles: &[&str],
         pathspecs: &[Pathspec],
     ) -> Result<Vec<PathBuf>, VcsError> {
-        let mut args = vec!["grep", "-l", "-z", "-F", "-i", "-e", needle, rev, "--"];
+        if needles.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut args = vec!["grep", "-l", "-z", "-F", "-i"];
+        for needle in needles {
+            args.extend(["-e", needle]);
+        }
+        args.extend([rev, "--"]);
         args.extend(pathspecs.iter().map(Pathspec::as_str));
         let output = self.runner.run("git", &args, &self.root)?;
         if output.exit_code == Some(1) {
@@ -1226,19 +1234,27 @@ mod tests {
         assert_eq!(git.read_at("HEAD", Path::new("nope.txt")).unwrap(), None);
         let named_a = [Pathspec::named_anywhere("a.txt")];
         assert_eq!(
-            git.files_containing_at("HEAD", "NEEDLE", &named_a).unwrap(),
+            git.files_containing_at("HEAD", &["NEEDLE"], &named_a).unwrap(),
             [PathBuf::from("a.txt")]
         );
-        assert!(git.files_containing_at("HEAD", "absent", &named_a).unwrap().is_empty());
         assert!(git
-            .files_containing_at("HEAD", "needle", &[Pathspec::named_anywhere("[a].txt")])
+            .files_containing_at("HEAD", &["absent"], &named_a)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            git.files_containing_at("HEAD", &["absent", "hello"], &named_a).unwrap(),
+            [PathBuf::from("a.txt")]
+        );
+        assert!(git.files_containing_at("HEAD", &[], &named_a).unwrap().is_empty());
+        assert!(git
+            .files_containing_at("HEAD", &["needle"], &[Pathspec::named_anywhere("[a].txt")])
             .unwrap()
             .is_empty());
         assert!(git.commit_adding(Path::new("a.txt")).unwrap().is_some());
         assert_eq!(git.commit_adding(Path::new("nope.txt")).unwrap(), None);
 
         // A searched revision that does not exist is a failure, not "no matches".
-        assert!(git.files_containing_at("no-such-ref", "needle", &named_a).is_err());
+        assert!(git.files_containing_at("no-such-ref", &["needle"], &named_a).is_err());
     }
 
     #[test]
@@ -1251,7 +1267,7 @@ mod tests {
         assert!(git.path_exists_at("HEAD", Path::new("a.txt")).is_err());
         assert!(git.read_at("HEAD", Path::new("a.txt")).is_err());
         assert!(git
-            .files_containing_at("HEAD", "x", &[Pathspec::named_anywhere("a")])
+            .files_containing_at("HEAD", &["x"], &[Pathspec::named_anywhere("a")])
             .is_err());
         assert!(git.commit_adding(Path::new("a.txt")).is_err());
         assert!(git.list_tags(None).is_err());

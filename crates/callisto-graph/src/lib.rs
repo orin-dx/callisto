@@ -327,32 +327,36 @@ pub fn pre_initial_version<'a>(pre: &'a callisto_model::format::PreState, id: &P
 /// them.
 struct PreJsonOrigin<'a> {
     pre_json: &'a std::path::Path,
+    keys: &'a [String],
     manifests: Vec<PathBuf>,
     rev: Option<Option<String>>,
     rosters: history::Rosters,
 }
 
 impl<'a> PreJsonOrigin<'a> {
-    fn new<D: DependencyResolver>(graph: &D, pre_json: &'a std::path::Path) -> Self {
+    fn new<D: DependencyResolver>(graph: &D, pre_json: &'a std::path::Path, keys: &'a [String]) -> Self {
         let manifests = graph
             .packages()
             .filter_map(|p| p.canonical_manifests().next().map(|m| m.path.clone()))
             .collect();
         Self {
             pre_json,
+            keys,
             manifests,
             rev: None,
             rosters: history::Rosters::default(),
         }
     }
 
-    /// The commit that added `pre.json`; resolving it reads every package's manifest there in one batch.
+    /// The commit that added `pre.json`; resolving it reads every package's manifest there in one batch, and a key no
+    /// such manifest names is searched for there together with every other key.
     fn rev(&mut self, git: &GitAccess<'_>) -> Result<Option<String>, GraphError> {
         if self.rev.is_none() {
             let rev = git.commit_adding(self.pre_json).map_err(GraphError::Vcs)?;
             if let Some(rev) = &rev {
                 let wanted: Vec<(String, PathBuf)> = self.manifests.iter().map(|m| (rev.clone(), m.clone())).collect();
                 self.rosters.prefetch(git, &wanted);
+                self.rosters.expect_names(rev, self.keys.iter().cloned());
             }
             self.rev = Some(rev);
         }
@@ -392,7 +396,7 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
     };
     let keys: Vec<String> = initial_versions.keys().cloned().collect();
     let mut owners = BTreeMap::new();
-    let mut origin = PreJsonOrigin::new(graph, pre_json);
+    let mut origin = PreJsonOrigin::new(graph, pre_json, &keys);
     for key in &keys {
         if let Some(owner) = graph.packages().find(|p| pre_json_key(&p.id) == *key) {
             if owner.id.ecosystem().is_some() || origin.bare_key_may_belong(git, key, owner, identity) {

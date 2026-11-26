@@ -303,3 +303,107 @@ fn bare_pre_json_keys_start_no_git_process_per_package() {
         );
     }
 }
+
+/// [`crates_in_v2_pre_mode`] after every crate moved to `crates/`, so the commit that added `pre.json` holds no
+/// manifest at any crate's current path.
+fn moved_crates_in_v2_pre_mode(crates: usize) -> tempfile::TempDir {
+    let dir = crates_in_v2_pre_mode(crates);
+    let root = dir.path();
+    let git = |args: &[&str]| {
+        let status = Command::new("git").args(args).current_dir(root).status().unwrap();
+        assert!(status.success(), "git {args:?}");
+    };
+    std::fs::create_dir_all(root.join("crates")).unwrap();
+    for i in 0..crates {
+        git(&["mv", &format!("c{i}"), &format!("crates/c{i}")]);
+    }
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "move crates"]);
+    dir
+}
+
+/// `packages` dual Cargo and npm packages whose names differ, in a Changesets v2 pre cycle keyed by the npm names, so
+/// no key names a package's first manifest.
+fn dual_packages_in_v2_pre_mode_keyed_by_npm(packages: usize) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let git = |args: &[&str]| {
+        let status = Command::new("git").args(args).current_dir(root).status().unwrap();
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["config", "user.email", "t@example.test"]);
+    git(&["config", "user.name", "t"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    let members: Vec<String> = (0..packages).map(|i| format!("\"d{i}\"")).collect();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        format!("[workspace]\nmembers = [{}]\nresolver = \"2\"\n", members.join(", ")),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        format!(
+            "{{\"name\":\"root\",\"private\":true,\"workspaces\":[{}]}}\n",
+            members.join(",")
+        ),
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "# pre\n").unwrap();
+    for i in 0..packages {
+        let package = root.join(format!("d{i}"));
+        std::fs::create_dir_all(package.join("src")).unwrap();
+        std::fs::write(
+            package.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"d{i}-rs\"\nversion = \"1.0.0\"\nedition = \"2021\"\ndescription = \"d\"\nlicense = \"MIT\"\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(package.join("src/lib.rs"), "").unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            format!("{{\"name\":\"d{i}-js\",\"version\":\"1.0.0\"}}\n"),
+        )
+        .unwrap();
+    }
+    let initial: Vec<String> = (0..packages).map(|i| format!("\"d{i}-js\":\"1.0.0\"")).collect();
+    std::fs::create_dir_all(root.join(".changeset")).unwrap();
+    std::fs::write(
+        root.join(".changeset/pre.json"),
+        format!(
+            "{{\"mode\":\"pre\",\"tag\":\"alpha\",\"initialVersions\":{{{}}},\"changesets\":[]}}\n",
+            initial.join(",")
+        ),
+    )
+    .unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "enter pre"]);
+    dir
+}
+
+/// Keys whose package's first manifest did not name them where `pre.json` was added (it moved, or the key is another
+/// ecosystem's name) are read from that commit's manifests together, not a search per key.
+#[test]
+fn pre_json_keys_read_from_history_start_no_git_process_per_package() {
+    type Fixture = fn(usize) -> tempfile::TempDir;
+    let fixtures: [(&str, Fixture); 2] = [
+        ("moved manifests", moved_crates_in_v2_pre_mode),
+        ("npm keys of dual packages", dual_packages_in_v2_pre_mode_keyed_by_npm),
+    ];
+    for (shape, fixture) in fixtures {
+        for args in [&["--dry-run", "release"][..], &["--dry-run", "version"][..]] {
+            let few = git_processes_in(fixture(2).path(), args);
+            let many = git_processes_in(fixture(6).path(), args);
+            assert_eq!(
+                few, many,
+                "{shape}, `callisto {args:?}`: {few} git processes for 2 packages, {many} for 6"
+            );
+        }
+    }
+}

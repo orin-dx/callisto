@@ -188,6 +188,9 @@ fn a_closed_stdout_ends_output_not_the_command() {
     for format in ["text", "json"] {
         for args in [
             ["schema"].as_slice(),
+            &["help"],
+            &["help", "status"],
+            &["completions", "bash"],
             &["status"],
             &["matrix"],
             &["--dry-run", "version"],
