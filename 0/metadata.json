@@ -1,0 +1,111 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8CAZDJPVZKVVTQH40FM056S",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-26T16:28:37.185699Z",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "beeb8b289c8c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 971632,
+    "cache_read_tokens": 18726641,
+    "output_tokens": 14040,
+    "api_call_count": 21
+  },
+  "session_token_usage": {
+    "input_tokens": 3566,
+    "cache_creation_tokens": 7703802,
+    "cache_read_tokens": 792795487,
+    "output_tokens": 933406,
+    "api_call_count": 1563,
+    "subagent_tokens": {
+      "input_tokens": 1824,
+      "cache_creation_tokens": 2973664,
+      "cache_read_tokens": 91403574,
+      "output_tokens": 607494,
+      "api_call_count": 912
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 41,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 14,
+      "entropy": 15,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 369
+  },
+  "summary": {
+    "intent": "Coordinate the Callisto v1 alpha work as a lead session: launch and watch background sessions, track work packages and PRs, order merges, and later drive PRs #242/#246 (and #253) to zero review findings so the Codex reviewer finds nothing.",
+    "outcome": "Work package PRs were opened and tracked, #560 (A) merged and fixed the shared RUSTSEC-2026-0542 audit failure, and findings on #169/#173 were fixed and resolved. Later #634/#638 were pushed with findings resolved after adopting a local Codex review loop, #645 was moved to draft, and Codex-correction sessions were launched with #638 pushed Codex-clean. #242's corrections, the combined init integration pass and the #645 close were still pending.",
+    "learnings": {
+      "repo": [
+        "RUSTSEC-2026-0542 (humantime unmaintained via dev-dep trycmd) fails the cargo-deny audit on every PR; WP A owns deny.toml and carried the ignore, so all other PRs had to rebase after #560 merged.",
+        "Two PRs committed cargo-mutants output under mutants.out.old/ because .gitignore only covered mutants.out/; widened to mutants.out*/.",
+        "A plain git push can fail silently when the local branch name differs from its upstream; use an explicit refspec and verify with git ls-remote.",
+        "claude --resume needs the full session id, not the 8-character job id; the short id leaves the session stuck on a search screen.",
+        "Entire gates require reviewer approval and open findings must be resolved via `entire trail finding resolve`; each WP group maps to a semantic trail (#357, #457-#460).",
+        "Auto-mode classifier refused commits carrying a Claude-Session: trailer, which launch rules forbid; commits must be signed with no trailer.",
+        "Publish isolation (L) shares templates and init.rs with D (#565), and tokenless twine publishing (J, #569) must merge after L; merge chain is #565 -> L -> #569.",
+        "Codex CLI is installed locally; `codex review --base` cannot take a custom prompt, so the default review is used to mimic the PR reviewer."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/tty.rs",
+          "line": 263,
+          "end_line": 291,
+          "finding": "Windows $EDITOR splitter keeps backslashes and quoted whitespace; review found single-quoted Git-for-Windows paths regressed, fixed by honoring single quotes."
+        },
+        {
+          "path": "crates/callisto-cli/benches/commands.rs",
+          "finding": "Real merge conflict between #563 (I) and #560 (A); #563 could not be auto-updated from main."
+        }
+      ],
+      "workflow": [
+        "Run the same reviewer (Codex) locally on the whole PR in a loop until clean before pushing; Claude-agent reviews have different blind spots and kept leaving findings.",
+        "Patching low-severity findings one push at a time does not converge; fix the boundary/contract and adopt a stopping rule instead of spot fixes.",
+        "Verify subagent and peer claims against the remote (ls-remote, signature, diff) rather than trusting reports; one claimed push had not landed.",
+        "Prove regression tests fail without the fix; one new process-count test passed without the guard and so proved nothing.",
+        "Prototype risky designs as a spike against real tooling before opening a large PR (the Git boundary PR #645 parsed foreign output and was redesigned).",
+        "Do not tell the user all PRs will go green after a base merge without listing exceptions with real conflicts."
+      ]
+    },
+    "friction": [
+      "Sandbox blocked the session daemon socket so agent commands had to be rerun outside it.",
+      "Session 2 sat on a worktree permission prompt only the user could answer, stalling D/J chain.",
+      "Session 3 and Session 5 exited with PRs still open; Session 5 resume failed by short id.",
+      "My status claim that #563 would go green after #560 merged was wrong due to the bench conflict.",
+      "Closing #645 was blocked by a permission check needing explicit user OK.",
+      "Edits to the codex-review script were blocked by a write-protected directory for shell commands.",
+      "Review rounds on #242/#246 kept yielding 3-5 new low findings per push and the user grew frustrated with the pace and with over-wordy prompt hints.",
+      "Flaky tests observed in full-workspace runs (registry_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim, init::tests::an_existing_config_errors).",
+      "Concurrent builds slowed the pre-push gate."
+    ],
+    "open_items": [
+      "Close #645 (Git boundary) once the user says so; any non-GitHub tag push work should start as a real-Git spike.",
+      "#242 corrections (disabled inference bypass via is_active(), revert JSON field, prerelease batching) still need a Codex-clean pass before push.",
+      "Integration pass reconciling #242 and #246 conflicts in init.rs and verifying combined behavior.",
+      "Product-picker bare-alias UX decision for #246 and the changeset serialization round-trip fix.",
+      "Merge order remains: #562, #564, #561, #566, #565, #563, #567, #568, then L and #569; Session 4 (Q) launches after E and F2 merge; K waits on G.",
+      "Whether E's changeset is Breaking (recommended yes) was left undecided.",
+      "Unfixed lows tracked as follow-ups: remaining per-package git grep when manifest moved since pre.json.",
+      "Codex proposal to replace NAPI's three size models with core-owned footprints in the michi project was received but not acted on."
+    ]
+  }
+}
