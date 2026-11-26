@@ -12,9 +12,9 @@
     {
       "name": "add",
       "signature": "callisto add [--package <NAME:SEVERITY>]... [--summary <TEXT>]",
-      "description": "Writes one changeset to .changeset/<adjective>-<noun>-<verb>.md, from flags or, with no --package and a terminal stdin, from an interactive wizard.",
+      "description": "Writes one changeset to .changeset/<adjective>-<noun>-<verb>.md, from flags or, with no --package and a terminal on stdin and stderr, from an interactive wizard (never with --format json).",
       "error_conditions": [
-        "No --package and stdin is not a terminal.",
+        "No --package and stdin or stderr is not a terminal, or --format json.",
         "--package given without --summary, or with a blank summary.",
         "A --package value without `:severity`, with a severity other than none, patch, minor or major, or naming a package not in the workspace."
       ]
@@ -61,7 +61,7 @@
         "callisto.toml already exists.",
         "Not inside a Git repository; without `origin`, only an explicit workflow or artifact request fails.",
         "A package matches more than one tag convention, or more than one package matches `v{version}`.",
-        "stdin is not a terminal and --yes is absent; --yes without a required flag.",
+        "Without a terminal on stdin and stderr, or with --format json, and --yes is absent; --yes without a required flag.",
         "--workflow together with --no-workflow.",
         "Invalid --artifact-target or --product-package values.",
         "--workflow when a workflow file already exists or the workspace shape has no generated workflow."
@@ -201,11 +201,11 @@
     },
     {
       "id": "CLI-ADD-03",
-      "criterion": "`callisto add` with no --package and a terminal stdin runs a wizard asking, in order, which packages to include, which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given, and a final confirmation; declining the confirmation writes nothing and exits 0. Every wizard prompt and preview line prints to stderr, not stdout."
+      "criterion": "`callisto add` with no --package, stdin and stderr terminals and --format text runs a wizard asking, in order, which packages to include (packages changed since their last tag, as `status` reports them, listed first and marked `*`; when that cannot be worked out, one warning on stderr and none marked), which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given (an empty answer opens the editor named by $VISUAL, else $EDITOR, for a multi-line one; when neither is set the summary is required inline; an editor that cannot be used (its command does not split into words, it does not start, or it saves text that is not UTF-8) prints one warning naming the variable and command and asks for the summary inline; on Windows the setting splits on whitespace outside single or double quotes and keeps backslashes, so `C:\\Tools\\vim.exe` opens that editor; on unix a SIGINT while the editor runs is left to the editor, whose exit status decides, and on Windows it is not handled specially), and a confirmation after a review of each package's bump and the summary (with --dry-run there is no confirmation: the review is followed by the dry-run report). A blank inline summary is refused with `the summary cannot be blank`; a summary has any leading byte-order mark removed and CRLF line ends turned into LF. Each package question prints its list once, numbered, with full package names, and reads one typed line: numbers, ranges (`1-3`) or listed names or `ecosystem/name` ids, separated by spaces or commas; an answer of only separators is asked again; Enter keeps the marked packages (none for the bump questions; at the first question with nothing marked, Enter is not offered and picks nothing, which fails with E273); an exact package name or `ecosystem/name` id wins over a row number, otherwise a number or range refers to rows (the review before writing shows what was picked); an answer naming anything not listed is asked again with the reason. When any listed name or id cannot be typed back exactly as one word (it is empty, contains whitespace or a comma, or is shown escaped), the hint begins `Some names here cannot be typed, so pick by row number.`, every number or range refers to rows even where a package has that name, and a word that is not a number or range is asked again with the reason, so no typed text picks a different package. A picked package whose name a changeset cannot hold fails with E268 before the review. The list itself is never redrawn, so terminal size and resizing do not affect it; the answer is read at a single-line prompt. Esc or Ctrl-C at that prompt cancels. Declining the confirmation, an editor that saves nothing, or an editor that exits non-zero writes nothing, prints `Cancelled, nothing written.` and exits 0; Esc or Ctrl-C at any question does the same with the cursor shown and the terminal settings restored, and exits 130 (E343); the editor's temporary file can remain if the terminal is closed while the editor is open. A SIGINT sent to the process from outside while a question is shown ends Callisto with the default signal behaviour; run `reset` if the terminal is left raw. After writing, it prints the path and the next step. Every wizard prompt, review and next-step line prints to stderr, not stdout."
     },
     {
       "id": "CLI-ADD-04",
-      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 2 with error `E214` whose help names `callisto add --package <name>:<severity>`.",
+      "criterion": "`callisto add` with no --package, and stdin or stderr not a terminal or --format json, exits 2 with error `E214` naming each missing flag (--package, and --summary when it was not given) and whose help reads `pass --package <ecosystem>/<name>:<severity> (repeatable) and --summary <text>`, before --summary is checked.",
       "is_error_case": true
     },
     {
@@ -224,11 +224,11 @@
     },
     {
       "id": "CLI-INIT-02",
-      "criterion": "Interactive init asks only: versioning (independent or fixed), only when the workspace has more than one package; whether to ship Cargo binaries as GitHub release assets, only when a supported Cargo binary target exists; the product package, only when more than one Cargo package produces a binary; comma-separated target triples; whether to generate a workflow (default yes); and whether to write callisto.toml (default yes). Without --versioning, packages version independently."
+      "criterion": "Interactive init asks only: versioning (independent or fixed), only when the workspace has more than one package; whether to ship Cargo binaries as GitHub release assets, only when a supported Cargo binary target exists; the product package, only when more than one Cargo package produces a binary; comma-separated target triples; whether to generate a workflow (default yes; not asked when the workflow file already exists, which is skipped with the note `--yes` prints); and whether to write callisto.toml (default yes). Without --versioning, packages version independently. The product question prints the binary packages once, numbered, and reads one typed line naming exactly one by number or name, as `add`'s package questions do, except that a name is resolved as --product-package resolves it: an `ecosystem/name` id, or a bare name only one workspace package has. A word naming any workspace package is a name, not a row number, and one that names a package that cannot be the product (ambiguous, not a binary) is asked again with the reason --product-package fails with; any other answer is asked again. When a listed id cannot be typed back exactly, the question picks by row number only, as `add`'s do. A bad --product-package or --artifact-target (no binary package, no GitHub origin, a duplicate or empty target) fails before any question."
     },
     {
       "id": "CLI-INIT-03",
-      "criterion": "A supplied flag (--versioning, --artifact-target, --product-package, --workflow, --no-workflow) skips its question, and declining the final write question writes no file."
+      "criterion": "A supplied flag (--versioning, --artifact-target, --product-package, --workflow, --no-workflow) skips its question, and declining the final write question writes no file, prints `Cancelled, nothing written.` and exits 0; Esc or Ctrl-C at any question writes no file and exits 130 (E343)."
     },
     {
       "id": "CLI-INIT-04",
@@ -258,7 +258,7 @@
     },
     {
       "id": "CLI-INIT-10",
-      "criterion": "With a non-terminal stdin and no --yes, init exits 2 with `E240` naming --yes and every other missing flag; with --yes it exits 2 with `E241` naming each missing flag: --product-package when --artifact-target is given and more than one supported Cargo package produces a binary.",
+      "criterion": "Without a terminal on stdin and stderr, or with --format json, and no --yes, init exits 2 with `E240` naming --yes and every other missing flag; with --yes it exits 2 with `E241` naming each missing flag: --product-package when --artifact-target is given and more than one supported Cargo package produces a binary.",
       "is_error_case": true
     },
     {
@@ -268,7 +268,7 @@
     },
     {
       "id": "CLI-INIT-12",
-      "criterion": "init exits without writing: 2 for an empty or repeated target triple (`E196`), a --product-package that is absent or not a supported Cargo binary producer (`E189`), or --product-package given without --artifact-target (`E298`); 1 for --artifact-target when no supported Cargo package produces a binary (`E188`), and for shipping binaries, by flag or by answer, when `origin` is not a GitHub repository (`E198`). An npm `bin` or Python `[project.scripts]` product selected for an artifact fails with a typed unsupported-builder diagnostic; registry-only npm and PyPI releases remain valid.",
+      "criterion": "init exits without writing: 2 for an empty or repeated target triple (`E196`), a --product-package that is absent, a bare name more than one package has, or not a supported Cargo binary producer (`E189`), or --product-package given without --artifact-target (`E298`); 1 for --artifact-target when no supported Cargo package produces a binary (`E188`), and for shipping binaries, by flag or by answer, when `origin` is not a GitHub repository (`E198`). An npm `bin` or Python `[project.scripts]` product selected for an artifact fails with a typed unsupported-builder diagnostic; registry-only npm and PyPI releases remain valid.",
       "is_error_case": true
     },
     {

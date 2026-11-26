@@ -108,10 +108,11 @@ pub(crate) fn needs_quoting(name: &str) -> bool {
             | ']'
             | '{'
             | '}'
-            | ' '
-    ) || name.contains(':')
+    ) || first.is_whitespace()
+        // The reader trims every Unicode whitespace character (tab, NBSP, ...) from a bare name.
+        || name.ends_with(char::is_whitespace)
+        || name.contains(':')
         || name.contains('#')
-        || name.ends_with(' ')
 }
 
 #[cfg(test)]
@@ -223,7 +224,10 @@ mod tests {
     }
 
     #[test]
-    fn needs_quoting_flags_trailing_space() {
-        assert!(needs_quoting("foo "));
+    fn needs_quoting_flags_boundary_whitespace() {
+        for name in ["foo ", " foo", "\tfoo", "foo\t", "\u{a0}foo", "foo\u{3000}"] {
+            assert!(needs_quoting(name), "{name:?}");
+        }
+        assert!(!needs_quoting("in\tside"));
     }
 }

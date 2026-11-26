@@ -114,12 +114,6 @@ fn tool_name(program: &str) -> &str {
         .unwrap_or(program)
 }
 
-fn remove_env(command: &mut std::process::Command, names: &[&str]) {
-    for name in names {
-        command.env_remove(name);
-    }
-}
-
 fn is_named_cargo_registry_token(name: &std::ffi::OsStr) -> bool {
     const PREFIX: &[u8] = b"CARGO_REGISTRIES_";
     const SUFFIX: &[u8] = b"_TOKEN";
@@ -132,6 +126,18 @@ fn is_named_cargo_registry_token(name: &std::ffi::OsStr) -> bool {
                 .get(bytes.len().saturating_sub(SUFFIX.len())..)
                 .is_some_and(|suffix| suffix.eq_ignore_ascii_case(SUFFIX))
     })
+}
+
+/// Every child process Callisto starts for a user-configured or external program: release credentials the tool does not
+/// use, `remove`, and named registry tokens (for anything but Cargo) are taken out, after `set` is applied.
+pub(crate) fn child_command(program: &str, remove: &[&str], set: &[(&str, &str)]) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    for name in unrelated_credentials(program).into_iter().chain(remove.iter().copied()) {
+        command.env_remove(name);
+    }
+    command.envs(set.iter().copied());
+    remove_unrelated_cargo_registry_tokens(&mut command, program);
+    command
 }
 
 /// Drops named registry tokens from a non-Cargo child, inherited or explicitly set; call after the child's variables.
@@ -153,10 +159,8 @@ pub struct CliCommandRunner;
 
 impl CommandRunner for CliCommandRunner {
     fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
-        let mut command = std::process::Command::new(program);
+        let mut command = child_command(program, &[], &[]);
         command.args(args).current_dir(cwd);
-        remove_env(&mut command, &unrelated_credentials(program));
-        remove_unrelated_cargo_registry_tokens(&mut command, program);
         let output = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -198,7 +202,6 @@ impl CommandRunner for CliCommandRunner {
     ) -> Result<CommandOutput, CommandError> {
         // Credential values are scanned here, not in `run_with_timeout_impl`, so the impl stays pure and testable
         // with a synthetic secrets list (no process-env mutation racing parallel tests).
-        let remove = unrelated_credentials(program);
         run_with_timeout_impl(
             program,
             args,
@@ -206,10 +209,7 @@ impl CommandRunner for CliCommandRunner {
             timeout,
             LiveEcho::STDERR,
             known_credential_env_values(std::env::vars()),
-            ChildEnvironment {
-                remove: &remove,
-                set: &[],
-            },
+            ChildEnvironment { remove: &[], set: &[] },
         )
     }
 
@@ -220,7 +220,6 @@ impl CommandRunner for CliCommandRunner {
         cwd: &Path,
         env: &[(&str, &str)],
     ) -> Result<CommandOutput, CommandError> {
-        let remove = unrelated_credentials(program);
         run_with_timeout_impl(
             program,
             args,
@@ -228,10 +227,7 @@ impl CommandRunner for CliCommandRunner {
             callisto_model::LOCAL_GIT_TIMEOUT,
             LiveEcho::STDERR,
             known_credential_env_values(std::env::vars()),
-            ChildEnvironment {
-                remove: &remove,
-                set: env,
-            },
+            ChildEnvironment { remove: &[], set: env },
         )
     }
 
@@ -243,10 +239,6 @@ impl CommandRunner for CliCommandRunner {
         timeout: Duration,
         removed: &[&str],
     ) -> Result<CommandOutput, CommandError> {
-        let remove = unrelated_credentials(program)
-            .into_iter()
-            .chain(removed.iter().copied())
-            .collect::<Vec<_>>();
         run_with_timeout_impl(
             program,
             args,
@@ -255,7 +247,7 @@ impl CommandRunner for CliCommandRunner {
             LiveEcho::STDERR,
             known_credential_env_values(std::env::vars()),
             ChildEnvironment {
-                remove: &remove,
+                remove: removed,
                 set: &[],
             },
         )
@@ -269,10 +261,6 @@ impl CommandRunner for CliCommandRunner {
         timeout: Duration,
         env: &[(&str, &str)],
     ) -> Result<CommandOutput, CommandError> {
-        let remove = unrelated_credentials(program)
-            .into_iter()
-            .chain(ACTION_SECRET_INPUTS.iter().copied())
-            .collect::<Vec<_>>();
         run_with_timeout_impl(
             program,
             args,
@@ -281,7 +269,7 @@ impl CommandRunner for CliCommandRunner {
             LiveEcho::BOTH,
             known_credential_env_values(std::env::vars()),
             ChildEnvironment {
-                remove: &remove,
+                remove: ACTION_SECRET_INPUTS,
                 set: env,
             },
         )
@@ -297,7 +285,6 @@ impl CommandRunner for CliCommandRunner {
         // Quiet mode never echoes stderr live (see `LiveEcho::NONE`
         // below), so there's nothing to redact -- pass an empty secrets
         // list rather than paying for an env scan that can only go unused.
-        let remove = unrelated_credentials(program);
         run_with_timeout_impl(
             program,
             args,
@@ -305,10 +292,7 @@ impl CommandRunner for CliCommandRunner {
             timeout,
             LiveEcho::NONE,
             Vec::new(),
-            ChildEnvironment {
-                remove: &remove,
-                set: &[],
-            },
+            ChildEnvironment { remove: &[], set: &[] },
         )
     }
 
@@ -319,10 +303,8 @@ impl CommandRunner for CliCommandRunner {
         cwd: &Path,
         stdin: &[u8],
     ) -> Result<CommandOutput, CommandError> {
-        let mut command = std::process::Command::new(program);
+        let mut command = child_command(program, &[], &[]);
         command.args(args).current_dir(cwd);
-        remove_env(&mut command, &unrelated_credentials(program));
-        remove_unrelated_cargo_registry_tokens(&mut command, program);
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -472,20 +454,13 @@ fn run_with_timeout_impl(
     live_secrets: Vec<String>,
     child_env: ChildEnvironment<'_>,
 ) -> Result<CommandOutput, CommandError> {
-    let mut command = std::process::Command::new(program);
+    let mut command = child_command(program, child_env.remove, child_env.set);
     command
         .args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    for name in child_env.remove {
-        command.env_remove(name);
-    }
-    for (name, value) in child_env.set {
-        command.env(name, value);
-    }
-    remove_unrelated_cargo_registry_tokens(&mut command, program);
     let mut child = command.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             CommandError::NotFound {

@@ -70,6 +70,9 @@ impl Prompter for Scripted {
             _ => panic!("`{prompt}` is not a select"),
         }
     }
+    fn pick(&mut self, prompt: &str, items: &[String], _: crate::tty::NameLookup<'_>) -> Result<usize, CliError> {
+        self.select(prompt, items)
+    }
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
         match self.next(prompt, Some(&default.to_string())) {
             Answer::Confirm(answer) => Ok(answer),
@@ -161,7 +164,7 @@ fn run_init_with_runner<R: CommandRunner>(
     let result = run(
         args,
         &global(root, OutputFormat::Text, dry_run),
-        interactive,
+        interactive.then(crate::tty::Prompts::for_tests),
         &mut prompter,
         &mut out.clone(),
         &mut err.clone(),
@@ -525,7 +528,7 @@ fn declining_the_preview_writes_nothing() {
         false,
     );
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
-    assert!(run.out.contains("nothing was written"));
+    assert!(run.out.contains(crate::tty::CANCELLED), "{}", run.out);
     assert!(nothing_written(dir.path()));
 }
 
@@ -908,7 +911,7 @@ fn dry_run_with_workflow_lists_every_file() {
         run(
             args,
             &global(dir.path(), OutputFormat::Json, true),
-            false,
+            None,
             &mut Scripted::new(vec![], &out),
             &mut out.clone(),
             &mut err.clone(),
@@ -946,7 +949,7 @@ fn json_reports_on_stdout() {
         run(
             yes(InitVersioning::Independent),
             &global(dir.path(), OutputFormat::Json, false),
-            false,
+            None,
             &mut Scripted::new(vec![], &out),
             &mut out.clone(),
             &mut err.clone(),
@@ -1256,7 +1259,7 @@ fn base_branch_sets_the_generated_workflow_branch_filter() {
         run(
             args,
             &global(dir.path(), OutputFormat::Json, false),
-            false,
+            None,
             &mut Scripted::new(vec![], &out),
             &mut out.clone(),
             &mut err.clone(),
@@ -1326,7 +1329,7 @@ fn base_branch_is_reported_when_the_default_workflow_cannot_be_built() {
     let (out, err) = (Shared::default(), Shared::default());
     run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
     assert!(
-        err.text().contains("Skipping the GitHub Actions workflow"),
+        err.text().contains("Keeping the existing GitHub Actions workflow"),
         "{}",
         err.text()
     );
@@ -1367,7 +1370,7 @@ fn run_with_json(root: &Path, args: InitArgs, dry_run: bool, out: &Shared, err: 
         run(
             args,
             &global(root, OutputFormat::Json, dry_run),
-            false,
+            None,
             &mut Scripted::new(vec![], out),
             &mut out.clone(),
             &mut err.clone(),
@@ -1544,7 +1547,7 @@ fn unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic() {
         run(
             InitArgs::default(),
             &global(dir.path(), OutputFormat::Json, false),
-            true,
+            Some(crate::tty::Prompts::for_tests()),
             &mut Scripted::new(vec![Answer::Confirm(true)], &out),
             &mut out.clone(),
             &mut err.clone(),
@@ -1632,4 +1635,120 @@ fn workflow_retry_reports_a_write_and_honours_dry_run() {
     assert_eq!(real.result.unwrap(), ExitCode::SUCCESS);
     assert!(!real.out.contains("[DRY-RUN]"), "{}", real.out);
     assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
+}
+
+#[test]
+fn flag_only_mistakes_fail_before_any_question() {
+    let triple = "x86_64-unknown-linux-gnu";
+    let cases: [(InitArgs, &str); 2] = [
+        (
+            InitArgs {
+                artifact_targets: vec![triple.to_owned(), triple.to_owned()],
+                ..Default::default()
+            },
+            "`x86_64-unknown-linux-gnu`",
+        ),
+        (
+            InitArgs {
+                artifact_targets: vec![triple.to_owned()],
+                product_package: Some("nope".to_owned()),
+                ..Default::default()
+            },
+            "nope",
+        ),
+    ];
+    for (args, named) in cases {
+        let dir = workspace(1);
+        let run = run_init(dir.path(), args, true, vec![], false);
+        let error = run.result.unwrap_err();
+        assert!(error.to_string().contains(named), "{error}");
+        assert!(run.prompter.asked.is_empty(), "asked {:?}", run.prompter.prompts());
+        assert!(nothing_written(dir.path()));
+    }
+}
+
+/// Only an existing workflow skips the question: a workflow path that cannot be checked (a symlink loop) is still
+/// offered, and accepting it surfaces the error before anything is written.
+#[cfg(unix)]
+#[test]
+fn a_workflow_path_that_cannot_be_checked_is_still_offered_and_fails_before_writing() {
+    let dir = workspace(0);
+    let workflow = scaffold::workflow_path(dir.path());
+    std::fs::create_dir_all(workflow.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&workflow, &workflow).unwrap();
+    let run = run_init(
+        dir.path(),
+        InitArgs::default(),
+        true,
+        vec![Answer::Confirm(true), Answer::Confirm(true)],
+        false,
+    );
+    assert!(run.result.is_err(), "{}", run.out);
+    assert_eq!(run.prompter.prompts().first().copied(), Some(WORKFLOW_PROMPT));
+    assert!(!dir.path().join("callisto.toml").exists());
+}
+
+#[test]
+fn an_existing_workflow_is_not_offered_and_is_skipped_with_the_note_yes_prints() {
+    let dir = workspace(0);
+    let workflow = scaffold::workflow_path(dir.path());
+    std::fs::create_dir_all(workflow.parent().unwrap()).unwrap();
+    std::fs::write(&workflow, "name: mine\n").unwrap();
+    let run = run_init(
+        dir.path(),
+        InitArgs::default(),
+        true,
+        vec![Answer::Confirm(true)],
+        false,
+    );
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert_eq!(run.prompter.prompts(), [WRITE_PROMPT]);
+    assert!(
+        run.out.contains("Keeping the existing GitHub Actions workflow"),
+        "{}",
+        run.out
+    );
+    // Retrying as-is would hit the same file, so the note only says how to regenerate it.
+    assert!(!run.out.contains("to retry"), "{}", run.out);
+    assert_eq!(std::fs::read_to_string(&workflow).unwrap(), "name: mine\n");
+}
+
+/// The product question resolves a typed name as `--product-package` does, against the whole workspace.
+#[test]
+fn a_typed_product_name_resolves_as_the_flag_does() {
+    let dir = workspace(2);
+    let root = dir.path();
+    // npm libraries: `app` shares a binary's bare name, `1` and `2` look like row numbers.
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"js","private":true,"workspaces":["js/*"]}"#,
+    )
+    .unwrap();
+    for name in ["app", "1"] {
+        std::fs::create_dir_all(root.join("js").join(name)).unwrap();
+        std::fs::write(
+            root.join("js").join(name).join("package.json"),
+            format!(r#"{{"name":"{name}","version":"1.0.0"}}"#),
+        )
+        .unwrap();
+    }
+    let facts = scaffold::detect(root, &IgnoreWalkLocator::new(root), &CliCommandRunner).unwrap();
+    let binaries: Vec<&InitPackage> = facts.binary_packages().collect();
+    let ids: Vec<&str> = binaries.iter().map(|package| package.id.as_str()).collect();
+    assert_eq!(ids, ["cargo/app", "cargo/tool"]);
+    let named = |word| product_named(&facts, &binaries, word);
+
+    assert_eq!(named("tool"), Some(Ok(1)), "a bare name only one package has");
+    assert_eq!(named("cargo/app"), Some(Ok(0)), "a qualified id");
+    for word in ["app", "1", "core", "npm/app"] {
+        let flag = facts.product_package(word).unwrap_err().to_string();
+        assert_eq!(
+            named(word),
+            Some(Err(flag)),
+            "{word}: refused for the flag's reason, not taken as a row"
+        );
+    }
+    assert!(named("app").unwrap().unwrap_err().contains("more than one package"));
+    assert_eq!(named("2"), None, "a word naming no package may be a row");
+    assert_eq!(named("missing"), None);
 }
