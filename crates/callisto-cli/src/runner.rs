@@ -8,6 +8,8 @@ use callisto_model::{
     CommandRunner,
 };
 
+use crate::output::advise;
+
 /// The most recent subprocess that exited non-zero, as a redacted summary a failing release can print after its error.
 static LAST_FAILED_COMMAND: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
@@ -170,7 +172,7 @@ impl CommandRunner for CliCommandRunner {
                 // classification, but never leak credentials to the terminal.
                 if !stderr.is_empty() {
                     let secrets = known_credential_env_values(std::env::vars());
-                    eprint!("{}", redact_known_secrets(&stderr, &secrets));
+                    advise(&mut std::io::stderr(), redact_known_secrets(&stderr, &secrets));
                 }
                 note_failed_command(program, o.status.code(), &stderr);
                 Ok(CommandOutput {
@@ -361,7 +363,7 @@ impl CommandRunner for CliCommandRunner {
                 let stderr = String::from_utf8_lossy(&o.stderr).into_owned();
                 if !stderr.is_empty() {
                     let secrets = known_credential_env_values(std::env::vars());
-                    eprint!("{}", redact_known_secrets(&stderr, &secrets));
+                    advise(&mut std::io::stderr(), redact_known_secrets(&stderr, &secrets));
                 }
                 note_failed_command(program, o.status.code(), &stderr);
                 Ok(CommandOutput {
@@ -418,7 +420,8 @@ fn capture_stream(mut reader: impl Read, echo: bool, secrets: &[String]) -> Stri
         if line.last() == Some(&b'\r') {
             line.pop();
         }
-        eprintln!("{}", redact_known_secrets(&String::from_utf8_lossy(line), secrets));
+        let line = redact_known_secrets(&String::from_utf8_lossy(line), secrets);
+        advise(&mut std::io::stderr(), format_args!("{line}\n"));
     };
     loop {
         match reader.read(&mut chunk) {
@@ -455,7 +458,7 @@ fn capture_stream(mut reader: impl Read, echo: bool, secrets: &[String]) -> Stri
 
 /// `live_secrets`: known-credential values (see
 /// [`callisto_model::known_credential_env_values`]) to redact from each
-/// line *before* it's echoed live to the terminal via `eprintln!`. This is
+/// line *before* it's echoed live to the terminal. This is
 /// deliberately separate from -- and does not affect -- the `captured`
 /// buffer that becomes the returned `CommandOutput.stderr`: that copy must
 /// stay byte-for-byte raw so downstream classifiers (e.g.
@@ -540,10 +543,12 @@ fn run_with_timeout_impl(
                     let stdout = stdout_rx.recv_timeout(READER_GRACE).ok();
                     let stderr = stderr_rx.recv_timeout(READER_GRACE).ok();
                     if stdout.is_none() || stderr.is_none() {
-                        eprintln!(
-                            "warning: `{program}` timed out and a descendant process \
-                                 appears to still hold its output pipes open; captured \
-                                 output may be incomplete"
+                        advise(
+                            &mut std::io::stderr(),
+                            format_args!(
+                                "warning: `{program}` timed out and a descendant process appears to still hold its \
+                                 output pipes open; captured output may be incomplete\n"
+                            ),
                         );
                     }
                     return Err(CommandError::TimedOut {
@@ -949,7 +954,7 @@ mod tests {
 
     /// The timeout-kill branch: the child (`sh -c "sleep 30 >&2 & sleep 10"`) outlives the timeout and a
     /// backgrounded grandchild keeps stderr open, so `run_with_timeout` must kill the child and warn. The warning
-    /// goes to real stderr via `eprintln!`, so the test re-execs the binary with `--nocapture` to capture it.
+    /// goes to real stderr, so the test re-execs the binary with `--nocapture` to capture it.
     #[test]
     fn run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open() {
         const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_KILL_CHILD";
@@ -982,6 +987,65 @@ mod tests {
             stderr.contains("timed out and a descendant process appears to still hold its output pipes open"),
             "expected the timeout branch's specific warning text in child stderr, got: {stderr}"
         );
+    }
+
+    /// With this process's stderr closed, every echo fails; each runner still drains and returns the child's real exit
+    /// status and raw output, and a timeout is still `TimedOut`. Re-execs with stderr on a pipe whose reader is closed.
+    #[test]
+    fn a_closed_stderr_never_changes_what_a_child_returned() {
+        const CHILD_ENV: &str = "CALLISTO_RUN_CLOSED_STDERR_CHILD";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            let script = "echo classify-me; echo echoed-line >&2; exit 3";
+            let cwd = std::path::Path::new(".");
+            let long = Duration::from_secs(30);
+            let outputs = [
+                ("run", runner.run("sh", &["-c", script], cwd)),
+                ("run_with_stdin", runner.run_with_stdin("sh", &["-c", script], cwd, b"")),
+                (
+                    "run_with_timeout",
+                    runner.run_with_timeout("sh", &["-c", script], cwd, long),
+                ),
+                (
+                    "run_with_timeout_publisher",
+                    runner.run_with_timeout_publisher("sh", &["-c", script], cwd, long, &[("CALLISTO_X", "1")]),
+                ),
+            ];
+            for (name, output) in outputs {
+                let output = output.unwrap_or_else(|error| panic!("{name}: {error:?}"));
+                assert_eq!(output.exit_code, Some(3), "{name}");
+                assert_eq!(output.stdout, "classify-me\n", "{name}");
+                assert_eq!(output.stderr, "echoed-line\n", "{name}");
+            }
+            let timed_out = runner.run_with_timeout(
+                "sh",
+                &[
+                    "-c",
+                    "echo started >&2; sleep 30 >&2 1>/dev/null & sleep 10 >/dev/null 2>&1",
+                ],
+                cwd,
+                Duration::from_millis(800),
+            );
+            assert!(matches!(timed_out, Err(CommandError::TimedOut { .. })), "{timed_out:?}");
+            println!("closed-stderr child finished");
+            return;
+        }
+
+        let (reader, writer) = std::io::pipe().expect("create a pipe");
+        drop(reader);
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::a_closed_stderr_never_changes_what_a_child_returned")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .stderr(writer)
+            .output()
+            .expect("failed to re-exec test binary");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{stdout}");
+        assert!(stdout.contains("closed-stderr child finished"), "{stdout}");
     }
 
     /// A subprocess that writes far more than `MAX_CAPTURED_OUTPUT_BYTES`
@@ -1092,7 +1156,7 @@ mod tests {
 
     /// The actual point of `run_quiet`: it must not echo stderr live to the
     /// terminal the way `run_with_timeout` does. Because the live echo goes
-    /// via `eprintln!` from inside `run_quiet` itself (not captured in
+    /// to real stderr from inside `run_quiet` itself (not captured in
     /// `CommandOutput`), this re-execs the current test binary as a child
     /// process with `--nocapture` so the real OS-level stderr can be
     /// observed and asserted on -- same pattern as
@@ -1254,7 +1318,7 @@ mod tests {
     /// entry point: a known-credential env var (`NPM_TOKEN`) present in the
     /// process environment must be scrubbed from the *live* terminal echo.
     /// Uses the re-exec pattern (see `run_with_timeout_still_streams_stderr_live`)
-    /// because the live echo goes via `eprintln!`, not `CommandOutput`.
+    /// because the live echo goes to real stderr, not `CommandOutput`.
     #[test]
     fn run_with_timeout_redacts_known_credential_env_value_from_live_stderr_echo() {
         const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_REDACT_CHILD";

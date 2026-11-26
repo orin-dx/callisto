@@ -631,6 +631,13 @@ pub const CREDENTIAL_VARS: &[&str] = &[
 /// Runs bare `callisto release` (local route) against the fake publishers.
 /// `home` isolates `~/.cargo` and `~/.npmrc`.
 pub fn release_local(root: &Path, args: &[&str], home: &Path, publishers: FakePublishers<'_>) -> Output {
+    release_local_command(root, args, home, publishers)
+        .output()
+        .expect("callisto release should run")
+}
+
+/// The command [`release_local`] runs, for a caller that sets its streams.
+pub fn release_local_command(root: &Path, args: &[&str], home: &Path, publishers: FakePublishers<'_>) -> Command {
     let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
     let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
     command.args(["--cwd", root.to_str().unwrap()]).args(args);
@@ -652,9 +659,15 @@ pub fn release_local(root: &Path, args: &[&str], home: &Path, publishers: FakePu
         .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
         .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
-        .env(NO_BACKOFF_SLEEP.0, NO_BACKOFF_SLEEP.1)
-        .output()
-        .expect("callisto release should run")
+        .env(NO_BACKOFF_SLEEP.0, NO_BACKOFF_SLEEP.1);
+    command
+}
+
+/// A pipe whose reading end is already closed: every write to it fails with `BrokenPipe`.
+pub fn closed_pipe() -> std::process::Stdio {
+    let (reader, writer) = std::io::pipe().expect("create a pipe");
+    drop(reader);
+    writer.into()
 }
 
 pub fn execute_from_coordinator(

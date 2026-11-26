@@ -215,8 +215,8 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     }
 
     match global.format {
-        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
-        OutputFormat::Text => render::render_version(&report, &ws.config, &mut std::io::stdout())?,
+        OutputFormat::Json => emit_report(&mut crate::output::stdout(), &report, global.dry_run)?,
+        OutputFormat::Text => render::render_version(&report, &ws.config, &mut crate::output::stdout())?,
     }
 
     // Mirrors the pattern in status.rs: diagnostics ride in the report so the

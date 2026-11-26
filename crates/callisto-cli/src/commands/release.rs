@@ -31,13 +31,18 @@ use crate::cli::{
 };
 use crate::error::CliError;
 use crate::io::{read_json_file, OutputFile, OutputKind};
-use crate::output::{emit_line, emit_report, log_line, write_document};
+use crate::output::{advise, emit_line, emit_report, log_line, write_document};
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
 pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    run(args, global, &mut std::io::stderr())
+}
+
+/// `release` with its notes and warnings written to `err`.
+pub fn run(args: ReleaseCommandArgs, global: &GlobalArgs, err: &mut dyn std::io::Write) -> Result<ExitCode, CliError> {
     match args.command {
-        None => release(&args.packages, args.receipt.as_deref(), global),
+        None => release(&args.packages, args.receipt.as_deref(), global, err),
         Some(ReleaseArgs::Pending(args)) => pending(args, global),
         Some(ReleaseArgs::Plan(args)) => plan(args, global),
         Some(ReleaseArgs::Inspect(args)) => inspect(args, global),
@@ -81,22 +86,23 @@ impl PendingWork {
 
     /// One stderr line saying why the check could not run, naming the error code and where to see the cause. Never a
     /// report diagnostic: the pending-work code means work was found.
-    pub(crate) fn write_unchecked_note(&self, err: &mut dyn std::io::Write) -> Result<(), CliError> {
+    pub(crate) fn write_unchecked_note(&self, err: &mut dyn std::io::Write) {
         if let Some(error) = &self.unchecked {
             let code = miette::Diagnostic::code(error).map_or_else(|| "no code".to_owned(), |code| code.to_string());
-            writeln!(
+            advise(
                 err,
-                "note: could not check for pending version work ({code}); run `callisto status` for the cause"
-            )?;
+                format_args!(
+                    "note: could not check for pending version work ({code}); run `callisto status` for the cause\n"
+                ),
+            );
         }
-        Ok(())
     }
 
-    fn write_notes(&self, err: &mut dyn std::io::Write) -> Result<(), CliError> {
+    fn write_notes(&self, err: &mut dyn std::io::Write) {
         if let Some(note) = self.diagnostic() {
-            writeln!(err, "note: {}", note.message)?;
+            advise(err, format_args!("note: {}\n", note.message));
         }
-        self.write_unchecked_note(err)
+        self.write_unchecked_note(err);
     }
 }
 
@@ -136,7 +142,12 @@ fn tag_missing_from_origin_note(tag: &str) -> String {
 /// Exact stdout when no package has an unreleased version.
 pub const NOTHING_TO_RELEASE: &str = "Nothing to release.";
 
-fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+fn release(
+    packages: &[String],
+    receipt: Option<&std::path::Path>,
+    global: &GlobalArgs,
+    err: &mut dyn std::io::Write,
+) -> Result<ExitCode, CliError> {
     let selections = parse_selections(packages)?;
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
@@ -161,7 +172,7 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
         (missing.map(|handle| handle.join().unwrap_or_default()), planned)
     });
     for tag in missing.unwrap_or_default() {
-        eprintln!("{}", tag_missing_from_origin_note(&tag));
+        advise(&mut *err, format_args!("{}\n", tag_missing_from_origin_note(&tag)));
     }
     let plan = match planned {
         Err(error)
@@ -175,7 +186,7 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
         {
             // The version work that would make the selection a release is the answer to the refusal.
             let pending = PendingWork::of(pending_version_work(&workspace, &selections));
-            write_release_preview_notes(None, &pending, &mut std::io::stderr())?;
+            write_release_preview_notes(None, &pending, &mut *err);
             return Err(error.into());
         }
         other => other?,
@@ -186,19 +197,19 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
             plan.as_ref(),
             global.format,
             pending.diagnostic(),
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
         )?;
-        write_release_preview_notes(plan.as_ref(), &pending, &mut std::io::stderr())?;
+        write_release_preview_notes(plan.as_ref(), &pending, &mut *err);
         return Ok(ExitCode::SUCCESS);
     }
     let Some(plan) = plan else {
         print_nothing_to_release(global)?;
         let pending = PendingWork::of(pending_version_work(&workspace, &selections));
-        write_release_preview_notes(None, &pending, &mut std::io::stderr())?;
+        write_release_preview_notes(None, &pending, &mut *err);
         return Ok(ExitCode::SUCCESS);
     };
     for diagnostic in &plan.diagnostics {
-        eprintln!("warning: {}", diagnostic.message);
+        advise(&mut *err, format_args!("warning: {}\n", diagnostic.message));
     }
     let intent = plan.intent;
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
@@ -231,7 +242,7 @@ fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &Glob
     }
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &ReleaseReport {
                 receipt: receipt_document.clone(),
             },
@@ -283,26 +294,22 @@ pub(crate) fn write_release_preview(
 }
 
 /// The notes `release --dry-run` adds to a preview, on stderr.
-fn write_release_preview_notes(
-    plan: Option<&LocalReleasePlan>,
-    pending: &PendingWork,
-    err: &mut dyn std::io::Write,
-) -> Result<(), CliError> {
+fn write_release_preview_notes(plan: Option<&LocalReleasePlan>, pending: &PendingWork, err: &mut dyn std::io::Write) {
     if let Some(plan) = plan {
         if let Some(refusal) = &plan.tags_unbound {
-            writeln!(err, "{}", tags_unbound_note(refusal))?;
+            advise(err, format_args!("{}\n", tags_unbound_note(refusal)));
         }
         for diagnostic in &plan.diagnostics {
-            writeln!(err, "warning: {}", diagnostic.message)?;
+            advise(err, format_args!("warning: {}\n", diagnostic.message));
         }
     }
-    pending.write_notes(err)
+    pending.write_notes(err);
 }
 
 fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &ReleaseNothingReport {
                 nothing_to_release: true,
             },
@@ -441,7 +448,7 @@ fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
                 })
                 .collect();
             emit_report(
-                &mut std::io::stdout(),
+                &mut crate::output::stdout(),
                 &callisto_model::ReleasePendingReport { pending: releases },
                 global.dry_run,
             )?;
@@ -517,7 +524,7 @@ fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<Exi
     )?;
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &callisto_model::ReleaseBuildPythonReport { built },
             global.dry_run,
         )?,
@@ -543,7 +550,7 @@ fn pack_npm(args: ReleasePackNpmArgs, global: &GlobalArgs) -> Result<ExitCode, C
     )?;
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &callisto_model::ReleasePackNpmReport { built },
             global.dry_run,
         )?,
@@ -568,7 +575,7 @@ fn package_cargo(args: ReleasePackageCargoArgs, global: &GlobalArgs) -> Result<E
     )?;
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &callisto_model::ReleasePackageCargoReport { built },
             global.dry_run,
         )?,
@@ -662,7 +669,7 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
     out.commit(&permit, &manifest)?;
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &ReleaseArtifactManifestReport {
                 manifest: manifest.clone(),
             },
@@ -826,11 +833,14 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
     let permit = out.permit();
     out.commit(&permit, &intent)?;
     for diagnostic in &diagnostics {
-        eprintln!("warning: {}", diagnostic.message);
+        advise(
+            &mut std::io::stderr(),
+            format_args!("warning: {}\n", diagnostic.message),
+        );
     }
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &ReleasePlanReport {
                 intent: intent.clone(),
                 diagnostics: diagnostics.clone(),
@@ -849,7 +859,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
 fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let value: serde_json::Value = read_json_file(&global.resolve_file_arg(&args.input))?;
     match global.format {
-        OutputFormat::Json => write_document(&mut std::io::stdout(), &value)?,
+        OutputFormat::Json => write_document(&mut crate::output::stdout(), &value)?,
         OutputFormat::Text => emit_line(&serde_json::to_string_pretty(&value).expect("JSON value serializes"))?,
     }
     Ok(ExitCode::SUCCESS)
@@ -939,7 +949,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     receipt.commit(&permit, &receipt_document)?;
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &ReleaseExecuteReport {
                 receipt: receipt_document.clone(),
             },

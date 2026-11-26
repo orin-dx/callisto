@@ -42,7 +42,11 @@ impl Rig {
     }
 
     fn run(&self, root: &Path, args: &[&str]) -> std::process::Output {
-        release_local(
+        self.command(root, args).output().expect("callisto release should run")
+    }
+
+    fn command(&self, root: &Path, args: &[&str]) -> std::process::Command {
+        release_local_command(
             root,
             args,
             &self.home(),
@@ -53,6 +57,14 @@ impl Rig {
                 git_trace: &self.git_trace,
             },
         )
+    }
+
+    /// Runs with stderr closed: every note, warning and error card fails to write.
+    fn run_without_stderr(&self, root: &Path, args: &[&str]) -> std::process::Output {
+        self.command(root, args)
+            .stderr(closed_pipe())
+            .output()
+            .expect("callisto release should run")
     }
 
     fn effects(&self) -> String {
@@ -1254,5 +1266,144 @@ fn selecting_one_distribution_of_a_dual_package_releases_both() {
             .collect();
         publishes.sort_unstable();
         assert_eq!(publishes, ["cargo/dual", "npm/dual"], "{selection}: {plan}");
+    }
+}
+
+/// A closed stderr loses the notes and warnings, never the result: the preview exits as it does with stderr open and
+/// its report still reaches stdout.
+#[test]
+fn a_closed_stderr_never_changes_a_preview_result() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    // A local tag `origin` lacks adds the missing-tag warning; a new changeset adds the pending-work note.
+    git(
+        root,
+        &[
+            "tag",
+            "-a",
+            "-m",
+            "Release core-crate@0.2.0",
+            "core-crate@0.2.0",
+            &release_commit,
+        ],
+    );
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    let control = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(control.status.success(), "{}", stderr(&control));
+    assert!(stderr(&control).contains("not on `origin`"), "{}", stderr(&control));
+    assert!(
+        stderr(&control).contains("run `callisto version`"),
+        "{}",
+        stderr(&control)
+    );
+
+    let text = rig.run_without_stderr(root, &["--format", "text", "--dry-run", "release"]);
+    assert_eq!(text.status.code(), Some(0));
+    assert_eq!(text.stdout, control.stdout);
+    let json = rig.run_without_stderr(root, &["--format", "json", "--dry-run", "release"]);
+    assert_eq!(json.status.code(), Some(0));
+    let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "pending-version-work"),
+        "{report}"
+    );
+}
+
+/// The note that the pending-work check failed is advisory too.
+#[test]
+fn a_closed_stderr_never_fails_a_preview_whose_pending_check_failed() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/broken.md"),
+        "---\n\"cargo/core-crate\": nonsense\n---\n\nText.\n",
+    )
+    .unwrap();
+    let control = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(
+        stderr(&control).contains("could not check for pending version work"),
+        "{}",
+        stderr(&control)
+    );
+    for format in ["text", "json"] {
+        let run = rig.run_without_stderr(root, &["--format", format, "--dry-run", "release"]);
+        assert_eq!(run.status.code(), Some(0), "{format}");
+        assert!(!run.stdout.is_empty(), "{format}");
+    }
+}
+
+/// Nothing to release with pending work, previewed and run, exits 0 with stderr closed and makes no effect.
+#[test]
+fn a_closed_stderr_never_fails_nothing_to_release() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let released = rig.run(root, &["release"]);
+    assert!(released.status.success(), "{}", stderr(&released));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "changeset"]);
+    let before = rig.mutations();
+    for args in [
+        ["--format", "text", "--dry-run", "release"].as_slice(),
+        &["--format", "json", "--dry-run", "release"],
+        &["--format", "text", "release"],
+        &["--format", "json", "release"],
+    ] {
+        let control = rig.run(root, args);
+        assert!(
+            stderr(&control).contains("run `callisto version`"),
+            "{args:?}: {}",
+            stderr(&control)
+        );
+        let run = rig.run_without_stderr(root, args);
+        assert_eq!(run.status.code(), Some(0), "{args:?}");
+        assert_eq!(run.stdout, control.stdout, "{args:?}");
+    }
+    assert_eq!(rig.mutations(), before);
+}
+
+/// A selection that is not a release keeps its exit status, not a panic, when its note cannot be written.
+#[test]
+fn a_closed_stderr_keeps_the_not_a_release_exit_status() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let released = rig.run(root, &["release"]);
+    assert!(released.status.success(), "{}", stderr(&released));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "changeset"]);
+    for format in ["text", "json"] {
+        for dry_run in [true, false] {
+            let mut args = vec!["--format", format, "release", "--package", "cargo/core-crate"];
+            if dry_run {
+                args.insert(2, "--dry-run");
+            }
+            let control = rig.run(root, &args);
+            assert_eq!(control.status.code(), Some(1), "{args:?}: {}", stderr(&control));
+            assert!(stderr(&control).contains("E169"), "{args:?}: {}", stderr(&control));
+            let run = rig.run_without_stderr(root, &args);
+            assert_eq!(run.status.code(), Some(1), "{args:?}");
+        }
     }
 }

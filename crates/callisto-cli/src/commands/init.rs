@@ -13,7 +13,7 @@ use dialoguer::{Confirm, Input, Select};
 
 use crate::cli::{GlobalArgs, InitArgs, InitVersioning, OutputFormat};
 use crate::error::CliError;
-use crate::output::emit_report;
+use crate::output::{advise, emit_report};
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::tty;
@@ -92,7 +92,7 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
         global,
         tty::is_interactive(),
         &mut TerminalPrompter,
-        &mut std::io::stdout(),
+        &mut crate::output::stdout(),
         &mut std::io::stderr(),
         &CliCommandRunner,
     )
@@ -108,11 +108,10 @@ struct Notes {
 }
 
 impl Notes {
-    /// Renders the queued notes to stderr and moves them to the shown ones.
-    fn emit(&mut self, err: &mut dyn Write) -> Result<(), CliError> {
-        render::render_diagnostics(&self.items, None, &mut &mut *err)?;
+    /// Says the queued notes on stderr, best effort, and moves them to the shown ones; the JSON report carries them.
+    fn emit(&mut self, err: &mut dyn Write) {
+        advise_diagnostics(&self.items, err);
         self.shown.append(&mut self.items);
-        Ok(())
     }
 
     /// Every note, shown or not, for the JSON report; call `emit` first so each reaches stderr once.
@@ -121,6 +120,13 @@ impl Notes {
         all.append(&mut self.items);
         all
     }
+}
+
+/// Says `diagnostics` on stderr, best effort: the JSON report carries them too.
+fn advise_diagnostics(diagnostics: &[callisto_model::Diagnostic], err: &mut dyn Write) {
+    let mut text = Vec::new();
+    render::render_diagnostics(diagnostics, None, &mut text).expect("rendering to memory cannot fail");
+    advise(err, String::from_utf8_lossy(&text));
 }
 
 /// `init` against explicit terminal state, prompter, output streams, and command runner.
@@ -145,8 +151,7 @@ pub fn run<R: CommandRunner>(
         &mut notes,
     );
     if result.is_err() {
-        // The original error wins; a failed stderr write must not replace it.
-        drop(notes.emit(err));
+        notes.emit(err);
     }
     result
 }
@@ -335,7 +340,7 @@ fn run_queued<'a, R: CommandRunner>(
             }
             let pending = super::release::PendingWork::of(pending);
             notes.items.extend(pending.diagnostic());
-            pending.write_unchecked_note(&mut *err)?;
+            pending.write_unchecked_note(&mut *err);
         }
         None => writeln!(human!(), "{NO_COMMITS}")?,
     }
@@ -356,7 +361,7 @@ fn run_queued<'a, R: CommandRunner>(
         }
     } else {
         // Said before the write question so a decline keeps them.
-        notes.emit(&mut *err)?;
+        notes.emit(&mut *err);
         if prompting && !prompter.confirm(WRITE_PROMPT, true)? {
             if json {
                 // The person who declined reads stderr; stdout may be a file.
@@ -380,7 +385,7 @@ fn run_queued<'a, R: CommandRunner>(
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
             notes.items.push(merge_publishes_diagnostic(branch));
             // The merge note and its advice come before the next steps.
-            notes.emit(&mut *err)?;
+            notes.emit(&mut *err);
             writeln!(
                 human!(),
                 "{}",
@@ -390,7 +395,7 @@ fn run_queued<'a, R: CommandRunner>(
         report.files = files;
         report
     };
-    notes.emit(&mut *err)?;
+    notes.emit(&mut *err);
     report.diagnostics.extend(notes.take_all());
     finish(&report, global, out)
 }
@@ -459,7 +464,7 @@ fn run_workflow_only<R: CommandRunner>(
         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
         scaffold::write_workflow(&facts.root, &workflow, &permit)?;
         let note = merge_publishes_diagnostic(&branch);
-        render::render_diagnostics(std::slice::from_ref(&note), None, &mut &mut *err)?;
+        advise_diagnostics(std::slice::from_ref(&note), err);
         let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
         writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(&facts)))?;
         diagnostics.push(note);

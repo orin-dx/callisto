@@ -12,11 +12,6 @@ pub(crate) fn write_document<W: io::Write, S: Serialize + ?Sized>(w: &mut W, val
     writeln!(w, "{text}")
 }
 
-/// Writes the JSON error envelope that `format_error_json` builds.
-pub fn write_error_json<W: io::Write>(w: &mut W, envelope: &serde_json::Value) -> io::Result<()> {
-    write_document(w, envelope)
-}
-
 /// Serializes any `Report` value to the one JSON success envelope every
 /// command shares: `{schemaVersion, command, dryRun, ...payload,
 /// diagnostics}`. `command` comes from `R::COMMAND`, `schemaVersion` from
@@ -34,24 +29,41 @@ pub fn emit_report<W: io::Write, R: callisto_model::Report>(w: &mut W, val: &R, 
     writeln!(w, "{text}")
 }
 
-/// Writes `bytes` to stdout. A closed reading end (e.g. `callisto ... | head`)
-/// is not a failure -- it's the normal way a consumer stops reading -- so a
-/// `BrokenPipe` is swallowed here instead of propagating, which is what
-/// makes this the one sink callers use in place of `println!` (which panics
-/// on that same condition).
-pub fn write_stdout(bytes: &[u8]) -> io::Result<()> {
-    write_swallowing_broken_pipe(&mut io::stdout(), bytes)
+/// Standard output as every command writes it. A reader that closes it early (`callisto status | head`) ends the
+/// output, not the command: a write to the closed pipe counts as done. Any other write error is returned.
+pub struct Stdout<W>(W);
+
+impl<W: Write> Stdout<W> {
+    pub fn new(inner: W) -> Self {
+        Self(inner)
+    }
 }
 
-/// The actual classification [`write_stdout`] applies, pulled out so a test
-/// can exercise it against a real closed pipe without touching the
-/// process's real (unredirectable, in-process) stdout fd.
-fn write_swallowing_broken_pipe<W: Write>(w: &mut W, bytes: &[u8]) -> io::Result<()> {
-    match w.write_all(bytes) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
-        Err(e) => Err(e),
+/// The process's stdout, through [`Stdout`].
+#[expect(clippy::disallowed_methods, reason = "the one place stdout is opened for writing")]
+pub fn stdout() -> Stdout<io::Stdout> {
+    Stdout::new(io::stdout())
+}
+
+impl<W: Write> Write for Stdout<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self.0.write(buf) {
+            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(buf.len()),
+            result => result,
+        }
     }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self.0.flush() {
+            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+            result => result,
+        }
+    }
+}
+
+/// Writes `bytes` to [`stdout`].
+pub fn write_stdout(bytes: &[u8]) -> io::Result<()> {
+    stdout().write_all(bytes)
 }
 
 /// Writes one line (plus trailing newline) through [`write_stdout`].
@@ -59,17 +71,19 @@ pub fn emit_line(line: &str) -> io::Result<()> {
     write_stdout(format!("{line}\n").as_bytes())
 }
 
-/// Writes one line to stderr -- for interactive wizard narration
-/// (`callisto add`'s step prompts), which must stay off stdout so a script
-/// piping stdout never sees prompt text mixed into a report or changeset preview.
-pub fn prompt_line(line: &str) {
-    eprintln!("{line}");
+pub use callisto_graph::note::advise;
+
+/// Writes one line of wizard narration (`callisto add`'s step prompts) to stderr, off stdout so a script piping
+/// stdout never sees prompt text mixed into a report or changeset preview.
+pub fn prompt_line(line: &str) -> io::Result<()> {
+    writeln!(io::stderr(), "{line}")
 }
 
+/// A progress line: stdout in text; in JSON, where stdout carries only the report, an advisory line on stderr.
 pub fn log_line(format: OutputFormat, line: &str) -> io::Result<()> {
     match format {
         OutputFormat::Json => {
-            eprintln!("{line}");
+            advise(&mut io::stderr(), format_args!("{line}\n"));
             Ok(())
         }
         OutputFormat::Text => emit_line(line),
@@ -131,40 +145,32 @@ mod tests {
         assert!(text.contains("\"dryRun\": true"), "got:\n{text}");
     }
 
-    /// Against a *real* closed pipe (a `UnixStream` half whose peer was
-    /// dropped, not a simulated error), the raw write must actually fail
-    /// with `BrokenPipe` (positive proof this test exercises the real
-    /// condition, not a vacuously-true no-op), and
-    /// `write_swallowing_broken_pipe` -- the classification `write_stdout`
-    /// applies to the real stdout fd -- must convert that into `Ok(())`
-    /// rather than let it propagate (`println!`'s failure mode).
+    /// Against a real closed pipe the raw write fails with `BrokenPipe` (so the test reproduces the condition), and
+    /// [`Stdout`] counts the write as done.
     #[cfg(unix)]
     #[test]
-    fn write_swallowing_broken_pipe_converts_a_real_broken_pipe_to_ok() {
+    fn stdout_counts_a_write_to_a_closed_pipe_as_done() {
         use std::os::unix::net::UnixStream;
 
         let (mut writer, reader) = UnixStream::pair().expect("create socket pair");
         drop(reader);
 
-        // The peer's close is not always visible to the very first write, so keep writing until
-        // the broken pipe surfaces.
+        // The peer's close is not always visible to the very first write, so keep writing until it surfaces.
         let raw_err = (0..64)
             .find_map(|_| writer.write_all(&[0u8; 4096]).err())
             .expect("writing to a closed UnixStream peer must fail");
-        assert_eq!(
-            raw_err.kind(),
-            io::ErrorKind::BrokenPipe,
-            "test setup must reproduce a real BrokenPipe, got: {raw_err:?}"
-        );
+        assert_eq!(raw_err.kind(), io::ErrorKind::BrokenPipe, "{raw_err:?}");
 
-        let result = write_swallowing_broken_pipe(&mut writer, b"more data after the pipe broke");
-        assert!(result.is_ok(), "must swallow BrokenPipe, got: {result:?}");
+        let mut sink = Stdout::new(writer);
+        let result = sink
+            .write_all(b"more data after the pipe broke")
+            .and_then(|()| sink.flush());
+        assert!(result.is_ok(), "{result:?}");
     }
 
-    /// A non-`BrokenPipe` I/O error must still propagate -- this isn't a
-    /// blanket "ignore every write error", only the closed-pipe case.
+    /// Only the closed pipe is quiet: any other error reaches the caller.
     #[test]
-    fn write_swallowing_broken_pipe_propagates_other_errors() {
+    fn stdout_returns_other_errors() {
         struct AlwaysFails;
         impl Write for AlwaysFails {
             fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
@@ -175,63 +181,8 @@ mod tests {
             }
         }
 
-        let result = write_swallowing_broken_pipe(&mut AlwaysFails, b"data");
-        assert_eq!(
-            result.unwrap_err().kind(),
-            io::ErrorKind::PermissionDenied,
-            "a non-BrokenPipe error must still propagate"
-        );
-    }
-
-    /// No source file under `callisto-cli/src` may call the raw `println!`
-    /// macro outside a `#[cfg(test)]` module: it panics on a closed stdout
-    /// (`BrokenPipe`) instead of exiting quietly, unlike
-    /// [`write_stdout`]/[`emit_line`]. `eprintln!` (stderr) is unaffected.
-    #[test]
-    fn println_macro_is_banned_outside_test_modules() {
-        let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut offenders = Vec::new();
-        visit_rs_files(&src_dir, &mut offenders);
-        assert!(
-            offenders.is_empty(),
-            "println! is banned in callisto-cli/src outside #[cfg(test)] modules; use \
-             output::write_stdout/emit_line instead. Offending locations:\n{}",
-            offenders.join("\n")
-        );
-    }
-
-    fn visit_rs_files(dir: &std::path::Path, offenders: &mut Vec<String>) {
-        for entry in std::fs::read_dir(dir).expect("read_dir").flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                visit_rs_files(&path, offenders);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                check_file_for_bare_println(&path, offenders);
-            }
-        }
-    }
-
-    /// Scans only the portion of the file before its first `#[cfg(test)]`
-    /// module (every file in this crate puts its test module last), skips
-    /// comment lines (this very file's doc comments mention `println!` by
-    /// name), and flags a `println!` call that is not part of `eprintln!`.
-    fn check_file_for_bare_println(path: &std::path::Path, offenders: &mut Vec<String>) {
-        let text = std::fs::read_to_string(path).expect("read source file");
-        let scope = text.split("#[cfg(test)]").next().unwrap_or(&text);
-        for (i, line) in scope.lines().enumerate() {
-            if line.trim_start().starts_with("//") {
-                continue;
-            }
-            let mut search_from = 0;
-            while let Some(pos) = line[search_from..].find("println!") {
-                let idx = search_from + pos;
-                let preceded_by_e = idx > 0 && line.as_bytes()[idx - 1] == b'e';
-                if !preceded_by_e {
-                    offenders.push(format!("{}:{}: {}", path.display(), i + 1, line.trim()));
-                }
-                search_from = idx + "println!".len();
-            }
-        }
+        let result = Stdout::new(AlwaysFails).write_all(b"data");
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[test]

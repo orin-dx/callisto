@@ -34,7 +34,7 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
     let report = callisto_graph::commands::status(&ws, &inference, &opts)?;
 
     match global.format {
-        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
+        OutputFormat::Json => emit_report(&mut crate::output::stdout(), &report, global.dry_run)?,
         OutputFormat::Text => render::render_status(&report, crate::color::enabled(), &mut crate::color::stdout())?,
     }
 

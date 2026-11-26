@@ -1,6 +1,8 @@
 //! Standalone callisto CLI binary library target.
 
 #![allow(clippy::result_large_err)]
+// Output goes through `output`: stdout through its sink, advisory stderr through `advise`.
+#![deny(clippy::print_stdout, clippy::print_stderr)]
 
 pub mod cli;
 pub mod color;

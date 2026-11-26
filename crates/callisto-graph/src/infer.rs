@@ -18,7 +18,8 @@ pub trait SeverityInference: Send + Sync {
         window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError>;
 
-    /// Whether `infer` reads commit history, so a shallow clone would silently shorten its window.
+    /// Whether `infer` reads commit history, so a shallow clone would silently shorten its window. Asked only when
+    /// [`Self::is_active`].
     fn requires_full_history(&self) -> bool {
         true
     }

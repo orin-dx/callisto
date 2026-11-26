@@ -2364,6 +2364,36 @@ fn auto_package_with_tag_of_tag() -> (tempfile::TempDir, SinglePackageGraph, Com
     (ws_dir, graph, head)
 }
 
+/// Real git whose bulk tag listing answers as Git before 2.44 did: a tag of a tag peels one level, to the inner tag, so
+/// the listing names no commit for it.
+struct LegacyTagListing;
+
+impl CommandRunner for LegacyTagListing {
+    fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+        let mut output = RealGitRunner.run(program, args, cwd)?;
+        if args.first() == Some(&"for-each-ref") && args.iter().any(|arg| arg.contains("%(*objectname)")) {
+            output.stdout = output
+                .stdout
+                .lines()
+                .map(|line| {
+                    let mut fields: Vec<String> = line.split('\0').map(str::to_owned).collect();
+                    if fields.len() == 5 && fields[1] == "tag" {
+                        let tag = RealGitRunner.run("git", &["cat-file", "tag", &fields[2]], cwd).unwrap();
+                        let mut header = tag.stdout.lines();
+                        let inner = header.next().and_then(|line| line.strip_prefix("object ")).unwrap();
+                        if header.next() == Some("type tag") {
+                            fields[3] = "tag".to_owned();
+                            fields[4] = inner.to_owned();
+                        }
+                    }
+                    fields.join("\0") + "\n"
+                })
+                .collect();
+        }
+        Ok(output)
+    }
+}
+
 fn aggregate_with(
     root: &Path,
     graph: &SinglePackageGraph,
@@ -2371,11 +2401,23 @@ fn aggregate_with(
     inference: &ProbeInference,
 ) -> Result<Aggregation, GraphError> {
     let cfg = crate::config::load(root).unwrap();
-    let tags = TagIndex::build(&GitAccess::new(root, &RealGitRunner), graph, &Default::default(), &cfg).unwrap();
-    assert!(
-        tags.last_tag(&graph.pkg.id).is_some(),
-        "the fixture's release tag is the package's last tag"
-    );
+    let tags = TagIndex::build(
+        &GitAccess::new(root, &LegacyTagListing),
+        graph,
+        &Default::default(),
+        &cfg,
+    )
+    .unwrap();
+    let last = tags
+        .last_tag(&graph.pkg.id)
+        .expect("the fixture's release tag is the package's last tag");
+    // The index holds no commit for the tag, so reading it starts a git process: a test that sees none ran is not
+    // answered from the index.
+    let lookup = ScriptedGit::failing(&["^{commit}"]);
+    assert!(tags
+        .commit_of(&GitAccess::new(root, &lookup), last.name.as_str())
+        .is_err());
+    assert!(lookup.ran("^{commit}"));
     aggregate(
         graph,
         &identity_for(&graph.pkg),
@@ -2409,6 +2451,36 @@ fn disabled_inference_prepares_no_window_and_its_failures_do_not_reach_the_plan(
         agg.seeds.get(&graph.pkg.id).map(Seed::severity),
         Some(Severity::Patch),
         "the pending changeset still plans a bump"
+    );
+}
+
+/// Active inference asks git for the tag's commit, so the disabled test above would see that lookup fail.
+#[test]
+fn active_inference_resolves_the_window_through_git() {
+    let (dir, graph, _) = auto_package_with_tag_of_tag();
+    let runner = ScriptedGit::failing(&["^{commit}"]);
+    let inference = ProbeInference::new(true, false);
+
+    let result = aggregate_with(dir.path(), &graph, &runner, &inference);
+
+    assert!(result.is_err());
+    assert!(runner.ran("^{commit}"), "{:?}", runner.seen.lock().unwrap());
+    assert_eq!(inference.calls.load(Ordering::SeqCst), 0);
+}
+
+/// Disabled inference never checks for full history, even when it says it would need it.
+#[test]
+fn disabled_inference_never_checks_for_full_history() {
+    let (dir, graph, _) = auto_package_with_tag_of_tag();
+    let runner = ScriptedGit::failing(&["--is-shallow-repository"]);
+    let inference = ProbeInference::new(false, true);
+
+    aggregate_with(dir.path(), &graph, &runner, &inference).unwrap();
+
+    assert!(
+        !runner.ran("--is-shallow-repository"),
+        "{:?}",
+        runner.seen.lock().unwrap()
     );
 }
 

@@ -158,7 +158,11 @@
     },
     {
       "id": "CLI-OUT-09",
-      "criterion": "`completions <shell>` and `schema` exit 0 without printing an error or panicking when stdout's reading end is already closed (e.g. piped into a command that exits early); a `--format json` report command's write error in that same situation propagates as `E213` and exits 1."
+      "criterion": "When stdout's reading end is already closed (e.g. piped into a command that exits early), every command, in text and JSON alike, exits as it would with stdout open, without printing an error or panicking; any other stdout write error is `E213` and exits 1, and a file the command must write still fails it."
+    },
+    {
+      "id": "CLI-OUT-10",
+      "criterion": "A closed or failing stderr never changes a command's exit code: notes, warnings, a tool's echoed output and the final error card are best effort, a usage error still exits 2 and a failure still exits 1 with its own error, never a panic."
     },
     {
       "id": "CLI-STATUS-01",

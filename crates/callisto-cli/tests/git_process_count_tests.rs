@@ -99,9 +99,9 @@ fn release_dry_run_probes_origin_once_and_starts_no_credential_helper() {
     assert_eq!(count("credential"), 0, "{starts:#?}");
 }
 
-/// A Cargo workspace of `crates` auto-triggered crates whose release tags point at another annotated tag, which the
-/// bulk tag listing cannot peel to a commit.
-fn auto_crates_with_tags_of_tags(crates: usize) -> tempfile::TempDir {
+/// A Cargo workspace of `crates` crates at 1.0.0 released by `trigger`, each tagged at `tag_version` by an annotated
+/// tag that points at another annotated tag.
+fn crates_with_tags_of_tags(crates: usize, trigger: &str, tag_version: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let git = |args: &[&str]| {
@@ -121,7 +121,7 @@ fn auto_crates_with_tags_of_tags(crates: usize) -> tempfile::TempDir {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"cargo/*\"\nrelease-trigger = \"auto\"\n",
+        format!("[[package]]\nmatch = \"cargo/*\"\nrelease-trigger = \"{trigger}\"\n"),
     )
     .unwrap();
     for i in 0..crates {
@@ -141,7 +141,7 @@ fn auto_crates_with_tags_of_tags(crates: usize) -> tempfile::TempDir {
         git(&[
             "tag",
             "-a",
-            &format!("c{i}@1.0.0"),
+            &format!("c{i}@{tag_version}"),
             "-m",
             "outer",
             &format!("inner-c{i}"),
@@ -150,17 +150,54 @@ fn auto_crates_with_tags_of_tags(crates: usize) -> tempfile::TempDir {
     dir
 }
 
-fn release_dry_run_git_processes(repository: &std::path::Path) -> usize {
-    git_processes_in(repository, &["--dry-run", "release"])
+/// A directory holding a `git` that answers the bulk tag listing as Git before 2.44 did, peeling a tag of a tag only to
+/// the inner tag, so the listing names no commit for the fixture's release tags. Every other call is the real Git.
+fn legacy_tag_listing_git() -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let real = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|directory| directory.join("git"))
+        .find(|candidate| candidate.is_file())
+        .expect("git on PATH");
+    let dir = tempfile::tempdir().unwrap();
+    // NUL-separated fields become tabs (no ref name holds one) so `sed` can mark a release tag's peel as a tag.
+    let script = format!(
+        "#!/bin/sh\ncase \"$*\" in\nfor-each-ref*'%(*objectname)'*)\n  '{real}' \"$@\" | tr '\\000' '\\t' \
+         | sed 's/^\\(c[0-9]*@[^\t]*\ttag\t[0-9a-f]*\t\\)commit\t/\\1tag\t/' | tr '\\t' '\\000'\n  ;;\n\
+         *) exec '{real}' \"$@\" ;;\nesac\n",
+        real = real.display()
+    );
+    let path = dir.path().join("git");
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    dir
+}
+
+/// Git processes `release --dry-run` starts over [`crates_with_tags_of_tags`], under the pre-2.44 tag listing when
+/// `legacy`.
+fn release_dry_run_starts(crates: usize, trigger: &str, tag_version: &str, legacy: bool) -> usize {
+    let repository = crates_with_tags_of_tags(crates, trigger, tag_version);
+    let legacy_git = legacy_tag_listing_git();
+    let mut path = std::env::var_os("PATH").unwrap();
+    if legacy {
+        let directories = std::iter::once(legacy_git.path().to_path_buf()).chain(std::env::split_paths(&path));
+        path = std::env::join_paths(directories.collect::<Vec<_>>()).unwrap();
+    }
+    git_processes_with(repository.path(), &["--dry-run", "release"], &path)
 }
 
 fn git_processes_in(repository: &std::path::Path, args: &[&str]) -> usize {
+    git_processes_with(repository, args, &std::env::var_os("PATH").unwrap())
+}
+
+fn git_processes_with(repository: &std::path::Path, args: &[&str], path: &std::ffi::OsStr) -> usize {
     let trace_dir = tempfile::tempdir().unwrap();
     let trace = trace_dir.path().join("trace.json");
     let output = Command::new(env!("CARGO_BIN_EXE_callisto"))
         .arg("--cwd")
         .arg(repository)
         .args(args)
+        .env("PATH", path)
         .env("GIT_TRACE2_EVENT", &trace)
         .env("GIT_TERMINAL_PROMPT", "0")
         .output()
@@ -173,15 +210,33 @@ fn git_processes_in(repository: &std::path::Path, args: &[&str]) -> usize {
         .count()
 }
 
-/// The changesets-only pending hint works out no inference window, so tags of tags are not peeled package by package.
+/// The disabled pending hint starts no git process of its own: an auto workspace starts exactly what the same workspace
+/// released by changesets starts, under the modern and the pre-2.44 tag listing, for 2 crates and for 6. The tags are
+/// at an older version than the manifests, so resuming the release looks no tag up.
 #[test]
-fn release_dry_run_peels_no_tag_per_auto_package_for_the_pending_hint() {
-    let few = release_dry_run_git_processes(auto_crates_with_tags_of_tags(2).path());
-    let many = release_dry_run_git_processes(auto_crates_with_tags_of_tags(6).path());
-    assert_eq!(
-        few, many,
-        "{few} git processes for 2 auto crates, {many} for 6: a git process per package"
-    );
+fn the_pending_hint_starts_no_git_process_of_its_own() {
+    for legacy in [false, true] {
+        let starts = [2, 6].map(|crates| {
+            let auto = release_dry_run_starts(crates, "auto", "0.9.0", legacy);
+            let changeset = release_dry_run_starts(crates, "changeset", "0.9.0", legacy);
+            assert_eq!(
+                auto, changeset,
+                "legacy listing {legacy}, {crates} crates: auto against changeset"
+            );
+            auto
+        });
+        assert_eq!(starts[0], starts[1], "legacy listing {legacy}: 2 crates against 6");
+    }
+}
+
+/// The pre-2.44 listing really leaves tags of tags to a lookup each: with every crate's current version tagged, resuming
+/// the release starts one more git process per crate there, and none more under the modern listing.
+#[test]
+fn the_legacy_tag_listing_leaves_each_tag_of_a_tag_to_a_lookup() {
+    let legacy = [2, 6].map(|crates| release_dry_run_starts(crates, "changeset", "1.0.0", true));
+    assert_eq!(legacy[1] - legacy[0], 4, "{legacy:?}");
+    let modern = [2, 6].map(|crates| release_dry_run_starts(crates, "changeset", "1.0.0", false));
+    assert_eq!(modern[0], modern[1], "{modern:?}");
 }
 
 /// A Cargo workspace of `crates` crates in a Changesets v2 pre cycle whose committed `pre.json` keys every baseline by

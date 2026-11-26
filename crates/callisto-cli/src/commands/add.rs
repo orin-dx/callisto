@@ -84,7 +84,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                     content: Some(text),
                     diagnostics: vec![],
                 };
-                emit_report(&mut std::io::stdout(), &report, true)?;
+                emit_report(&mut crate::output::stdout(), &report, true)?;
             }
             OutputFormat::Text => {
                 emit_line(&format!(
@@ -107,7 +107,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 content: None,
                 diagnostics: vec![],
             };
-            emit_report(&mut std::io::stdout(), &report, false)?;
+            emit_report(&mut crate::output::stdout(), &report, false)?;
         }
         OutputFormat::Text => {
             log_line(global.format, &format!("Added changeset: {rel_path}"))?;
@@ -161,15 +161,15 @@ fn run_wizard(
         return Err(CliError::AddNoPackagesInWorkspace);
     }
 
-    prompt_line("Which packages would you like to include in this changeset?");
+    prompt_line("Which packages would you like to include in this changeset?")?;
     let selected_indices = prompter.multi_select(all_packages)?;
     if selected_indices.is_empty() {
         return Err(CliError::AddNoPackagesSelected);
     }
     let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
 
-    prompt_line("\nWhich of these packages should be a MAJOR bump?");
-    prompt_line("(Select none if there are no breaking changes)");
+    prompt_line("\nWhich of these packages should be a MAJOR bump?")?;
+    prompt_line("(Select none if there are no breaking changes)")?;
     let major_set: std::collections::HashSet<usize> = prompter.multi_select(&selected_packages)?.into_iter().collect();
 
     let minor_candidates: Vec<String> = selected_packages
@@ -181,8 +181,8 @@ fn run_wizard(
     let minor_set: std::collections::HashSet<String> = if minor_candidates.is_empty() {
         std::collections::HashSet::new()
     } else {
-        prompt_line("\nWhich of these packages should be a MINOR bump?");
-        prompt_line("(Any remaining packages will default to a PATCH bump)");
+        prompt_line("\nWhich of these packages should be a MINOR bump?")?;
+        prompt_line("(Any remaining packages will default to a PATCH bump)")?;
         prompter
             .multi_select(&minor_candidates)?
             .into_iter()
@@ -208,7 +208,7 @@ fn run_wizard(
     let summary = match summary {
         Some(summary) => summary,
         None => {
-            prompt_line("\nPlease enter a summary for this change:");
+            prompt_line("\nPlease enter a summary for this change:")?;
             prompter.summary()?
         }
     };
@@ -220,9 +220,9 @@ fn run_wizard(
     prompt_line(&format!(
         "\n=== Changeset Preview ===\n{}",
         callisto_model::format::write_changeset(&preview)?
-    ));
+    ))?;
     if !prompter.confirm("Is this your desired changeset?", true)? {
-        prompt_line("Changeset creation cancelled.");
+        prompt_line("Changeset creation cancelled.")?;
         return Ok(None);
     }
     Ok(Some((entries, summary)))

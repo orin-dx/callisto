@@ -2,6 +2,8 @@
 //! for callisto.
 
 #![allow(clippy::result_large_err)]
+// Advisory stderr goes through `note::advise`, which a closed stream cannot turn into a failure.
+#![deny(clippy::print_stdout, clippy::print_stderr)]
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,7 +32,7 @@ pub mod locate;
 mod manifest_cache;
 pub(crate) mod matrix;
 pub mod napi;
-mod note;
+pub mod note;
 mod parallel;
 pub mod plan;
 pub(crate) mod registry_endpoint;

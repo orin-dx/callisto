@@ -84,7 +84,7 @@ fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     }
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &ReleasePrVerifyReport { ok: true },
             global.dry_run,
         )?,
@@ -115,7 +115,7 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 
     match global.format {
         OutputFormat::Json => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &ReleasePrDecideReport { decision },
             global.dry_run,
         )?,
@@ -146,7 +146,7 @@ fn commit_plan(args: ReleasePrCommitPlanArgs, global: &GlobalArgs) -> Result<Exi
             out.commit(&permit, &plan)?;
         }
         None => emit_report(
-            &mut std::io::stdout(),
+            &mut crate::output::stdout(),
             &ReleasePrCommitPlanReport { plan },
             global.dry_run,
         )?,

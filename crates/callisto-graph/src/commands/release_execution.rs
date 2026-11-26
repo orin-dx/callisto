@@ -98,9 +98,12 @@ fn warn_if_registry_version_adopted(operation: &ReleaseOperationId) {
         | ReleaseOperationRole::ArtifactUpload { .. }
         | ReleaseOperationRole::ForgePublish => return,
     };
-    eprintln!(
-        "warning: {package} {} is already published; skipping",
-        operation.version
+    crate::note::advise(
+        &mut std::io::stderr(),
+        format_args!(
+            "warning: {package} {} is already published; skipping\n",
+            operation.version
+        ),
     );
 }
 
@@ -254,7 +257,10 @@ fn settle_issued<P: ReleaseProviderSet + ?Sized>(
                 return Ok(());
             };
             for other in unconfirmed {
-                eprintln!("warning: {other} is also still not shown by its registry");
+                crate::note::advise(
+                    &mut std::io::stderr(),
+                    format_args!("warning: {other} is also still not shown by its registry\n"),
+                );
             }
             return Err(GraphError::RegistryPublishUnconfirmed {
                 package: first.package.name().to_owned(),

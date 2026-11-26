@@ -57,7 +57,10 @@ impl ReleaseProvider for ForgeReleaseProvider {
                 Some(path.to_string_lossy().into_owned())
             }
             ReleaseNotes::Generated { reason } => {
-                eprintln!("{}", generated_notes_notice(&request.id.package, *reason));
+                crate::note::advise(
+                    &mut std::io::stderr(),
+                    format_args!("{}\n", generated_notes_notice(&request.id.package, *reason)),
+                );
                 None
             }
         };
