@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>bm3zh7b0c</task-id>
+<tool-use-id>toolu_01RMULiC3rda5dZa44FaqpEx</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/9d961c64-651e-469e-9876-ffd740126ce3/tasks/bm3zh7b0c.output</output-file>
+<status>completed</status>
+<summary>Background command "codex review --base origin/main &gt; /tmp/claude-501/w2-codex-r1.log 2&gt;&amp;1; echo "codex exit $?" &gt;&gt; /tmp/claude-501/w2-codex-r1.log" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bz5kerzno</task-id>
+<tool-use-id>toolu_013oBxvNjy1ZpEr6YTYRnR3a</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/9d961c64-651e-469e-9876-ffd740126ce3/tasks/bz5kerzno.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /tmp/claude-501/w2-final-gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: good work on 3074e784c. Codex's local review (/tmp/callisto-local-verification-2026-11-26/review.txt, #242 section) found three adjacent gaps; take them plus your P2 in this PR, one batch: (1) The pre.json per-package history grep: #242's pending hint adds main's version-planner cost to release --dry-run, so it is this PR's regression. Batch it in history.rs (one git call for all keys whose manifest moved), and make the process-count test cover a moved manifest. (2) init README recovery: write callisto.toml only after the required README succeeds, so a README failure leaves no config and a retry works; accurate advice for a later workflow failure. No rollback machinery. (3) `callisto help` and `help status` still fail E213 on closed stdout: route them through the shared stdout sink. (4) Narrow the docs promise: closed stderr never changes the result for advisories, error cards and subprocess echo; required narration (e.g. JSON init facts on stderr) stays fallible. Failing tests first for 1-3. Then merge origin/main, full gate by exit code (+ just bench), codex review --base origin/main until nothing actionable, commit signed. Do NOT push; report the sha.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+do 2. I'm overriding that DECISIONS.md line as the lead: README ordering is init's boundary, which #242 owns, so do it in this PR with a failing test first. The integrator will only reconcile.
+</cross-session-message>

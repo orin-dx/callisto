@@ -1,0 +1,111 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8D397GAAJ4EF2GPWWDJ0JKH",
+  "session_id": "9d961c64-651e-469e-9876-ffd740126ce3",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-26T23:33:23.677845Z",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".changeset/lively-ravens-bound.md",
+    ".changeset/sharp-pandas-jump.md",
+    "crates/callisto-cli/src/commands/help.rs",
+    "crates/callisto-cli/tests/closed_stream_tests.rs",
+    "crates/callisto-cli/tests/git_process_count_tests.rs",
+    "crates/callisto-cli/tests/init_recovery_tests.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/history.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "7c6702096574",
+  "checkpoint_transcript_start": 2024,
+  "transcript_lines_at_start": 2024,
+  "compact_transcript_start": 158,
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 74901,
+    "cache_read_tokens": 19288494,
+    "output_tokens": 32324,
+    "api_call_count": 55
+  },
+  "session_token_usage": {
+    "input_tokens": 406,
+    "cache_creation_tokens": 386462,
+    "cache_read_tokens": 49785365,
+    "output_tokens": 129522,
+    "api_call_count": 200
+  },
+  "redaction": {
+    "replacements": 18,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 18,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "summary": {
+    "intent": "Complete Workstream 2 of the onboarding-friction PR (best-effort stderr, closed-stdout handling, git process-count oracles), then, at the lead session's request, also fix four adjacent gaps: batch pre.json per-package history lookups, init README/config write ordering, `help` on closed stdout, and narrowing the docs promise.",
+    "outcome": "Workstream 2 was committed as signed 3074e784c and passed the full gate. Items 1-4 were then implemented test-first, formatted and clippy-checked, and committed signed; the final sha is not shown. Still not done: merging origin/main, the full gate re-run (with bench), another codex review round, and reporting the sha.",
+    "learnings": {
+      "repo": [
+        "Advisory stderr goes through `callisto_graph::note::advise` (re-exported as `output::advise`), and stdout goes through `output::stdout()` / `color::stdout()`. Both treat a closed pipe as best-effort, while real write failures still fail.",
+        "The lints `print_stdout`/`print_stderr` (denied) and a disallowed `std::io::stdout` replace the old source-scanning `println!` test.",
+        "Git process-count tests use tags at 0.9.0 with manifests at 1.0.0 and compare Auto against a Changeset control, under modern Git and simulated pre-2.44 tag listing. Positive controls prove the oracles can actually fail.",
+        "`history::declaring_at` used to run one `git grep` per package for v2 `pre.json` keyed by npm names. `version --dry-run` had this cost on main, and #242's pending hint carried it into `release --dry-run`.",
+        "Specs live in docs/specs/cli.json (CLI-OUT-09/10, CLI-INIT-15). Error help text is checked against docs/errors.md by hygiene/architecture tests, so changing E278 help needs that file kept in sync.",
+        "Changes need a changeset under .changeset/, which can be generated with `callisto add --package ... --summary ...`.",
+        "Gate commands are `just pre-push`, `lint`, `doc-check`, `test` and `bench`; `fuzz-check` is only needed when public signatures in callisto-model or callisto-manifests change."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "finding": "`files_containing_at` now takes `&[&str]` needles, emits one `-e` per needle in a single `git grep`, and returns empty for no needles. Existing tests were migrated and a multi-needle test was added."
+        },
+        {
+          "path": "crates/callisto-graph/src/history.rs",
+          "finding": "`Rosters` gained an `expected` names map and a `texts` cache. The first `declaring_at` miss at a revision searches all expected names in one grep and then batch-reads the matching manifests via `prefetch`. A test with a counting runner asserts 1 grep for expected names and 2 when an unexpected name is added."
+        },
+        {
+          "path": "crates/callisto-graph/src/lib.rs",
+          "finding": "`PreJsonOrigin` now carries the pre.json keys and calls `rosters.expect_names(rev, keys)` when it resolves the commit that added pre.json."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "finding": "`init` was reordered so `callisto.toml` is written only after the required `.changeset/README.md` succeeds. A README failure leaves no config, so a retry works."
+        }
+      ],
+      "workflow": [
+        "Failing-first tests proved each fix: process counts went 27 vs 55 before the batch, and `help` returned E213 on closed stdout before the sink change.",
+        "The lead session widened scope mid-task through a cross-session message, so a boundary decision on an out-of-scope P2 finding became an assigned task.",
+        "The final gate was run from a script that logs each recipe's exit code to a file, run in the background, and the logs were read afterwards.",
+        "Findings were reproduced and checked against git history (whether the file changed on the branch) before deciding they were this PR's regression."
+      ]
+    },
+    "friction": [
+      "The ledger had no rows for 6HAHVX or VDYV5B, so the work came from the brief and handoff.",
+      "The codex P2 fell outside the original workstream boundary, which forced a pause and a decision request.",
+      "Moving 6 `eprintln!` advisories in callisto-graph (including during real publish) went beyond the handoff's file list.",
+      "The commit tooling printed progress noise (▮/Tasks/Time) that had to be filtered from output."
+    ],
+    "open_items": [
+      "Merge origin/main (was 39a70f311) right before the push, then re-run the full gate by exit code, including `just bench`.",
+      "Run `codex review --base origin/main` again until nothing is actionable, then report the final signed commit sha to close-gap-for-alpha. Nothing is to be pushed.",
+      "Add a ledger row for the pre.json history finding, if it is still tracked separately.",
+      "`just fuzz-check` and `just ci` were not run, and the earlier decision that fuzz-check was unnecessary should be rechecked since `files_containing_at` in callisto-model changed signature.",
+      "Required narration, such as JSON init facts on stderr, stays fallible by design, and the docs narrowing for that should be verified in cli.json."
+    ]
+  }
+}
