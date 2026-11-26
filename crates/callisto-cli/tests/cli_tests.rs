@@ -1,10 +1,8 @@
 /// Integration test verifying that `callisto add` selects the non-interactive
 /// error path when stdin is not a terminal and no `--package` flags are given.
 ///
-/// This test pipes `/dev/null` as stdin (no TTY) and invokes the real binary.
-/// `tty::is_interactive()` returns `false` in that condition, so the command
-/// must reject the invocation with a `NotATty` error rather than attempting to
-/// open a `dialoguer` wizard on a non-TTY handle.
+/// This test pipes `/dev/null` as stdin (no TTY) and invokes the real binary,
+/// which must reject the invocation with E214 rather than open a wizard.
 ///
 /// The binary is located via the `CARGO_BIN_EXE_callisto` env var that Cargo
 /// injects at test compile time, so no hard-coded path is needed.
@@ -46,8 +44,8 @@ fn test_add_non_interactive_via_pipe() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("stdin is not a terminal") || stderr.contains("not_a_tty"),
-        "stderr should mention the TTY check; got: {stderr}"
+        stderr.contains("E214"),
+        "stderr should carry the not-a-terminal code; got: {stderr}"
     );
     // The error must name the flags needed to
     // proceed non-interactively, not just say "no".
@@ -59,7 +57,7 @@ fn test_add_non_interactive_via_pipe() {
 
 /// `add --package name:severity` must record the
 /// changeset without prompting even when both stdin and stdout are piped
-/// (non-TTY) -- the flags path never touches `tty::is_interactive()`.
+/// (non-TTY), and the written entry keeps its ecosystem-qualified name.
 #[test]
 fn test_add_flags_path_skips_tty_check_entirely() {
     use std::process::{Command, Stdio};
@@ -77,6 +75,14 @@ fn test_add_flags_path_skips_tty_check_entirely() {
     std::fs::write(
         root.join("crates/my-app/Cargo.toml"),
         "[package]\nname = \"my-app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    // An npm package of the same name, so only the ecosystem tells them apart.
+    std::fs::write(root.join("package.json"), r#"{"private":true,"workspaces":["web/*"]}"#).unwrap();
+    std::fs::create_dir_all(root.join("web/my-app")).unwrap();
+    std::fs::write(
+        root.join("web/my-app/package.json"),
+        r#"{"name":"my-app","version":"0.1.0"}"#,
     )
     .unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -105,6 +111,15 @@ fn test_add_flags_path_skips_tty_check_entirely() {
         "add --package must succeed non-interactively with piped stdin; stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    // The entry keeps the ecosystem-qualified name it was given.
+    let written: Vec<String> = std::fs::read_dir(root.join(".changeset"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+        .filter(|path| path.file_name().is_some_and(|name| name != "README.md"))
+        .map(|path| std::fs::read_to_string(path).unwrap())
+        .collect();
+    assert_eq!(written, ["---\ncargo/my-app: patch\n---\n\na fix\n"]);
 }
 
 /// A napi package and a maturin package that both

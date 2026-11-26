@@ -98,7 +98,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E055 | Changeset has entries but an empty or whitespace-only summary | Add a non-empty summary after the closing `---` delimiter. |
 | E056 | Cannot write changeset: entries present but summary is empty or whitespace-only | Provide a non-empty summary describing the change. |
 | E057 | Entry <index> has an empty package name | — |
-| E268 | Entry <index> name contains a literal `"`, which cannot be written (no escaping convention is defined for this grammar) | Remove the literal `"` from the package name before writing the changeset. |
+| E268 | Entry <index> name <name> cannot be written so it reads back unchanged: a changeset name cannot contain `"`, a carriage return or a line feed, or repeat another entry | Rename the package so its name has no `"`, carriage return or line feed, and name each package once. |
 
 ## callisto-model — Git access
 
@@ -260,7 +260,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E211 | Wraps a registry client error (message is the underlying error's own text) | verify registry credentials/authentication and network connectivity, then retry |
 | E212 | Wraps a `.changeset/pre.json` parse error (message is the underlying error's own text) | Check that .changeset/pre.json is valid JSON and was not partially written. |
 | E213 | An I/O error, optionally naming the path being accessed | check that the path exists and that you have permission to access it |
-| E214 | Refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given | specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments |
+| E214 | Refusing to prompt interactively: prompts need a terminal on stdin and stderr and `--format text`, and `--package` was not given | pass --package <ecosystem>/<name>:<severity> (repeatable) and --summary <text> |
 | E215 | Release intent's schema version doesn't match what this build reads | re-run `callisto release plan` to derive a fresh intent: an intent is bound to one build's operation graph and is never reused across versions |
 | E219 | Release intent declares no binary artifact slots; no artifact manifest can be created | plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots |
 | E220 | Artifact manifests require a Git commit release source | plan the release from a Git commit source |
@@ -283,7 +283,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E237 | Artifact manifest file is invalid | re-run `callisto release artifact-manifest` to regenerate it |
 | E238 | A release JSON file (intent, decision, snapshot, manifest, preview) is not well-formed | check the file is complete, well-formed JSON |
 | E239 | This workspace cannot release locally | release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally |
-| E240 | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
+| E240 | Refusing to prompt interactively: prompts need a terminal on stdin and stderr and `--format text`, so `init` needs flags, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
 | E241 | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |
 | E242 | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
 | E243 | `pre enter` was run while `.changeset/pre.json`'s mode is already `pre` | run `callisto pre exit` first |
@@ -304,6 +304,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E187, E195, E199,
 | E298 | `init --product-package` given without `--artifact-target` | drop --<flag>, or pass --artifact-target to ship the product's binaries |
 | E299 | `init --workflow`/`--artifact-target` given without a hosted `origin` remote | Missing: add it with `git remote add origin <url>`. Not hosted: use an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials; inspect with `git remote get-url --push origin`, fix with `git remote set-url --push origin <url>`. Then re-run init. |
 | E342 | `init` found a Changesets config that leaves `access` restricted or absent, and scoped npm packages with no `publishConfig.access` that callisto would publish as public | set `publishConfig.access` in each listed package.json (`restricted` keeps it private to the scope, `public` confirms it), or pass --yes to publish them as public |
+| E343 | An interactive prompt was cancelled with Esc or Ctrl-C; nothing was written. The process exits 130 | nothing was written; run the command again, or pass flags explicitly to skip the prompts |
 | E308 | `release build-python` or `artifact-manifest --seal-python` on an intent that publishes no Python package, `release pack-npm` or `--seal-npm` on one that publishes no npm package, or `release package-cargo` on one that publishes no crate | drop --seal-python and `release build-python` for an intent without a Python publish, --seal-npm and `release pack-npm` for one without an npm publish, or `release package-cargo` for one without a crate publish |
 | E309 | `release artifact-manifest`, `release plan`, `release execute`, `release-pr commit-plan`, `release build-python`, `release pack-npm` or `release package-cargo` was run with `--dry-run`, which it refuses | re-run `callisto <command>` without --dry-run |
 | E310 | Failed to read manifest `<path>`: <message> | Make the manifest readable UTF-8 text; a workspace member's manifest is never skipped. |

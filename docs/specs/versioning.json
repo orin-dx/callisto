@@ -50,7 +50,7 @@
     },
     {
       "id": "VER-CS-06",
-      "criterion": "Writing a changeset emits `---`, one `name: severity` line per entry in order, `---`, a blank line, the trimmed summary and a trailing newline; a name is quoted when it starts with a YAML-significant character (such as `@`, `-`, `#`, `\"` or a space), contains `:` or `#`, or ends with a space."
+      "criterion": "Writing a changeset emits `---`, one `name: severity` line per entry in order, `---`, a blank line, the trimmed summary and a trailing newline; a name is quoted when it starts with a YAML-significant character (such as `@`, `-`, `#`, `\"` or a space), contains `:` or `#`, or starts or ends with any whitespace the reader trims (a space, tab, no-break space or other Unicode whitespace). A name containing `\"`, a carriage return or a line feed, or repeating an earlier entry's name, fails with E268 and nothing is written; carriage returns in the summary are written as LF. Every written changeset parses back to the same names, severities and summary."
     },
     {
       "id": "VER-CS-07",

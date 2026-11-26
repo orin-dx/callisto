@@ -135,18 +135,22 @@ impl InitFacts {
             .filter(|package| !package.supports_artifact_builder() && !package.unsupported_bin_ecosystems.is_empty())
     }
 
-    /// Resolves `name` (qualified or bare) to a binary-producing package.
+    /// The packages `name` names: the one whose qualified id it is, else every package with that bare name.
+    pub fn named(&self, name: &str) -> Vec<&InitPackage> {
+        match self.packages.iter().find(|package| package.id == name) {
+            Some(package) => vec![package],
+            None => self.packages.iter().filter(|package| package.name() == name).collect(),
+        }
+    }
+
+    /// Resolves `name` (qualified, or a bare name only one package has) to a binary-producing package.
     pub fn product_package(&self, name: &str) -> Result<&InitPackage, GraphError> {
         let invalid = |reason| GraphError::InitInvalidProductPackage {
             package: name.to_owned(),
             reason,
             candidates: self.binary_packages().map(|package| package.id.clone()).collect(),
         };
-        let found: Vec<&InitPackage> = match self.packages.iter().find(|package| package.id == name) {
-            Some(package) => vec![package],
-            None => self.packages.iter().filter(|package| package.name() == name).collect(),
-        };
-        match found.as_slice() {
+        match self.named(name).as_slice() {
             [package] if package.is_binary() && package.supports_artifact_builder() => Ok(package),
             [package] if package.is_binary() => Err(GraphError::InitUnsupportedArtifactBuilder {
                 package: package.id.clone(),
@@ -159,7 +163,10 @@ impl InitFacts {
                 }),
             }),
             [_] => Err(invalid("it does not produce a binary artifact")),
-            _ => Err(invalid("it is not a workspace package")),
+            [] => Err(invalid("it is not a workspace package")),
+            [..] => Err(invalid(
+                "more than one package has this name; give its `ecosystem/name` id",
+            )),
         }
     }
 }

@@ -10,7 +10,7 @@ use callisto_cli::commands::*;
 use callisto_cli::output::advise;
 use callisto_graph::ExitKind;
 
-// Exit codes: 0 success, 1 failure, 2 usage error: from clap, or a handler error whose `exit_kind` is usage (docs/stability.md). A handler's `Ok(code)` is returned as is.
+// Exit codes: 0 success, 1 failure, 2 usage error: from clap, or a handler error whose `exit_kind` is usage, 130 cancelled at a prompt with nothing written (docs/stability.md). A handler's `Ok(code)` is returned as is.
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -35,9 +35,13 @@ fn main() -> ExitCode {
     match res {
         Ok(code) => code,
         Err(err) => {
-            let exit = match err.exit_kind() {
-                ExitKind::Usage => ExitCode::from(2),
-                ExitKind::Runtime => ExitCode::FAILURE,
+            let exit = if matches!(err, callisto_cli::error::CliError::Cancelled) {
+                ExitCode::from(callisto_cli::tty::CANCELLED_EXIT)
+            } else {
+                match err.exit_kind() {
+                    ExitKind::Usage => ExitCode::from(2),
+                    ExitKind::Runtime => ExitCode::FAILURE,
+                }
             };
             // The exit status is decided; the error card is best effort.
             let stderr = &mut std::io::stderr();

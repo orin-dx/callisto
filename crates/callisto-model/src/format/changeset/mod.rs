@@ -111,14 +111,14 @@ pub enum WriteError {
     #[diagnostic(code(E057))]
     EmptyName { index: usize },
 
-    /// `entries[index]`'s name contains a literal `"`, which cannot be written — no escaping
-    /// convention is defined for this grammar.
-    #[error("entry {index} name {name:?} contains a literal `\"`, which cannot be written (no escaping convention is defined for this grammar)")]
+    /// `entries[index]`'s name would not read back as itself: it holds a `"`, CR or LF (the grammar has no
+    /// escaping and is line-based), or repeats an earlier entry's name.
+    #[error("entry {index} name {name:?} cannot be written so it reads back unchanged: a changeset name cannot contain `\"`, a carriage return or a line feed, or repeat another entry")]
     #[diagnostic(
         code(E268),
-        help("Remove the literal `\"` from the package name before writing the changeset.")
+        help("Rename the package so its name has no `\"`, carriage return or line feed, and name each package once.")
     )]
-    NameContainsQuote { index: usize, name: String },
+    NameNotRepresentable { index: usize, name: String },
 }
 
 /// Parses one `.changeset/*.md` file's contents.
@@ -129,7 +129,7 @@ pub enum WriteError {
 /// block are skipped. CRLF line endings are normalized to LF before parsing.
 pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
     let trimmed_bom = source.strip_prefix('\u{FEFF}').unwrap_or(source);
-    let normalized = trimmed_bom.replace("\r\n", "\n").replace('\r', "\n");
+    let normalized = lf_line_ends(trimmed_bom);
     let lines: Vec<&str> = normalized.split('\n').collect();
 
     if lines.first().map(|l| l.trim_end()) != Some("---") {
@@ -148,10 +148,10 @@ pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
 
     for (offset, &line) in lines[1..closing_index].iter().enumerate() {
         let line_no = offset + 2; // absolute, 1-indexed; line 1 was "---"
-        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+        let Some(entry) = frontmatter_entry(line) else {
             continue;
-        }
-        let entry = parse_entry_line(line).map_err(|e| promote_line_error(e, line_no))?;
+        };
+        let entry = entry.map_err(|e| promote_line_error(e, line_no))?;
         if let Some(&first_line) = first_seen.get(&entry.name) {
             return Err(ParseError::DuplicateEntry {
                 line: line_no,
@@ -174,6 +174,19 @@ pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
     Ok(Changeset { entries, summary })
 }
 
+/// CRLF and lone CR become LF, as the reader splits lines.
+fn lf_line_ends(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+/// One frontmatter line as the reader sees it; `None` for a blank or `#`-comment line.
+fn frontmatter_entry(line: &str) -> Option<Result<Entry, LineError>> {
+    if line.trim().is_empty() || line.trim_start().starts_with('#') {
+        return None;
+    }
+    Some(parse_entry_line(line))
+}
+
 fn promote_line_error(err: LineError, line: usize) -> ParseError {
     match err {
         LineError::UnclosedQuotedName => ParseError::UnclosedQuotedName { line },
@@ -189,32 +202,40 @@ fn promote_line_error(err: LineError, line: usize) -> ParseError {
 /// Names are quoted only when necessary. Severities are always written lowercase. Output
 /// always uses `\n` line endings and ends with a single trailing newline after the summary.
 /// An empty changeset (no entries, no summary) writes as `---\n---\n\n`.
+///
+/// Every entry reads back through [`parse_changeset`] with the same name and severity, and the
+/// summary reads back as written here (trimmed, LF line ends); a name that cannot is refused.
 pub fn write_changeset(changeset: &Changeset) -> Result<String, WriteError> {
     if changeset.summary.trim().is_empty() && !changeset.entries.is_empty() {
         return Err(WriteError::EmptySummary);
     }
+    let mut out = String::from("---\n");
+    let mut written = std::collections::HashSet::with_capacity(changeset.entries.len());
     for (index, entry) in changeset.entries.iter().enumerate() {
         if entry.name.is_empty() {
             return Err(WriteError::EmptyName { index });
         }
-        if entry.name.contains('"') {
-            return Err(WriteError::NameContainsQuote {
+        let line = if needs_quoting(&entry.name) {
+            format!("\"{}\": {}", entry.name, entry.severity)
+        } else {
+            format!("{}: {}", entry.name, entry.severity)
+        };
+        // No escapes and one entry per line; the reader rejects a repeated name.
+        let reads_back = !entry.name.contains(['"', '\r', '\n'])
+            && written.insert(entry.name.as_str())
+            && frontmatter_entry(&line).and_then(Result::ok).as_ref() == Some(entry);
+        if !reads_back {
+            return Err(WriteError::NameNotRepresentable {
                 index,
                 name: entry.name.clone(),
             });
         }
-    }
-
-    let mut out = String::from("---\n");
-    for entry in &changeset.entries {
-        if needs_quoting(&entry.name) {
-            out.push_str(&format!("\"{}\": {}\n", entry.name, entry.severity));
-        } else {
-            out.push_str(&format!("{}: {}\n", entry.name, entry.severity));
-        }
+        out.push_str(&line);
+        out.push('\n');
     }
     out.push_str("---\n");
-    let summary = changeset.summary.trim();
+    let summary = lf_line_ends(&changeset.summary);
+    let summary = summary.trim();
     if !summary.is_empty() {
         out.push('\n');
         out.push_str(summary);
