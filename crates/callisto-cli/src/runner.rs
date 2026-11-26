@@ -128,10 +128,18 @@ fn is_named_cargo_registry_token(name: &std::ffi::OsStr) -> bool {
     })
 }
 
+/// Gives a `git` child [`callisto_model::vcs::GIT_ENVIRONMENT`]; call before the child's own variables.
+fn apply_git_environment(command: &mut std::process::Command, program: &str) {
+    if tool_name(program) == "git" {
+        command.envs(callisto_model::vcs::GIT_ENVIRONMENT);
+    }
+}
+
 /// Every child process Callisto starts for a user-configured or external program: release credentials the tool does not
 /// use, `remove`, and named registry tokens (for anything but Cargo) are taken out, after `set` is applied.
 pub(crate) fn child_command(program: &str, remove: &[&str], set: &[(&str, &str)]) -> std::process::Command {
     let mut command = std::process::Command::new(program);
+    apply_git_environment(&mut command, program);
     for name in unrelated_credentials(program).into_iter().chain(remove.iter().copied()) {
         command.env_remove(name);
     }
@@ -609,6 +617,32 @@ mod tests {
             .run_with_timeout("true", &[], std::path::Path::new("."), Duration::from_secs(5))
             .unwrap();
         assert!(out.success());
+    }
+
+    /// Every way the runner starts `git` gives it the git environment; `!env` as an alias prints what git's children see.
+    #[cfg(unix)]
+    #[test]
+    fn every_git_child_gets_the_git_environment() {
+        let runner = CliCommandRunner;
+        let args = ["-c", "alias.e=!env", "e"];
+        let here = std::path::Path::new(".");
+        for output in [
+            runner.run("git", &args, here).unwrap(),
+            runner.run_quiet("git", &args, here, Duration::from_secs(30)).unwrap(),
+            runner.run_with_stdin("git", &args, here, b"").unwrap(),
+            runner
+                .run_with_env("git", &args, here, &[("GIT_INDEX_FILE", "x")])
+                .unwrap(),
+        ] {
+            assert!(output.success(), "{}", output.stderr);
+            for (name, value) in callisto_model::vcs::GIT_ENVIRONMENT {
+                assert!(
+                    output.stdout.lines().any(|line| line == format!("{name}={value}")),
+                    // Never print the captured environment: it can hold inherited secrets.
+                    "{name}={value} is missing from git's child environment"
+                );
+            }
+        }
     }
 
     #[cfg(unix)]

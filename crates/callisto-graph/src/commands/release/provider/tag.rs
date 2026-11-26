@@ -288,6 +288,9 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
 }
 
 #[cfg(test)]
+mod native_remote_tests;
+
+#[cfg(test)]
 mod tests {
     use super::super::loopback::fixtures;
     use super::*;

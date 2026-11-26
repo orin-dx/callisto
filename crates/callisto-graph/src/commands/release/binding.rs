@@ -157,7 +157,7 @@ pub(crate) fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Re
             reason: "origin must have a push URL",
         });
     }
-    canonical_git_remote(output.stdout.trim())
+    canonical_git_remote(printed_url(&output.stdout))
 }
 
 /// `origin`'s canonical push URL, or `None` when `origin` has no push URL.
@@ -177,7 +177,7 @@ pub(crate) fn optional_git_remote(
     if output.exit_code != Some(0) {
         return Ok(None);
     }
-    canonical_git_remote(output.stdout.trim()).map(Some)
+    canonical_git_remote(printed_url(&output.stdout)).map(Some)
 }
 
 /// Re-reads `origin`'s push URL and refuses unless it is still exactly the
@@ -195,7 +195,19 @@ pub(crate) fn recheck_git_remote(
     Ok(())
 }
 
+/// The URL `git remote get-url` printed, without the newline that ends it.
+fn printed_url(stdout: &str) -> &str {
+    stdout.strip_suffix('\n').unwrap_or(stdout)
+}
+
 pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
+    // Git keeps a line break as part of the URL, where `url::Url` would drop it.
+    if raw.contains(['\r', '\n']) {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "URL contains a line break",
+        });
+    }
+    let raw = raw.trim();
     let ssh_url = if raw.starts_with("git@") && !raw.contains("//") {
         let (host, path) =
             raw.strip_prefix("git@")

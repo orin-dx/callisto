@@ -11,6 +11,10 @@ pub use access::{FirstParentTouches, GitAccess};
 pub use boundary::{check_ignore_arg, GitStdout, LogEntry, Pathspec};
 pub use checkpoint::{Checkpoint, CheckpointFacts, VERSION_CHECKPOINT};
 
+/// The environment a command runner gives every `git` child: a credential prompt fails instead of waiting for input
+/// that never comes, and the messages Callisto matches stay in git's untranslated English.
+pub const GIT_ENVIRONMENT: [(&str, &str); 2] = [("GIT_TERMINAL_PROMPT", "0"), ("LC_ALL", "C")];
+
 #[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VcsError {

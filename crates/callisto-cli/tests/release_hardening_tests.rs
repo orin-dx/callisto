@@ -887,6 +887,25 @@ fn red_d08_local_only_tag_is_pushed_to_the_remote_before_the_receipt() {
 }
 
 #[test]
+fn an_origin_push_url_with_a_line_break_is_refused_before_any_effect() {
+    let e = RigEnv::single();
+    git(
+        e.root(),
+        &[
+            "config",
+            "remote.origin.pushurl",
+            "https://github.com/example/core-\ncrate.git",
+        ],
+    );
+    let out = e.run(&[]);
+    assert!(!out.status.success());
+    assert!(diagnostic_codes(&out).contains(&"E132".to_owned()), "{}", stderr(&out));
+    assert_eq!(e.rig.log_count("cargo publish"), 0);
+    assert_eq!(e.rig.log_count("git push"), 0);
+    assert!(!e.receipt_path().exists());
+}
+
+#[test]
 fn red_c7_pre_effect_observation_failure_does_not_wedge_rerun() {
     let e = RigEnv::single();
     // An unreachable registry proves neither presence nor absence, so after
