@@ -2080,3 +2080,45 @@ fn workflow_outcomes_for_each_state_and_way_of_asking() {
         }
     }
 }
+
+/// A stream that refuses any write containing `needle`.
+struct RefusesLine(&'static str);
+
+impl Write for RefusesLine {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if String::from_utf8_lossy(buf).contains(self.0) {
+            return Err(std::io::ErrorKind::PermissionDenied.into());
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The review `init` writes is required, even inside the workflow it is building: a review line that cannot be written
+/// fails `init` before anything is written, rather than reading as a workflow that could not be built.
+#[test]
+fn a_review_line_that_cannot_be_written_fails_before_any_write() {
+    for format in [OutputFormat::Text, OutputFormat::Json] {
+        let dir = workspace(0);
+        let out = Shared::default();
+        let refusing = RefusesLine("default branch:");
+        let (mut out_stream, mut err_stream): (Box<dyn Write>, Box<dyn Write>) = match format {
+            OutputFormat::Json => (Box::new(out.clone()), Box::new(refusing)),
+            OutputFormat::Text => (Box::new(refusing), Box::new(out.clone())),
+        };
+        let result = run(
+            yes(InitVersioning::Independent),
+            &global(dir.path(), format, false),
+            None,
+            &mut Scripted::new(vec![], &out),
+            &mut *out_stream,
+            &mut *err_stream,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        );
+        let error = result.unwrap_err();
+        assert!(matches!(error, CliError::Io { .. }), "{format:?}: {error:?}");
+        assert!(!dir.path().join("callisto.toml").exists(), "{format:?}");
+    }
+}

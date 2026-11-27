@@ -207,6 +207,47 @@ fn a_closed_stdout_ends_output_not_the_command() {
     }
 }
 
+/// A stdout that refuses writes for a reason other than a closed reader: a non-blocking socket already full, so every
+/// write fails with `WouldBlock`.
+fn full_stdout() -> (std::os::unix::net::UnixStream, Stdio) {
+    use std::io::Write as _;
+
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().unwrap();
+    writer.set_nonblocking(true).unwrap();
+    let mut filling = &writer;
+    let full = (0..100_000)
+        .find_map(|_| filling.write(&[0u8; 4096]).err())
+        .expect("the socket fills");
+    assert_eq!(full.kind(), io::ErrorKind::WouldBlock, "{full:?}");
+    (reader, std::os::fd::OwnedFd::from(writer).into())
+}
+
+/// Help and version are output like any other: a stdout that fails for a reason other than a closed reader fails them
+/// with E213, while a closed one still ends them quietly, and a missing subcommand stays a usage error.
+#[test]
+fn help_and_version_output_goes_through_the_stdout_sink() {
+    let dir = tempfile::tempdir().unwrap();
+    for args in [
+        ["help"].as_slice(),
+        &["--help"],
+        &["status", "--help"],
+        &["--version"],
+        &["-V"],
+    ] {
+        let (_reader, stdout) = full_stdout();
+        let failed = callisto(dir.path(), args).stdout(stdout).output().unwrap();
+        assert_eq!(failed.status.code(), Some(1), "{args:?}: {}", stderr(&failed));
+        assert!(stderr(&failed).contains("E213"), "{args:?}: {}", stderr(&failed));
+        let closed = callisto(dir.path(), args).stdout(closed_pipe()).output().unwrap();
+        assert_eq!(closed.status.code(), Some(0), "{args:?}: {}", stderr(&closed));
+        let control = callisto(dir.path(), args).output().unwrap();
+        assert_eq!(control.status.code(), Some(0), "{args:?}");
+        assert!(!control.stdout.is_empty(), "{args:?}");
+    }
+    let usage = callisto(dir.path(), &[]).output().unwrap();
+    assert_eq!(usage.status.code(), Some(2), "{}", stderr(&usage));
+}
+
 /// A closed stdout does not excuse a storage failure: a changeset that cannot be written still fails the command.
 #[test]
 fn a_storage_failure_still_fails_with_stdout_closed() {

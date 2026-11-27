@@ -392,8 +392,9 @@ impl LiveEcho {
 /// With `echo`, each line is also written to this process's stderr with `secrets` redacted first (registry tools can
 /// echo a credential verbatim). The returned text stays raw so classifiers keep matching exact upstream text. Lines
 /// are read as bytes: a line iterator has no bound on a single line, so a flood with no newlines would buffer without
-/// limit before it could be capped.
-fn capture_stream(mut reader: impl Read, echo: bool, secrets: &[String]) -> String {
+/// limit before it could be capped. A read the OS interrupted is retried; any other failed read is an error, since a
+/// short capture would read as the child's whole output.
+fn capture_stream(mut reader: impl Read, echo: bool, secrets: &[String]) -> std::io::Result<String> {
     let mut captured: Vec<u8> = Vec::new();
     let mut truncated = false;
     let mut pending_line: Vec<u8> = Vec::new();
@@ -405,9 +406,11 @@ fn capture_stream(mut reader: impl Read, echo: bool, secrets: &[String]) -> Stri
         let line = redact_known_secrets(&String::from_utf8_lossy(line), secrets);
         advise(&mut std::io::stderr(), format_args!("{line}\n"));
     };
-    loop {
+    let failed = loop {
         match reader.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break None,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => break Some(error),
             Ok(n) => {
                 let data = &chunk[..n];
                 if echo {
@@ -427,15 +430,18 @@ fn capture_stream(mut reader: impl Read, echo: bool, secrets: &[String]) -> Stri
                 }
             }
         }
-    }
+    };
     if echo && !pending_line.is_empty() {
         echo_line(&mut pending_line);
+    }
+    if let Some(error) = failed {
+        return Err(error);
     }
     let mut text = String::from_utf8_lossy(&captured).into_owned();
     if truncated {
         text.push_str("\n...[output truncated]\n");
     }
-    text
+    Ok(text)
 }
 
 /// `live_secrets`: known-credential values (see
@@ -484,8 +490,8 @@ fn run_with_timeout_impl(
 
     // Reader threads signal completion over a channel, not a join: a descendant that inherited the pipe fds keeps
     // `read()` blocked after the child exits, so `recv_timeout` bounds the wait.
-    let (stdout_tx, stdout_rx) = std::sync::mpsc::channel::<String>();
-    let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<String>();
+    let (stdout_tx, stdout_rx) = std::sync::mpsc::channel::<std::io::Result<String>>();
+    let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<std::io::Result<String>>();
 
     let stdout_secrets = live_secrets.clone();
     std::thread::spawn(move || {
@@ -550,6 +556,11 @@ fn run_with_timeout_impl(
                     .to_string(),
         });
     };
+    let read_failed = |error: std::io::Error| CommandError::Io {
+        program: program.to_string(),
+        message: format!("reading its output failed: {error}"),
+    };
+    let (stdout, stderr) = (stdout.map_err(read_failed)?, stderr.map_err(read_failed)?);
 
     note_failed_command(program, status.code(), &stderr);
     Ok(CommandOutput {
@@ -962,6 +973,49 @@ mod tests {
             stderr.contains("timed out and a descendant process appears to still hold its output pipes open"),
             "expected the timeout branch's specific warning text in child stderr, got: {stderr}"
         );
+    }
+
+    /// A read the OS interrupted is retried, not taken for the end of the child's output.
+    #[test]
+    fn capture_retries_an_interrupted_read() {
+        struct Interrupting(std::collections::VecDeque<std::io::Result<&'static [u8]>>);
+        impl Read for Interrupting {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                match self.0.pop_front() {
+                    None => Ok(0),
+                    Some(Err(error)) => Err(error),
+                    Some(Ok(bytes)) => {
+                        buf[..bytes.len()].copy_from_slice(bytes);
+                        Ok(bytes.len())
+                    }
+                }
+            }
+        }
+        let reader = Interrupting(
+            [
+                Ok(&b"before\n"[..]),
+                Err(std::io::ErrorKind::Interrupted.into()),
+                Ok(&b"after\n"[..]),
+            ]
+            .into(),
+        );
+        assert_eq!(capture_stream(reader, false, &[]).unwrap(), "before\nafter\n");
+    }
+
+    /// A read that fails is a capture failure, never a short, clean capture.
+    #[test]
+    fn capture_reports_a_failed_read() {
+        struct Failing(bool);
+        impl Read for Failing {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if std::mem::replace(&mut self.0, false) {
+                    buf[..3].copy_from_slice(b"ok\n");
+                    return Ok(3);
+                }
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+        }
+        assert!(capture_stream(Failing(true), false, &[]).is_err());
     }
 
     /// With this process's stderr closed, every echo fails; each runner still drains and returns the child's real exit

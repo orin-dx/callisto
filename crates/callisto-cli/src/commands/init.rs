@@ -306,8 +306,12 @@ fn run_queued<'a, R: CommandRunner>(
     // A workflow nobody asked for (the default) never fails `init`: if it cannot be built, say why and go on.
     let asked_for_workflow = args.workflow || (prompting && !workflow_blocked);
     let workflow = match shape.filter(|_| want_workflow) {
-        Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner, human!()) {
-            Ok(built) => Some(built),
+        Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner) {
+            // The review line is required output, so its failure is not a workflow that could not be built.
+            Ok((content, branch)) => {
+                write_default_branch(&branch, human!())?;
+                Some((content, branch.name))
+            }
             Err(error) if !asked_for_workflow => {
                 let note = match &error {
                     CliError::Graph(callisto_graph::GraphError::InitWorkflowExists { path }) => format!(
@@ -467,7 +471,9 @@ fn run_workflow_only<R: CommandRunner>(
             }
         })?;
     let base_branch = changesets::base_branch(root);
-    let (workflow, branch) = build_workflow(&facts, shape, base_branch.as_ref(), runner, human)?;
+    let (workflow, branch) = build_workflow(&facts, shape, base_branch.as_ref(), runner)?;
+    write_default_branch(&branch, human)?;
+    let branch = branch.name;
     writeln!(human, "\n{}", workflow_summary(&facts.root, &branch))?;
     let mut diagnostics = Vec::new();
     if !global.dry_run {
@@ -497,14 +503,19 @@ fn run_workflow_only<R: CommandRunner>(
     finish(&report, global, out)
 }
 
+/// Says which branch a generated workflow runs on, and where that came from.
+fn write_default_branch(branch: &scaffold::DefaultBranch, human: &mut dyn Write) -> Result<(), CliError> {
+    writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
+    Ok(())
+}
+
 /// The workflow text and the default branch it triggers on.
 fn build_workflow<R: CommandRunner>(
     facts: &InitFacts,
     shape: scaffold::WorkflowShape,
     base_branch: Option<&BranchName>,
     runner: &R,
-    human: &mut dyn Write,
-) -> Result<(String, BranchName), CliError> {
+) -> Result<(String, scaffold::DefaultBranch), CliError> {
     scaffold::ensure_workflow_absent(&facts.root)?;
     let branch = match base_branch {
         Some(name) => scaffold::DefaultBranch {
@@ -513,11 +524,10 @@ fn build_workflow<R: CommandRunner>(
         },
         None => scaffold::default_branch(runner, &facts.root),
     };
-    writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
     let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package versions are semver");
     let commit = scaffold::resolve_release_commit(runner, &facts.root, &version)?;
     let content = scaffold::render_workflow(facts, shape, &branch.name, &commit, &version);
-    Ok((content, branch.name))
+    Ok((content, branch))
 }
 
 /// Printed, and recorded as a warning diagnostic, when no `origin` remote is configured.
