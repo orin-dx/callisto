@@ -1,0 +1,61 @@
+<task-notification>
+<task-id>bm3zh7b0c</task-id>
+<tool-use-id>toolu_01RMULiC3rda5dZa44FaqpEx</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/9d961c64-651e-469e-9876-ffd740126ce3/tasks/bm3zh7b0c.output</output-file>
+<status>completed</status>
+<summary>Background command "codex review --base origin/main &gt; /tmp/claude-501/w2-codex-r1.log 2&gt;&amp;1; echo "codex exit $?" &gt;&gt; /tmp/claude-501/w2-codex-r1.log" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bz5kerzno</task-id>
+<tool-use-id>toolu_013oBxvNjy1ZpEr6YTYRnR3a</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/9d961c64-651e-469e-9876-ffd740126ce3/tasks/bz5kerzno.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /tmp/claude-501/w2-final-gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: good work on 3074e784c. Codex's local review (/tmp/callisto-local-verification-2026-11-26/review.txt, #242 section) found three adjacent gaps; take them plus your P2 in this PR, one batch: (1) The pre.json per-package history grep: #242's pending hint adds main's version-planner cost to release --dry-run, so it is this PR's regression. Batch it in history.rs (one git call for all keys whose manifest moved), and make the process-count test cover a moved manifest. (2) init README recovery: write callisto.toml only after the required README succeeds, so a README failure leaves no config and a retry works; accurate advice for a later workflow failure. No rollback machinery. (3) `callisto help` and `help status` still fail E213 on closed stdout: route them through the shared stdout sink. (4) Narrow the docs promise: closed stderr never changes the result for advisories, error cards and subprocess echo; required narration (e.g. JSON init facts on stderr) stays fallible. Failing tests first for 1-3. Then merge origin/main, full gate by exit code (+ just bench), codex review --base origin/main until nothing actionable, commit signed. Do NOT push; report the sha.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+do 2. I'm overriding that DECISIONS.md line as the lead: README ordering is init's boundary, which #242 owns, so do it in this PR with a failing test first. The integrator will only reconcile.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: after the gate, the bare `codex review --base origin/main` is not enough (it passed real defects today). Run a targeted one instead: `codex exec` with a prompt telling it to review `git diff origin/main...HEAD` against the #242 contract in /tmp/callisto-local-verification-2026-11-26/review.txt and the handoff's Workstream2 + 'Combined acceptance cases' (/Users/gabe/Projects/callisto/.claude/plans/closure-2026-11-26/claude-execution-handoff.txt), check siblings, and write throwaway failing tests against real functions for anything it suspects; report only confirmed failures. Fix confirmed ones, re-gate, repeat until it confirms none. Then report the sha. Don't push.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:/tmp/cc-socks/11696.sock" from-name="close-gap-for-alpha" from-mode="prompting">
+Lead: the owner merged #246 (main is 108d71ec0), so stop the current gate on 3e902a31b, which is stale. Merge origin/main now. It conflicts in crates/callisto-cli/src/commands/init.rs and init/tests.rs. Resolve keeping BOTH sides, never ours/theirs wholesale: #242's exactly-once notes lifecycle, retryable README-before-config ordering and help/stdout sink, plus main's (#246's) prompt capability (Text + TTY stdin + TTY stderr; JSON never prompts), its workflow classification (only InitWorkflowExists skips the question; explicit --workflow or interactive Yes fatal before the config write; --no-workflow or No skips; unrequested automatic failure warns and continues), its rows-only picker and product-name resolution, and its CANCELLED wording. Add tests for the combined init behaviour from the handoff's 'Combined acceptance cases'. Then the full gate and the targeted Codex review as I messaged. Report the sha; don't push.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>b1o4u5ts4</task-id>
+<tool-use-id>toolu_0114ST8fJYGhgAbidyZWmjoR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/9d961c64-651e-469e-9876-ffd740126ce3/tasks/b1o4u5ts4.output</output-file>
+<status>completed</status>
+<summary>Background command "bash /tmp/claude-501/w2-final-gate.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bjmq9zcg1</task-id>
+<tool-use-id>toolu_01Cri8jfmVXzeKq9Su2zCAMQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/9d961c64-651e-469e-9876-ffd740126ce3/tasks/bjmq9zcg1.output</output-file>
+<status>completed</status>
+<summary>Background command "codex exec -s workspace-write -C /Users/gabe/Projects/callisto/.claude/worktrees/wp-onboarding-friction-fix - &lt; /tmp/claude-501/w2-codex-targeted-prompt.txt &gt; /tmp/claude-501/w2-codex-t1.log 2&gt;&amp;1; echo "codex exit $?" &gt;&gt; /tmp/claude-501/w2-codex-t1.log" completed (exit code 0)</summary>
+</task-notification>
