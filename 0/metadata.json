@@ -1,0 +1,107 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8G4VXJB84GXWMKFF042PSK6",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-28T03:58:45.759842Z",
+  "branch": "wp-git-boundary-split",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/add_duplicate_package_tests.rs",
+    "crates/callisto-cli/tests/add_interactive_pty_tests.rs",
+    "crates/callisto-cli/tests/add_name_representation_tests.rs",
+    "crates/callisto-cli/tests/cli_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "2445218d2c7d",
+  "compact_transcript_start": 0,
+  "session_token_usage": {
+    "input_tokens": 3740,
+    "cache_creation_tokens": 8079865,
+    "cache_read_tokens": 811195090,
+    "output_tokens": 983582,
+    "api_call_count": 1643,
+    "subagent_tokens": {
+      "input_tokens": 1824,
+      "cache_creation_tokens": 2973664,
+      "cache_read_tokens": 91403574,
+      "output_tokens": 607494,
+      "api_call_count": 912
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 49,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 14,
+      "entropy": 23,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 387
+  },
+  "summary": {
+    "intent": "Coordinate the Callisto v1 alpha work as a lead session: launch and watch background sessions, track work packages and PRs, and drive them to merge. Later, drive PRs #242 (#634), #246 (#638) and #253 (#645) to zero Entire and Codex findings.",
+    "outcome": "Early phase: sessions ran, WP PRs #560-#569 opened, #560 merged, and findings on D and E were fixed. Later phase: #246 merged, #253 was split and pushed at 0b219304c, and #242 was pushed at 98620363e. A new batch of #242 and #253 fixes was in progress, unpushed, with a push-destination spike running.",
+    "learnings": {
+      "repo": [
+        "The repo's `deny.toml` needed an ignore for RUSTSEC-2026-0542 (`humantime` via dev-dependency `trycmd`); until it merged, every PR failed the audit.",
+        "The repo's `.gitignore` covered only `mutants.out/`, so cargo-mutants `mutants.out.old/` output got committed in D and F2; it is now widened to `mutants.out*/`.",
+        "The gate is `just pre-push && just lint && just doc-check && just test`, judged by exit code. `just fuzz-check` is needed when callisto-model public signatures change.",
+        "Main routes all child processes through one `child_command` in runner.rs, so Git environment policy belongs there.",
+        "About 130 test-side `git` spawns bypassed the isolated fixture helper, so developer-global config such as `insteadOf`, hooks or `gpgsign` broke tests and caused ~120s hangs.",
+        "Passing a large list of patterns as `git grep` arguments hits E2BIG; use `git grep -f -` with stdin through `run_with_stdin`.",
+        "Four Git push-destination defects exist on main: double rewrite, additional push URLs dropped, `.git` canonicalization, and `push.followTags` publishing unrelated annotated tags."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 666,
+          "end_line": 669,
+          "finding": "A test printed the full stdout of `env` on failure, which could leak secrets into CI logs. The assertion now names only the missing variable, and a sibling PATH-filter test needed the same fix."
+        },
+        {
+          "path": "crates/callisto-cli/benches/commands.rs",
+          "finding": "WP I (#563) conflicts with #560 here, so Session 5 resolves it on rebase."
+        }
+      ],
+      "workflow": [
+        "Entire trail findings are checked with `entire trail finding list` and resolved with `entire trail finding resolve`. Each WP group is linked to one semantic trail with `entire trail link`.",
+        "`claude --bg --resume` needs the full session id, not the 8-character job id.",
+        "A plain `git push` can fail silently when the local branch name differs from its upstream. Use an explicit refspec and confirm with `git ls-remote`.",
+        "A bare `codex review --base origin/main` misses real defects. Targeted review with handoff cases and failing tests is more effective, and a memory note records this.",
+        "Peer-session reports must be verified against the remote head, signature and Entire state before they count as done.",
+        "Fixing one instance of a finding without sweeping the same pattern across the repo produced repeated findings. Each review round costs real money."
+      ]
+    },
+    "friction": [
+      "The sandbox blocked the session daemon socket, so `claude agents` had to run outside it.",
+      "The auto-mode classifier refused a commit carrying a `Claude-Session:` trailer, which blocked Session 3 and the shared `deny.toml` fix.",
+      "Session 2 was stuck at a worktree permission prompt that only the user could answer.",
+      "Several PRs were not green after #560 merged. #563 had a real bench conflict that I had wrongly described as clearing, and the user called this out.",
+      "Repeated Entire and Codex findings, with each push triggering paid reviews, caused strong user frustration with spot fixes, flip-flopping and pushing unproven work.",
+      "The `pkill` and `gh pr close 645` commands were denied by the classifier and were not worked around.",
+      "Brain was locked by another process when recording the accepted limit."
+    ],
+    "open_items": [
+      "Finish #253: the isolation migration in session 4df379e1, then the gate and a clean targeted Codex review, then push once and mark #645 ready.",
+      "Finish #242: session 7885c500 is fixing the E2BIG pre.json history search and the nested-tag test control, followed by the gate, a targeted Codex review and a push.",
+      "Run the push-destination spike (9725e05f) and open a follow-up change for the four Git defects on main.",
+      "Await the user's OK to close #645.",
+      "The user should merge #242 and then #253, after which release PR #628 (0.23.0) is refreshed from main.",
+      "Decide whether E's changeset is Breaking (recommended yes).",
+      "Accepted limit: manifest paths with a literal newline in a directory name make cat-file batching fall back to per-file reads. A proper fix needs NUL framing (`cat-file --batch -z`, Git 2.38+), above the 2.20 floor.",
+      "Other v1 alpha WPs (G, H, K, L, Q, R, F2/J chain) still wait on merges.",
+      "Contract proposals for the interactive CLI are unapproved (TERM=dumb, init context to stderr, re-ask on empty selection)."
+    ]
+  }
+}
