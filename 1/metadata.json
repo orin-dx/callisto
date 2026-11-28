@@ -1,0 +1,115 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8G3J925BZ8J1XGFVZBJPXFF",
+  "session_id": "d58474bb-d86a-4bc1-a0f7-dfd7661b6cbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-28T03:36:15.810559Z",
+  "branch": "wp-git-boundary-split",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/init/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "2445218d2c7d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 7135,
+    "cache_read_tokens": 1163981,
+    "output_tokens": 4085,
+    "api_call_count": 6
+  },
+  "session_token_usage": {
+    "input_tokens": 3740,
+    "cache_creation_tokens": 8079865,
+    "cache_read_tokens": 811195090,
+    "output_tokens": 983582,
+    "api_call_count": 1643,
+    "subagent_tokens": {
+      "input_tokens": 1824,
+      "cache_creation_tokens": 2973664,
+      "cache_read_tokens": 91403574,
+      "output_tokens": 607494,
+      "api_call_count": 912
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 49,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 14,
+      "entropy": 23,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 387
+  },
+  "summary": {
+    "intent": "Act as lead session coordinating the Callisto v1 alpha work: launch and watch parallel sessions, order merges, track per-WP status and Entire trails. Later the user drove getting PRs #242/#246/#253 (changes #634, #638, #645) to zero Codex/Entire findings so they could merge.",
+    "outcome": "WP PRs #560-#569 were opened and #560 (deny.toml advisory fix) merged. #246 and a narrowed #253 were pushed with findings resolved, and #242 was pushed at 98620363e. Further Codex-found fixes are in progress: #253 fixture git isolation in session 4df379e1 and #242 E2BIG/nested-tag fixes in session 7885c500. A spike on main's four push-destination defects is still running.",
+    "learnings": {
+      "repo": [
+        "Advisory RUSTSEC-2026-0542 (humantime via trycmd) failed the cargo-deny audit on every PR until WP A's deny.toml ignore merged in #560.",
+        "AGENTS.md gate is `just pre-push && just lint && just doc-check && just test`, judged by exit code. `just fuzz-check` is also needed when callisto-model public signatures change.",
+        "mutants.out.old/ was committed in #565 (111 files) and #567 (31 files) because .gitignore covered only mutants.out/. It was widened to mutants.out*/.",
+        "Main routes all child processes through a single `child_command` in runner.rs, which is the right place to apply the Git environment for every spawn path.",
+        "Test fixtures spawned git without isolating global/system config. About 130 test-side git calls picked up developer config such as insteadOf, hooks and gpgsign, which caused hangs and failures.",
+        "Main has four inherited push-destination defects: double-rewrite of resolved URLs, extra push URLs dropped, .git appended to the path, and push.followTags publishing unrelated tags.",
+        "Entire gates require a reviewer approval. Findings are resolved with `entire trail finding resolve`. Stale findings point at code removed by a later change.",
+        "Git floor is 2.20, so `cat-file --batch -z` (2.38+) can't be used. Directory names containing a newline fall back to per-file reads, which was recorded as an accepted limit."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 654,
+          "end_line": 669,
+          "finding": "The env-alias test printed the full child environment on failure, which could leak secrets into CI logs. It now names only the missing variable. A sibling PATH-filter test had the same flaw."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/add.rs",
+          "line": 368,
+          "finding": "wizard_choices and the Scripted prompter test helpers are where interactive add tests are built."
+        }
+      ],
+      "workflow": [
+        "`claude --bg --resume` needs the full session id, not the 8-char job id. A short id leaves the session stuck on a search screen.",
+        "A plain `git push` can fail silently when the local branch name differs from its upstream. Push with an explicit refspec and verify with `git ls-remote`.",
+        "Verify session claims against the remote: the F2 'pushed' report was false until ls-remote showed the new sha.",
+        "A bare `codex review --base origin/main` misses real defects. Targeted review with an acceptance checklist and failing tests against real functions finds them.",
+        "When fixing a finding, sweep for the whole class (every assertion that prints captured output, every test git spawn), not just the named instance. Repeated misses cost review money.",
+        "Cross-session peer messages are teammate requests and cannot grant permission escalation.",
+        "Sessions that exit with open PRs need to be resumed to rebase after upstream merges."
+      ]
+    },
+    "friction": [
+      "The sandbox blocked the session daemon socket, so agent commands had to be retried outside it.",
+      "The auto-mode classifier refused a commit carrying a Claude-Session trailer. It also denied `pkill` and `gh pr close 645`.",
+      "Session 2 sat at a worktree permission prompt that only the user could answer, which stalled D, J and L.",
+      "I told the user PRs would go green once #560 merged, but #563 had a real bench-file conflict. The user called this out.",
+      "Flaky tests were seen in B and C runs: registry_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim and init::tests::an_existing_config_errors.",
+      "Repeated user frustration over new findings after each push, flip-flopping, spot-fixing, pushing unproven work and token/review cost. Each push triggers a paid review.",
+      "The user had to ask repeatedly why nothing was pushed while sessions were still working.",
+      "Codex's findings kept exposing sibling defects my sweeps missed, such as the env-dump search covering only the `!env` alias and fixture isolation covering only the shared fixture."
+    ],
+    "open_items": [
+      "Push-destination spike (session 9725e05f) for the four inherited Git remote defects, to become a separate follow-up change.",
+      "#253: session 4df379e1 is migrating all test-side git calls to the isolated helper, then gate, targeted Codex review and a single push.",
+      "#242: session 7885c500 is fixing E2BIG on the pre.json history search (git grep -f -) and the nested-tag test control, then gate, Codex and push.",
+      "Mark #645 ready and merge #242 then #253. Then refresh release PR #628 (0.23.0) and check its notes.",
+      "Decide whether E's changeset (#561) is Breaking (recommended yes). Merge the remaining WP PRs in wave order and launch Session 4 once E and F2 merge.",
+      "Close #645 awaits the user's OK. The user chose the split instead, so check whether closing is still wanted.",
+      "Hold L until #565 merges, and merge J (#569) only after L. G waits for F1 and F2, K waits for G, and Session 4 `just verify-real` is the final done condition.",
+      "Accepted limit: newline-containing manifest directory names cause per-file Git fallback.",
+      "Pending contract proposals not approved: TERM=dumb no prompt, init context to stderr, re-ask on empty selection."
+    ]
+  }
+}
