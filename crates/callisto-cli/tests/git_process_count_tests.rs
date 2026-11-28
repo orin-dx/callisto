@@ -150,20 +150,33 @@ fn crates_with_tags_of_tags(crates: usize, trigger: &str, tag_version: &str) -> 
     dir
 }
 
-/// A directory holding a `git` that answers the bulk tag listing as Git before 2.44 did, peeling a tag of a tag only to
-/// the inner tag, so the listing names no commit for the fixture's release tags. Every other call is the real Git.
-fn legacy_tag_listing_git() -> tempfile::TempDir {
+/// How the bulk tag listing peels a tag of a tag.
+#[derive(Clone, Copy, Debug)]
+enum Peel {
+    /// Through to the commit, as Git 2.44 and later list it.
+    Recursive,
+    /// One level, to the inner tag, as Git before 2.44 listed it: the listing names no commit for the tag.
+    OneLevel,
+}
+
+/// A directory holding a `git` whose bulk tag listing peels the fixture's release tags as `peel` says, whichever Git is
+/// on PATH, `commit` being the commit they point at. Every other call is the real Git.
+fn tag_listing_git(peel: Peel, commit: &str) -> tempfile::TempDir {
     use std::os::unix::fs::PermissionsExt as _;
 
     let real = std::env::split_paths(&std::env::var_os("PATH").unwrap())
         .map(|directory| directory.join("git"))
         .find(|candidate| candidate.is_file())
         .expect("git on PATH");
+    let peeled = match peel {
+        Peel::Recursive => format!("commit\t{commit}"),
+        Peel::OneLevel => "tag\t\\2".to_owned(),
+    };
     let dir = tempfile::tempdir().unwrap();
-    // NUL-separated fields become tabs (no ref name holds one) so `sed` can mark a release tag's peel as a tag.
+    // NUL-separated fields become tabs (no ref name holds one) so `sed` can rewrite a release tag's peel.
     let script = format!(
         "#!/bin/sh\ncase \"$*\" in\nfor-each-ref*'%(*objectname)'*)\n  '{real}' \"$@\" | tr '\\000' '\\t' \
-         | sed 's/^\\(c[0-9]*@[^\t]*\ttag\t[0-9a-f]*\t\\)commit\t/\\1tag\t/' | tr '\\t' '\\000'\n  ;;\n\
+         | sed 's/^\\(c[0-9]*@[^\t]*\ttag\t[0-9a-f]*\t\\)[a-z]*\t\\([0-9a-f]*\\)$/\\1{peeled}/' | tr '\\t' '\\000'\n  ;;\n\
          *) exec '{real}' \"$@\" ;;\nesac\n",
         real = real.display()
     );
@@ -173,16 +186,21 @@ fn legacy_tag_listing_git() -> tempfile::TempDir {
     dir
 }
 
-/// Git processes `release --dry-run` starts over [`crates_with_tags_of_tags`], under the pre-2.44 tag listing when
-/// `legacy`.
-fn release_dry_run_starts(crates: usize, trigger: &str, tag_version: &str, legacy: bool) -> usize {
+/// Git processes `release --dry-run` starts over [`crates_with_tags_of_tags`] under a tag listing that peels as `peel`
+/// says.
+fn release_dry_run_starts(crates: usize, trigger: &str, tag_version: &str, peel: Peel) -> usize {
     let repository = crates_with_tags_of_tags(crates, trigger, tag_version);
-    let legacy_git = legacy_tag_listing_git();
-    let mut path = std::env::var_os("PATH").unwrap();
-    if legacy {
-        let directories = std::iter::once(legacy_git.path().to_path_buf()).chain(std::env::split_paths(&path));
-        path = std::env::join_paths(directories.collect::<Vec<_>>()).unwrap();
-    }
+    // Read before the counted run, so the listing's oracle starts no process of its own there.
+    let head = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repository.path())
+        .output()
+        .unwrap();
+    assert!(head.status.success());
+    let listing = tag_listing_git(peel, String::from_utf8(head.stdout).unwrap().trim());
+    let path = std::env::var_os("PATH").unwrap();
+    let directories = std::iter::once(listing.path().to_path_buf()).chain(std::env::split_paths(&path));
+    let path = std::env::join_paths(directories.collect::<Vec<_>>()).unwrap();
     git_processes_with(repository.path(), &["--dry-run", "release"], &path)
 }
 
@@ -211,32 +229,32 @@ fn git_processes_with(repository: &std::path::Path, args: &[&str], path: &std::f
 }
 
 /// The disabled pending hint starts no git process of its own: an auto workspace starts exactly what the same workspace
-/// released by changesets starts, under the modern and the pre-2.44 tag listing, for 2 crates and for 6. The tags are
-/// at an older version than the manifests, so resuming the release looks no tag up.
+/// released by changesets starts, under the recursive and the one-level tag listing, for 2 crates and for 6. The tags
+/// are at an older version than the manifests, so resuming the release looks no tag up.
 #[test]
 fn the_pending_hint_starts_no_git_process_of_its_own() {
-    for legacy in [false, true] {
+    for peel in [Peel::Recursive, Peel::OneLevel] {
         let starts = [2, 6].map(|crates| {
-            let auto = release_dry_run_starts(crates, "auto", "0.9.0", legacy);
-            let changeset = release_dry_run_starts(crates, "changeset", "0.9.0", legacy);
+            let auto = release_dry_run_starts(crates, "auto", "0.9.0", peel);
+            let changeset = release_dry_run_starts(crates, "changeset", "0.9.0", peel);
             assert_eq!(
                 auto, changeset,
-                "legacy listing {legacy}, {crates} crates: auto against changeset"
+                "{peel:?} listing, {crates} crates: auto against changeset"
             );
             auto
         });
-        assert_eq!(starts[0], starts[1], "legacy listing {legacy}: 2 crates against 6");
+        assert_eq!(starts[0], starts[1], "{peel:?} listing: 2 crates against 6");
     }
 }
 
-/// The pre-2.44 listing really leaves tags of tags to a lookup each: with every crate's current version tagged, resuming
-/// the release starts one more git process per crate there, and none more under the modern listing.
+/// The one-level listing really leaves tags of tags to a lookup each: with every crate's current version tagged,
+/// resuming the release starts one more git process per crate there, and none more under the recursive listing.
 #[test]
 fn the_legacy_tag_listing_leaves_each_tag_of_a_tag_to_a_lookup() {
-    let legacy = [2, 6].map(|crates| release_dry_run_starts(crates, "changeset", "1.0.0", true));
-    assert_eq!(legacy[1] - legacy[0], 4, "{legacy:?}");
-    let modern = [2, 6].map(|crates| release_dry_run_starts(crates, "changeset", "1.0.0", false));
-    assert_eq!(modern[0], modern[1], "{modern:?}");
+    let one_level = [2, 6].map(|crates| release_dry_run_starts(crates, "changeset", "1.0.0", Peel::OneLevel));
+    assert_eq!(one_level[1] - one_level[0], 4, "{one_level:?}");
+    let recursive = [2, 6].map(|crates| release_dry_run_starts(crates, "changeset", "1.0.0", Peel::Recursive));
+    assert_eq!(recursive[0], recursive[1], "{recursive:?}");
 }
 
 /// A Cargo workspace of `crates` crates in a Changesets v2 pre cycle whose committed `pre.json` keys every baseline by

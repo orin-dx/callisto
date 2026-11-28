@@ -436,13 +436,20 @@ impl GitAccess<'_> {
         if needles.is_empty() {
             return Ok(Vec::new());
         }
-        let mut args = vec!["grep", "-l", "-z", "-F", "-i"];
-        for needle in needles {
-            args.extend(["-e", needle]);
-        }
+        // The needles go on stdin, one per line, because there can be more than an argument list holds. A patterns
+        // file drops empty lines and a line's trailing carriage return, so a needle that is empty or holds a line
+        // break stays an argument, read exactly as before.
+        let (lines, arguments): (Vec<&str>, Vec<&str>) = needles
+            .iter()
+            .partition(|needle| !needle.is_empty() && !needle.contains(['\n', '\r']));
+        let mut args = vec!["grep", "-l", "-z", "-F", "-i", "-f", "-"];
+        args.extend(arguments.into_iter().flat_map(|needle| ["-e", needle]));
         args.extend([rev, "--"]);
         args.extend(pathspecs.iter().map(Pathspec::as_str));
-        let output = self.runner.run("git", &args, &self.root)?;
+        let patterns: String = lines.into_iter().flat_map(|needle| [needle, "\n"]).collect();
+        let output = self
+            .runner
+            .run_with_stdin("git", &args, &self.root, patterns.as_bytes())?;
         if output.exit_code == Some(1) {
             return Ok(Vec::new());
         }
@@ -892,6 +899,8 @@ mod tests {
 
     struct FakeRunner {
         calls: Mutex<Vec<Vec<String>>>,
+        /// What each `run_with_stdin` call piped, in call order.
+        stdin: Mutex<Vec<Vec<u8>>>,
         response: Box<ResponseFn>,
     }
 
@@ -910,8 +919,9 @@ mod tests {
             program: &str,
             args: &[&str],
             cwd: &Path,
-            _stdin: &[u8],
+            stdin: &[u8],
         ) -> Result<CommandOutput, CommandError> {
+            self.stdin.lock().unwrap().push(stdin.to_vec());
             self.run(program, args, cwd)
         }
     }
@@ -951,6 +961,7 @@ mod tests {
         let expected_root = dunce::canonicalize(temp.path()).unwrap();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: trust_response(temp.path().to_path_buf(), String::new(), true),
         };
         let git = GitAccess::new(temp.path(), &runner);
@@ -967,6 +978,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: trust_response(temp.path().to_path_buf(), "?? release-input.txt\0".to_string(), false),
         };
         let git = GitAccess::new(temp.path(), &runner);
@@ -983,6 +995,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: trust_response(temp.path().to_path_buf(), " M Cargo.toml\0".to_string(), true),
         };
         let error = GitAccess::new(temp.path(), &runner)
@@ -1001,6 +1014,7 @@ mod tests {
             let root = temp.path().to_path_buf();
             let runner = FakeRunner {
                 calls: Mutex::new(Vec::new()),
+                stdin: Mutex::new(Vec::new()),
                 response: Box::new(move |args| {
                     if args == ["rev-parse", arguments.0] {
                         return Ok(ok(arguments.1));
@@ -1019,6 +1033,7 @@ mod tests {
     fn test_list_tags_fetches_unfiltered_and_filters_locally_with_globset() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| Ok(ok("pkg-a@1.0.0\npkg-ab@1.0.0\nunrelated\n"))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1039,6 +1054,7 @@ mod tests {
     fn test_list_tags_rejects_malformed_glob() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| Ok(ok("pkg-a@1.0.0\n"))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1057,6 +1073,7 @@ mod tests {
     fn test_list_tags_errors_on_failed_git_invocation() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| {
                 Ok(CommandOutput {
                     exit_code: Some(128),
@@ -1080,6 +1097,7 @@ mod tests {
     fn test_list_tags_errors_when_there_is_no_git_repository() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| {
                 Ok(CommandOutput {
                     exit_code: Some(128),
@@ -1108,19 +1126,55 @@ mod tests {
             cwd: &Path,
             env: &[(&str, &str)],
         ) -> Result<CommandOutput, CommandError> {
-            let output = std::process::Command::new(program)
+            let output = RealGit::command(program, args, cwd).envs(env.iter().copied()).output();
+            RealGit::finish(program, output)
+        }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<CommandOutput, CommandError> {
+            use std::io::Write;
+            use std::process::Stdio;
+            let spawned = RealGit::command(program, args, cwd)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn();
+            let mut child = match spawned {
+                Ok(child) => child,
+                Err(error) => return RealGit::finish(program, Err(error)),
+            };
+            let mut pipe = child.stdin.take().expect("stdin was piped");
+            // Written from a thread so a child that answers while still reading cannot deadlock on a full pipe.
+            std::thread::scope(|scope| {
+                scope.spawn(move || pipe.write_all(stdin));
+                RealGit::finish(program, child.wait_with_output())
+            })
+        }
+    }
+
+    impl RealGit {
+        fn command(program: &str, args: &[&str], cwd: &Path) -> std::process::Command {
+            let mut command = std::process::Command::new(program);
+            command
                 .args(args)
                 .current_dir(cwd)
                 .env_remove("GIT_DIR")
                 .env_remove("GIT_WORK_TREE")
                 .env_remove("GIT_INDEX_FILE")
-                .env("GIT_CEILING_DIRECTORIES", cwd.parent().unwrap_or(cwd))
-                .envs(env.iter().copied())
-                .output()
-                .map_err(|error| CommandError::Io {
-                    program: program.to_string(),
-                    message: error.to_string(),
-                })?;
+                .env("GIT_CEILING_DIRECTORIES", cwd.parent().unwrap_or(cwd));
+            command
+        }
+
+        fn finish(program: &str, output: std::io::Result<std::process::Output>) -> Result<CommandOutput, CommandError> {
+            let output = output.map_err(|error| CommandError::Io {
+                program: program.to_string(),
+                message: error.to_string(),
+            })?;
             Ok(CommandOutput {
                 exit_code: output.status.code(),
                 stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -1257,6 +1311,94 @@ mod tests {
         assert!(git.files_containing_at("no-such-ref", &["needle"], &named_a).is_err());
     }
 
+    /// The needles reach `git grep` one per line on stdin, so their number never grows the argument list; one a line
+    /// cannot carry as it is, empty or holding a line break, stays an argument.
+    #[test]
+    fn files_containing_at_pipes_the_needles_to_one_git_grep() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
+            response: Box::new(|_| Ok(ok("HEAD:a/Cargo.toml\0"))),
+        };
+        let git = GitAccess::new(PathBuf::from("."), &runner);
+        let specs = [Pathspec::named_anywhere("Cargo.toml")];
+
+        let found = git
+            .files_containing_at("HEAD", &["foo", "-bar", "", "a\r", "b\nc"], &specs)
+            .unwrap();
+
+        assert_eq!(found, [PathBuf::from("a/Cargo.toml")]);
+        let expected = [
+            "grep",
+            "-l",
+            "-z",
+            "-F",
+            "-i",
+            "-f",
+            "-",
+            "-e",
+            "",
+            "-e",
+            "a\r",
+            "-e",
+            "b\nc",
+            "HEAD",
+            "--",
+            specs[0].as_str(),
+        ];
+        assert_eq!(*runner.calls.lock().unwrap(), [expected.map(str::to_owned).to_vec()]);
+        assert_eq!(*runner.stdin.lock().unwrap(), [b"foo\n-bar\n".to_vec()]);
+    }
+
+    /// Line breaks in a needle mean what they mean to `git grep -e`: a newline separates needles, an empty one is in
+    /// every file, and a carriage return is a character to find.
+    #[test]
+    fn files_containing_at_reads_line_breaks_in_a_needle_as_git_grep_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        real_git(&root, &["init", "-q"]);
+        std::fs::write(root.join("a.txt"), "hello\r\nworld\n").unwrap();
+        real_git(&root, &["-c", "core.autocrlf=false", "add", "a.txt"]);
+        real_git(&root, &["commit", "-q", "-m", "one"]);
+        let git = GitAccess::new(root, &RealGit);
+        let named_a = [Pathspec::named_anywhere("a.txt")];
+
+        for (needle, found) in [
+            ("", true),
+            ("\n", true),
+            ("absent\n", true),
+            ("absent\n\nother", true),
+            ("absent\nworld", true),
+            ("\r", true),
+            ("hello\r", true),
+            ("world\r", false),
+            ("absent\r\nother", false),
+        ] {
+            let files = git.files_containing_at("HEAD", &["absent", needle], &named_a).unwrap();
+            assert_eq!(!files.is_empty(), found, "{needle:?}");
+        }
+    }
+
+    /// Megabytes of needles, past the default argument limit on macOS and Linux, still search in one `git grep`.
+    #[test]
+    fn files_containing_at_searches_more_needles_than_an_argument_list_holds() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        real_git(&root, &["init", "-q"]);
+        std::fs::write(root.join("a.txt"), "hello needle").unwrap();
+        real_git(&root, &["add", "a.txt"]);
+        real_git(&root, &["commit", "-q", "-m", "one"]);
+        let filler: Vec<String> = (0..12_000)
+            .map(|i| format!("removed-{i:07}-{}", "a".repeat(200)))
+            .collect();
+        let needles: Vec<&str> = filler.iter().map(String::as_str).chain(["NEEDLE"]).collect();
+        let git = GitAccess::new(root, &RealGit);
+
+        let found = git.files_containing_at("HEAD", &needles, &[Pathspec::named_anywhere("a.txt")]);
+
+        assert_eq!(found.unwrap(), [PathBuf::from("a.txt")]);
+    }
+
     #[test]
     fn probes_fail_loudly_outside_a_git_repository_against_real_git() {
         let dir = tempfile::tempdir().unwrap();
@@ -1277,6 +1419,7 @@ mod tests {
     fn test_resolve_commit_returns_none_on_failed_rev_parse() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| {
                 Ok(CommandOutput {
                     exit_code: Some(1),
@@ -1295,6 +1438,7 @@ mod tests {
         let sha = "a".repeat(40);
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(move |_args| Ok(ok(format!("{}\n", "a".repeat(40))))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1323,6 +1467,7 @@ mod tests {
     fn head_sha_rejects_a_malformed_sha() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| Ok(ok("not-a-sha\n"))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1338,6 +1483,7 @@ mod tests {
     fn batch_check_runner(answer: String) -> FakeRunner {
         FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(move |_args| Ok(ok(answer.clone()))),
         }
     }
@@ -1379,6 +1525,7 @@ mod tests {
         let stdout = format!("{}\0", "a".repeat(40));
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(move |_args| Ok(ok(stdout.clone()))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1396,6 +1543,7 @@ mod tests {
     fn test_commits_since_builds_since_range_and_pathspec_args() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| Ok(ok(""))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1416,6 +1564,7 @@ mod tests {
     fn test_commits_since_propagates_git_log_failure_instead_of_unbounded_walk() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|args| {
                 Ok(if args[0] == "rev-parse" {
                     CommandOutput {
@@ -1447,6 +1596,7 @@ mod tests {
     fn test_create_tag_annotated_shells_expected_args() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| Ok(ok(""))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1481,6 +1631,7 @@ mod tests {
     fn test_create_tag_lightweight_shells_expected_args() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| Ok(ok(""))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1507,6 +1658,7 @@ mod tests {
     fn test_create_tag_force_unsigned_adds_no_sign_before_separator() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| Ok(ok(""))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1544,6 +1696,7 @@ mod tests {
         let sha_clone = sha.clone();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(move |_args| Ok(ok(format!("{}\n", sha_clone)))),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1557,6 +1710,7 @@ mod tests {
     fn test_head_sha_propagates_git_failure() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_args| {
                 Ok(CommandOutput {
                     exit_code: Some(128),
@@ -1585,6 +1739,7 @@ mod tests {
     fn head_sha_failure_redacts_credential() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(leaky_response),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1598,6 +1753,7 @@ mod tests {
     fn commits_since_failure_redacts_credential() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(leaky_response),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1611,6 +1767,7 @@ mod tests {
     fn create_tag_failure_redacts_credential() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(leaky_response),
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
@@ -1730,6 +1887,7 @@ mod tests {
         let root = temp.path().to_path_buf();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(move |args| match args {
                 ["rev-parse", "--show-toplevel"] => Ok(ok(format!("{}\n", root.display()))),
                 ["diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", sha] if sha == &"0".repeat(40) => {
@@ -1776,6 +1934,7 @@ mod tests {
         let root = temp.path().to_path_buf();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(move |args| match args {
                 ["rev-parse", "--show-toplevel"] => Ok(ok(format!("{}\n", root.display()))),
                 ["diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", sha] if sha == &"0".repeat(40) => {
@@ -1806,6 +1965,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|_| {
                 Ok(ok(
                     "\0c3\0\na/Cargo.toml\0Cargo.toml\0\0c2\0\nb/Cargo.toml\0odd\u{1}name\0\0c1\0\nCargo.toml\0a/Cargo.toml\0",
@@ -1835,6 +1995,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
+            stdin: Mutex::new(Vec::new()),
             response: Box::new(|args| panic!("unexpected command: {args:?}")),
         };
 

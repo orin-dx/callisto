@@ -75,6 +75,16 @@ impl CommandRunner for RealGitRunner {
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         })
     }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        stdin: &[u8],
+    ) -> Result<CommandOutput, CommandError> {
+        callisto_fixtures::git::GitRunner.run_with_stdin(program, args, cwd, stdin)
+    }
 }
 
 /// A `CommandRunner` double that answers `git rev-parse --verify --quiet
@@ -2274,8 +2284,9 @@ impl ScriptedGit {
     }
 }
 
-impl CommandRunner for ScriptedGit {
-    fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+impl ScriptedGit {
+    /// Records the call and fails it when it is one of the injected failures.
+    fn admit(&self, program: &str, args: &[&str]) -> Result<(), CommandError> {
         let line = args.join(" ");
         self.seen.lock().unwrap().push(line.clone());
         if self.fail.iter().any(|needle| line.contains(needle)) {
@@ -2284,7 +2295,25 @@ impl CommandRunner for ScriptedGit {
                 message: format!("injected failure: {line}"),
             });
         }
+        Ok(())
+    }
+}
+
+impl CommandRunner for ScriptedGit {
+    fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+        self.admit(program, args)?;
         RealGitRunner.run(program, args, cwd)
+    }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        stdin: &[u8],
+    ) -> Result<CommandOutput, CommandError> {
+        self.admit(program, args)?;
+        RealGitRunner.run_with_stdin(program, args, cwd, stdin)
     }
 }
 
@@ -2391,6 +2420,16 @@ impl CommandRunner for LegacyTagListing {
                 .collect();
         }
         Ok(output)
+    }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        stdin: &[u8],
+    ) -> Result<CommandOutput, CommandError> {
+        RealGitRunner.run_with_stdin(program, args, cwd, stdin)
     }
 }
 

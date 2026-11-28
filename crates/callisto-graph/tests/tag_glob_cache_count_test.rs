@@ -87,6 +87,23 @@ impl CommandRunner for FakeGitTagRunner {
             stderr: String::new(),
         })
     }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        _stdin: &[u8],
+    ) -> Result<CommandOutput, CommandError> {
+        // The history search pipes its needles; batched reads stay unsupported, so lookups read one at a time.
+        if args.first() != Some(&"grep") {
+            return Err(CommandError::Unsupported {
+                program: program.to_owned(),
+                reason: "only the history search is scripted".to_owned(),
+            });
+        }
+        self.run(program, args, cwd)
+    }
 }
 
 /// A directory outside any Git repository, so every `git` call is answered

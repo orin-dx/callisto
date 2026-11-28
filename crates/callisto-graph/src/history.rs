@@ -243,9 +243,17 @@ mod tests {
         dir
     }
 
-    /// Git that counts its `grep` calls.
+    /// Git that counts its `grep` calls, whichever way they are started.
     #[derive(Default)]
     struct CountingGrep(std::sync::atomic::AtomicUsize);
+
+    impl CountingGrep {
+        fn count(&self, args: &[&str]) {
+            if args.first() == Some(&"grep") {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    }
 
     impl callisto_model::CommandRunner for CountingGrep {
         fn run(
@@ -254,10 +262,19 @@ mod tests {
             args: &[&str],
             cwd: &Path,
         ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
-            if args.first() == Some(&"grep") {
-                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            }
+            self.count(args);
             GitRunner.run(program, args, cwd)
+        }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            self.count(args);
+            GitRunner.run_with_stdin(program, args, cwd, stdin)
         }
     }
 
