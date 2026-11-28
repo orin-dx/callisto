@@ -10,8 +10,8 @@ use callisto_model::{
 
 use crate::commands::registry_argv::npm_default_access;
 use crate::commands::release::{
-    canonical_root, is_platform_package, optional_git_remote, plan_workspace_release, programs, timeouts,
-    LocalReleasePlan, LocalReleaseSource,
+    canonical_root, is_platform_package, plan_workspace_release, programs, timeouts, LocalReleasePlan,
+    LocalReleaseSource, Origin,
 };
 use crate::error::GraphError;
 use crate::{DependencyResolver, ProjectLocator, ResolvedConfig, Workspace};
@@ -99,8 +99,11 @@ pub struct InitFacts {
     pub root: PathBuf,
     pub ecosystems: BTreeSet<Ecosystem>,
     pub packages: Vec<InitPackage>,
-    /// Canonical `origin` push URL, or `None` when no `origin` remote is configured.
+    /// Canonical `origin` push URL; `None` when there is no hosted `origin`.
     pub origin: Option<String>,
+    /// Why `origin` is not a hosted remote (a local path, say), when it is configured but not hosted: `init` treats it
+    /// as no `origin`.
+    pub origin_not_hosted: Option<&'static str>,
     /// `origin` as a GitHub `owner/repo`, when it is one.
     pub origin_repository: Option<GitHubRepository>,
     /// Non-default tag templates to write, keyed by qualified package id.
@@ -286,7 +289,11 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
     if git_dir.exit_code != Some(0) {
         return Err(GraphError::InitNotGitRepository { root });
     }
-    let origin = optional_git_remote(&root, runner)?;
+    let (origin, origin_not_hosted) = match Origin::read(&root, runner)? {
+        Origin::Hosted(remote) => (Some(remote), None),
+        Origin::Missing => (None, None),
+        Origin::NotHosted(reason) => (None, Some(reason)),
+    };
     let head = runner.run_with_timeout(
         programs::GIT,
         &["rev-parse", "--verify", "--quiet", "HEAD"],
@@ -306,6 +313,7 @@ fn detect_facts<L: ProjectLocator, R: CommandRunner>(
         ecosystems: BTreeSet::new(),
         packages: Vec::new(),
         origin: origin.as_ref().map(|remote| remote.endpoint.clone()),
+        origin_not_hosted,
         origin_repository: origin.as_ref().and_then(|remote| remote.github_repository.clone()),
         tag_templates,
         has_commit: head.exit_code == Some(0),
@@ -577,7 +585,8 @@ fn resolve_config_text(root: &Path, text: &str) -> Result<ResolvedConfig, GraphE
     Ok(crate::config::resolve(root, raw)?)
 }
 
-/// The first release `config` would produce, from the plan behind `release --dry-run`.
+/// The first release `config` would produce, from the plan behind `release --dry-run`, and the packages `version`
+/// has pending work for.
 ///
 /// # Errors
 ///
@@ -587,11 +596,17 @@ pub fn preview<L: ProjectLocator, R: CommandRunner>(
     config: &str,
     locator: &L,
     runner: &R,
-) -> Result<Option<LocalReleasePlan>, GraphError> {
+) -> Result<(Option<LocalReleasePlan>, PendingVersionWork), GraphError> {
     let resolved = resolve_config_text(&facts.root, config)?;
     let workspace = Workspace::load_with_config(facts.root.clone(), resolved, locator, runner)?;
-    plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)
+    let plan = plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)?;
+    // Advisory: the caller reports why it could not be checked rather than failing the preview.
+    let pending = crate::commands::pending_version_work(&workspace, &[]);
+    Ok((plan, pending))
 }
+
+/// The packages `version` has pending work for, or the error that stopped the check.
+pub type PendingVersionWork = Result<Vec<callisto_model::ReleasePackageId>, GraphError>;
 
 /// Validates artifact target triples.
 ///
@@ -634,7 +649,7 @@ pub fn init_files(root: &Path, workflow: bool) -> Result<Vec<PathBuf>, GraphErro
     Ok(files)
 }
 
-/// Writes `callisto.toml` and, when absent, `.changeset/README.md`.
+/// Writes `.changeset/README.md` when absent, then `callisto.toml`.
 ///
 /// # Errors
 ///
@@ -643,8 +658,9 @@ pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitRepo
     ensure_uninitialized(root)?;
     let config_path = root.join("callisto.toml");
     let files = init_files(root, false)?;
-    callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err(&config_path))?;
+    // `callisto.toml` marks the workspace initialized, so it is written last and a failed README leaves a retry open.
     write_changeset_readme(root, permit)?;
+    callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err(&config_path))?;
     Ok(InitReport {
         schema_version: SCHEMA_VERSION,
         initialized: true,

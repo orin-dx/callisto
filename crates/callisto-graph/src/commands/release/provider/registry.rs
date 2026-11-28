@@ -123,7 +123,7 @@ fn warn_if_foreign_repository(
         registry_repository.as_deref(),
         origin,
     ) {
-        eprintln!("{warning}");
+        crate::note::advise(&mut std::io::stderr(), format_args!("{warning}\n"));
     }
 }
 

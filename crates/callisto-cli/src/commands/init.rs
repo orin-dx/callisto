@@ -7,13 +7,13 @@ use callisto_graph::commands::init::{
     self as scaffold, changesets, BinaryRelease, InitAnswers, InitFacts, InitPackage, Versioning,
 };
 use callisto_graph::locate::{IgnoreWalkLocator, LocateError};
-use callisto_graph::GraphError;
+use callisto_graph::{GraphError, HOSTED_ORIGIN_FORMS};
 use callisto_model::{ApplyPermit, BranchName, CommandRunner, InitReport, SCHEMA_VERSION};
 use inquire::{Confirm, Select, Text};
 
 use crate::cli::{GlobalArgs, InitArgs, InitVersioning, OutputFormat};
 use crate::error::CliError;
-use crate::output::emit_report;
+use crate::output::{advise, emit_report};
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::tty;
@@ -102,10 +102,41 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
         global,
         tty::Prompts::detect(global.format),
         &mut TerminalPrompter,
-        &mut std::io::stdout(),
+        &mut crate::output::stdout(),
         &mut std::io::stderr(),
         &CliCommandRunner,
     )
+}
+
+/// Diagnostics queued while `init` runs. `run` emits whatever is still unshown when `init` fails, so an error never
+/// swallows a warning that explains it.
+#[derive(Default)]
+struct Notes {
+    /// Queued and not yet on stderr.
+    items: Vec<callisto_model::Diagnostic>,
+    shown: Vec<callisto_model::Diagnostic>,
+}
+
+impl Notes {
+    /// Says the queued notes on stderr, best effort, and moves them to the shown ones; the JSON report carries them.
+    fn emit(&mut self, err: &mut dyn Write) {
+        advise_diagnostics(&self.items, err);
+        self.shown.append(&mut self.items);
+    }
+
+    /// Every note, shown or not, for the JSON report; call `emit` first so each reaches stderr once.
+    fn take_all(&mut self) -> Vec<callisto_model::Diagnostic> {
+        let mut all = std::mem::take(&mut self.shown);
+        all.append(&mut self.items);
+        all
+    }
+}
+
+/// Says `diagnostics` on stderr, best effort: the JSON report carries them too.
+fn advise_diagnostics(diagnostics: &[callisto_model::Diagnostic], err: &mut dyn Write) {
+    let mut text = Vec::new();
+    render::render_diagnostics(diagnostics, None, &mut text).expect("rendering to memory cannot fail");
+    advise(err, String::from_utf8_lossy(&text));
 }
 
 /// `init` against explicit terminal state (`prompts` is `Some` when it may ask questions), prompter, output streams, and
@@ -118,6 +149,27 @@ pub fn run<R: CommandRunner>(
     out: &mut dyn Write,
     err: &mut dyn Write,
     runner: &R,
+) -> Result<ExitCode, CliError> {
+    let mut notes = Notes::default();
+    let result = run_queued(
+        args, global, prompts, prompter, &mut *out, &mut *err, runner, &mut notes,
+    );
+    if result.is_err() {
+        notes.emit(err);
+    }
+    result
+}
+
+#[expect(clippy::too_many_arguments, reason = "init's explicit streams plus the note queue")]
+fn run_queued<'a, R: CommandRunner>(
+    args: InitArgs,
+    global: &GlobalArgs,
+    prompts: Option<tty::Prompts>,
+    prompter: &mut dyn Prompter,
+    out: &'a mut dyn Write,
+    err: &'a mut dyn Write,
+    runner: &R,
+    notes: &mut Notes,
 ) -> Result<ExitCode, CliError> {
     validate_flags(&args)?;
     let interactive = prompts.is_some();
@@ -148,16 +200,28 @@ pub fn run<R: CommandRunner>(
     }
     let json = global.format == OutputFormat::Json;
     // JSON keeps stdout for the report.
-    let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
-    write_facts(&facts, human)?;
+    macro_rules! human {
+        () => {
+            if json {
+                &mut *err
+            } else {
+                &mut *out
+            }
+        };
+    }
+    write_facts(&facts, human!())?;
 
     if facts.origin.is_none() {
         if args.workflow {
-            return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+            return Err(CliError::InitFlagRequiresOrigin {
+                flag: "workflow",
+                not_hosted: facts.origin_not_hosted,
+            });
         }
         if !args.artifact_targets.is_empty() {
             return Err(CliError::InitFlagRequiresOrigin {
                 flag: "artifact-target",
+                not_hosted: facts.origin_not_hosted,
             });
         }
     }
@@ -175,22 +239,26 @@ pub fn run<R: CommandRunner>(
     let requested = requested_release(&args, &facts)?;
     let prompting = interactive && !args.yes;
     let migration = changesets::migrate(&facts.root, &facts);
-    // A dry run writes nothing, so it previews with the warning instead.
-    if !migration.public_scoped.is_empty() && !args.yes && !global.dry_run {
+    // A dry run writes nothing, so it previews with the warning instead of refusing.
+    let refusing = !migration.public_scoped.is_empty() && !args.yes && !global.dry_run;
+    // Queued first so a refusal below still shows them; the refusal itself names the access hazard.
+    notes.items.extend(migration.diagnostics_unless_refused(refusing));
+    if refusing {
         return Err(CliError::InitChangesetsAccess {
             packages: migration.public_scoped,
         });
     }
     let mut answers = collect_answers(&args, &facts, &requested, prompting, prompter)?;
 
-    let mut diagnostics = migration.diagnostics.clone();
-    diagnostics.extend(migration.apply_fixed_groups(&mut answers));
+    notes.items.extend(migration.apply_fixed_groups(&mut answers));
     if facts.origin.is_none() {
-        writeln!(human, "{ORIGIN_MISSING_NOTE}")?;
-        diagnostics.push(callisto_model::Diagnostic {
+        notes.items.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::InitOriginMissing,
             severity: callisto_model::DiagnosticSeverity::Warning,
-            message: ORIGIN_MISSING_NOTE.to_owned(),
+            message: match facts.origin_not_hosted {
+                Some(reason) => origin_not_hosted_note(reason),
+                None => ORIGIN_MISSING_NOTE.to_owned(),
+            },
             package: None,
             path: None,
             escalated_by: None,
@@ -206,8 +274,7 @@ pub fn run<R: CommandRunner>(
         }
         Err(reason) => {
             let note = workflow_unsupported_note(reason);
-            writeln!(human, "{note}")?;
-            diagnostics.push(callisto_model::Diagnostic {
+            notes.items.push(callisto_model::Diagnostic {
                 code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
                 severity: callisto_model::DiagnosticSeverity::Warning,
                 message: note,
@@ -239,8 +306,12 @@ pub fn run<R: CommandRunner>(
     // A workflow nobody asked for (the default) never fails `init`: if it cannot be built, say why and go on.
     let asked_for_workflow = args.workflow || (prompting && !workflow_blocked);
     let workflow = match shape.filter(|_| want_workflow) {
-        Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner, human) {
-            Ok(built) => Some(built),
+        Some(shape) => match build_workflow(&facts, shape, migration.base_branch.as_ref(), runner) {
+            // The review line is required output, so its failure is not a workflow that could not be built.
+            Ok((content, branch)) => {
+                write_default_branch(&branch, human!())?;
+                Some((content, branch.name))
+            }
             Err(error) if !asked_for_workflow => {
                 let note = match &error {
                     CliError::Graph(callisto_graph::GraphError::InitWorkflowExists { path }) => format!(
@@ -252,8 +323,7 @@ pub fn run<R: CommandRunner>(
                         "Skipping the GitHub Actions workflow: {error}. Run `callisto init --workflow` to retry."
                     ),
                 };
-                writeln!(human, "{note}")?;
-                diagnostics.push(callisto_model::Diagnostic {
+                notes.items.push(callisto_model::Diagnostic {
                     code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
                     severity: callisto_model::DiagnosticSeverity::Warning,
                     message: note,
@@ -269,7 +339,7 @@ pub fn run<R: CommandRunner>(
         None => None,
     };
     if workflow.is_none() {
-        diagnostics.extend(migration.base_branch_unused());
+        notes.items.extend(migration.base_branch_unused());
     }
 
     let config = scaffold::render_config(&facts, &answers);
@@ -282,23 +352,26 @@ pub fn run<R: CommandRunner>(
         .lines()
         .all(|line| line.trim().is_empty() || line.trim_start().starts_with('#'))
     {
-        writeln!(human, "\ncallisto.toml: no settings needed, the defaults apply.")?;
+        writeln!(human!(), "\ncallisto.toml: no settings needed, the defaults apply.")?;
     } else {
-        writeln!(human, "\ncallisto.toml:\n{config}")?;
+        writeln!(human!(), "\ncallisto.toml:\n{config}")?;
     }
     match plan {
-        Some(plan) => {
-            writeln!(human, "First release preview (`callisto release --dry-run`):")?;
-            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human)?;
+        Some((plan, pending)) => {
+            writeln!(human!(), "First release preview (`callisto release --dry-run`):")?;
+            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, None, human!())?;
+            // `origin` already has its own note above, so an unbound tag adds nothing.
+            if let Some(plan) = &plan {
+                notes.items.extend(plan.diagnostics.clone());
+            }
+            let pending = super::release::PendingWork::of(pending);
+            notes.items.extend(pending.diagnostic());
+            pending.write_unchecked_note(&mut *err);
         }
-        None => writeln!(human, "{NO_COMMITS}")?,
+        None => writeln!(human!(), "{NO_COMMITS}")?,
     }
-    if let Some((workflow, _)) = &workflow {
-        writeln!(
-            human,
-            "\n{}:\n{workflow}",
-            scaffold::workflow_path(&facts.root).display()
-        )?;
+    if let Some((_, branch)) = &workflow {
+        writeln!(human!(), "\n{}", workflow_summary(&facts.root, branch))?;
     }
 
     // Computed before any write, so the `.changeset/README.md` existence check sees disk state as-is.
@@ -313,46 +386,63 @@ pub fn run<R: CommandRunner>(
             diagnostics: Vec::new(),
         }
     } else {
+        // Said before the write question so a decline keeps them.
+        notes.emit(&mut *err);
         if prompting && !prompter.confirm(WRITE_PROMPT, true)? {
-            writeln!(human, "{}", tty::CANCELLED)?;
+            // JSON never prompts, so a decline is always text.
+            writeln!(human!(), "{}", tty::CANCELLED)?;
             return Ok(ExitCode::SUCCESS);
         }
         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
         let mut report = scaffold::write(&facts.root, &config, &permit)?;
         if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
-            diagnostics.push(announce_workflow(human, &facts, branch)?);
+            notes.items.push(merge_publishes_diagnostic(branch));
+            // The merge note and its advice come before the next steps.
+            notes.emit(&mut *err);
+            writeln!(
+                human!(),
+                "{}",
+                next_steps_note(&scaffold::registry_secret_names(&facts))
+            )?;
         }
         report.files = files;
         report
     };
-    report.diagnostics.extend(diagnostics);
-    if json {
-        emit_report(&mut &mut *out, &report, global.dry_run)?;
+    notes.emit(&mut *err);
+    report.diagnostics.extend(notes.take_all());
+    finish(&report, global, out)
+}
+
+/// Writes the report to stdout; its diagnostics already reached stderr.
+fn finish(report: &InitReport, global: &GlobalArgs, out: &mut dyn Write) -> Result<ExitCode, CliError> {
+    if global.format == OutputFormat::Json {
+        emit_report(&mut &mut *out, report, global.dry_run)?;
     } else {
-        render::render_init(&report, &mut &mut *out)?;
+        render::render_init(report, &mut &mut *out)?;
     }
     Ok(ExitCode::SUCCESS)
 }
 
-/// Prints what a written workflow means and what to do next; the same text is recorded as a diagnostic.
-fn announce_workflow(
-    human: &mut dyn Write,
-    facts: &InitFacts,
-    branch: &BranchName,
-) -> Result<callisto_model::Diagnostic, CliError> {
-    let note = merge_publishes_note(branch);
-    writeln!(human, "{note}")?;
-    writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(facts)))?;
-    Ok(callisto_model::Diagnostic {
+/// The workflow's path and what it does, in place of its text.
+fn workflow_summary(root: &std::path::Path, branch: &BranchName) -> String {
+    format!(
+        "{}: on each push to `{branch}`, opens a release PR while version work is pending and publishes once it merges.",
+        scaffold::workflow_path(root).display()
+    )
+}
+
+/// What a written workflow means for the branch it runs on, recorded as a diagnostic and said on stderr.
+fn merge_publishes_diagnostic(branch: &BranchName) -> callisto_model::Diagnostic {
+    callisto_model::Diagnostic {
         code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
         severity: callisto_model::DiagnosticSeverity::Info,
-        message: note,
+        message: merge_publishes_note(branch),
         package: None,
         path: None,
         escalated_by: None,
         governed_by: None,
-    })
+    }
 }
 
 /// `init --workflow` in a workspace that already has `callisto.toml`: writes only the workflow.
@@ -369,7 +459,10 @@ fn run_workflow_only<R: CommandRunner>(
     let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
     write_facts(&facts, human)?;
     if facts.origin.is_none() {
-        return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+        return Err(CliError::InitFlagRequiresOrigin {
+            flag: "workflow",
+            not_hosted: facts.origin_not_hosted,
+        });
     }
     let shape =
         scaffold::workflow_shape(&facts, scaffold::existing_config_ships_binaries(&facts.root)?).map_err(|reason| {
@@ -378,17 +471,19 @@ fn run_workflow_only<R: CommandRunner>(
             }
         })?;
     let base_branch = changesets::base_branch(root);
-    let (workflow, branch) = build_workflow(&facts, shape, base_branch.as_ref(), runner, human)?;
-    writeln!(
-        human,
-        "\n{}:\n{workflow}",
-        scaffold::workflow_path(&facts.root).display()
-    )?;
+    let (workflow, branch) = build_workflow(&facts, shape, base_branch.as_ref(), runner)?;
+    write_default_branch(&branch, human)?;
+    let branch = branch.name;
+    writeln!(human, "\n{}", workflow_summary(&facts.root, &branch))?;
     let mut diagnostics = Vec::new();
     if !global.dry_run {
         let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
         scaffold::write_workflow(&facts.root, &workflow, &permit)?;
-        diagnostics.push(announce_workflow(human, &facts, &branch)?);
+        let note = merge_publishes_diagnostic(&branch);
+        advise_diagnostics(std::slice::from_ref(&note), err);
+        let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
+        writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(&facts)))?;
+        diagnostics.push(note);
     }
     let config_path = facts.root.join("callisto.toml");
     let config = callisto_model::strict_fs::read_optional(&config_path)
@@ -405,12 +500,13 @@ fn run_workflow_only<R: CommandRunner>(
         files: vec![scaffold::workflow_path(&facts.root)],
         diagnostics,
     };
-    if json {
-        emit_report(&mut &mut *out, &report, global.dry_run)?;
-    } else {
-        render::render_init(&report, &mut &mut *out)?;
-    }
-    Ok(ExitCode::SUCCESS)
+    finish(&report, global, out)
+}
+
+/// Says which branch a generated workflow runs on, and where that came from.
+fn write_default_branch(branch: &scaffold::DefaultBranch, human: &mut dyn Write) -> Result<(), CliError> {
+    writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
+    Ok(())
 }
 
 /// The workflow text and the default branch it triggers on.
@@ -419,8 +515,7 @@ fn build_workflow<R: CommandRunner>(
     shape: scaffold::WorkflowShape,
     base_branch: Option<&BranchName>,
     runner: &R,
-    human: &mut dyn Write,
-) -> Result<(String, BranchName), CliError> {
+) -> Result<(String, scaffold::DefaultBranch), CliError> {
     scaffold::ensure_workflow_absent(&facts.root)?;
     let branch = match base_branch {
         Some(name) => scaffold::DefaultBranch {
@@ -429,16 +524,23 @@ fn build_workflow<R: CommandRunner>(
         },
         None => scaffold::default_branch(runner, &facts.root),
     };
-    writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
     let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package versions are semver");
     let commit = scaffold::resolve_release_commit(runner, &facts.root, &version)?;
     let content = scaffold::render_workflow(facts, shape, &branch.name, &commit, &version);
-    Ok((content, branch.name))
+    Ok((content, branch))
 }
 
 /// Printed, and recorded as a warning diagnostic, when no `origin` remote is configured.
 const ORIGIN_MISSING_NOTE: &str = "No `origin` remote is configured: skipping the release workflow and \
 shipping-binaries questions; `callisto release` will refuse until one is added.";
+
+/// Printed, and recorded as a warning diagnostic, when `origin` is not a hosted remote; the value is never shown.
+fn origin_not_hosted_note(reason: &str) -> String {
+    format!(
+        "`origin` is not a hosted remote: {reason} (use {HOSTED_ORIGIN_FORMS}); skipping the release workflow and \
+shipping-binaries questions; `callisto release` will refuse until one is set."
+    )
+}
 
 /// Rejects flag combinations invalid regardless of workspace facts.
 fn validate_flags(args: &InitArgs) -> Result<(), CliError> {
@@ -457,7 +559,12 @@ fn write_facts(facts: &InitFacts, out: &mut dyn Write) -> Result<(), CliError> {
     let ecosystems: Vec<&str> = facts.ecosystems.iter().map(|ecosystem| ecosystem.prefix()).collect();
     writeln!(out, "Detected:")?;
     writeln!(out, "  ecosystems: {}", ecosystems.join(", "))?;
-    writeln!(out, "  origin: {}", facts.origin.as_deref().unwrap_or("none"))?;
+    let origin = match (&facts.origin, facts.origin_not_hosted.is_some()) {
+        (Some(origin), _) => origin.as_str(),
+        (None, true) => "not hosted",
+        (None, false) => "none",
+    };
+    writeln!(out, "  origin: {origin}")?;
     writeln!(out, "  packages:")?;
     for package in &facts.packages {
         let tag = package.last_tag.as_ref().map_or("none", |tag| tag.as_str());

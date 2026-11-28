@@ -11,11 +11,12 @@ use crate::commands::git_batch::{batch_blobs, BatchBlob};
 use crate::error::GraphError;
 use crate::IdentityIndex;
 
-/// The ecosystems with a manifest declaring a name at a revision, for every (revision, name) already read, and the
-/// manifest texts read so far.
+/// The ecosystems with a manifest declaring a name at a revision, for every (revision, name) already read, the names a
+/// revision may still be asked about, and the manifest texts read so far.
 #[derive(Default)]
 pub(crate) struct Rosters {
     declaring: HashMap<(String, String), BTreeSet<Ecosystem>>,
+    expected: HashMap<String, BTreeSet<String>>,
     texts: HashMap<(String, PathBuf), Option<String>>,
 }
 
@@ -41,6 +42,11 @@ impl Rosters {
         }
     }
 
+    /// Names `rev`'s manifests may be asked about, so the first one that has to be searched for reads them all.
+    pub(crate) fn expect_names(&mut self, rev: &str, names: impl IntoIterator<Item = String>) {
+        self.expected.entry(rev.to_owned()).or_default().extend(names);
+    }
+
     fn manifest_text(&mut self, git: &GitAccess<'_>, rev: &str, path: &Path) -> Result<Option<String>, GraphError> {
         let key = (rev.to_owned(), path.to_path_buf());
         if let Some(known) = self.texts.get(&key) {
@@ -51,19 +57,46 @@ impl Rosters {
         Ok(text)
     }
 
+    /// The ecosystems where `rev` held a manifest declaring exactly `name`, the spelling a default tag carries. The
+    /// first search at `rev` covers every name expected there: one `git grep` and one batched read of its matches.
     fn declaring_at(&mut self, git: &GitAccess<'_>, rev: &str, name: &str) -> Result<BTreeSet<Ecosystem>, GraphError> {
-        let key = (rev.to_string(), name.to_string());
+        let key = (rev.to_owned(), name.to_owned());
         if let Some(known) = self.declaring.get(&key) {
             return Ok(known.clone());
         }
-        let mut declaring = BTreeSet::new();
-        for (ecosystem, format, file_name) in MANIFESTS {
-            if declares(git, rev, name, format, file_name)? {
-                declaring.insert(ecosystem);
+        let mut names = self.expected.remove(rev).unwrap_or_default();
+        names.insert(name.to_owned());
+        names.retain(|name| !self.declaring.contains_key(&(rev.to_owned(), name.clone())));
+        let needles: Vec<&str> = names.iter().map(String::as_str).collect();
+        let pathspecs = MANIFESTS.map(|(_, _, file_name)| Pathspec::named_anywhere(file_name));
+        let paths = git.files_containing_at(rev, &needles, &pathspecs)?;
+        let wanted: Vec<(String, PathBuf)> = paths.iter().map(|path| (rev.to_owned(), path.clone())).collect();
+        self.prefetch(git, &wanted);
+        let mut found: HashMap<String, BTreeSet<Ecosystem>> = HashMap::new();
+        for path in &paths {
+            let file_name = path.file_name().and_then(|name| name.to_str());
+            let Some((ecosystem, format, _)) = MANIFESTS
+                .into_iter()
+                .find(|(_, _, manifest)| Some(*manifest) == file_name)
+            else {
+                continue;
+            };
+            let Some(text) = self.manifest_text(git, rev, path)? else {
+                continue;
+            };
+            // A manifest that was broken at `rev` simply names nobody.
+            let declared = read_identity(format, &text, path)
+                .ok()
+                .and_then(|identity| identity.name);
+            if let Some(declared) = declared.filter(|declared| names.contains(declared)) {
+                found.entry(declared).or_default().insert(ecosystem);
             }
         }
-        self.declaring.insert(key, declaring.clone());
-        Ok(declaring)
+        for name in names {
+            let ecosystems = found.remove(&name).unwrap_or_default();
+            self.declaring.insert((rev.to_owned(), name), ecosystems);
+        }
+        Ok(self.declaring.get(&key).cloned().unwrap_or_default())
     }
 }
 
@@ -72,30 +105,6 @@ const MANIFESTS: [(Ecosystem, ManifestFormat, &str); 3] = [
     (Ecosystem::Npm, ManifestFormat::PackageJson, "package.json"),
     (Ecosystem::Pypi, ManifestFormat::PyprojectToml, "pyproject.toml"),
 ];
-
-/// Whether `rev` held a manifest named `file_name` declaring exactly `name`, the spelling a default tag carries; only
-/// manifests mentioning it are read.
-fn declares(
-    git: &GitAccess<'_>,
-    rev: &str,
-    name: &str,
-    format: ManifestFormat,
-    file_name: &str,
-) -> Result<bool, GraphError> {
-    for path in git.files_containing_at(rev, name, &[Pathspec::named_anywhere(file_name)])? {
-        let Some(text) = git.read_at(rev, &path)? else {
-            continue;
-        };
-        // A manifest that was broken at `rev` simply names nobody.
-        let declared = read_identity(format, &text, &path)
-            .ok()
-            .and_then(|identity| identity.name);
-        if declared.is_some_and(|declared| declared == name) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
 
 /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.
 fn first_manifest_declares_at(
@@ -234,15 +243,58 @@ mod tests {
         dir
     }
 
+    /// Git that counts its `grep` calls, whichever way they are started.
+    #[derive(Default)]
+    struct CountingGrep(std::sync::atomic::AtomicUsize);
+
+    impl CountingGrep {
+        fn count(&self, args: &[&str]) {
+            if args.first() == Some(&"grep") {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    }
+
+    impl callisto_model::CommandRunner for CountingGrep {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            self.count(args);
+            GitRunner.run(program, args, cwd)
+        }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            self.count(args);
+            GitRunner.run_with_stdin(program, args, cwd, stdin)
+        }
+    }
+
+    /// A manifest declares only the literal name, and every name expected at a revision is searched for at once.
     #[test]
     fn a_manifest_declares_only_the_literal_name() {
         let dir = repository();
-        let git = GitAccess::new(dir.path(), &GitRunner);
-        let declares = |name, format, file| declares(&git, "HEAD~1", name, format, file).unwrap();
-        assert!(declares("my_pkg", ManifestFormat::PyprojectToml, "pyproject.toml"));
-        assert!(!declares("my-pkg", ManifestFormat::PyprojectToml, "pyproject.toml"));
-        assert!(declares("foo_bar", ManifestFormat::CargoToml, "Cargo.toml"));
-        assert!(!declares("foo-bar", ManifestFormat::CargoToml, "Cargo.toml"));
+        let runner = CountingGrep::default();
+        let git = GitAccess::new(dir.path(), &runner);
+        let mut rosters = Rosters::default();
+        rosters.expect_names("HEAD~1", ["my-pkg", "foo_bar", "foo-bar"].map(String::from));
+        let mut declaring = |name| rosters.declaring_at(&git, "HEAD~1", name).unwrap();
+        assert_eq!(declaring("my_pkg"), BTreeSet::from([Ecosystem::Pypi]));
+        assert!(declaring("my-pkg").is_empty());
+        assert_eq!(declaring("foo_bar"), BTreeSet::from([Ecosystem::Cargo]));
+        assert!(declaring("foo-bar").is_empty());
+        assert_eq!(runner.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // A name nobody expected is searched for on its own.
+        assert!(declaring("nobody").is_empty());
+        assert_eq!(runner.0.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     #[test]

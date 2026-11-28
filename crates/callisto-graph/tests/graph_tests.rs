@@ -38,6 +38,7 @@ fn test_compose_pr_body_custom_branch_flag() {
         graph,
         tags: OnceCell::from(tags),
         git: OnceCell::from(git),
+        origin_url: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
         identity: callisto_graph::IdentityIndex::default(),

@@ -51,7 +51,7 @@ fn preview(global: &GlobalArgs, mode: &str, tag: &str, rel_path: &Path, content:
                 content: Some(content.to_string()),
                 diagnostics: vec![],
             };
-            emit_report(&mut std::io::stdout(), &report, true)?;
+            emit_report(&mut crate::output::stdout(), &report, true)?;
         }
         OutputFormat::Text => {
             emit_line(&format!(
@@ -143,7 +143,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                         content: None,
                         diagnostics: vec![],
                     };
-                    emit_report(&mut std::io::stdout(), &report, false)?;
+                    emit_report(&mut crate::output::stdout(), &report, false)?;
                 }
                 OutputFormat::Text => {
                     log_line(global.format, &format!("Entered pre mode with tag `{tag}`"))?;
@@ -199,7 +199,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                         content: None,
                         diagnostics: vec![],
                     };
-                    emit_report(&mut std::io::stdout(), &report, false)?;
+                    emit_report(&mut crate::output::stdout(), &report, false)?;
                 }
                 OutputFormat::Text => {
                     log_line(global.format, "Exiting pre mode")?;

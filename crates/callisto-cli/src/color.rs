@@ -12,6 +12,7 @@ pub fn resolve() -> anstream::ColorChoice {
     resolve_with(&|name| std::env::var(name).ok())
 }
 
+#[expect(clippy::disallowed_methods, reason = "only asks whether stdout is a terminal")]
 fn resolve_with(var: &dyn Fn(&str) -> Option<String>) -> anstream::ColorChoice {
     if var("NO_COLOR").is_some_and(|v| !v.is_empty()) {
         return anstream::ColorChoice::Never;
@@ -27,10 +28,11 @@ pub fn enabled() -> bool {
     resolve() != anstream::ColorChoice::Never
 }
 
-/// Wraps stdout in an `AutoStream` using the one resolved `ColorChoice`, so any
-/// ANSI codes a renderer emits are stripped when color is disabled.
-pub fn stdout() -> anstream::AutoStream<std::io::Stdout> {
-    anstream::AutoStream::new(std::io::stdout(), resolve())
+/// The shared stdout sink over an `AutoStream` using the one resolved `ColorChoice`, so any ANSI codes a renderer
+/// emits are stripped when color is disabled.
+#[expect(clippy::disallowed_methods, reason = "wrapped in the shared stdout sink")]
+pub fn stdout() -> crate::output::Stdout<anstream::AutoStream<std::io::Stdout>> {
+    crate::output::Stdout::new(anstream::AutoStream::new(std::io::stdout(), resolve()))
 }
 
 #[cfg(test)]

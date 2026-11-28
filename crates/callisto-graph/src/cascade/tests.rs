@@ -103,6 +103,23 @@ impl callisto_model::CommandRunner for FakeGitTagRunner {
             stderr: String::new(),
         })
     }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &std::path::Path,
+        _stdin: &[u8],
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        // The history search pipes its needles; batched reads stay unsupported, so lookups read one at a time.
+        if args.first() != Some(&"grep") {
+            return Err(callisto_model::CommandError::Unsupported {
+                program: program.to_owned(),
+                reason: "only the history search is scripted".to_owned(),
+            });
+        }
+        self.run(program, args, cwd)
+    }
 }
 
 /// Shared fixture: `TagIndex::build` requires each package to resolve a

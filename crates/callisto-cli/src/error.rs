@@ -1,5 +1,5 @@
 use callisto_graph::locate::LocateError;
-use callisto_graph::{ConfigError, ExitKind, GraphError};
+use callisto_graph::{ConfigError, ExitKind, GraphError, HOSTED_ORIGIN_FORMS};
 use callisto_model::CommandError;
 use miette::Diagnostic;
 
@@ -370,12 +370,25 @@ pub enum CliError {
     )]
     InitFlagRequiresArtifactTarget { flag: &'static str },
 
-    #[error("`--{flag}` requires an `origin` remote, and none is configured")]
+    #[error(
+        "`--{flag}` requires a hosted `origin` remote, and {}",
+        match not_hosted { Some(reason) => format!("the configured one is not hosted: {reason}"), None => "none is configured".to_owned() }
+    )]
     #[diagnostic(
         code(E299),
-        help("add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init")
+        help(
+            "{}",
+            if not_hosted.is_some() {
+                format!("use {HOSTED_ORIGIN_FORMS}: inspect with `git remote get-url --push origin`, fix with `git remote set-url --push origin <url>`, then re-run init")
+            } else {
+                "add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init".to_owned()
+            }
+        )
     )]
-    InitFlagRequiresOrigin { flag: &'static str },
+    InitFlagRequiresOrigin {
+        flag: &'static str,
+        not_hosted: Option<&'static str>,
+    },
 
     #[error("workspace is already in pre-release mode")]
     #[diagnostic(code(E243), help("run `callisto pre exit` first"))]

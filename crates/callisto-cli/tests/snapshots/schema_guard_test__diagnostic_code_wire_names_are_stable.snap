@@ -17,6 +17,7 @@ expression: "variant_names(&run_schema(\"status\"), \"DiagnosticCode\")"
   "napi-target-added-not-in-members",
   "napi-target-removed-still-on-disk",
   "package-rule-matched-nothing",
+  "pending-version-work",
   "platform-package-without-owner",
   "product-artifact-owner-without-product",
   "range-not-round-trippable",

@@ -56,8 +56,8 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
     };
 
     match global.format {
-        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
-        OutputFormat::Text => render::render_compose_pr_body(&report, &mut std::io::stdout())?,
+        OutputFormat::Json => emit_report(&mut crate::output::stdout(), &report, global.dry_run)?,
+        OutputFormat::Text => render::render_compose_pr_body(&report, &mut crate::output::stdout())?,
     }
 
     Ok(ExitCode::SUCCESS)

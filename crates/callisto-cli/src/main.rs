@@ -1,17 +1,38 @@
 #![allow(clippy::result_large_err)]
+#![deny(clippy::print_stdout, clippy::print_stderr)]
 
+use std::io::Write as _;
 use std::process::ExitCode;
 
+use clap::error::ErrorKind;
 use clap::Parser;
 
 use callisto_cli::cli::{Cli, Command};
 use callisto_cli::commands::*;
+use callisto_cli::output::advise;
 use callisto_graph::ExitKind;
 
 // Exit codes: 0 success, 1 failure, 2 usage error: from clap, or a handler error whose `exit_kind` is usage, 130 cancelled at a prompt with nothing written (docs/stability.md). A handler's `Ok(code)` is returned as is.
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        // Help and version are output, so they go through the shared stdout sink like every report.
+        Err(shown) if matches!(shown.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => {
+            return match write!(callisto_cli::color::stdout(), "{}", shown.render().ansi()) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(source) => {
+                    let error = callisto_cli::error::CliError::from(source);
+                    advise(
+                        &mut std::io::stderr(),
+                        format_args!("{:?}\n", miette::Report::new(error)),
+                    );
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        Err(usage) => usage.exit(),
+    };
     let command_name = cli.command.report_name();
 
     let res = match cli.command {
@@ -41,17 +62,23 @@ fn main() -> ExitCode {
                     ExitKind::Runtime => ExitCode::FAILURE,
                 }
             };
+            // The exit status is decided; the error card is best effort.
+            let stderr = &mut std::io::stderr();
             if cli.global.format == callisto_cli::cli::OutputFormat::Json {
                 let report = callisto_cli::error::format_error_json(command_name, cli.global.dry_run, &err);
-                let _res = callisto_cli::output::write_error_json(&mut std::io::stderr(), &report);
+                let text = serde_json::to_string_pretty(&report).expect("the error envelope serializes");
+                advise(stderr, format_args!("{text}\n"));
             } else {
                 let indeterminate = matches!(
                     miette::Diagnostic::code(&err).map(|code| code.to_string()).as_deref(),
                     Some("E157" | "E176")
                 );
-                eprintln!("{:?}", miette::Report::new(err));
+                advise(stderr, format_args!("{:?}\n", miette::Report::new(err)));
                 if let Some(summary) = indeterminate.then(callisto_cli::runner::last_failed_command).flatten() {
-                    eprintln!("Most recent failed command (redacted):\n{summary}");
+                    advise(
+                        stderr,
+                        format_args!("Most recent failed command (redacted):\n{summary}\n"),
+                    );
                 }
             }
             exit

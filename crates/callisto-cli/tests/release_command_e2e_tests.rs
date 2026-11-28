@@ -42,7 +42,11 @@ impl Rig {
     }
 
     fn run(&self, root: &Path, args: &[&str]) -> std::process::Output {
-        release_local(
+        self.command(root, args).output().expect("callisto release should run")
+    }
+
+    fn command(&self, root: &Path, args: &[&str]) -> std::process::Command {
+        release_local_command(
             root,
             args,
             &self.home(),
@@ -53,6 +57,14 @@ impl Rig {
                 git_trace: &self.git_trace,
             },
         )
+    }
+
+    /// Runs with stderr closed: every note, warning and error card fails to write.
+    fn run_without_stderr(&self, root: &Path, args: &[&str]) -> std::process::Output {
+        self.command(root, args)
+            .stderr(closed_pipe())
+            .output()
+            .expect("callisto release should run")
     }
 
     fn effects(&self) -> String {
@@ -382,9 +394,13 @@ fn dry_run_without_origin_notes_unbound_tags() {
         "{}",
         stderr(&preview)
     );
-    // The missing-origin probe (`optional_git_remote`, called more than once
-    // while deriving this preview) must never leak git's own raw stderr for
-    // an absent remote -- only the one deliberate note above.
+    assert!(
+        stderr(&preview).contains("no `origin` remote is configured, so tag operations are unbound"),
+        "{}",
+        stderr(&preview)
+    );
+    // The missing-origin probe must never leak git's own raw stderr for an absent remote -- only the one deliberate
+    // note above.
     assert!(
         !stderr(&preview).contains("No such remote"),
         "git's own probe stderr must not leak: {}",
@@ -393,6 +409,578 @@ fn dry_run_without_origin_notes_unbound_tags() {
 
     let run = rig.run(root, &["release"]);
     assert!(!run.status.success());
+    assert_no_effects(&rig, root);
+}
+
+/// An `origin` that is not a hosted remote previews exactly like no `origin`, with or without a product release; a
+/// real release refuses it by name.
+#[test]
+fn an_origin_that_is_not_hosted_previews_unbound_and_refuses_by_name() {
+    let local = tempfile::tempdir().unwrap();
+    let local = local.path().to_str().unwrap();
+    for origin in [
+        local,
+        "file:///srv/git/core-crate.git",
+        ".mirror:team/x",
+        "remotes/origin.git",
+    ] {
+        for product_release in [false, true] {
+            let (dir, release_commit) = release_commit_fixture_with_product_release(product_release);
+            let root = dir.path();
+            git(root, &["checkout", "-q", "main"]);
+            git(root, &["remote", "set-url", "origin", origin]);
+            let rig = Rig::new(&release_commit);
+
+            let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+            assert!(preview.status.success(), "{origin}: {}", stderr(&preview));
+            let text = String::from_utf8_lossy(&preview.stdout);
+            assert!(text.contains("cargo/core-crate 0.2.0"), "{origin}: {text}");
+            assert_eq!(
+                stderr(&preview).matches("not a hosted remote").count(),
+                1,
+                "{origin}: {}",
+                stderr(&preview)
+            );
+            // The note carries the refusal's reason and the accepted forms, never the value.
+            assert!(
+                stderr(&preview).contains("use an https:// or ssh://git@ URL") && !stderr(&preview).contains(origin),
+                "{origin}: {}",
+                stderr(&preview)
+            );
+            if product_release {
+                continue;
+            }
+            let run = rig.run(root, &["release"]);
+            assert!(!run.status.success());
+            // The report wraps long values, so compare without its layout.
+            let squash = |text: &str| {
+                text.chars()
+                    .filter(|c| !c.is_whitespace() && *c != '│')
+                    .collect::<String>()
+            };
+            let refusal = squash(&stderr(&run));
+            assert!(
+                refusal.contains(&squash("`origin` is not a hosted remote")) && refusal.contains("git@host:owner/repo"),
+                "{}",
+                stderr(&run)
+            );
+            assert!(!refusal.contains(&squash(origin)), "{}", stderr(&run));
+            assert!(
+                refusal.contains(&squash("git remote get-url --push origin"))
+                    && refusal.contains(&squash("git remote set-url --push origin <url>")),
+                "{}",
+                stderr(&run)
+            );
+            assert_no_effects(&rig, root);
+        }
+    }
+}
+
+/// A release with no `origin` says so and points at `git remote add`, not at a push URL that does not exist.
+#[test]
+fn a_release_without_an_origin_says_to_add_one() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    git(root, &["remote", "remove", "origin"]);
+    let rig = Rig::new(&release_commit);
+    let run = rig.run(root, &["release"]);
+    assert!(!run.status.success());
+    let refusal: String = stderr(&run)
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '│')
+        .collect();
+    assert!(refusal.contains("no`origin`remoteisconfigured"), "{}", stderr(&run));
+    assert!(refusal.contains("gitremoteaddorigin<url>"), "{}", stderr(&run));
+}
+
+/// A selection that is not a release still gets the pending-work pointer before the error.
+#[test]
+fn a_selection_that_is_not_a_release_points_at_version_before_failing() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let released = rig.run(root, &["release"]);
+    assert!(released.status.success(), "{}", stderr(&released));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    let run = rig.run(
+        root,
+        &[
+            "--format",
+            "text",
+            "--dry-run",
+            "release",
+            "--package",
+            "cargo/core-crate",
+        ],
+    );
+    assert!(!run.status.success(), "{}", stderr(&run));
+    assert!(stderr(&run).contains("E169"), "{}", stderr(&run));
+    assert_eq!(
+        stderr(&run).matches("run `callisto version`").count(),
+        1,
+        "{}",
+        stderr(&run)
+    );
+}
+
+/// A hosted `origin`, as an HTTPS URL or scp-style, binds the preview's tags.
+#[test]
+fn a_hosted_origin_binds_the_preview() {
+    for origin in [
+        "https://github.com/example/core-crate.git",
+        "git@github.com:example/core-crate.git",
+    ] {
+        let (dir, release_commit) = on_branch();
+        let root = dir.path();
+        git(root, &["remote", "set-url", "origin", origin]);
+        let rig = Rig::new(&release_commit);
+        let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+        assert!(preview.status.success(), "{origin}: {}", stderr(&preview));
+        assert!(
+            String::from_utf8_lossy(&preview.stdout).contains("create git tag"),
+            "{origin}"
+        );
+        assert!(
+            !stderr(&preview).contains("not a hosted remote"),
+            "{origin}: {}",
+            stderr(&preview)
+        );
+    }
+}
+
+/// A released version plus a new changeset has nothing to release yet, so the preview points at `callisto version`.
+#[test]
+fn nothing_to_release_with_a_new_changeset_points_at_version() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let run = rig.run(root, &["release"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    assert_eq!(String::from_utf8_lossy(&preview.stdout), "Nothing to release.\n");
+    assert_eq!(
+        stderr(&preview).matches("callisto version").count(),
+        1,
+        "{}",
+        stderr(&preview)
+    );
+}
+
+/// The real release says there is nothing to release and still points at pending changesets, and a selection that is
+/// not a release gets the pointer before E169 without `--dry-run` too.
+#[test]
+fn a_real_release_with_nothing_to_release_points_at_pending_changesets() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let released = rig.run(root, &["release"]);
+    assert!(released.status.success(), "{}", stderr(&released));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    // A real release trusts only a clean worktree.
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "add a changeset"]);
+
+    let run = rig.run(root, &["--format", "text", "release"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "Nothing to release.\n");
+    assert_eq!(
+        stderr(&run).matches("run `callisto version`").count(),
+        1,
+        "{}",
+        stderr(&run)
+    );
+
+    let selected = rig.run(root, &["--format", "text", "release", "--package", "cargo/core-crate"]);
+    assert!(!selected.status.success(), "{}", stderr(&selected));
+    assert!(stderr(&selected).contains("E169"), "{}", stderr(&selected));
+    assert_eq!(
+        stderr(&selected).matches("run `callisto version`").count(),
+        1,
+        "{}",
+        stderr(&selected)
+    );
+}
+
+/// The JSON preview carries the pending-work pointer in its existing `diagnostics`, and says it on stderr once.
+#[test]
+fn the_json_preview_carries_the_pending_work_pointer_in_diagnostics() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+
+    let preview = rig.run(root, &["--format", "json", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let pointing = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "pending-version-work")
+        .count();
+    assert_eq!(pointing, 1, "{report}");
+    assert_eq!(
+        stderr(&preview).matches("run `callisto version`").count(),
+        1,
+        "{}",
+        stderr(&preview)
+    );
+}
+
+/// When the pending-work check itself fails, the preview still succeeds and says which error stopped it.
+#[test]
+fn a_failed_pending_work_check_is_named_not_dropped() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/broken.md"),
+        "---\n\"cargo/core-crate\": nonsense\n---\n\nText.\n",
+    )
+    .unwrap();
+
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let text = stderr(&preview);
+    assert_eq!(
+        text.matches("could not check for pending version work (E").count(),
+        1,
+        "{text}"
+    );
+    assert!(text.contains("callisto status"), "{text}");
+}
+
+/// An unapproved `publishConfig.registry` is refused with E120 naming only scheme and host, and what must match.
+#[test]
+fn an_unapproved_publish_registry_is_refused_without_its_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    git(root, &["remote", "add", "origin", "https://github.com/example/web.git"]);
+    fs::write(
+        root.join("package.json"),
+        r#"{"name":"web","version":"1.0.0","publishConfig":{"registry":"https://npm.evil.example/secret-path-xyz/"}}"#,
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "initial"]);
+    let out = callisto(root, &["--dry-run", "release"]);
+    assert!(!out.status.success(), "{}", stderr(&out));
+    let text = squash_report(&stderr(&out));
+    assert!(text.contains("E120"), "{text}");
+    assert!(text.contains(&squash_report("`https://npm.evil.example`")), "{text}");
+    assert!(!text.contains("secret-path-xyz"), "{text}");
+    for part in [
+        "`publishConfig.registry` in package.json",
+        "is not one of the approved `[registries]` entries",
+        "only the scheme and host are shown, compare the full URL in package.json",
+    ] {
+        assert!(text.contains(&squash_report(part)), "{part}: {text}");
+    }
+}
+
+/// The report wraps long values, so compare without its layout.
+fn squash_report(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace() && *c != '│').collect()
+}
+
+/// A prerelease note `version` already applied stays on disk but is not pending, so the hint goes away.
+#[test]
+fn retained_prerelease_notes_are_not_pending() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    for args in [
+        &["pre", "enter", "beta"][..],
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    ] {
+        let out = callisto(root, args);
+        assert!(out.status.success(), "{args:?}: {}", stderr(&out));
+    }
+    let hints = |rig: &Rig| {
+        let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+        assert!(preview.status.success(), "{}", stderr(&preview));
+        stderr(&preview).matches("callisto version").count()
+    };
+    assert_eq!(hints(&rig), 1);
+
+    let versioned = callisto(root, &["version"]);
+    assert!(versioned.status.success(), "{}", stderr(&versioned));
+    assert!(
+        fs::read_dir(root.join(".changeset"))
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.path().extension().is_some_and(|ext| ext == "md")),
+        "the note is retained for the prerelease cycle"
+    );
+    assert_eq!(hints(&rig), 0);
+}
+
+/// A preview plans what is already versioned, so pending changesets get a pointer to `callisto version`.
+#[test]
+fn dry_run_with_pending_changesets_points_at_version() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    assert_eq!(
+        stderr(&preview).matches("callisto version").count(),
+        1,
+        "{}",
+        stderr(&preview)
+    );
+}
+
+/// `--package` narrows the pending-work hint to what the selection would release.
+#[test]
+fn the_pending_work_hint_follows_the_release_selection() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/core\", \"crates/other\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/other/src")).unwrap();
+    fs::write(
+        root.join("crates/other/Cargo.toml"),
+        "[package]\nname = \"other\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("crates/other/src/lib.rs"), "").unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "add other"]);
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/other:patch", "--summary", "Fix other"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    let rig = Rig::new(&release_commit);
+
+    let selected = rig.run(
+        root,
+        &[
+            "--format",
+            "text",
+            "--dry-run",
+            "release",
+            "--package",
+            "cargo/core-crate",
+        ],
+    );
+    assert!(selected.status.success(), "{}", stderr(&selected));
+    assert!(!stderr(&selected).contains("callisto version"), "{}", stderr(&selected));
+
+    let everything = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(everything.status.success(), "{}", stderr(&everything));
+    assert!(
+        stderr(&everything).contains("pending version work for `cargo/other`"),
+        "{}",
+        stderr(&everything)
+    );
+}
+
+/// A one-crate repository with `origin` set to `origin`, committed.
+fn init_fixture(origin: Option<&str>) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    if let Some(origin) = origin {
+        git(root, &["remote", "add", "origin", origin]);
+    }
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"solo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src/lib.rs"), "").unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "initial"]);
+    dir
+}
+
+fn init_with(root: &Path, format: &str, env: &[(String, String)]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--format", format, "--cwd", root.to_str().unwrap(), "init", "--yes"])
+        .args(["--versioning", "independent"])
+        .envs(env.iter().map(|(key, value)| (key, value)))
+        .output()
+        .unwrap()
+}
+
+/// Each `init` note is said once on stderr, in text and JSON alike; JSON also carries it in the report.
+fn assert_said_once(out: &std::process::Output, format: &str, note: &str) {
+    assert!(out.status.success(), "{}", stderr(out));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stderr(out).matches(note).count(), 1, "{format}: {}", stderr(out));
+    if format == "json" {
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let messages = report["diagnostics"].as_array().unwrap();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|d| d["message"].as_str().unwrap().contains(note))
+                .count(),
+            1,
+            "{report}"
+        );
+    } else {
+        assert!(!stdout.contains(note), "{stdout}");
+    }
+}
+
+#[test]
+fn init_says_the_missing_origin_note_once_on_stderr() {
+    for format in ["text", "json"] {
+        let dir = init_fixture(None);
+        let out = init_with(dir.path(), format, &[]);
+        assert_said_once(&out, format, "No `origin` remote is configured");
+        // The origin note covers it: no second, tags-unbound wording.
+        assert!(!stderr(&out).contains("unbound"), "{format}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn init_says_a_non_hosted_origin_is_not_hosted_once_without_its_value() {
+    for origin in [
+        "/srv/vcs/team-repo.git",
+        "file:///srv/vcs/team-repo.git",
+        "https://u:secret@host:99999/x.git",
+    ] {
+        for format in ["text", "json"] {
+            let dir = init_fixture(Some(origin));
+            let out = init_with(dir.path(), format, &[]);
+            assert_said_once(&out, format, "`origin` is not a hosted remote");
+            let text = format!("{}{}", stderr(&out), String::from_utf8_lossy(&out.stdout));
+            assert!(
+                !text.contains("team-repo") && !text.contains("secret"),
+                "{origin}: {text}"
+            );
+            assert!(!stderr(&out).contains("unbound"), "{origin}: {}", stderr(&out));
+        }
+    }
+}
+
+#[test]
+fn init_says_why_it_skipped_an_unsupported_workflow_once_on_stderr() {
+    for format in ["text", "json"] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for (path, content) in [
+            (
+                "package.json",
+                r#"{"name":"root","version":"0.0.0","private":true,"workspaces":["web","web-linux-x64-gnu"]}"#,
+            ),
+            (
+                "web/package.json",
+                r#"{"name":"web","version":"1.0.0","optionalDependencies":{"web-linux-x64-gnu":"1.0.0"}}"#,
+            ),
+            (
+                "web-linux-x64-gnu/package.json",
+                r#"{"name":"web-linux-x64-gnu","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
+            ),
+        ] {
+            fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+            fs::write(root.join(path), content).unwrap();
+        }
+        callisto_fixtures::git::init_repo(root);
+        git(
+            root,
+            &["remote", "add", "origin", "https://github.com/example/tools.git"],
+        );
+        git(root, &["add", "."]);
+        git(root, &["commit", "-q", "-m", "fixture"]);
+        let out = init_with(root, format, &[]);
+        assert_said_once(&out, format, "Skipping GitHub Actions workflow generation");
+    }
+}
+
+#[test]
+fn init_advises_protecting_the_release_branch_once_on_stderr() {
+    // The workflow pins Callisto's own release tag: serve it from a local repository instead of GitHub.
+    let upstream = tempfile::tempdir().unwrap();
+    callisto_fixtures::git::init_repo(upstream.path());
+    git(upstream.path(), &["commit", "-q", "--allow-empty", "-m", "release"]);
+    git(
+        upstream.path(),
+        &["tag", &format!("callisto@{}", env!("CARGO_PKG_VERSION"))],
+    );
+    let env = [
+        ("GIT_CONFIG_COUNT".to_owned(), "1".to_owned()),
+        (
+            "GIT_CONFIG_KEY_0".to_owned(),
+            format!("url.file://{}.insteadOf", upstream.path().display()),
+        ),
+        (
+            "GIT_CONFIG_VALUE_0".to_owned(),
+            "https://github.com/orin-dx/callisto.git".to_owned(),
+        ),
+    ];
+    for format in ["text", "json"] {
+        let dir = init_fixture(Some("https://github.com/example/solo.git"));
+        let out = init_with(dir.path(), format, &env);
+        assert!(
+            dir.path().join(".github/workflows/callisto-release.yml").is_file(),
+            "{}",
+            stderr(&out)
+        );
+        assert_said_once(&out, format, "require pull requests and reviews");
+    }
+}
+
+/// A remote string, credentials included, is never echoed by init or release.
+#[test]
+fn a_credential_origin_never_reaches_any_output() {
+    const ORIGIN: &str = "https://user:secret@host:99999/x.git";
+    for format in ["text", "json"] {
+        let dir = init_fixture(Some(ORIGIN));
+        let out = init_with(dir.path(), format, &[]);
+        assert!(out.status.success(), "{}", stderr(&out));
+        for text in [stderr(&out), String::from_utf8_lossy(&out.stdout).into_owned()] {
+            assert!(!text.contains("secret"), "{text}");
+        }
+    }
+
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    git(root, &["remote", "set-url", "origin", ORIGIN]);
+    let rig = Rig::new(&release_commit);
+    for args in [&["--dry-run", "release"][..], &["release"]] {
+        for format in ["text", "json"] {
+            let out = rig.run(root, &[&["--format", format][..], args].concat());
+            for text in [stderr(&out), String::from_utf8_lossy(&out.stdout).into_owned()] {
+                assert!(!text.contains("secret"), "{args:?}: {text}");
+            }
+        }
+    }
     assert_no_effects(&rig, root);
 }
 
@@ -678,5 +1266,144 @@ fn selecting_one_distribution_of_a_dual_package_releases_both() {
             .collect();
         publishes.sort_unstable();
         assert_eq!(publishes, ["cargo/dual", "npm/dual"], "{selection}: {plan}");
+    }
+}
+
+/// A closed stderr loses the notes and warnings, never the result: the preview exits as it does with stderr open and
+/// its report still reaches stdout.
+#[test]
+fn a_closed_stderr_never_changes_a_preview_result() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    // A local tag `origin` lacks adds the missing-tag warning; a new changeset adds the pending-work note.
+    git(
+        root,
+        &[
+            "tag",
+            "-a",
+            "-m",
+            "Release core-crate@0.2.0",
+            "core-crate@0.2.0",
+            &release_commit,
+        ],
+    );
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    let control = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(control.status.success(), "{}", stderr(&control));
+    assert!(stderr(&control).contains("not on `origin`"), "{}", stderr(&control));
+    assert!(
+        stderr(&control).contains("run `callisto version`"),
+        "{}",
+        stderr(&control)
+    );
+
+    let text = rig.run_without_stderr(root, &["--format", "text", "--dry-run", "release"]);
+    assert_eq!(text.status.code(), Some(0));
+    assert_eq!(text.stdout, control.stdout);
+    let json = rig.run_without_stderr(root, &["--format", "json", "--dry-run", "release"]);
+    assert_eq!(json.status.code(), Some(0));
+    let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "pending-version-work"),
+        "{report}"
+    );
+}
+
+/// The note that the pending-work check failed is advisory too.
+#[test]
+fn a_closed_stderr_never_fails_a_preview_whose_pending_check_failed() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/broken.md"),
+        "---\n\"cargo/core-crate\": nonsense\n---\n\nText.\n",
+    )
+    .unwrap();
+    let control = rig.run(root, &["--format", "text", "--dry-run", "release"]);
+    assert!(
+        stderr(&control).contains("could not check for pending version work"),
+        "{}",
+        stderr(&control)
+    );
+    for format in ["text", "json"] {
+        let run = rig.run_without_stderr(root, &["--format", format, "--dry-run", "release"]);
+        assert_eq!(run.status.code(), Some(0), "{format}");
+        assert!(!run.stdout.is_empty(), "{format}");
+    }
+}
+
+/// Nothing to release with pending work, previewed and run, exits 0 with stderr closed and makes no effect.
+#[test]
+fn a_closed_stderr_never_fails_nothing_to_release() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let released = rig.run(root, &["release"]);
+    assert!(released.status.success(), "{}", stderr(&released));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "changeset"]);
+    let before = rig.mutations();
+    for args in [
+        ["--format", "text", "--dry-run", "release"].as_slice(),
+        &["--format", "json", "--dry-run", "release"],
+        &["--format", "text", "release"],
+        &["--format", "json", "release"],
+    ] {
+        let control = rig.run(root, args);
+        assert!(
+            stderr(&control).contains("run `callisto version`"),
+            "{args:?}: {}",
+            stderr(&control)
+        );
+        let run = rig.run_without_stderr(root, args);
+        assert_eq!(run.status.code(), Some(0), "{args:?}");
+        assert_eq!(run.stdout, control.stdout, "{args:?}");
+    }
+    assert_eq!(rig.mutations(), before);
+}
+
+/// A selection that is not a release keeps its exit status, not a panic, when its note cannot be written.
+#[test]
+fn a_closed_stderr_keeps_the_not_a_release_exit_status() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let released = rig.run(root, &["release"]);
+    assert!(released.status.success(), "{}", stderr(&released));
+    let added = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:patch", "--summary", "Fix a thing"],
+    );
+    assert!(added.status.success(), "{}", stderr(&added));
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "changeset"]);
+    for format in ["text", "json"] {
+        for dry_run in [true, false] {
+            let mut args = vec!["--format", format, "release", "--package", "cargo/core-crate"];
+            if dry_run {
+                args.insert(2, "--dry-run");
+            }
+            let control = rig.run(root, &args);
+            assert_eq!(control.status.code(), Some(1), "{args:?}: {}", stderr(&control));
+            assert!(stderr(&control).contains("E169"), "{args:?}: {}", stderr(&control));
+            let run = rig.run_without_stderr(root, &args);
+            assert_eq!(run.status.code(), Some(1), "{args:?}");
+        }
     }
 }

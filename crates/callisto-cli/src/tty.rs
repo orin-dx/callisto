@@ -7,6 +7,7 @@ use inquire::Text;
 
 use crate::cli::OutputFormat;
 use crate::error::CliError;
+use crate::output::prompt_line;
 
 /// Proof that this run may prompt; only [`Prompts::detect`] makes one.
 pub struct Prompts(());
@@ -60,14 +61,14 @@ pub(crate) fn pick_many(
 ) -> Result<Vec<usize>, CliError> {
     let by_name = |word: &str| listed_name(items, word);
     let words = Words::for_list(items, &by_name);
-    print_list(heading, items, marked);
+    print_list(heading, items, marked)?;
     let (lead, what) = (words.lead(), words.what());
     if marked.contains(&true) {
-        eprintln!("{lead}Enter keeps the * ones, or type {what}. Esc cancels.");
+        prompt_line(&format!("{lead}Enter keeps the * ones, or type {what}. Esc cancels."))?;
     } else if empty_ok {
-        eprintln!("{lead}Enter picks none, or type {what}. Esc cancels.");
+        prompt_line(&format!("{lead}Enter picks none, or type {what}. Esc cancels."))?;
     } else {
-        eprintln!("{lead}Type {what}. Esc cancels.");
+        prompt_line(&format!("{lead}Type {what}. Esc cancels."))?;
     }
     read_answer(items, marked, false, words)
 }
@@ -132,10 +133,10 @@ fn listed_name(items: &[Listed], word: &str) -> Option<Result<usize, String>> {
 pub(crate) fn pick_one(heading: &str, ids: &[String], by_name: NameLookup<'_>) -> Result<usize, CliError> {
     let items: Vec<Listed> = ids.iter().map(|id| Listed::by_id(id)).collect();
     let words = Words::for_list(&items, by_name);
-    print_list(heading, &items, &[]);
+    print_list(heading, &items, &[])?;
     match words {
-        Words::NamesOrRows(_) => eprintln!("Type a number or a name. Esc cancels."),
-        Words::RowsOnly => eprintln!("{}Type a number. Esc cancels.", words.lead()),
+        Words::NamesOrRows(_) => prompt_line("Type a number or a name. Esc cancels.")?,
+        Words::RowsOnly => prompt_line(&format!("{}Type a number. Esc cancels.", words.lead()))?,
     }
     let picked = read_answer(&items, &[], true, words)?;
     Ok(*picked
@@ -143,7 +144,7 @@ pub(crate) fn pick_one(heading: &str, ids: &[String], by_name: NameLookup<'_>) -
         .expect("the validator accepts only an answer naming exactly one entry"))
 }
 
-fn print_list(heading: &str, items: &[Listed], marked: &[bool]) {
+fn print_list(heading: &str, items: &[Listed], marked: &[bool]) -> std::io::Result<()> {
     let width = items.len().to_string().len();
     let mut text = format!("{heading}\n");
     for (index, item) in items.iter().enumerate() {
@@ -155,7 +156,7 @@ fn print_list(heading: &str, items: &[Listed], marked: &[bool]) {
             item.name.escape_debug()
         ));
     }
-    eprint!("{text}");
+    std::io::Write::write_all(&mut std::io::stderr(), text.as_bytes())
 }
 
 /// One line typed at a single-line prompt; the prompt's validator asks again with the reason until [`answer`] accepts

@@ -10,6 +10,7 @@ use callisto_model::{
     PublishTarget, RegistryBindingDigest, RegistryKey, SemanticInputDigest,
 };
 
+use crate::error::{OriginRefusal, ShownRegistry};
 use crate::registry_endpoint::{
     canonical_registry_url, split_routes_digest, url_parse_error_reason, RegistryBindingV1,
 };
@@ -82,13 +83,13 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     let publish = publish_raw
         .map(|raw| canonical_registry_binding(key.as_str(), raw))
         .transpose()?;
-    if let (Some(raw), Some(binding)) = (explicit, &index)
+    if let (Some(_), Some(binding)) = (explicit, &index)
         && matches!(target, PublishTarget::Npm { .. })
         && !is_approved_npm_registry(workspace, binding)
     {
         return Err(GraphError::UntrustedNpmRegistry {
             package: package.clone(),
-            url: raw.to_owned(),
+            registry: ShownRegistry::of(binding),
         });
     }
     let identity = match (&index, &publish) {
@@ -127,9 +128,8 @@ pub(crate) fn canonical_registry_binding(registry: &str, raw: &str) -> Result<Re
     })
 }
 
-/// Maps a [`GitHubRepositoryParseError`] to a specific, static diagnostic
-/// reason for [`GraphError::UnsafeGitRemote`], rather than discarding it
-/// behind one generic message for every distinct parse failure.
+/// Maps a [`GitHubRepositoryParseError`] to a specific, static reason `origin` is not hosted, shown in
+/// [`GraphError::UnsafeGitRemote`], rather than discarding it behind one generic message.
 fn github_repository_parse_error_reason(error: &GitHubRepositoryParseError) -> &'static str {
     match error {
         GitHubRepositoryParseError::MissingSeparator { .. } => "GitHub remote path must be in owner/repo form",
@@ -142,42 +142,79 @@ fn github_repository_parse_error_reason(error: &GitHubRepositoryParseError) -> &
     }
 }
 
-pub(crate) fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Result<PreparedGitRemote, GraphError> {
-    // A missing/unset `origin` is an answer this call interprets itself (into
-    // `UnsafeGitRemote`), not an unexpected failure worth echoing git's own
-    // "No such remote" to the terminal -- so this is a quiet probe.
-    let output = runner.run_quiet(
-        programs::GIT,
-        &["remote", "get-url", "--push", programs::GIT_REMOTE],
-        root,
-        timeouts::LOCAL_GIT,
-    )?;
-    if output.exit_code != Some(0) {
-        return Err(GraphError::UnsafeGitRemote {
-            reason: "origin must have a push URL",
-        });
-    }
-    canonical_git_remote(output.stdout.trim())
+/// `origin`'s push URL, read and parsed once: every release, preview and `init` decision reads this value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Origin {
+    /// No `origin`, or one without a push URL.
+    Missing,
+    /// A remote tags and the forge repository can bind to.
+    Hosted(PreparedGitRemote),
+    /// Anything else, such as a local path: only the fixed reason is kept, never the text, so no diagnostic can echo it.
+    NotHosted(&'static str),
 }
 
-/// `origin`'s canonical push URL, or `None` when `origin` has no push URL.
-pub(crate) fn optional_git_remote(
-    root: &Path,
-    runner: &dyn CommandRunner,
-) -> Result<Option<PreparedGitRemote>, GraphError> {
-    // A repository with no `origin` is an expected, common case here (e.g.
-    // before `init` adds one), not a failure -- probe quietly so git's own
-    // "error: No such remote 'origin'" never reaches the terminal.
-    let output = runner.run_quiet(
-        programs::GIT,
-        &["remote", "get-url", "--push", programs::GIT_REMOTE],
-        root,
-        timeouts::LOCAL_GIT,
-    )?;
-    if output.exit_code != Some(0) {
-        return Ok(None);
+impl Origin {
+    pub(crate) fn read(root: &Path, runner: &dyn CommandRunner) -> Result<Self, GraphError> {
+        Ok(Self::parse_push_url(Self::read_push_url(root, runner)?.as_deref()))
     }
-    canonical_git_remote(output.stdout.trim()).map(Some)
+
+    /// `origin`'s push URL, or `None` when there is no such remote.
+    pub(crate) fn read_push_url(root: &Path, runner: &dyn CommandRunner) -> Result<Option<String>, GraphError> {
+        // A missing `origin` is an answer, not a failure: probe quietly so git's "No such remote" never prints.
+        let output = runner.run_quiet(
+            programs::GIT,
+            &["remote", "get-url", "--push", programs::GIT_REMOTE],
+            root,
+            timeouts::LOCAL_GIT,
+        )?;
+        Ok((output.exit_code == Some(0)).then(|| output.stdout.trim().to_owned()))
+    }
+
+    pub(crate) fn parse_push_url(raw: Option<&str>) -> Self {
+        raw.map_or(Self::Missing, Self::parse)
+    }
+
+    fn parse(raw: &str) -> Self {
+        match canonical_git_remote(raw) {
+            Ok(remote) => Self::Hosted(remote),
+            Err(reason) => Self::NotHosted(reason),
+        }
+    }
+
+    /// A real release: only a hosted remote.
+    pub(crate) fn required(self) -> Result<PreparedGitRemote, GraphError> {
+        self.optional()?.ok_or(GraphError::UnsafeGitRemote {
+            refusal: OriginRefusal::NoPushUrl,
+        })
+    }
+
+    /// A real run that works without a remote: none, or a hosted one.
+    pub(crate) fn optional(self) -> Result<Option<PreparedGitRemote>, GraphError> {
+        match self {
+            Self::Missing => Ok(None),
+            Self::Hosted(remote) => Ok(Some(remote)),
+            Self::NotHosted(reason) => Err(GraphError::UnsafeGitRemote {
+                refusal: OriginRefusal::NotHosted { reason },
+            }),
+        }
+    }
+
+    /// Why a preview cannot bind tags: `None` for a hosted remote.
+    pub(crate) fn refusal(&self) -> Option<OriginRefusal> {
+        match self {
+            Self::Hosted(_) => None,
+            Self::Missing => Some(OriginRefusal::NoPushUrl),
+            Self::NotHosted(reason) => Some(OriginRefusal::NotHosted { reason }),
+        }
+    }
+
+    /// A preview: a remote that is not hosted reads exactly like no remote.
+    pub(crate) fn preview(self) -> Option<PreparedGitRemote> {
+        match self {
+            Self::Hosted(remote) => Some(remote),
+            Self::Missing | Self::NotHosted(_) => None,
+        }
+    }
 }
 
 /// Re-reads `origin`'s push URL and refuses unless it is still exactly the
@@ -187,7 +224,7 @@ pub(crate) fn recheck_git_remote(
     runner: &dyn CommandRunner,
     expected: &PreparedGitRemote,
 ) -> Result<(), GraphError> {
-    if prepared_git_remote(root, runner)? != *expected {
+    if Origin::read(root, runner)?.required()? != *expected {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::git_remote_changed(),
         });
@@ -195,72 +232,50 @@ pub(crate) fn recheck_git_remote(
     Ok(())
 }
 
-pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
+/// The strict parser behind [`Origin::Hosted`]: `https://` or `ssh://git@` with an owner and repository, or
+/// `git@host:owner/repo`.
+pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, &'static str> {
     let ssh_url = if raw.starts_with("git@") && !raw.contains("//") {
-        let (host, path) =
-            raw.strip_prefix("git@")
-                .and_then(|value| value.split_once(':'))
-                .ok_or(GraphError::UnsafeGitRemote {
-                    reason: "invalid SSH remote syntax",
-                })?;
+        let (host, path) = raw
+            .strip_prefix("git@")
+            .and_then(|value| value.split_once(':'))
+            .ok_or("invalid SSH remote syntax")?;
         format!("ssh://git@{host}/{path}")
     } else {
         raw.to_string()
     };
-    let parsed = url::Url::parse(&ssh_url).map_err(|error| GraphError::UnsafeGitRemote {
-        reason: url_parse_error_reason(error),
-    })?;
+    let parsed = url::Url::parse(&ssh_url).map_err(url_parse_error_reason)?;
     if parsed.cannot_be_a_base() || parsed.host_str().is_none() {
-        return Err(GraphError::UnsafeGitRemote {
-            reason: "URL must have an authority",
-        });
+        return Err("URL must have an authority");
     }
     if !matches!(parsed.scheme(), "https" | "ssh") {
-        return Err(GraphError::UnsafeGitRemote {
-            reason: "URL scheme must be HTTPS or SSH",
-        });
+        return Err("URL scheme must be HTTPS or SSH");
     }
     if parsed.password().is_some() || parsed.query().is_some() || parsed.fragment().is_some() {
-        return Err(GraphError::UnsafeGitRemote {
-            reason: "credentials, query strings, and fragments are forbidden",
-        });
+        return Err("credentials, query strings, and fragments are forbidden");
     }
     if parsed.scheme() == "https" && !parsed.username().is_empty() {
-        return Err(GraphError::UnsafeGitRemote {
-            reason: "HTTPS userinfo is forbidden",
-        });
+        return Err("HTTPS userinfo is forbidden");
     }
     if parsed.scheme() == "ssh" && parsed.username() != "git" {
-        return Err(GraphError::UnsafeGitRemote {
-            reason: "SSH remotes must use the git account",
-        });
+        return Err("SSH remotes must use the git account");
     }
     let host = parsed.host_str().expect("validated authority").to_ascii_lowercase();
-    let mut components = parsed.path_segments().ok_or(GraphError::UnsafeGitRemote {
-        reason: "remote path is invalid",
-    })?;
+    let mut components = parsed.path_segments().ok_or("remote path is invalid")?;
     let owner = components
         .next()
         .filter(|value| !value.is_empty())
-        .ok_or(GraphError::UnsafeGitRemote {
-            reason: "remote path must name an owner and repository",
-        })?;
+        .ok_or("remote path must name an owner and repository")?;
     let repository = components
         .next()
         .filter(|value| !value.is_empty())
-        .ok_or(GraphError::UnsafeGitRemote {
-            reason: "remote path must name an owner and repository",
-        })?;
+        .ok_or("remote path must name an owner and repository")?;
     if components.next().is_some() || owner == "." || owner == ".." || repository == "." || repository == ".." {
-        return Err(GraphError::UnsafeGitRemote {
-            reason: "remote path must contain exactly an owner and repository",
-        });
+        return Err("remote path must contain exactly an owner and repository");
     }
     let repository = repository.strip_suffix(".git").unwrap_or(repository);
     if repository.is_empty() {
-        return Err(GraphError::UnsafeGitRemote {
-            reason: "repository name is empty",
-        });
+        return Err("repository name is empty");
     }
     let port = parsed.port_or_known_default();
     let port_text = match (parsed.scheme(), port) {
@@ -283,9 +298,8 @@ pub(crate) fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, Graph
     transcript.push_str("gitRemote.repository", repository);
     let github_repository = if host == "github.com" {
         Some(
-            GitHubRepository::parse(&format!("{owner}/{repository}")).map_err(|error| GraphError::UnsafeGitRemote {
-                reason: github_repository_parse_error_reason(&error),
-            })?,
+            GitHubRepository::parse(&format!("{owner}/{repository}"))
+                .map_err(|error| github_repository_parse_error_reason(&error))?,
         )
     } else {
         None
@@ -343,9 +357,8 @@ mod tests {
 
     /// Answers `git remote get-url` with a failure (no `origin`) and records
     /// whether the probe went through the live-echoing `run_with_timeout` path
-    /// or the quiet one -- `prepared_git_remote`/`optional_git_remote` must
-    /// never let git's own "No such remote" reach the terminal for this
-    /// expected, common case.
+    /// or the quiet one -- `Origin::read` must never let git's own
+    /// "No such remote" reach the terminal for this expected, common case.
     struct NoRemote {
         used_live_echo: std::sync::atomic::AtomicBool,
     }
@@ -399,28 +412,74 @@ mod tests {
     }
 
     #[test]
-    fn optional_git_remote_probes_quietly_when_origin_is_missing() {
+    fn origin_probes_quietly_when_origin_is_missing() {
         let runner = NoRemote::new();
-        let result = optional_git_remote(Path::new("."), &runner);
-        assert!(matches!(result, Ok(None)), "got: {result:?}");
+        let origin = Origin::read(Path::new("."), &runner).unwrap();
+        assert_eq!(origin, Origin::Missing);
+        assert!(matches!(origin.required(), Err(GraphError::UnsafeGitRemote { .. })));
         assert!(
             !runner.used_live_echo.load(std::sync::atomic::Ordering::SeqCst),
-            "optional_git_remote must probe via run_quiet, not the live-echoing run_with_timeout"
+            "Origin::read must probe via run_quiet, not the live-echoing run_with_timeout"
         );
     }
 
     #[test]
-    fn prepared_git_remote_probes_quietly_when_origin_is_missing() {
-        let runner = NoRemote::new();
-        let result = prepared_git_remote(Path::new("."), &runner);
-        assert!(
-            matches!(result, Err(GraphError::UnsafeGitRemote { .. })),
-            "got: {result:?}"
+    fn a_refused_origin_never_echoes_the_remote() {
+        for raw in [
+            "https://user:pw@github.com/o/r.git?token=t#f",
+            "ssh://deploy@example.test/o/r.git",
+            "http://github.com/o/r.git",
+            "remotes/origin.git",
+            "https://user:secret@host:99999/x.git",
+        ] {
+            let error = Origin::parse(raw).optional().unwrap_err();
+            assert!(
+                error.to_string().contains("`origin` is not a hosted remote: "),
+                "{error}"
+            );
+            assert!(error.to_string().contains("(use an https://"), "{error}");
+            for text in [error.to_string(), format!("{error:?}")] {
+                for leak in ["secret", "pw", "deploy", "example.test", "github.com", "remotes/origin"] {
+                    assert!(!text.contains(leak), "{text}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_untrusted_registry_shows_only_its_scheme_and_host() {
+        let shown = |raw: &str| {
+            ShownRegistry::of(&canonical_registry_binding("test", raw).expect("an accepted registry URL")).to_string()
+        };
+        assert_eq!(shown("https://Registry.Example.com"), "`https://registry.example.com`");
+        assert_eq!(
+            shown("https://registry.example.com/private/team-path"),
+            "`https://registry.example.com`"
         );
-        assert!(
-            !runner.used_live_echo.load(std::sync::atomic::Ordering::SeqCst),
-            "prepared_git_remote must probe via run_quiet, not the live-echoing run_with_timeout"
-        );
+        // A spelling the binding check accepts but a plain URL parse would read differently never panics.
+        if let Ok(binding) = canonical_registry_binding("test", "sparse+https:registry.example.com") {
+            assert!(ShownRegistry::of(&binding).to_string().starts_with('`'));
+        }
+        // Credentials, a query and a fragment never reach this type: the binding check refuses them first.
+        for secret in [
+            "https://u:pw@r.example.test/",
+            "https://r.example.test/?token=pw",
+            "https://r.example.test/#pw",
+        ] {
+            assert!(canonical_registry_binding("corp", secret).is_err(), "{secret}");
+        }
+    }
+
+    #[test]
+    fn a_refused_origin_says_why_in_fixed_words() {
+        for (raw, reason) in [
+            ("https://token@github.com/o/r.git", "HTTPS userinfo is forbidden"),
+            ("http://github.com/o/r.git", "URL scheme must be HTTPS or SSH"),
+            ("remotes/origin.git", "URL has no scheme"),
+        ] {
+            let error = Origin::parse(raw).optional().unwrap_err();
+            assert!(error.to_string().contains(reason), "{raw}: {error}");
+        }
     }
 
     #[test]
@@ -600,13 +659,24 @@ mod tests {
     #[test]
     fn npm_override_must_match_a_configured_npm_registry() {
         assert!(npm_binding(CORP, "https://npm.corp.example/").is_ok());
-        for untrusted in ["https://npm.evil.example/", "https://npm.corp.example/other/"] {
+        for untrusted in ["https://npm.evil.example/", "https://npm.corp.example/other/token-abc/"] {
+            let error = npm_binding(CORP, untrusted).err();
             assert!(
-                matches!(
-                    npm_binding(CORP, untrusted),
-                    Err(GraphError::UntrustedNpmRegistry { .. })
-                ),
+                matches!(error, Some(GraphError::UntrustedNpmRegistry { .. })),
                 "{untrusted}"
+            );
+            let message = error.expect("checked above").to_string();
+            // A path can carry a token, so only scheme and host show; the text still says what must match.
+            assert!(
+                !message.contains("token-abc") && !message.contains("/other"),
+                "{message}"
+            );
+            assert!(
+                message.contains("publishConfig.registry")
+                    && message.contains("package.json")
+                    && message.contains("is not one of the approved `[registries]` entries")
+                    && message.contains("only the scheme and host are shown, compare the full URL in package.json"),
+                "{message}"
             );
         }
         let cargo_kind = "[registries.corp]\nkind = \"cargo\"\n";

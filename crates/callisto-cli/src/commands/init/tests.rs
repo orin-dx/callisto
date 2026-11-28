@@ -143,6 +143,7 @@ fn global(root: &Path, format: OutputFormat, dry_run: bool) -> GlobalArgs {
 struct Run {
     result: Result<ExitCode, CliError>,
     out: String,
+    err: String,
     prompter: Scripted,
 }
 
@@ -173,6 +174,7 @@ fn run_init_with_runner<R: CommandRunner>(
     Run {
         result,
         out: out.text(),
+        err: err.text(),
         prompter,
     }
 }
@@ -310,7 +312,7 @@ fn an_unrequested_workflow_that_cannot_be_built_is_skipped_not_fatal() {
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
     assert!(dir.path().join("callisto.toml").exists());
     assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
-    assert!(run.out.contains("Skipping the GitHub Actions workflow"), "{}", run.out);
+    assert!(run.err.contains("Skipping the GitHub Actions workflow"), "{}", run.err);
 }
 
 // The retry the skipped-workflow note advertises works: `--workflow` adds the workflow and leaves `callisto.toml` alone.
@@ -324,9 +326,9 @@ fn the_advertised_workflow_retry_writes_only_the_workflow() {
     let run = run_init_with_runner(dir.path(), first, false, vec![], false, &FakeLsRemote { stdout: "" });
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
     assert!(
-        run.out.contains("Run `callisto init --workflow` to retry."),
+        run.err.contains("Run `callisto init --workflow` to retry."),
         "{}",
-        run.out
+        run.err
     );
     let config = std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap();
 
@@ -349,6 +351,8 @@ fn the_advertised_workflow_retry_writes_only_the_workflow() {
         config
     );
     assert!(run.out.contains("Next steps:"), "{}", run.out);
+    assert!(!run.out.contains("Initialized callisto configuration"), "{}", run.out);
+    assert!(run.out.contains("Wrote "), "{}", run.out);
 }
 
 // An existing config without `--workflow` is still refused.
@@ -758,11 +762,6 @@ fn missing_origin_writes_config_with_warning_and_skips_shipping() {
     let out = Shared::default();
     let err = Shared::default();
     run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
-    assert!(
-        err.text().contains("No `origin` remote is configured"),
-        "{}",
-        err.text()
-    );
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     assert_eq!(report["initialized"], true);
     let diagnostics = report["diagnostics"].as_array().unwrap();
@@ -800,7 +799,7 @@ fn workflow_or_artifact_target_without_origin_errors() {
         .result
         .unwrap_err();
     assert!(
-        matches!(&error, CliError::InitFlagRequiresOrigin { flag } if *flag == "workflow"),
+        matches!(&error, CliError::InitFlagRequiresOrigin { flag, .. } if *flag == "workflow"),
         "{error}"
     );
     assert!(nothing_written(workflow_dir.path()));
@@ -811,7 +810,7 @@ fn workflow_or_artifact_target_without_origin_errors() {
         .result
         .unwrap_err();
     assert!(
-        matches!(&error, CliError::InitFlagRequiresOrigin { flag } if *flag == "artifact-target"),
+        matches!(&error, CliError::InitFlagRequiresOrigin { flag, .. } if *flag == "artifact-target"),
         "{error}"
     );
     assert!(nothing_written(target_dir.path()));
@@ -1103,13 +1102,18 @@ fn written_workflow_notes_that_merging_publishes() {
         &fake_ls_remote(env!("CARGO_PKG_VERSION")),
     );
     assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
-    assert!(run.out.contains(&format!("{note}\n")), "{}", run.out);
+    assert_eq!(run.err.matches(note).count(), 1, "{}", run.err);
+    assert!(!run.out.contains(note), "{}", run.out);
+    assert!(
+        run.out.contains(".github/workflows/callisto-release.yml: ") && !run.out.contains("\njobs:"),
+        "the path and a summary, not the file: {}",
+        run.out
+    );
 
     let dir = workspace(0);
     let out = Shared::default();
     let err = Shared::default();
     run_with_json(dir.path(), args(), false, &out, &err);
-    assert!(err.text().contains(note), "{}", err.text());
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     let diagnostics = report["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics.len(), 1, "{report}");
@@ -1227,6 +1231,9 @@ fn restricted_access_refuses_without_yes_naming_each_public_package() {
         .to_string()
         .contains("publishConfig.access"));
     assert_eq!(miette::Diagnostic::code(&error).unwrap().to_string(), "E342");
+    // The refusal names the hazard; its own warning would only repeat it, while the other findings are not lost.
+    assert!(!run.err.contains("restricted or absent"), "{}", run.err);
+    assert_eq!(run.err.matches("`changelog` is not honoured").count(), 1, "{}", run.err);
     assert!(run.prompter.prompts().is_empty());
     assert!(!dir.path().join("callisto.toml").exists());
 }
@@ -1242,7 +1249,7 @@ fn a_dry_run_reports_the_access_hazard_instead_of_refusing() {
     };
     let run = run_init(dir.path(), args, true, vec![], true);
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
-    assert!(run.out.contains("npm/@acme/cli, npm/@acme/core"), "{}", run.out);
+    assert!(run.err.contains("npm/@acme/cli, npm/@acme/core"), "{}", run.err);
     assert!(!dir.path().join("callisto.toml").exists());
 }
 
@@ -1279,6 +1286,7 @@ fn base_branch_sets_the_generated_workflow_branch_filter() {
         "{}",
         err.text()
     );
+    assert!(err.text().contains("on each push to `release`"), "{}", err.text());
     assert!(!report_diagnostics(&out)
         .iter()
         .any(|d| d["message"].as_str().unwrap().contains("`baseBranch`")));
@@ -1328,8 +1336,15 @@ fn base_branch_is_reported_when_the_default_workflow_cannot_be_built() {
     .unwrap();
     let (out, err) = (Shared::default(), Shared::default());
     run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
-    assert!(
-        err.text().contains("Keeping the existing GitHub Actions workflow"),
+    assert!(report_diagnostics(&out).iter().any(|d| d["message"]
+        .as_str()
+        .unwrap()
+        .contains("Keeping the existing GitHub Actions workflow")));
+    assert_eq!(
+        err.text()
+            .matches("Keeping the existing GitHub Actions workflow")
+            .count(),
+        1,
         "{}",
         err.text()
     );
@@ -1556,11 +1571,6 @@ fn unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic() {
         .unwrap(),
         std::process::ExitCode::SUCCESS
     );
-    assert!(
-        err.text().contains("Skipping GitHub Actions workflow generation"),
-        "{}",
-        err.text()
-    );
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     let diagnostics = report["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics.len(), 1, "{report}");
@@ -1637,6 +1647,197 @@ fn workflow_retry_reports_a_write_and_honours_dry_run() {
     assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
 }
 
+// A non-hosted origin reads like no origin: init never pushes, so it still previews the first release.
+#[test]
+fn init_previews_with_a_file_url_or_local_path_origin() {
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    let path = remote.path().to_str().unwrap().to_owned();
+    for url in [format!("file://{path}"), path] {
+        let dir = workspace_without_origin(1);
+        git(dir.path(), &["remote", "add", "origin", &url]);
+        let run = run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false);
+        assert_eq!(
+            run.result.unwrap(),
+            std::process::ExitCode::SUCCESS,
+            "{url}: {}",
+            run.err
+        );
+        assert!(run.out.contains("First release preview"), "{url}: {}", run.out);
+    }
+}
+
+// A configured but non-hosted origin gets its own wording on the flag error and in the detected facts.
+#[test]
+fn a_flag_that_needs_a_hosted_origin_says_when_origin_is_not_hosted() {
+    let dir = workspace_without_origin(1);
+    git(dir.path(), &["remote", "add", "origin", "/srv/vcs/team-repo.git"]);
+    let args = InitArgs {
+        workflow: true,
+        ..yes(InitVersioning::Independent)
+    };
+    let run = run_init(dir.path(), args, false, vec![], false);
+    let error = run.result.unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            CliError::InitFlagRequiresOrigin {
+                not_hosted: Some(_),
+                ..
+            }
+        ),
+        "{error}"
+    );
+    assert!(error.to_string().contains("is not hosted"), "{error}");
+    assert!(run.out.contains("origin: not hosted"), "{}", run.out);
+    assert!(!format!("{error:?}{}", run.out).contains("team-repo"));
+    assert!(nothing_written(dir.path()));
+}
+
+// Notes queued before the write question are said once whether the write is confirmed or declined.
+#[test]
+fn interactive_notes_are_said_once_on_confirm_and_kept_on_decline() {
+    for (confirm, written) in [(true, true), (false, false)] {
+        let dir = workspace_without_origin(1);
+        let run = run_init(
+            dir.path(),
+            InitArgs::default(),
+            true,
+            vec![Answer::Select(0), Answer::Confirm(confirm)],
+            false,
+        );
+        assert_eq!(run.result.unwrap(), std::process::ExitCode::SUCCESS);
+        assert_eq!(
+            run.err.matches("No `origin` remote").count(),
+            1,
+            "{confirm}: {}",
+            run.err
+        );
+        assert_eq!(dir.path().join("callisto.toml").exists(), written, "{confirm}");
+    }
+}
+
+// A declined write says each queued note once on stderr before the question, then that nothing was written.
+#[test]
+fn a_declined_write_says_each_note_once_and_writes_nothing() {
+    let dir = workspace_without_origin(1);
+    let out = Shared::default();
+    let err = Shared::default();
+    let code = run(
+        InitArgs::default(),
+        &global(dir.path(), OutputFormat::Text, false),
+        Some(crate::tty::Prompts::for_tests()),
+        &mut Scripted::new(vec![Answer::Select(0), Answer::Confirm(false)], &out),
+        &mut out.clone(),
+        &mut err.clone(),
+        &CliCommandRunner,
+    )
+    .unwrap();
+    assert_eq!(code, std::process::ExitCode::SUCCESS);
+    assert_eq!(err.text().matches("No `origin` remote").count(), 1, "{}", err.text());
+    assert!(!out.text().contains("No `origin` remote"), "{}", out.text());
+    assert_eq!(out.text().matches(crate::tty::CANCELLED).count(), 1, "{}", out.text());
+    assert!(!dir.path().join("callisto.toml").exists());
+    assert!(!dir.path().join(".changeset/README.md").exists());
+}
+
+// A pending-work check that fails is named on stderr once; init still succeeds.
+#[test]
+fn a_failed_pending_work_check_is_named_in_the_preview() {
+    let dir = workspace(0);
+    std::fs::create_dir_all(dir.path().join(".changeset")).unwrap();
+    std::fs::write(
+        dir.path().join(".changeset/broken.md"),
+        "---\n\"cargo/core\": nonsense\n---\n\nText.\n",
+    )
+    .unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-q", "-m", "broken changeset"]);
+    let args = InitArgs {
+        yes: true,
+        no_workflow: true,
+        ..Default::default()
+    };
+    let (out, err) = (Shared::default(), Shared::default());
+    run_with_json(dir.path(), args, false, &out, &err);
+    let note = "could not check for pending version work (E";
+    assert_eq!(err.text().matches(note).count(), 1, "{}", err.text());
+    // The pending-work code means work was found, so a failed check stays out of the report.
+    let listed = report_diagnostics(&out)
+        .iter()
+        .filter(|d| d["message"].as_str().is_some_and(|m| m.contains(note)))
+        .count();
+    assert_eq!(listed, 0, "{}", out.text());
+}
+
+// In text mode the merge note and its advice come before the next steps.
+#[test]
+fn the_merge_note_precedes_the_next_steps() {
+    let dir = workspace(0);
+    let combined = Shared::default();
+    let args = InitArgs {
+        workflow: true,
+        ..yes(InitVersioning::Independent)
+    };
+    let code = run(
+        args,
+        &global(dir.path(), OutputFormat::Text, false),
+        None,
+        &mut Scripted::new(vec![], &combined),
+        &mut combined.clone(),
+        &mut combined.clone(),
+        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+    )
+    .unwrap();
+    assert_eq!(code, ExitCode::SUCCESS);
+    let text = combined.text();
+    let merge = text
+        .find("Merging to `main` publishes: require pull requests")
+        .expect(&text);
+    let next = text.find("Next steps:").expect(&text);
+    assert!(merge < next, "{text}");
+    assert_eq!(text.matches("Merging to `main` publishes").count(), 1, "{text}");
+}
+
+// A skipped-workflow warning is queued before the preview runs; a preview failure must not swallow it.
+#[test]
+fn a_skipped_workflow_warning_prints_once_before_a_preview_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("package.json"),
+        "{\"name\":\"solo\",\"version\":\"1.0.0\",\"packageManager\":\"yarn@4.0.0\"}\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("yarn.lock"), "").unwrap();
+    std::fs::write(
+        root.join(".yarnrc.yml"),
+        "npmRegistryServer: \"https://npm.example.test\"\n",
+    )
+    .unwrap();
+    callisto_fixtures::git::init_repo(root);
+    git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/tools.git"],
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "fixture"]);
+    let args = InitArgs {
+        yes: true,
+        ..Default::default()
+    };
+    let run = run_init_with_runner(root, args, false, vec![], false, &FakeLsRemote { stdout: "" });
+    let error = run.result.unwrap_err();
+    assert!(error.to_string().contains("npmRegistryServer"), "{error}");
+    assert_eq!(
+        run.err.matches("Skipping the GitHub Actions workflow").count(),
+        1,
+        "{}",
+        run.err
+    );
+    assert!(!root.join("callisto.toml").exists());
+}
+
 #[test]
 fn flag_only_mistakes_fail_before_any_question() {
     let triple = "x86_64-unknown-linux-gnu";
@@ -1703,13 +1904,15 @@ fn an_existing_workflow_is_not_offered_and_is_skipped_with_the_note_yes_prints()
     );
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
     assert_eq!(run.prompter.prompts(), [WRITE_PROMPT]);
-    assert!(
-        run.out.contains("Keeping the existing GitHub Actions workflow"),
+    assert_eq!(
+        run.err.matches("Keeping the existing GitHub Actions workflow").count(),
+        1,
         "{}",
-        run.out
+        run.err
     );
+    assert!(!run.out.contains("Keeping the existing"), "{}", run.out);
     // Retrying as-is would hit the same file, so the note only says how to regenerate it.
-    assert!(!run.out.contains("to retry"), "{}", run.out);
+    assert!(!run.err.contains("to retry"), "{}", run.err);
     assert_eq!(std::fs::read_to_string(&workflow).unwrap(), "name: mine\n");
 }
 
@@ -1751,4 +1954,171 @@ fn a_typed_product_name_resolves_as_the_flag_does() {
     assert!(named("app").unwrap().unwrap_err().contains("more than one package"));
     assert_eq!(named("2"), None, "a word naming no package may be a row");
     assert_eq!(named("missing"), None);
+}
+
+/// Every workflow state against every way the workflow is asked for. A required workflow that cannot be had fails
+/// before anything is written; an automatic one that cannot be built is warned about once and `init` goes on; a
+/// skipped one is not looked at; a workflow already there is never overwritten; and one that fails to write after
+/// `callisto.toml` is recovered by `callisto init --workflow`, as the error says.
+#[cfg(unix)]
+#[test]
+fn workflow_outcomes_for_each_state_and_way_of_asking() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum State {
+        Absent,
+        Existing,
+        Unbuildable,
+        Unwritable,
+    }
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Asked {
+        Required,
+        Automatic,
+        Skipped,
+    }
+    let mine = "name: mine\n";
+    for state in [State::Absent, State::Existing, State::Unbuildable, State::Unwritable] {
+        for asked in [Asked::Required, Asked::Automatic, Asked::Skipped] {
+            let label = format!("{state:?}, {asked:?}");
+            let dir = workspace(0);
+            let root = dir.path();
+            let workflow = scaffold::workflow_path(root);
+            let workflows = workflow.parent().unwrap().to_path_buf();
+            std::fs::create_dir_all(&workflows).unwrap();
+            match state {
+                State::Existing => std::fs::write(&workflow, mine).unwrap(),
+                State::Unwritable => {
+                    std::fs::set_permissions(&workflows, std::fs::Permissions::from_mode(0o555)).unwrap()
+                }
+                State::Absent | State::Unbuildable => {}
+            }
+            // The action tag the workflow pins is missing, so it cannot be built.
+            let version = if state == State::Unbuildable {
+                "0.0.0-missing"
+            } else {
+                env!("CARGO_PKG_VERSION")
+            };
+            let runner = fake_ls_remote(version);
+            let args = match asked {
+                Asked::Required => InitArgs {
+                    workflow: true,
+                    ..yes(InitVersioning::Independent)
+                },
+                Asked::Automatic => yes(InitVersioning::Independent),
+                Asked::Skipped => InitArgs {
+                    no_workflow: true,
+                    ..yes(InitVersioning::Independent)
+                },
+            };
+            let run = run_init_with_runner(root, args, false, vec![], false, &runner);
+            std::fs::set_permissions(&workflows, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let config_written = root.join("callisto.toml").exists();
+            let warnings = |text: &str| run.err.matches(text).count();
+            if state == State::Existing {
+                assert_eq!(std::fs::read_to_string(&workflow).unwrap(), mine, "{label}");
+            }
+            match (state, asked) {
+                (_, Asked::Skipped) => {
+                    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS, "{label}");
+                    assert!(config_written, "{label}");
+                    assert_eq!(workflow.exists(), state == State::Existing, "{label}");
+                    assert_eq!(warnings("GitHub Actions workflow"), 0, "{label}: {}", run.err);
+                }
+                (State::Absent, Asked::Required | Asked::Automatic) => {
+                    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS, "{label}");
+                    assert!(config_written && workflow.exists(), "{label}");
+                }
+                (State::Existing | State::Unbuildable, Asked::Required) => {
+                    assert!(run.result.is_err(), "{label}");
+                    assert!(!config_written, "{label}: a required workflow fails before any write");
+                    assert!(!root.join(".changeset/README.md").exists(), "{label}");
+                }
+                (State::Existing, Asked::Automatic) => {
+                    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS, "{label}");
+                    assert!(config_written, "{label}");
+                    assert_eq!(
+                        warnings("Keeping the existing GitHub Actions workflow"),
+                        1,
+                        "{label}: {}",
+                        run.err
+                    );
+                }
+                (State::Unbuildable, Asked::Automatic) => {
+                    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS, "{label}");
+                    assert!(config_written && !workflow.exists(), "{label}");
+                    assert_eq!(
+                        warnings("Skipping the GitHub Actions workflow"),
+                        1,
+                        "{label}: {}",
+                        run.err
+                    );
+                }
+                (State::Unwritable, Asked::Required | Asked::Automatic) => {
+                    let error = run.result.unwrap_err();
+                    assert_eq!(
+                        miette::Diagnostic::code(&error).map(|code| code.to_string()).as_deref(),
+                        Some("E278"),
+                        "{label}: {error:?}"
+                    );
+                    let help = miette::Diagnostic::help(&error)
+                        .map(|help| help.to_string())
+                        .unwrap_or_default();
+                    assert!(help.contains("callisto init --workflow"), "{label}: {help}");
+                    assert!(config_written && !workflow.exists(), "{label}");
+                    let retry = InitArgs {
+                        workflow: true,
+                        yes: true,
+                        ..Default::default()
+                    };
+                    let retried = run_init_with_runner(root, retry, false, vec![], false, &runner);
+                    assert_eq!(retried.result.unwrap(), ExitCode::SUCCESS, "{label}: {}", retried.err);
+                    assert!(workflow.exists(), "{label}");
+                }
+            }
+        }
+    }
+}
+
+/// A stream that refuses any write containing `needle`.
+struct RefusesLine(&'static str);
+
+impl Write for RefusesLine {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if String::from_utf8_lossy(buf).contains(self.0) {
+            return Err(std::io::ErrorKind::PermissionDenied.into());
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The review `init` writes is required, even inside the workflow it is building: a review line that cannot be written
+/// fails `init` before anything is written, rather than reading as a workflow that could not be built.
+#[test]
+fn a_review_line_that_cannot_be_written_fails_before_any_write() {
+    for format in [OutputFormat::Text, OutputFormat::Json] {
+        let dir = workspace(0);
+        let out = Shared::default();
+        let refusing = RefusesLine("default branch:");
+        let (mut out_stream, mut err_stream): (Box<dyn Write>, Box<dyn Write>) = match format {
+            OutputFormat::Json => (Box::new(out.clone()), Box::new(refusing)),
+            OutputFormat::Text => (Box::new(refusing), Box::new(out.clone())),
+        };
+        let result = run(
+            yes(InitVersioning::Independent),
+            &global(dir.path(), format, false),
+            None,
+            &mut Scripted::new(vec![], &out),
+            &mut *out_stream,
+            &mut *err_stream,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        );
+        let error = result.unwrap_err();
+        assert!(matches!(error, CliError::Io { .. }), "{format:?}: {error:?}");
+        assert!(!dir.path().join("callisto.toml").exists(), "{format:?}");
+    }
 }

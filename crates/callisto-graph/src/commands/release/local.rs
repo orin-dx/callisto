@@ -8,7 +8,6 @@ use callisto_model::{
 
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::binding::optional_git_remote;
 use super::capability::{
     derive_release_intent_unmoved, names_taken_by_other_projects, observe_source, published_packages,
     unsatisfied_packages, ReleaseCheckout,
@@ -88,7 +87,7 @@ pub struct OriginTagProbe {
 pub fn origin_tag_probe<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
 ) -> Result<Option<OriginTagProbe>, GraphError> {
-    let Some(remote) = optional_git_remote(&workspace.root, workspace.runner)? else {
+    let Some(remote) = workspace.origin()?.preview() else {
         return Ok(None);
     };
     let tags = workspace.tags()?;
@@ -146,8 +145,8 @@ impl OriginTagProbe {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalReleasePlan {
     pub intent: ReleaseIntentV1,
-    /// A preview only: `origin` has no push URL, so tags carry no remote and a run would refuse.
-    pub tags_unbound: bool,
+    /// A preview only: why `origin` cannot bind tags, so they carry no remote and a run would refuse.
+    pub tags_unbound: Option<crate::error::OriginRefusal>,
     /// Advisory findings from derivation (e.g. an artifact owner selected without its product).
     pub diagnostics: Vec<callisto_model::Diagnostic>,
 }
@@ -172,7 +171,7 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
     }
     // Without an `origin` push URL a preview cannot observe anything, so it cannot call a tagged release finished.
     if observation == Observation::Never
-        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
+        || (mode == LocalReleaseSource::Preview && workspace.origin()?.preview().is_none())
     {
         return Ok(tagged);
     }
@@ -274,9 +273,7 @@ fn refuse_a_name_another_project_owns<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<(), GraphError> {
     let first_releases = first_release_packages(workspace, decision)?;
     // Without an `origin` push URL a preview cannot tell whose repository the registry names.
-    if first_releases.is_empty()
-        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
-    {
+    if first_releases.is_empty() || (mode == LocalReleaseSource::Preview && workspace.origin()?.preview().is_none()) {
         return Ok(());
     }
     let (_, prepared) =
@@ -313,9 +310,7 @@ fn refuse_a_published_version_left_behind<R: CommandRunner, D: DependencyResolve
     }
     let moved = super::version_commit::packages_moved_past_their_version(workspace, decision, resumable)?;
     // Without an `origin` push URL a preview cannot observe the registry either.
-    if moved.is_empty()
-        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
-    {
+    if moved.is_empty() || (mode == LocalReleaseSource::Preview && workspace.origin()?.preview().is_none()) {
         return Ok(());
     }
     let (_, prepared) =
@@ -426,20 +421,22 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
         refuse_a_name_another_project_owns(workspace, &decision, &source, profile, mode)?;
     }
     refuse_a_published_version_left_behind(workspace, &decision, &resumable, &source, profile, mode, observation)?;
-    // A local run is its own orchestration: slots bind to the source commit.
-    let artifact_policy = match (&workspace.config.product_release, &source) {
-        (Some(_), SourceIdentity::GitCommit { sha }) => {
-            workspace.forge_repository()?.map(|repository| ArtifactBuildPolicy {
-                repository,
-                workflow_path: callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH.to_owned(),
-                workflow_commit: sha.clone(),
-            })
-        }
-        _ => None,
-    };
     let remote = match mode {
         LocalReleaseSource::Preview => GitRemoteRequirement::OptionalForPreview,
         LocalReleaseSource::Trusted => GitRemoteRequirement::Required,
+    };
+    // A local run is its own orchestration: slots bind to the source commit.
+    let artifact_policy = match (&workspace.config.product_release, &source) {
+        (Some(_), SourceIdentity::GitCommit { sha }) => {
+            workspace
+                .forge_repository_for(remote)?
+                .map(|repository| ArtifactBuildPolicy {
+                    repository,
+                    workflow_path: callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH.to_owned(),
+                    workflow_commit: sha.clone(),
+                })
+        }
+        _ => None,
     };
     let mut diagnostics = Vec::new();
     // Only a trusted run re-observes the source; a preview takes HEAD's commit as given.
@@ -454,12 +451,16 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
         remote,
         &mut diagnostics,
     )?;
-    let tags_unbound = mode == LocalReleaseSource::Preview
+    let tags_unbound = if mode == LocalReleaseSource::Preview
         && intent
             .operations
             .iter()
             .any(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
-        && optional_git_remote(&workspace.root, workspace.runner)?.is_none();
+    {
+        workspace.origin()?.refusal()
+    } else {
+        None
+    };
     Ok(Some(LocalReleasePlan {
         intent,
         tags_unbound,
@@ -588,7 +589,7 @@ mod tests {
         )
         .unwrap()
         .expect("unreleased");
-        assert!(preview.tags_unbound);
+        assert_eq!(preview.tags_unbound, Some(crate::error::OriginRefusal::NoPushUrl));
         assert!(preview
             .intent
             .operations
@@ -598,6 +599,39 @@ mod tests {
             plan(dir.path(), &[], LocalReleaseSource::Trusted).unwrap_err(),
             GraphError::UnsafeGitRemote { .. }
         ));
+    }
+
+    // The publish outlook says why tags cannot be pushed, for a missing and for a non-hosted `origin`.
+    #[test]
+    fn the_publish_outlook_names_why_tags_cannot_be_pushed() {
+        for (set_origin, reason) in [
+            (None, "no `origin` remote is configured"),
+            (Some("/srv/git/repo.git"), "`origin` is not a hosted remote"),
+        ] {
+            let (dir, _) = fixture();
+            match set_origin {
+                None => git(dir.path(), &["remote", "remove", "origin"]),
+                Some(url) => git(dir.path(), &["remote", "set-url", "origin", url]),
+            };
+            let preview = load_and_plan(
+                dir.path(),
+                &crate::IgnoreWalkLocator::new(dir.path()),
+                &RealGitRunner,
+                &[],
+                LocalReleaseSource::Preview,
+            )
+            .unwrap();
+            let crate::release_preview::PublishOutlook::Planned { notes, .. } =
+                crate::release_preview::publish_outlook(Ok(preview))
+            else {
+                panic!("a plan with unbound tags is still planned");
+            };
+            assert!(
+                notes.iter().any(|note| note.contains(reason)
+                    && note.contains("so tags cannot be pushed until `origin` is a hosted remote.")),
+                "{notes:?}"
+            );
+        }
     }
 
     #[test]
@@ -612,7 +646,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert!(!preview.tags_unbound);
+        assert_eq!(preview.tags_unbound, None);
     }
 
     /// Real git, and a registry that never answers: every `cargo info` fails the way an unreachable network does.
@@ -734,7 +768,7 @@ mod tests {
             .unwrap()
             .expect("an unobservable tagged release stays planned");
         assert_eq!(released_names(&plan), ["app", "lib"]);
-        assert!(plan.tags_unbound);
+        assert!(plan.tags_unbound.is_some());
     }
 
     /// Real git, except `ls-remote` answers "no such ref" and every other program is unavailable: a

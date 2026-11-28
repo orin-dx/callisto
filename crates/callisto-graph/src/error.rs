@@ -356,7 +356,7 @@ pub enum GraphError {
     },
 
     #[error(
-        "package `{package}` sets `publishConfig.registry` to `{url}`, which is not an operator-approved npm registry"
+        "package `{package}` sets `publishConfig.registry` in package.json to {registry}, which is not one of the approved `[registries]` entries; only the scheme and host are shown, compare the full URL in package.json"
     )]
     #[diagnostic(
         code(E120),
@@ -369,7 +369,10 @@ pub enum GraphError {
              remove the override from package.json."
         )
     )]
-    UntrustedNpmRegistry { package: PackageId, url: String },
+    UntrustedNpmRegistry {
+        package: PackageId,
+        registry: ShownRegistry,
+    },
 
     #[error("release intent references package `{package}` which is not an exact selected workspace package")]
     #[diagnostic(code(E123), help("Rebuild the release intent from the current workspace instead of reusing a selection from another workspace."))]
@@ -467,9 +470,9 @@ pub enum GraphError {
     )]
     UnsafeRegistryBinding { registry: String, reason: &'static str },
 
-    #[error("unsafe Git push remote: {reason}")]
-    #[diagnostic(code(E132), help("Configure origin with a credential-free HTTPS or SSH URL."))]
-    UnsafeGitRemote { reason: &'static str },
+    #[error("no hosted Git push remote: {refusal}")]
+    #[diagnostic(code(E132), help("{}", refusal.help()))]
+    UnsafeGitRemote { refusal: OriginRefusal },
 
     #[error("release execution state is invalid: {source}")]
     #[diagnostic(
@@ -969,6 +972,62 @@ pub enum ReleaseSelectionInvalidReason {
     SnapshotVersion,
     #[error("it is an unreleased workspace package a selected package depends on; select it too")]
     DependencyNotSelected,
+}
+
+/// A registry's scheme and host only, never its path, which can carry a token.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ShownRegistry(String);
+
+impl ShownRegistry {
+    /// The scheme and host of a binding Callisto already parsed; the raw text is never parsed again.
+    pub(crate) fn of(binding: &crate::registry_endpoint::RegistryBindingV1) -> Self {
+        Self(format!("{}://{}", binding.scheme, binding.host))
+    }
+}
+
+impl std::fmt::Display for ShownRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "`{}`", self.0)
+    }
+}
+
+impl std::fmt::Debug for ShownRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ShownRegistry({self})")
+    }
+}
+
+/// Why `origin` cannot be bound, carried by [`GraphError::UnsafeGitRemote`] (E132).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OriginRefusal {
+    NoPushUrl,
+    NotHosted { reason: &'static str },
+}
+
+/// The `origin` forms Callisto accepts, worded once for every message and document that names them.
+pub const HOSTED_ORIGIN_FORMS: &str = "an https:// or ssh://git@ URL, or git@host:owner/repo, without credentials";
+
+impl OriginRefusal {
+    fn help(&self) -> String {
+        match self {
+            Self::NoPushUrl => "add the repository's remote with `git remote add origin <url>`".to_owned(),
+            Self::NotHosted { .. } => format!(
+                "use {HOSTED_ORIGIN_FORMS}: inspect with `git remote get-url --push origin`, fix with `git remote set-url --push origin <url>`"
+            ),
+        }
+    }
+}
+
+impl std::fmt::Display for OriginRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoPushUrl => f.write_str("no `origin` remote is configured"),
+            Self::NotHosted { reason } => write!(
+                f,
+                "`origin` is not a hosted remote: {reason} (use {HOSTED_ORIGIN_FORMS})"
+            ),
+        }
+    }
 }
 
 /// An unmet precondition for a release operation, carried by

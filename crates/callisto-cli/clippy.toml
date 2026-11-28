@@ -1,0 +1,4 @@
+allow-print-in-tests = true
+disallowed-methods = [
+    { path = "std::io::stdout", reason = "write through callisto_cli::output::stdout, which treats a closed pipe as the end of output" },
+]

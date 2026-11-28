@@ -1,3 +1,4 @@
+use std::io::Write as _;
 use std::process::ExitCode;
 
 use clap::CommandFactory;
@@ -20,7 +21,7 @@ pub fn handle(args: HelpArgs, _global: &GlobalArgs) -> Result<ExitCode, CliError
             .ok_or_else(|| CliError::HelpUnknownCommand { name: name.clone() })?;
     }
 
-    target.print_help()?;
+    write!(crate::color::stdout(), "{}", target.render_help().ansi())?;
     Ok(ExitCode::SUCCESS)
 }
 

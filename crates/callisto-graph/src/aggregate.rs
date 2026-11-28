@@ -46,6 +46,11 @@ pub struct Aggregation {
 }
 
 impl Aggregation {
+    /// Changesets this run applies: consumed, or newly recorded in a pre cycle (which consumes none).
+    pub fn pending_changesets(&self) -> usize {
+        self.consumed.len() + self.new_pre_changesets.len()
+    }
+
     /// Each seeded package's severity, the cascade's starting point.
     pub fn severities(&self) -> BTreeMap<PackageId, Severity> {
         self.seeds
@@ -456,12 +461,14 @@ where
     loaded.extend(archived);
     let mut agg = Aggregation::default();
     // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
-    if graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
+    if inference.is_active()
+        && inference.requires_full_history()
+        && graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto)
+    {
         git.require_full_history()?;
     }
 
     for pkg in graph.packages() {
-        let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
         let last_tag = tags.last_tag(&pkg.id);
         let cur_ver = last_tag
             .map(|t| t.version.clone())
@@ -473,14 +480,14 @@ where
                 })
             })?;
 
-        let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
-        let policy = resolve_package_config(&native_names, config)
-            .and_then(|pcfg| pcfg.pre_major_inference)
-            .unwrap_or(PreMajorInferencePolicy::Off);
-
-        // release_trigger: Changeset packages take severity from pending changesets only --
-        // commit inference must not run for them, so neither does resolving its window.
-        let inferred = if pkg.release_trigger == ReleaseTrigger::Auto {
+        // Changeset packages take severity from pending changesets only, and disabled inference infers nothing: neither
+        // works out an inference window, which would otherwise peel tags package by package.
+        let inferred = if pkg.release_trigger == ReleaseTrigger::Auto && inference.is_active() {
+            let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
+            let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
+            let policy = resolve_package_config(&native_names, config)
+                .and_then(|pcfg| pcfg.pre_major_inference)
+                .unwrap_or(PreMajorInferencePolicy::Off);
             let since = last_tag
                 .map(|t| resolve_since(git, tags, t.name.as_str()))
                 .transpose()?;

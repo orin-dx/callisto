@@ -303,11 +303,14 @@ impl PypiRegistry {
 /// Files on the index that no build of this release declared are never checked, but they are worth a line.
 pub(super) fn warn_about_extra_files(operation: &RegistryPublishOperation, extras: &[&str]) {
     if !extras.is_empty() {
-        eprintln!(
-            "warning: the index lists {} for {} {}, which this release did not build; it is not checked",
-            extras.join(", "),
-            operation.package_name,
-            operation.version.render()
+        crate::note::advise(
+            &mut std::io::stderr(),
+            format_args!(
+                "warning: the index lists {} for {} {}, which this release did not build; it is not checked\n",
+                extras.join(", "),
+                operation.package_name,
+                operation.version.render()
+            ),
         );
     }
 }

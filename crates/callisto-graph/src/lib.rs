@@ -2,6 +2,8 @@
 //! for callisto.
 
 #![allow(clippy::result_large_err)]
+// Advisory stderr goes through `note::advise`, which a closed stream cannot turn into a failure.
+#![deny(clippy::print_stdout, clippy::print_stderr)]
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,7 +32,7 @@ pub mod locate;
 mod manifest_cache;
 pub(crate) mod matrix;
 pub mod napi;
-mod note;
+pub mod note;
 mod parallel;
 pub mod plan;
 pub(crate) mod registry_endpoint;
@@ -51,7 +53,7 @@ pub use cascade::{
     ConvergedTargets, DepWriteTarget, RewriteKey, RewriteOutcome, SpecRewrite,
 };
 pub use config::{load as load_config, resolve as resolve_config, GroupDef, GroupTable, ResolvedConfig};
-pub use error::{ConfigError, ExitKind, GraphError};
+pub use error::{ConfigError, ExitKind, GraphError, HOSTED_ORIGIN_FORMS};
 pub use groups::{fixed_group_target, pre_mutation_checks, versioned_bump, GroupCheckOutcome};
 pub use identity::IdentityIndex;
 pub use infer::{InferenceOutcome, InferenceWindowSpec, NoInference, SeverityInference};
@@ -82,6 +84,9 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// is called. `pub` so tests can hand-construct a `Workspace` with a
     /// pre-seeded value.
     pub git: OnceCell<GitAccess<'a>>,
+    /// `origin`'s push URL, read by one git process the first time `Workspace::origin` is called. Never formatted
+    /// into output.
+    pub origin_url: OnceCell<Option<String>>,
     pub runner: &'a R,
     /// Path-keyed cache of manifest handles opened read-only during this
     /// workspace's lifetime. Populated during graph discovery
@@ -138,6 +143,7 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
             graph,
             tags: OnceCell::new(),
             git: OnceCell::new(),
+            origin_url: OnceCell::new(),
             runner,
             manifest_cache,
             identity,
@@ -198,9 +204,30 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         self.git.get_or_init(|| GitAccess::new(&self.root, self.runner))
     }
 
+    /// `origin`, read from git once per workspace; a plan, its preview and its checks all see the same remote.
+    pub(crate) fn origin(&self) -> Result<crate::commands::release::Origin, GraphError> {
+        let raw = match self.origin_url.get() {
+            Some(raw) => raw,
+            None => {
+                let raw = crate::commands::release::Origin::read_push_url(&self.root, self.runner)?;
+                self.origin_url.get_or_init(|| raw)
+            }
+        };
+        Ok(crate::commands::release::Origin::parse_push_url(raw.as_deref()))
+    }
+
     /// The GitHub repository a product release publishes to: `[release] forge-repository` when set, else `origin`'s.
-    /// No remote, or one that is not on GitHub, means none; an `origin` that cannot be read safely is an error.
+    /// No remote, or one not on GitHub, means none; an `origin` that is not hosted refuses a real run and reads as
+    /// none in a preview.
     pub fn forge_repository(&self) -> Result<Option<callisto_model::GitHubRepository>, GraphError> {
+        self.forge_repository_for(crate::commands::release::GitRemoteRequirement::Required)
+    }
+
+    /// [`Workspace::forge_repository`] for a real run (`Required`) or a preview (`OptionalForPreview`).
+    pub(crate) fn forge_repository_for(
+        &self,
+        remote: crate::commands::release::GitRemoteRequirement,
+    ) -> Result<Option<callisto_model::GitHubRepository>, GraphError> {
         if let Some(configured) = self
             .config
             .product_release
@@ -209,8 +236,12 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         {
             return Ok(Some(configured));
         }
-        Ok(crate::commands::release::optional_git_remote(&self.root, self.runner)?
-            .and_then(|remote| remote.github_repository))
+        let origin = self.origin()?;
+        let remote = match remote {
+            crate::commands::release::GitRemoteRequirement::Required => origin.optional()?,
+            crate::commands::release::GitRemoteRequirement::OptionalForPreview => origin.preview(),
+        };
+        Ok(remote.and_then(|remote| remote.github_repository))
     }
 
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {
@@ -292,35 +323,63 @@ pub fn pre_initial_version<'a>(pre: &'a callisto_model::format::PreState, id: &P
     pre.initial_versions()?.get(&pre_json_key(id))
 }
 
-/// The commit that added `pre_json`, asked of Git once however many keys need it.
-fn commit_added<'c>(
-    cache: &'c mut Option<Option<String>>,
-    git: &GitAccess<'_>,
-    pre_json: &std::path::Path,
-) -> Result<Option<&'c str>, GraphError> {
-    if cache.is_none() {
-        *cache = Some(git.commit_adding(pre_json).map_err(GraphError::Vcs)?);
-    }
-    Ok(cache.as_ref().and_then(Option::as_deref))
+/// The commit that added `pre.json` and every package's manifest there, each asked of Git once however many keys need
+/// them.
+struct PreJsonOrigin<'a> {
+    pre_json: &'a std::path::Path,
+    keys: &'a [String],
+    manifests: Vec<PathBuf>,
+    rev: Option<Option<String>>,
+    rosters: history::Rosters,
 }
 
-/// Whether `package`, which carries the bare `key` today, may be the package that held it when `pre.json` was added.
-///
-/// History that cannot be read is no evidence of another owner, so it keeps the key.
-fn bare_key_may_belong(
-    git: &GitAccess<'_>,
-    added: &mut Option<Option<String>>,
-    pre_json: &std::path::Path,
-    key: &str,
-    package: &callisto_model::Package,
-    identity: &IdentityIndex,
-    rosters: &mut history::Rosters,
-) -> bool {
-    let held = commit_added(added, git, pre_json).and_then(|rev| match rev {
-        Some(rev) => history::may_have_held_name_at(git, rev, key, package, identity, rosters),
-        None => Ok(true),
-    });
-    held.unwrap_or(true)
+impl<'a> PreJsonOrigin<'a> {
+    fn new<D: DependencyResolver>(graph: &D, pre_json: &'a std::path::Path, keys: &'a [String]) -> Self {
+        let manifests = graph
+            .packages()
+            .filter_map(|p| p.canonical_manifests().next().map(|m| m.path.clone()))
+            .collect();
+        Self {
+            pre_json,
+            keys,
+            manifests,
+            rev: None,
+            rosters: history::Rosters::default(),
+        }
+    }
+
+    /// The commit that added `pre.json`; resolving it reads every package's manifest there in one batch, and a key no
+    /// such manifest names is searched for there together with every other key.
+    fn rev(&mut self, git: &GitAccess<'_>) -> Result<Option<String>, GraphError> {
+        if self.rev.is_none() {
+            let rev = git.commit_adding(self.pre_json).map_err(GraphError::Vcs)?;
+            if let Some(rev) = &rev {
+                let wanted: Vec<(String, PathBuf)> = self.manifests.iter().map(|m| (rev.clone(), m.clone())).collect();
+                self.rosters.prefetch(git, &wanted);
+                self.rosters.expect_names(rev, self.keys.iter().cloned());
+            }
+            self.rev = Some(rev);
+        }
+        Ok(self.rev.clone().flatten())
+    }
+
+    /// Whether `package`, which carries the bare `key` today, may be the package that held it when `pre.json` was
+    /// added.
+    ///
+    /// History that cannot be read is no evidence of another owner, so it keeps the key.
+    fn bare_key_may_belong(
+        &mut self,
+        git: &GitAccess<'_>,
+        key: &str,
+        package: &callisto_model::Package,
+        identity: &IdentityIndex,
+    ) -> bool {
+        let held = self.rev(git).and_then(|rev| match rev {
+            Some(rev) => history::may_have_held_name_at(git, &rev, key, package, identity, &mut self.rosters),
+            None => Ok(true),
+        });
+        held.unwrap_or(true)
+    }
 }
 
 /// Resolves native baselines, attributing historical bare keys at the commit that added `pre.json`.
@@ -337,13 +396,10 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
     };
     let keys: Vec<String> = initial_versions.keys().cloned().collect();
     let mut owners = BTreeMap::new();
-    let mut rosters = history::Rosters::default();
-    let mut added = None;
+    let mut origin = PreJsonOrigin::new(graph, pre_json, &keys);
     for key in &keys {
         if let Some(owner) = graph.packages().find(|p| pre_json_key(&p.id) == *key) {
-            if owner.id.ecosystem().is_some()
-                || bare_key_may_belong(git, &mut added, pre_json, key, owner, identity, &mut rosters)
-            {
+            if owner.id.ecosystem().is_some() || origin.bare_key_may_belong(git, key, owner, identity) {
                 owners.insert(key.clone(), owner);
             } else {
                 // Another package's baseline: it must not pin this package's version either.
@@ -363,7 +419,7 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
                     let package = graph.packages().find(|p| p.id == id);
                     package.filter(|package| {
                         PackageId::parse(key).is_ok_and(|parsed| parsed.ecosystem().is_some())
-                            || bare_key_may_belong(git, &mut added, pre_json, key, package, identity, &mut rosters)
+                            || origin.bare_key_may_belong(git, key, package, identity)
                     })
                 }
                 Err(GraphError::UnknownPackage { .. }) => None,
@@ -376,8 +432,8 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
                 Err(error) => return Err(error),
             }
         } else {
-            let owner = match commit_added(&mut added, git, pre_json)? {
-                Some(rev) => history::sole_owner_at(git, rev, key, &same, identity, &mut rosters)?,
+            let owner = match origin.rev(git)? {
+                Some(rev) => history::sole_owner_at(git, &rev, key, &same, identity, &mut origin.rosters)?,
                 None => None,
             };
             Some(owner.ok_or_else(|| GraphError::AmbiguousPreJsonKey {

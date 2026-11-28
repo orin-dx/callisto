@@ -126,7 +126,10 @@ impl ProjectLocator for IgnoreWalkLocator {
                         },
                     });
                 }
-                eprintln!("{}", unparseable_manifest_warning(&manifest_path, &failure));
+                crate::note::advise(
+                    &mut std::io::stderr(),
+                    format_args!("{}\n", unparseable_manifest_warning(&manifest_path, &failure)),
+                );
             }
 
             for (ecosystem, content, identity) in parsed {
@@ -241,7 +244,7 @@ enum ManifestFailure {
 
 /// Warning text for a manifest that fails to read or parse but isn't a workspace member (its own
 /// ecosystem doesn't admit it, and it shares no directory with an admitted manifest) --
-/// tested directly, since `eprintln!` output can't be captured from inside discovery.
+/// tested directly, since stderr output can't be captured from inside discovery.
 fn unparseable_manifest_warning(path: &Path, failure: &ManifestFailure) -> String {
     match failure {
         ManifestFailure::Unreadable(message) => {

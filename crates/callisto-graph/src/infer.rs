@@ -17,6 +17,17 @@ pub trait SeverityInference: Send + Sync {
         git: &GitAccess<'_>,
         window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError>;
+
+    /// Whether `infer` reads commit history, so a shallow clone would silently shorten its window. Asked only when
+    /// [`Self::is_active`].
+    fn requires_full_history(&self) -> bool {
+        true
+    }
+
+    /// Whether inference runs at all: when it doesn't, its window is not worked out and `infer` is not called.
+    fn is_active(&self) -> bool {
+        true
+    }
 }
 
 pub struct InferenceWindowSpec<'a> {
@@ -45,6 +56,14 @@ impl SeverityInference for NoInference {
         _window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError> {
         Ok(None)
+    }
+
+    fn requires_full_history(&self) -> bool {
+        false
+    }
+
+    fn is_active(&self) -> bool {
+        false
     }
 }
 

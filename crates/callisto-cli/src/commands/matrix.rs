@@ -20,8 +20,8 @@ pub fn handle(args: MatrixArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
     let report = callisto_graph::commands::matrix(&ws, &opts)?;
 
     match global.format {
-        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
-        OutputFormat::Text => render::render_matrix(&report, &mut std::io::stdout())?,
+        OutputFormat::Json => emit_report(&mut crate::output::stdout(), &report, global.dry_run)?,
+        OutputFormat::Text => render::render_matrix(&report, &mut crate::output::stdout())?,
     }
 
     Ok(ExitCode::SUCCESS)

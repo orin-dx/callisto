@@ -158,7 +158,11 @@
     },
     {
       "id": "CLI-OUT-09",
-      "criterion": "`completions <shell>` and `schema` exit 0 without printing an error or panicking when stdout's reading end is already closed (e.g. piped into a command that exits early); a `--format json` report command's write error in that same situation propagates as `E213` and exits 1."
+      "criterion": "When stdout's reading end is already closed (e.g. piped into a command that exits early), every command, in text and JSON alike, exits as it would with stdout open, without printing an error or panicking; any other stdout write error is `E213` and exits 1, and a file the command must write still fails it."
+    },
+    {
+      "id": "CLI-OUT-10",
+      "criterion": "Notes, warnings, a tool's echoed output and the final error card are best effort on stderr: when stderr is closed or failing they are lost without changing the exit code, so a usage error still exits 2 and a failure still exits 1 with its own error, never a panic. Output a command needs on stderr, such as `add`'s wizard prompts and `init`'s review of what it detected and will write (on stderr under `--format json`), still fails the command when it cannot be written."
     },
     {
       "id": "CLI-STATUS-01",
@@ -220,7 +224,7 @@
     },
     {
       "id": "CLI-INIT-01",
-      "criterion": "Before any question, `callisto init` prints `Detected:` with the ecosystems, the origin remote URL, and each package's qualified id, version, last tag, and executable names for executable-producing packages. Artifact selection includes only supported Cargo binary targets."
+      "criterion": "Before any question, `callisto init` prints `Detected:` with the ecosystems, the hosted origin endpoint (or `not hosted` or `none`, never the remote value), and each package's qualified id, version, last tag, and executable names for executable-producing packages. Artifact selection includes only supported Cargo binary targets."
     },
     {
       "id": "CLI-INIT-02",
@@ -253,7 +257,7 @@
     },
     {
       "id": "CLI-INIT-09",
-      "criterion": "init exits 1 without writing when callisto.toml already exists (unless `--workflow` is given, which then writes only the workflow and leaves callisto.toml as it is) or when the directory is not inside a Git repository, each with a help line naming the fix. With no `origin` remote configured, init instead writes callisto.toml, skips the workflow and shipping-binaries questions, and emits an `init-origin-missing` warning diagnostic; `--workflow` or `--artifact-target` without `origin` exits 1 naming the fix, and `callisto release` refuses later.",
+      "criterion": "init exits 1 without writing when callisto.toml already exists (unless `--workflow` is given, which then writes only the workflow and leaves callisto.toml as it is) or when the directory is not inside a Git repository, each with a help line naming the fix. With no `origin` remote configured, or one that is not a hosted remote (such as a local path or `file://` URL), init instead writes callisto.toml, skips the workflow and shipping-binaries questions, and emits an `init-origin-missing` warning diagnostic that never shows the `origin` value; `--workflow` or `--artifact-target` without a hosted `origin` exits 1 naming the fix, and `callisto release` refuses later.",
       "is_error_case": true
     },
     {
@@ -281,7 +285,7 @@
     },
     {
       "id": "CLI-INIT-15",
-      "criterion": "When init fails to write callisto.toml, .changeset/README.md, or a generated workflow file, it exits 1 with E278 naming the exact path it failed to write.",
+      "criterion": "When init fails to write callisto.toml, .changeset/README.md, or a generated workflow file, it exits 1 with E278 naming the exact path it failed to write. It writes .changeset/README.md before callisto.toml, so a README it cannot write leaves no callisto.toml and a plain `callisto init` retry completes; a workflow it cannot write after callisto.toml is retried with `callisto init --workflow`.",
       "is_error_case": true
     },
     {

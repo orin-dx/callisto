@@ -9,7 +9,7 @@ use inquire::{Confirm, Text};
 
 use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
-use crate::output::{emit_line, emit_report, log_line, prompt_line};
+use crate::output::{advise, emit_line, emit_report, log_line, prompt_line};
 use crate::runner::CliCommandRunner;
 use crate::tty::{self, Listed};
 use crate::workspace::load_workspace;
@@ -105,7 +105,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                     content: Some(text),
                     diagnostics: vec![],
                 };
-                emit_report(&mut std::io::stdout(), &report, true)?;
+                emit_report(&mut crate::output::stdout(), &report, true)?;
             }
             OutputFormat::Text => {
                 emit_line(&format!(
@@ -128,14 +128,17 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 content: None,
                 diagnostics: vec![],
             };
-            emit_report(&mut std::io::stdout(), &report, false)?;
+            emit_report(&mut crate::output::stdout(), &report, false)?;
         }
         OutputFormat::Text => {
             log_line(global.format, &format!("Added changeset: {rel_path}"))?;
         }
     }
     if wizard {
-        prompt_line("Next: commit it with your change; `callisto release --dry-run` previews the release.");
+        advise(
+            &mut std::io::stderr(),
+            "Next: commit it with your change; `callisto release --dry-run` previews the release.\n",
+        );
     }
 
     Ok(ExitCode::SUCCESS)
@@ -213,7 +216,7 @@ impl AddPrompter for TerminalAddPrompter {
             match chosen.edit() {
                 Ok(saved) => return Ok(saved.and_then(|text| Summary::new(&text).ok())),
                 // The answers so far are kept: the summary is asked for inline instead.
-                Err(unusable) => prompt_line(&format!("warning: {unusable}")),
+                Err(unusable) => advise(&mut std::io::stderr(), format_args!("warning: {unusable}\n")),
             }
         }
     }
@@ -242,7 +245,7 @@ fn run_wizard(
 ) -> Result<Option<(Vec<Entry>, Summary)>, CliError> {
     let answers = ask(choices, summary, dry_run, prompter)?;
     if answers.is_none() {
-        prompt_line(tty::CANCELLED);
+        prompt_line(tty::CANCELLED)?;
     }
     Ok(answers)
 }
@@ -330,7 +333,7 @@ fn ask(
         entries: entries.clone(),
         summary: summary.0.clone(),
     })?;
-    prompt_line(&review(&entries, &summary.0));
+    prompt_line(&review(&entries, &summary.0))?;
     if dry_run || prompter.confirm("Write this changeset?", true)? {
         Ok(Some((entries, summary)))
     } else {
@@ -372,9 +375,12 @@ fn wizard_choices<'a>(
     changed: Result<std::collections::BTreeMap<callisto_model::PackageId, bool>, callisto_graph::GraphError>,
 ) -> Vec<Choice> {
     let changed = changed.unwrap_or_else(|error| {
-        prompt_line(&format!(
-            "warning: could not tell which packages changed since their last release, so none is picked: {error}"
-        ));
+        advise(
+            &mut std::io::stderr(),
+            format_args!(
+                "warning: could not tell which packages changed since their last release, so none is picked: {error}\n"
+            ),
+        );
         std::collections::BTreeMap::new()
     });
     packages
