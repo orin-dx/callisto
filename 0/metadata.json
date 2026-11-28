@@ -1,0 +1,89 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8G3RYVAE4SBKEZD2P4YCWSS",
+  "session_id": "7885c500-741a-41cf-aba9-c84654922949",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-28T03:39:35.110538Z",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    "crates/callisto-cli/tests/git_process_count_tests.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/cascade/tests.rs",
+    "crates/callisto-graph/src/history.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/tests/tag_glob_cache_count_test.rs",
+    "crates/callisto-model/src/vcs/access.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "b6a55567f96b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 184,
+    "cache_creation_tokens": 222585,
+    "cache_read_tokens": 13740356,
+    "output_tokens": 60312,
+    "api_call_count": 90
+  },
+  "session_token_usage": {
+    "input_tokens": 184,
+    "cache_creation_tokens": 222585,
+    "cache_read_tokens": 13740356,
+    "output_tokens": 60312,
+    "api_call_count": 90
+  },
+  "redaction": {
+    "replacements": 12,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 12,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "summary": {
+    "intent": "Fix two #242 review findings on PR #634: (1) E2BIG from files_containing_at putting every baseline key in git grep argv, by sending patterns via run_with_stdin with 'git grep -f -' and migrating test runners; (2) make the resumption positive control work under both native and single-level tag listing shapes. Then run the full gate, a targeted Codex review, and make a signed commit without pushing.",
+    "outcome": "Both fixes were implemented with failing reproductions first; the small and 8,831-key CLI cases now both plan cargo/foo 1.0.0 -> 1.0.1-alpha.0, and the legacy-listing tests pass natively and under the one-level shim. The full gate (pre-push, lint, doc-check, test, fuzz-check, bench) passed by exit code and a signed commit was created. The targeted Codex review and the report with the sha had not yet happened in the transcript.",
+    "learnings": {
+      "repo": [
+        "files_containing_at in callisto-model/src/vcs/access.rs now sends patterns through run_with_stdin with 'git grep -f -'; newline-in-needle splitting matches -e semantics, and error text no longer includes the needle list.",
+        "Test runners (FakeRunner, CountingGrep, ScriptedGit, LegacyTagListing, RealGitRunner and the scripted tag fakes) must delegate run_with_stdin or grep silently falls back to the conservative path, so they need migrating whenever the transport changes.",
+        "Temporarily making the default run_with_stdin panic on grep was an effective audit to find unmigrated runners (15 graph lib tests plus 1 integration test).",
+        "git grep -f - cost scales with pattern count (about 3.8s for 8,831 keys), which is Git's own per-pattern cost; the large test payload was shrunk to about 2.5 MB to keep it fast.",
+        "The worktree guard requires scripts to be run from files rather than inline commands.",
+        "Bench process counts stay constant across 50/200/500 packages after the change."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "finding": "files_containing_at and RealGit gained stdin-based grep transport; new tests cover argv form and a real E2BIG-sized payload."
+        },
+        {
+          "path": "crates/callisto-graph/src/history.rs",
+          "finding": "CountingGrep now delegates stdin and counts grep calls there."
+        },
+        {
+          "path": "crates/callisto-cli/tests/git_process_count_tests.rs",
+          "finding": "The resumption positive control now covers both native recursive peeling and single-level listing shapes, so it passes under the one-level shim."
+        }
+      ],
+      "workflow": [
+        "Reproduce each finding with the supplied script before changing code, then rerun it after the fix to confirm.",
+        "Run mktemp-based probes in $TMPDIR with fail-closed checks; a failed mktemp ran a probe in the worktree and left stray files that had to be unstaged and removed.",
+        "Run the gate in the background with a monitor on per-step exit codes."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}

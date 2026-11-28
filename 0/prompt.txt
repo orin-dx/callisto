@@ -1,0 +1,61 @@
+PR #634 (Entire change #242), worktree /Users/gabe/Projects/callisto/.claude/worktrees/wp-onboarding-friction-fix at 98620363e (pushed). Read /tmp/callisto-findings-2026-11-27/claude-handoff.txt items 1 and 2, consolidated-review.txt, and the lane242 reproduction scripts. Fix both in one batch, each with its failing reproduction first: (1) Medium E2BIG: files_containing_at puts every historical baseline key in git grep's argv; a large prerelease (8,831 keys) fails E024 'Argument list too long'. Send patterns through run_with_stdin with 'git grep -f -': one process, same statuses, fixed/case-insensitive semantics and NUL path framing. Migrate graph CountingGrep and model RealGit test delegation in the same change. Both CLI cases (small and 8,831-key) must plan the same cargo bump after the fix. Sweep for any other git argv that grows with package or key count and fix the same way. (2) Low: the resumption positive control assumes native recursive tag peeling; under the single-level listing shim it fails [9,13]. Control both listing shapes or gate on the real capability; keep the historical-tag, cache-miss and active-inference controls; no Git floor change. Do not redo earlier corrections. Then merge origin/main if it moved, the full gate by exit code (just pre-push && just lint && just doc-check && just test, network unsandboxed, just fuzz-check, just bench), then a TARGETED Codex review (codex exec, prompt: review git diff origin/main...HEAD against the #242 items of that handoff and consolidated-review.txt, check siblings, write throwaway failing tests against real functions, report only confirmed failures); fix confirmed ones and repeat until none. Commit signed. Report the sha; do NOT push. Rules (from the lead session close-gap-for-alpha). Be thorough before a push: a push costs a paid review, so find problems locally first.
+- Read AGENTS.md. Prefer a type or private constructor over a check; delete checks a type makes redundant; fix sibling call sites in the same PR.
+- A check, preview, dry run or test must run on exactly the structure the real path executes (one shared graph or derivation, the real tool), never a projection, copy or re-implementation. When fixing a failing or flaky test, assert the measured behaviour still happens.
+- No new traits, async or frameworks. No new error codes, JSON keys or flags without asking the lead.
+- Work in a named worktree off fresh origin/main. Write the failing test first for behaviour changes.
+- Before reporting a change as ready to push, run the AGENTS.md gate in full and judge each by exit code: `just pre-push && just lint && just doc-check && just test` (workspace-wide, not just the touched crate; tests elsewhere read scripts, specs and error registries). Run network/pty tests unsandboxed. Iterate with scoped `cargo test -p` while working.
+- If you change a public signature in callisto-manifests or callisto-model, also run `just fuzz-check` (the fuzz crate is outside the workspace, so crate tests miss it).
+- Run `cargo mutants --in-place --in-diff` only for new decision logic, not for merges, renames, docs, CI or tests; never commit mutants.out*.
+- Merges and conflict resolutions: resolve, run the touched crate's tests, push. Nothing else.
+- Changeset (`cargo run -p callisto-cli -- add ...`) only for user-visible changes, written for users.
+- Every push triggers a paid review. Before reporting, run the checklist in /Users/gabe/.claude/jobs/d58474bb/tmp/review-checklist.md against your full diff. Push once, only after the lead has read your diff and says push; for an existing PR, commit locally and report the worktree and sha first.
+- Signed commits, no session trailer. Merge the latest origin/main right before pushing (no rebase, no force-push). Push with git push origin HEAD:refs/heads/<branch>, confirm with git ls-remote, link the given trail, open with entire trail ci-pr.
+- Trails are semantic outcomes shared by many PRs. Never change a trail's title or description (no `entire trail update` on it, no `entire trail create` to rename it). Put PR-specific text in the PR body with `gh pr edit <n> --body-file`. Link your branch to the trail the lead named; if your work does not fit that trail's outcome, ask the lead instead of linking it anyway.
+- If CI fails, fix that failure only. If Entire raises findings, fix only wrong results, broken recovery, security issues or checks that cannot fail; report the rest to the lead.
+- Report to the lead (close-gap-for-alpha) in under 5 lines: PR, sha, what you ran.
+- CARGO_BUILD_JOBS is cores/5; never run two cargo builds in one worktree.
+- Findings: the lead writes a row in /Users/gabe/Projects/callisto/.claude/plans/FINDINGS-LEDGER.md (class, owning boundary, codebase-wide sweep, fix level) before any fix is briefed. If you find a finding without a row, stop and ask the lead.
+- Prompt UI is final: line-based lists (plain text + inquire single-line Text). Findings about the prompt library's own behaviour are dismissed with a documented limit; fix only behaviour Callisto owns. Never redesign the prompt UI in response to a finding.
+
+---
+
+<task-notification>
+<task-id>bix57lh70</task-id>
+<summary>Monitor event: "gate step results (pre-push, lint, doc-check, test, fuzz-check, bench)"</summary>
+<event>pre-push=0
+lint=0
+doc-check=0</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bix57lh70</task-id>
+<summary>Monitor event: "gate step results (pre-push, lint, doc-check, test, fuzz-check, bench)"</summary>
+<event>test=0
+fuzz-check=0</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bd0fgvkg5</task-id>
+<tool-use-id>toolu_011u5job4aeaqdNmvD64i5cj</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/7885c500-741a-41cf-aba9-c84654922949/tasks/bd0fgvkg5.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full gate, fuzz-check and bench" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bix57lh70</task-id>
+<tool-use-id>toolu_01HkgqfDjp63WtnTAD8cZhw5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/7885c500-741a-41cf-aba9-c84654922949/tasks/bix57lh70.output</output-file>
+<status>completed</status>
+<summary>Monitor "gate step results (pre-push, lint, doc-check, test, fuzz-check, bench)" stream ended</summary>
+<event>bench=0</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
