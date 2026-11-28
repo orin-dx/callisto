@@ -1,0 +1,22 @@
+You are an adversarial reviewer for Callisto change #242 in this repository (the current directory, a git worktree). Review `git diff origin/main...HEAD` against this contract:
+
+1. The #242 sections of /tmp/callisto-local-verification-2026-11-26/review.txt (findings INIT-RECOVERY, HELP-SINK, STDERR-CONTRACT, and the #242 summary).
+2. "Workstream2" (items A-E) and "Combined acceptance cases" in /Users/gabe/Projects/callisto/.claude/plans/closure-2026-11-26/claude-execution-handoff.txt.
+3. Owner decisions in /Users/gabe/Projects/callisto/.claude/plans/closure-2026-11-26/DECISIONS.md (binding; a counterexample that contradicts them is not a defect). Exception: the lead has explicitly moved the init README ordering into this change.
+4. AGENTS.md in the repository root.
+
+What the change claims:
+- One best-effort stderr operation (`callisto_graph::note::advise`, re-exported as `callisto_cli::output::advise`) for notes, warnings, a child's echoed output and the final error card. A failed write never replaces the selected result (E169 stays E169, usage stays exit 2, success stays 0, never 101), and never stops the runner draining or capturing a child.
+- Required output stays fallible: prompts, init's review narration (including JSON init facts on stderr), reports, storage/receipt/intent writes, real process and capture failures.
+- One shared stdout sink (`callisto_cli::output::stdout`, `color::stdout`) used by every command and format, `callisto help` included: a closed pipe ends output without failing; other errors still fail.
+- Performance oracles: process-count tests use historical tag versions with matched auto/changeset controls under native and simulated pre-2.44 tag listing, with a positive control; aggregate tests force a real tag-cache miss with an active positive control; disabled inference skips the full-history check.
+- pre.json keys needing history are searched for in one `git grep` plus one batched read at the commit that added pre.json; `release --dry-run` and `version --dry-run` start no git process per package for moved manifests or npm-keyed dual packages.
+- init writes .changeset/README.md before callisto.toml, so a README failure leaves no config and a plain retry completes; E278 advice stays accurate for a later workflow failure.
+- docs/specs/cli.json and the .changeset entries describe exactly that behaviour, no broader.
+
+Method:
+- Read the diff and the code around it, including sibling call sites in callisto-cli and callisto-graph that print to stdout/stderr, write files, or start git processes. Look for any remaining path where a write to stdout/stderr can panic, replace a result, or bypass the sinks; any required output that became silently best effort; any new per-package git process; any init ordering or advice that is wrong; any docs/spec/changeset sentence the code does not honour.
+- For every suspected defect, write a throwaway failing test against the real function or the compiled binary (`cargo test -p <crate> --test <file>` or a unit test), run it, and keep the finding only if the test fails for the stated reason. Run one cargo command at a time. Use `cargo build -p callisto-cli` for the binary at target/debug/callisto.
+- Delete every throwaway test and file you created before you finish, and leave `git status` exactly as you found it. Do not commit, push, or edit product code.
+
+Report only confirmed failures. For each: location (file:line), the failing input, the observed versus expected behaviour, the exact test you ran and its output, and the smallest fix at the boundary. If nothing fails, say "No confirmed failures" and list what you tried.

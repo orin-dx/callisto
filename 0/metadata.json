@@ -1,0 +1,92 @@
+{
+  "cli_version": "0.13.5-nightly.202611160626.76f1b5129",
+  "checkpoint_id": "01M8G27SK1AX2P4WX1T6D8EJTF",
+  "session_id": "01a21a53-a1d9-7b92-ba6d-223bff8cd2e7",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-28T03:12:43.425309Z",
+  "branch": "worktree-wp-onboarding-friction-fix",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/review_242_adversarial.rs",
+    "crates/callisto-cli/tests/review_242_capture.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "81889ee59aba",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 217453,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8160640,
+    "output_tokens": 27094,
+    "api_call_count": 51
+  },
+  "session_token_usage": {
+    "input_tokens": 217453,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8160640,
+    "output_tokens": 27094,
+    "api_call_count": 51
+  },
+  "redaction": {
+    "replacements": 16,
+    "layers": {
+      "betterleaks": 15,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 6,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "Adversarially review Callisto change #242 (git diff origin/main...HEAD) against a review contract, owner decisions, and AGENTS.md, confirming defects only via throwaway failing tests, then cleaning up and leaving git status unchanged.",
+    "outcome": "Three failures were confirmed with failing tests: required JSON init review write failure downgraded to a warning, capture_stream treating Interrupted reads as EOF (pre-existing), and --help/--version bypassing the stdout sink on non-BrokenPipe errors. Other checks passed, and all throwaway tests and artifacts were removed with git status clean.",
+    "learnings": {
+      "repo": [
+        "Process-count tests (git_process_count_tests) with historical tags, legacy-listing positive control, and moved/dual manifest cases all passed (10 tests); closed_stream, init_recovery, init_origin, aggregate, shallow-clone, runner and workflow-matrix tests also passed.",
+        "Release e2e test harness (release_harness.rs) builds ~8 repos and can make live git ls-remote lookups with 60s timeouts, making release_command_e2e_tests very slow and creating callisto-test-registry-* temp dirs that need cleanup.",
+        "Explicit `callisto help` routes through the shared stdout sink and returns E213 on non-BrokenPipe errors, but clap's Cli::parse path for --help/--version does not.",
+        "Entire Brain brief fails in this sandbox because its lock file is outside the writable area; direct source inspection is needed."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "line": 311,
+          "end_line": 329,
+          "finding": "Automatic workflow preparation catches errors from a function that also writes required review narration, so a required write failure (JSON init, GitHub origin) becomes an optional-workflow warning and init succeeds with config written instead of E213."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 410,
+          "end_line": 438,
+          "finding": "capture_stream's read loop treats all read errors, including ErrorKind::Interrupted, as EOF, truncating captured output silently; should retry Interrupted and surface other errors as capture failures."
+        },
+        {
+          "path": "crates/callisto-cli/src/main.rs",
+          "line": 16,
+          "end_line": 22,
+          "finding": "Cli::parse lets clap print help/version and drop the write result, so --help, status --help and --version exit 0 on WouldBlock stdout; should use try_parse and render via the shared stdout sink."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Entire Brain brief failed due to a lock file outside the writable sandbox.",
+      "The release e2e suite was very slow due to repeated live git lookups with 60s timeouts in fixture setup.",
+      "The release harness left temp registry directories outside the repo that had to be found and removed manually.",
+      "Ranger audit skill artifacts (workspace manifest, candidates, findings JSON) added overhead on top of the requested review report."
+    ],
+    "open_items": [
+      "Fix init so required review narration write errors propagate as E213 before the optional workflow-preparation fallback.",
+      "Fix capture_stream to retry Interrupted and propagate other read errors as capture failures (pre-existing but contrary to the capture contract).",
+      "Switch main.rs to try_parse and route help/version output through the shared stdout sink, preserving usage exit 2 and closed-pipe success."
+    ]
+  }
+}
